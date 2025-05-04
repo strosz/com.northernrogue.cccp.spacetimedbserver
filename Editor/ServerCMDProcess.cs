@@ -342,9 +342,9 @@ public class ServerCMDProcess
             "Write-Host 'Checking WSL...'; " +                                                          //hasWSL
             "$wsl = (wsl --status 2>&1); " +                                                            //hasWSL
             "if ($?) { Write-Host 'WSL_INSTALLED=TRUE' } else { Write-Host 'WSL_INSTALLED=FALSE' }; " + //hasWSL
-            "Write-Host 'Checking Debian...'; " +                                                                  //hasDebian
-            "$debian = (Get-AppxPackage TheDebianProject.DebianGNULinux); " +                                      //hasDebian
-            "if ($debian) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " + //hasDebian
+            "Write-Host 'Checking Debian...'; " +                                                                                  //hasDebian
+            "wsl --list 2>&1 | Select-String -Pattern 'Debian' -Quiet; " +                                                         //hasDebian
+            "if ($?) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " +                    //hasDebian
             "Write-Host 'Checking Debian Trixie...'; " +                                                                           //hasTrixie
             "$trixie = (wsl -d Debian -u "+ userName + " -- cat /etc/os-release 2>&1); " +                                         //hasTrixie
             "if ($trixie -match 'trixie') { Write-Host 'TRIXIE_INSTALLED=TRUE' } else { Write-Host 'TRIXIE_INSTALLED=FALSE' }; " + //hasTrixie
@@ -387,7 +387,7 @@ public class ServerCMDProcess
         //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}", 0);
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDB || !hasSpacetimeDBPath)
         {
-            logCallback("Missing pre-requisites. Please launch the Server Installer Window.", -1);
+            logCallback("Missing pre-requisites. Install them with the Server Installer Window.", -1);
         } else
         {
             logCallback("Pre-requisites check complete. All required components are installed.", 1);

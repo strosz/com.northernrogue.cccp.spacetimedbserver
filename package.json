@@ -1,7 +1,7 @@
 {
   "name": "com.northernrogue.cccp.spacetimedbserver",
   "displayName": "CCCP SpacetimeDB Server Manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
@@ -22,6 +22,6 @@
     "Multiplayer",
     "Online"
   ],
-  "documentationUrl": "",
+  "documentationUrl": "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing",
   "type": "tool"
 }

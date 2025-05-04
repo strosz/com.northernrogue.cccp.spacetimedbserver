@@ -424,7 +424,7 @@ public class ServerInstallerWindow : EditorWindow
         CheckInstallationStatus();
         await Task.Delay(1000);
         
-        if (hasDebianTrixie)
+        if (hasDebianTrixie && !installIfAlreadyInstalled)
         {
             SetStatus("Debian Trixie Update is already installed.", Color.green);
             return;
@@ -432,39 +432,76 @@ public class ServerInstallerWindow : EditorWindow
         
         SetStatus("Installing Debian Trixie Update...", Color.yellow);
         
-        // Command to update Debian sources to Trixie and perform upgrade
-        string trixieUpdateCommand = "wsl -d Debian -u root bash -c \"" +
-            "sed -i 's/bookworm/trixie/g' /etc/apt/sources.list && " +
-            "apt update && apt full-upgrade -y" +
-            "\"";
-            
-        // Use the ServerCMDProcess method to run the PowerShell command
-        bool success = await cmdProcess.RunPowerShellInstallCommand(trixieUpdateCommand, LogMessage, visibleInstallProcesses);
-        
-        if (success)
+        // Step 1: Update and upgrade
+        string updateCommand = "wsl -d Debian -u root bash -c \"apt update && apt upgrade -y\"";
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses);
+        if (!updateSuccess)
         {
-            SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
-            await Task.Delay(1000);
+            SetStatus("Failed to update Debian. Trixie installation aborted.", Color.red);
+            return;
+        }
+        
+        // Step 2: Install update-manager-core
+        SetStatus("Installing update-manager-core...", Color.yellow);
+        string coreCommand = "wsl -d Debian -u root bash -c \"apt install -y update-manager-core\"";
+        bool coreSuccess = await cmdProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses);
+        if (!coreSuccess)
+        {
+            SetStatus("Failed to install update-manager-core. Trixie installation aborted.", Color.red);
+            return;
+        }
+        
+        // Step 3: Change sources.list to trixie
+        SetStatus("Updating sources to Trixie...", Color.yellow);
+        string sourcesCommand = "wsl -d Debian -u root bash -c \"sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
+        bool sourcesSuccess = await cmdProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses);
+        if (!sourcesSuccess)
+        {
+            SetStatus("Failed to update sources.list. Trixie installation aborted.", Color.red);
+            return;
+        }
+        
+        // Step 4: Update again
+        SetStatus("Updating package lists for Trixie...", Color.yellow);
+        string updateTrixieCommand = "wsl -d Debian -u root bash -c \"apt update\"";
+        bool updateTrixieSuccess = await cmdProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses);
+        if (!updateTrixieSuccess)
+        {
+            SetStatus("Failed to update package lists for Trixie. Installation aborted.", Color.red);
+            return;
+        }
+        
+        // Step 5: Full upgrade
+        SetStatus("Performing full upgrade to Trixie...", Color.yellow);
+        string upgradeCommand = "wsl -d Debian -u root bash -c \"apt full-upgrade -y\"";
+        bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses);
+        if (!upgradeSuccess)
+        {
+            SetStatus("Failed to perform full upgrade to Trixie. Installation aborted.", Color.red);
+            return;
+        }
+        
+        SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
+        await Task.Delay(1000);
 
-            // WSL Shutdown
-            cmdProcess.ShutdownWsl();
-            await Task.Delay(3000);
+        // WSL Shutdown
+        cmdProcess.ShutdownWsl();
+        await Task.Delay(3000);
 
-            // Restart WSL
-            cmdProcess.StartWsl();
-            SetStatus("WSL restarted. Checking installation status...", Color.green);
-            await Task.Delay(3000);
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (hasDebianTrixie)
-            {
-                SetStatus("Debian Trixie Update installed successfully.", Color.green);
-            }
-            else
-            {
-                SetStatus("Debian Trixie Update installation failed. Please install manually.", Color.red);
-            }
-        }        
+        // Restart WSL
+        cmdProcess.StartWsl();
+        SetStatus("WSL restarted. Checking installation status...", Color.green);
+        await Task.Delay(3000);
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        if (hasDebianTrixie)
+        {
+            SetStatus("Debian Trixie Update installed successfully.", Color.green);
+        }
+        else
+        {
+            SetStatus("Debian Trixie Update installation failed. Please check logs.", Color.red);
+        }
     }
     
     private async void InstallCurl()
@@ -481,7 +518,8 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Installing curl...", Color.yellow);
         
         // Command to install curl
-        string curlInstallCommand = "wsl -d Debian -u root bash -c \"apt update && apt install -y curl\"";
+        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        string curlInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"apt install -y curl\"";
             
         // Use the ServerCMDProcess method to run the PowerShell command
         bool success = await cmdProcess.RunPowerShellInstallCommand(curlInstallCommand, LogMessage, visibleInstallProcesses);
