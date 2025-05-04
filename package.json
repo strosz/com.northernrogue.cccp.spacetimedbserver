@@ -1,0 +1,27 @@
+{
+  "name": "com.northernrogue.cccp.spacetimedbserver",
+  "displayName": "CCCP SpacetimeDB Server Manager",
+  "version": "0.1.0",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "author": {
+    "name": "Mathias Toivonen",
+    "email": "mathias@northernrogue.se",
+    "url": ""
+  },
+  "description": "Cosmos Cove Control Panel is a management interface for your SpacetimeDB Server.",
+  "keywords": [
+    "SpacetimeDB",
+    "Server",
+    "Manager",
+    "Cosmos",
+    "CCCP",
+    "MMORPG",
+    "MMO",
+    "Multiplayer",
+    "Online"
+  ],
+  "documentationUrl": "",
+  "type": "tool"
+}
