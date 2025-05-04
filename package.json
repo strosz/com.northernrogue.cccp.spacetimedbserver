@@ -6,9 +6,9 @@
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
   "author": {
-    "name": "Mathias Toivonen",
+    "name": "Northern Rogue",
     "email": "mathias@northernrogue.se",
-    "url": ""
+    "url": "https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"
   },
   "description": "Cosmos Cove Control Panel is a management interface for your SpacetimeDB Server.",
   "keywords": [
