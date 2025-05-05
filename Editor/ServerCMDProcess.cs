@@ -60,45 +60,75 @@ public class ServerCMDProcess
     
     #region Installation Methods
     
-    public async Task<bool> RunPowerShellInstallCommand(string command, Action<string, int> statusCallback = null, bool visibleProcess = true)
+    public async Task<bool> RunPowerShellInstallCommand(string command, Action<string, int> statusCallback = null, bool visibleProcess = true, bool keepWindowOpenForDebug = false)
     {
+        Process process = null;
         try
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug}");
             
-            Process process = new Process();
+            process = new Process();
             process.StartInfo.FileName = "powershell.exe";
+            process.StartInfo.Verb = "runas"; // Request administrator privileges
+
+            string finalCommand = command;
+            // If we want the window visible AND want it to stay open for debugging, add a pause at the end
+            if (visibleProcess && keepWindowOpenForDebug)
+            {
+                string pauseMessage = "Command finished. Press Enter to close this window...";
+                // Append the pause logic to the original command. Ensure proper quoting/escaping.
+                // We escape quotes within the PowerShell command string passed to -Command.
+                finalCommand = string.Format("{0}; Write-Host \"{1}\"; Read-Host", command.Replace("\"", "\\\""), pauseMessage);
+            }
+
+            // Use -Command. Need to properly escape quotes within the command string for PowerShell.
+            process.StartInfo.Arguments = string.Format("-Command \"{0}\"", finalCommand.Replace("\"", "\\\""));
             
+            process.StartInfo.UseShellExecute = false; 
+
             if (visibleProcess)
             {
-                process.StartInfo.Arguments = $"-Command \"Start-Process powershell -ArgumentList '-Command {command}' -Verb RunAs\"";
-                process.StartInfo.UseShellExecute = true;
-                process.StartInfo.CreateNoWindow = false;
+                process.StartInfo.CreateNoWindow = false; 
+                process.StartInfo.RedirectStandardOutput = false;
+                process.StartInfo.RedirectStandardError = false;
             }
             else
             {
-                // Run without showing a window
-                process.StartInfo.Arguments = $"-Command \"{command}\"";
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.CreateNoWindow = true; 
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
-                process.StartInfo.Verb = "runas"; // Still run as admin
             }
             
             process.Start();
-            
-            statusCallback?.Invoke($"{command} execution started. This may take some time.", 1);
-            
-            // Wait a bit to allow the process to start
-            await Task.Delay(5000);
-            
-            return true;
+            statusCallback?.Invoke($"Executing: {command}", 0);
+
+            // Since WaitForExitAsync is not available, run WaitForExit in a background thread 
+            // to avoid blocking the main Unity thread.
+            await Task.Run(() => process.WaitForExit()); 
+
+            int exitCode = process.ExitCode;
+
+            if (exitCode == 0)
+            {
+                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' completed successfully.", 1);
+                return true;
+            }
+            else
+            {
+                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console window if visible.", -1);
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            statusCallback?.Invoke($"Error executing PowerShell command: {ex.Message}", -1);
+            string commandExcerpt = command.Length > 50 ? command.Substring(0, 50) + "..." : command;
+            statusCallback?.Invoke($"Error executing PowerShell command '{commandExcerpt}': {ex.Message}", -1);
+            UnityEngine.Debug.LogError($"[ServerCMDProcess] Exception during PowerShell execution for command '{commandExcerpt}': {ex}");
             return false;
+        }
+        finally
+        {
+             process?.Dispose();
         }
     }
     
