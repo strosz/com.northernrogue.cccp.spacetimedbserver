@@ -47,8 +47,9 @@ public class ServerInstallerWindow : EditorWindow
     private bool keepWindowOpenForDebug = true;
 
     // Debug install process
-    private bool alwaysShowInstall = false; // Always show install button
+    private bool alwaysShowInstall = false;
     private bool installIfAlreadyInstalled = false;
+    private bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
     
     // Settings
     private const string PrefsKeyPrefix = "ServerWindow_"; // Use the same prefix as ServerWindow
@@ -289,6 +290,10 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.LabelField("Keep windows open:", GUILayout.Width(115));
         bool newDebugValue = EditorGUILayout.Toggle(keepWindowOpenForDebug, GUILayout.Width(20));
         
+        // Force install toggle
+        EditorGUILayout.LabelField("Force install:", GUILayout.Width(70));
+        bool newForceInstallValue = EditorGUILayout.Toggle(forceInstall, GUILayout.Width(20));
+
         // Only update when changed
         if (EditorGUI.EndChangeCheck())
         {
@@ -302,6 +307,14 @@ public class ServerInstallerWindow : EditorWindow
             {
                 keepWindowOpenForDebug = newDebugValue;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", keepWindowOpenForDebug);
+            }
+            
+            // Check if the force install toggle changed
+            if (newForceInstallValue != forceInstall)
+            {
+                forceInstall = newForceInstallValue;
+                alwaysShowInstall = forceInstall;
+                installIfAlreadyInstalled = forceInstall;
             }
         }
 

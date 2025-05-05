@@ -122,12 +122,23 @@ public class ServerCMDProcess
             
             if (visibleProcess)
             {
-                // For visible process, we can't easily get the exit code
-                // Wait for a reasonable amount of time for the command to execute
-                await Task.Delay(10000); // Wait 10 seconds minimum
-                
-                // For visible process, we'll assume success unless proven otherwise
-                return true;
+                // For visible process, wait for the CMD process (running the batch) to exit.
+                // This ensures the batch file itself completes.
+                await Task.Run(() => process.WaitForExit()); 
+                int exitCode = process.ExitCode;
+
+                // Note: ExitCode 0 only means the batch file executed without CMD errors.
+                // It doesn't guarantee the success of commands *inside* the batch (like WSL commands).
+                if (exitCode == 0)
+                {
+                    statusCallback?.Invoke($"Command window closed for '{command.Split(' ')[0]}...'. Check window for success/errors.", 1);
+                    return true; // Assume success if batch ran okay, user checks visible output.
+                }
+                else
+                {
+                    statusCallback?.Invoke($"Command window for '{command.Split(' ')[0]}...' closed with CMD error code {exitCode}.", -1);
+                    return false;
+                }
             }
             else
             {
@@ -156,7 +167,8 @@ public class ServerCMDProcess
         }
         finally
         {
-            if (process != null && !visibleProcess) // Only dispose if it's not a visible process
+            // Dispose hidden process, but leave visible cmd.exe alone as it might still be closing
+            if (process != null && !visibleProcess)
             {
                 process?.Dispose();
             }
