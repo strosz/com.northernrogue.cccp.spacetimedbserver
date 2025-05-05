@@ -68,67 +68,98 @@ public class ServerCMDProcess
             if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug}");
             
             process = new Process();
-            process.StartInfo.FileName = "powershell.exe";
-            process.StartInfo.Verb = "runas"; // Request administrator privileges
-
-            string finalCommand = command;
-            // If we want the window visible AND want it to stay open for debugging, add a pause at the end
-            if (visibleProcess && keepWindowOpenForDebug)
-            {
-                string pauseMessage = "Command finished. Press Enter to close this window...";
-                // Append the pause logic to the original command. Ensure proper quoting/escaping.
-                // We escape quotes within the PowerShell command string passed to -Command.
-                finalCommand = string.Format("{0}; Write-Host \"{1}\"; Read-Host", command.Replace("\"", "\\\""), pauseMessage);
-            }
-
-            // Use -Command. Need to properly escape quotes within the command string for PowerShell.
-            process.StartInfo.Arguments = string.Format("-Command \"{0}\"", finalCommand.Replace("\"", "\\\""));
             
-            process.StartInfo.UseShellExecute = false; 
-
+            // Build the final command
+            string finalCommand = command;
+            
             if (visibleProcess)
             {
-                process.StartInfo.CreateNoWindow = false; 
-                process.StartInfo.RedirectStandardOutput = false;
-                process.StartInfo.RedirectStandardError = false;
+                // For visible window, use a simpler approach that avoids nested quote issues
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.UseShellExecute = true; // Must be true to show window
+                process.StartInfo.CreateNoWindow = false;
+                
+                // Use a simple batch technique - write the command to a temp file and execute it
+                // This avoids all the quote escaping issues
+                string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"spacetime_cmd_{DateTime.Now.Ticks}.bat");
+                
+                using (System.IO.StreamWriter sw = new System.IO.StreamWriter(tempBatchFile))
+                {
+                    sw.WriteLine("@echo off");
+                    sw.WriteLine("echo Running command...");
+                    sw.WriteLine(command);
+                    
+                    if (keepWindowOpenForDebug)
+                    {
+                        sw.WriteLine("echo Command finished. Press any key to close this window...");
+                        sw.WriteLine("pause > nul");
+                    }
+                    else
+                    {
+                        sw.WriteLine("echo Command completed. Window will close in 3 seconds...");
+                        sw.WriteLine("timeout /t 3 > nul");
+                    }
+                }
+                
+                process.StartInfo.Arguments = $"/C \"{tempBatchFile}\"";
+                
+                if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Created batch file: {tempBatchFile}");
             }
             else
             {
-                process.StartInfo.CreateNoWindow = true; 
+                // For hidden execution
+                process.StartInfo.FileName = "powershell.exe";
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.Arguments = $"-Command \"{finalCommand.Replace("\"", "`\"")}\"";
+                process.StartInfo.Verb = "runas"; // Run as admin for hidden process
             }
             
             process.Start();
             statusCallback?.Invoke($"Executing: {command}", 0);
-
-            // Since WaitForExitAsync is not available, run WaitForExit in a background thread 
-            // to avoid blocking the main Unity thread.
-            await Task.Run(() => process.WaitForExit()); 
-
-            int exitCode = process.ExitCode;
-
-            if (exitCode == 0)
+            
+            if (visibleProcess)
             {
-                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' completed successfully.", 1);
+                // For visible process, we can't easily get the exit code
+                // Wait for a reasonable amount of time for the command to execute
+                await Task.Delay(10000); // Wait 10 seconds minimum
+                
+                // For visible process, we'll assume success unless proven otherwise
                 return true;
             }
             else
             {
-                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console window if visible.", -1);
-                return false;
+                // For hidden process, wait for completion and check exit code
+                await Task.Run(() => process.WaitForExit());
+                int exitCode = process.ExitCode;
+                
+                if (exitCode == 0)
+                {
+                    statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' completed successfully.", 1);
+                    return true;
+                }
+                else
+                {
+                    statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}.", -1);
+                    return false;
+                }
             }
         }
         catch (Exception ex)
         {
             string commandExcerpt = command.Length > 50 ? command.Substring(0, 50) + "..." : command;
-            statusCallback?.Invoke($"Error executing PowerShell command '{commandExcerpt}': {ex.Message}", -1);
-            UnityEngine.Debug.LogError($"[ServerCMDProcess] Exception during PowerShell execution for command '{commandExcerpt}': {ex}");
+            statusCallback?.Invoke($"Error executing command '{commandExcerpt}': {ex.Message}", -1);
+            UnityEngine.Debug.LogError($"[ServerCMDProcess] Exception: {ex}");
             return false;
         }
         finally
         {
-             process?.Dispose();
+            if (process != null && !visibleProcess) // Only dispose if it's not a visible process
+            {
+                process?.Dispose();
+            }
         }
     }
     

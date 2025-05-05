@@ -17,6 +17,11 @@ public class ServerInstallerWindow : EditorWindow
     private string statusMessage = "Ready to install components.";
     private Color statusColor = Color.grey;
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+    private double lastRepaintTime = 0;
+    private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
+    
+    // Cache for frequently used values
+    private string cachedUserName = "";
     
     // Styles
     private GUIStyle titleStyle;
@@ -70,15 +75,40 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
+        
         // Load install debug settings from EditorPrefs
         visibleInstallProcesses = EditorPrefs.GetBool(PrefsKeyPrefix + "VisibleInstallProcesses", true);
+        keepWindowOpenForDebug = EditorPrefs.GetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", true);
+        
+        // Cache the current username
+        cachedUserName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         
         InitializeInstallerItems();
+        
+        // Reduce frequency of automatic repaints
+        EditorApplication.update += OnEditorUpdate;
         
         CheckInstallationStatus();
 
         // Update installer items status based on loaded prefs
         UpdateInstallerItemsStatus();
+    }
+    
+    private void OnDisable()
+    {
+        // Clean up the update callback when the window is closed
+        EditorApplication.update -= OnEditorUpdate;
+    }
+
+    private void OnEditorUpdate()
+    {
+        // Only trigger repaint if refreshing AND enough time has passed
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (isRefreshing && (currentTime - lastRepaintTime) > minRepaintInterval)
+        {
+            lastRepaintTime = currentTime;
+            RequestRepaint(); // Use a helper to request repaint
+        }
     }
     
     #region Installer Items
@@ -140,38 +170,52 @@ public class ServerInstallerWindow : EditorWindow
 
     private void UpdateInstallerItemsStatus()
     {
+        bool repaintNeeded = false;
         foreach (var item in installerItems)
         {
+            bool previousState = item.isInstalled;
+            bool newState = previousState; // Default to no change
+            
             if (item.title.Contains("WSL2"))
             {
-                item.isInstalled = hasWSL && hasDebian;
+                newState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("Debian Trixie"))
             {
-                item.isInstalled = hasDebianTrixie;
+                newState = hasDebianTrixie;
             }
             else if (item.title.Contains("cURL"))
             {
-                item.isInstalled = hasCurl;
+                newState = hasCurl;
             }
             else if (item.title.Contains("SpacetimeDB Server"))
             {
-                item.isInstalled = hasSpacetimeDBServer;
+                newState = hasSpacetimeDBServer;
             }
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
-                item.isInstalled = hasSpacetimeDBPath;
+                newState = hasSpacetimeDBPath;
             }
             else if (item.title.Contains("Rust"))
             {
-                item.isInstalled = hasRust;
+                newState = hasRust;
             }
             else if (item.title.Contains("SpacetimeDB Unity SDK"))
             {
-                item.isInstalled = hasSpacetimeDBUnitySDK;
+                newState = hasSpacetimeDBUnitySDK;
+            }
+            
+            if (newState != previousState)
+            {
+                item.isInstalled = newState;
+                repaintNeeded = true; // Mark that a repaint is needed because item state changed
             }
         }
-        Repaint();
+        
+        if (repaintNeeded)
+        {
+            RequestRepaint(); // Request a repaint only if an item's state changed
+        }
     }
     #endregion
 
@@ -234,28 +278,43 @@ public class ServerInstallerWindow : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
                
+        // Visibility and Debug toggles - wrap in change check for efficiency
+        EditorGUI.BeginChangeCheck();
+        
         // Visibility toggle
         EditorGUILayout.LabelField("Show install windows:", GUILayout.Width(125));
         bool newVisibleValue = EditorGUILayout.Toggle(visibleInstallProcesses, GUILayout.Width(20));
-        if (newVisibleValue != visibleInstallProcesses)
+        
+        // Debug mode toggle
+        EditorGUILayout.LabelField("Keep windows open:", GUILayout.Width(115));
+        bool newDebugValue = EditorGUILayout.Toggle(keepWindowOpenForDebug, GUILayout.Width(20));
+        
+        // Only update when changed
+        if (EditorGUI.EndChangeCheck())
         {
-            visibleInstallProcesses = newVisibleValue;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
+            if (newVisibleValue != visibleInstallProcesses)
+            {
+                visibleInstallProcesses = newVisibleValue;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
+            }
+            
+            if (newDebugValue != keepWindowOpenForDebug)
+            {
+                keepWindowOpenForDebug = newDebugValue;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", keepWindowOpenForDebug);
+            }
         }
 
         // Add space between elements
         GUILayout.FlexibleSpace();
         
-        // Add a small space
-        GUILayout.Space(10);
-        
-        // Username field
+        // Username field - only process changes when needed
+        EditorGUI.BeginChangeCheck();
         EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(110));
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(100));
-        
-        if (newUserName != userName)
+        string newUserName = EditorGUILayout.TextField(cachedUserName, GUILayout.Width(100));
+        if (EditorGUI.EndChangeCheck() && newUserName != cachedUserName)
         {
+            cachedUserName = newUserName;
             EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
             cmdProcess.SetUserName(newUserName);
         }
@@ -265,10 +324,19 @@ public class ServerInstallerWindow : EditorWindow
     
     private void DrawInstallerItemsList()
     {
-        // Draw a box for the installer items list
+        // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        EditorGUILayout.LabelField("SpacetimeDB Server Installer", titleStyle);
+        // Minimize GUIContent creation during rendering
+        if (titleStyle != null)
+        {
+            GUILayout.Label("SpacetimeDB Server Installer", titleStyle);
+        }
+        else
+        {
+            EditorGUILayout.LabelField("SpacetimeDB Server Installer");
+        }
+        
         EditorGUILayout.LabelField("Install all the required software to run your local SpacetimeDB Server.\n"+
         "Alpha Version - May yet require manual control.",
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
@@ -282,9 +350,10 @@ public class ServerInstallerWindow : EditorWindow
         }
         else
         {
-            foreach (var item in installerItems)
+            // Cache to reduce GC and memory allocations
+            for (int i = 0; i < installerItems.Count; i++)
             {
-                DrawInstallerItem(item);
+                DrawInstallerItem(installerItems[i], i);
             }
         }
         
@@ -292,7 +361,8 @@ public class ServerInstallerWindow : EditorWindow
         GUILayout.EndVertical();
     }
     
-    private void DrawInstallerItem(InstallerItem item)
+    // Optimized to reduce GC allocations
+    private void DrawInstallerItem(InstallerItem item, int index)
     {
         // Container box for each installer item
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -300,8 +370,8 @@ public class ServerInstallerWindow : EditorWindow
         // Header with name and install button
         EditorGUILayout.BeginHorizontal();
         
-        // Title
-        EditorGUILayout.LabelField($" {item.title}", itemTitleStyle, GUILayout.ExpandWidth(true));
+        // Title - reuse cached content when possible
+        EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));
         
         // Status (installed or install button)
         if (item.isInstalled && !alwaysShowInstall)
@@ -315,14 +385,17 @@ public class ServerInstallerWindow : EditorWindow
             // Install button
             if (GUILayout.Button("Install", installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
             {
-                item.installAction?.Invoke();
+                // Use delayCall to avoid issues with GUI during install action
+                EditorApplication.delayCall += () => {
+                    item.installAction?.Invoke();
+                };
             }
         }
         
         EditorGUILayout.EndHorizontal();
         
         // Description
-        EditorGUILayout.LabelField($" {item.description}", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField(item.description, EditorStyles.wordWrappedMiniLabel);
         
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(2);
@@ -353,6 +426,8 @@ public class ServerInstallerWindow : EditorWindow
     #region Check Installation Status
     private void CheckInstallationStatus()
     {
+        if (isRefreshing) return; // Don't start a new refresh if one is already running
+        
         isRefreshing = true;
         SetStatus("Checking installation status...", Color.yellow);
         
@@ -386,8 +461,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
             
             isRefreshing = false;
-            SetStatus("Installation status updated.", Color.green);
-            Repaint();
+            SetStatus("Installation status updated.", Color.green); // This might request repaint (throttled)
         });
     }
     #endregion
@@ -431,17 +505,10 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        if (string.IsNullOrEmpty(userName))
-        {
-            SetStatus("Please enter your Debian username first.", Color.red);
-            return;
-        }
-        
         SetStatus("Installing Debian Trixie Update - Step 1: apt update", Color.yellow);
         
         // Step 1: Update
-        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
+        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
         bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateSuccess)
         {
@@ -452,7 +519,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 2: Upgrade
         SetStatus("Installing Debian Trixie Update - Step 2: apt upgrade", Color.yellow);
-        string upgradeCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt upgrade -y\"";
+        string upgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt upgrade -y\"";
         bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!upgradeSuccess)
         {
@@ -463,7 +530,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 3: Install update-manager-core
         SetStatus("Installing Debian Trixie Update - Step 3: install update-manager-core", Color.yellow);
-        string coreCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y update-manager-core\"";
+        string coreCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y update-manager-core\"";
         bool coreSuccess = await cmdProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!coreSuccess)
         {
@@ -474,7 +541,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 4: Change sources.list to trixie
         SetStatus("Installing Debian Trixie Update - Step 4: update sources to Trixie", Color.yellow);
-        string sourcesCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
+        string sourcesCommand = "wsl -d Debian -u root bash -c \"sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
         bool sourcesSuccess = await cmdProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!sourcesSuccess)
         {
@@ -485,7 +552,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 5: Update again for Trixie
         SetStatus("Installing Debian Trixie Update - Step 5: update package lists for Trixie", Color.yellow);
-        string updateTrixieCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
+        string updateTrixieCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
         bool updateTrixieSuccess = await cmdProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateTrixieSuccess)
         {
@@ -496,21 +563,20 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 6: Full upgrade
         SetStatus("Installing Debian Trixie Update - Step 6: performing full upgrade to Trixie", Color.yellow);
-        string fullUpgradeCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt full-upgrade -y\"";
+        string fullUpgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt full-upgrade -y\"";
         bool fullUpgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!fullUpgradeSuccess)
         {
             SetStatus("Failed to perform full upgrade to Trixie. Installation aborted.", Color.red);
             return;
         }
-        await Task.Delay(10000);
+        await Task.Delay(2000);
         
         SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
-        await Task.Delay(2000);
 
         // WSL Shutdown
         cmdProcess.ShutdownWsl();
-        await Task.Delay(5000); // Longer wait for shutdown
+        await Task.Delay(3000); // Longer wait for shutdown
 
         // Restart WSL
         cmdProcess.StartWsl();
@@ -538,47 +604,44 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("curl is already installed.", Color.green);
             return;
         }
+                
+        SetStatus("Installing curl...", Color.green);
         
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        if (string.IsNullOrEmpty(userName))
-        {
-            SetStatus("Please enter your Debian username first.", Color.red);
-            return;
-        }
-        
-        SetStatus("Installing curl - Step 1: Update package list", Color.yellow);
-        
-        // First update package list
-        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
+        SetStatus("Running: apt update", Color.yellow);
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(
+            updateCommand, 
+            LogMessage, 
+            visibleInstallProcesses, 
+            keepWindowOpenForDebug
+        );
         if (!updateSuccess)
         {
             SetStatus("Failed to update package list. Curl installation aborted.", Color.red);
             return;
         }
-        await Task.Delay(2000); // Shorter delay as RunPowerShellInstallCommand now waits
         
-        // Then install curl
-        SetStatus("Installing curl - Step 2: Installing curl package", Color.yellow);
-        string curlInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y curl\"";
-        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(curlInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        // Delay between commands to ensure UI updates
+        await Task.Delay(1000);
+        
+        // Now install curl
+        string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing curl...' && sudo apt install -y curl\"";
+        SetStatus("Running: apt install -y curl", Color.yellow);
+        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+            installCommand, 
+            LogMessage, 
+            visibleInstallProcesses, 
+            keepWindowOpenForDebug
+        );
         if (!installSuccess)
         {
             SetStatus("Failed to install curl. Installation aborted.", Color.red);
             return;
         }
-        await Task.Delay(2000); // Shorter delay
-        
-        SetStatus("Curl installation complete. Verifying...", Color.green);
-        await Task.Delay(1000);
-        
-        string verifyCommand = "wsl -d Debian -u " + userName + " bash -c \"curl --version\"";
-        // Verification doesn't need to keep window open usually
-        bool verifySuccess = await cmdProcess.RunPowerShellInstallCommand(verifyCommand, LogMessage, visibleInstallProcesses, false);
         
         // Check installation status
         CheckInstallationStatus();
-        await Task.Delay(2000);
+        await Task.Delay(1000);
         
         if (hasCurl)
         {
@@ -586,7 +649,7 @@ public class ServerInstallerWindow : EditorWindow
         }
         else
         {
-            SetStatus("curl installation failed. Please install manually.", Color.red);
+            SetStatus("curl installation failed. Please check console output.", Color.red);
         }
     }
     
@@ -602,7 +665,7 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         // Check prerequisites
-        if (!hasCurl)
+        if (!hasCurl )
         {
             SetStatus("curl is required to install SpacetimeDB Server. Please install curl first.", Color.red);
             return;
@@ -618,11 +681,11 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        SetStatus("Installing SpacetimeDB Server...", Color.yellow);
+        SetStatus("Installing SpacetimeDB Server...", Color.green);
         
         // Command to install SpacetimeDB Server
         string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        string spacetimeInstallCommand = $"wsl -d Debian -u {userName} bash -c \"curl -sSf https://install.spacetimedb.com | sh\"";
+        string spacetimeInstallCommand = $"wsl -d Debian -u root bash -c \"curl -sSf https://install.spacetimedb.com | sh\"";
             
         // Use the ServerCMDProcess method to run the PowerShell command
         bool success = await cmdProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
@@ -657,7 +720,7 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        SetStatus("Installing SpacetimeDB PATH...", Color.yellow);
+        SetStatus("Installing SpacetimeDB PATH...", Color.green);
         
         // Use the ServerCMDProcess method to run the PowerShell command
         string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
@@ -706,7 +769,7 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
         
         // First update package list
-        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
+        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
         bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateSuccess)
         {
@@ -717,22 +780,14 @@ public class ServerInstallerWindow : EditorWindow
         
         // Then install Rust
         SetStatus("Installing Rust - Step 2: Installing rustc package", Color.yellow);
-        string rustInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y rustc\"";
+        string rustInstallCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y rustc\"";
         bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
             SetStatus("Failed to install Rust. Installation aborted.", Color.red);
             return;
         }
-        await Task.Delay(2000); // Shorter delay
-        
-        SetStatus("Rust installation complete. Verifying...", Color.green);
-        await Task.Delay(1000);
-        
-        string verifyCommand = "wsl -d Debian -u " + userName + " bash -c \"rustc --version\"";
-        // Verification doesn't need to keep window open
-        bool verifySuccess = await cmdProcess.RunPowerShellInstallCommand(verifyCommand, LogMessage, visibleInstallProcesses, false);
-        
+
         // Check installation status
         CheckInstallationStatus();
         await Task.Delay(2000);
@@ -777,7 +832,7 @@ public class ServerInstallerWindow : EditorWindow
     }
     #endregion
     
-    #region Install SpacetimeDB PATH
+    #region Log Messages
     private void LogMessage(string message, int type)
     {
         switch (type)
@@ -795,7 +850,7 @@ public class ServerInstallerWindow : EditorWindow
                 SetStatus(message, Color.grey);
                 break;
         }
-        Repaint();
+        RequestRepaint(); // Always request repaint on status change, but throttled
     }
     
     private void SetStatus(string message, Color color)
@@ -803,6 +858,17 @@ public class ServerInstallerWindow : EditorWindow
         statusMessage = message;
         statusColor = color;
         statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+        RequestRepaint(); // Always request repaint on status change, but throttled
+    }
+
+    private void RequestRepaint()
+    {
+        double currentTime = EditorApplication.timeSinceStartup;
+        if ((currentTime - lastRepaintTime) > minRepaintInterval)
+        {
+            lastRepaintTime = currentTime;
+            Repaint();
+        }
     }
     #endregion
     
