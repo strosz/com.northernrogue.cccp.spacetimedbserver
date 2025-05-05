@@ -478,27 +478,89 @@ public class ServerInstallerWindow : EditorWindow
     private async void InstallWSLDebian()
     {
         CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        // If already installed, just update UI
-        if (hasWSL && hasDebian)
+        if (hasWSL && hasDebian && !installIfAlreadyInstalled)
         {
             SetStatus("WSL2 with Debian is already installed.", Color.green);
             return;
         }
-        
-        SetStatus("Installing WSL2 with Debian...", Color.yellow);
-        
-        // Use the ServerCMDProcess method to run the PowerShell command
-        bool success = await cmdProcess.RunPowerShellInstallCommand("wsl --install -d Debian", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        
-        if (success)
+
+        EditorUtility.DisplayDialog("About WSL1 and WSL2", 
+        "WSL1 and WSL2 allows you to run a Linux distribution within Windows. This allows SpacetimeDB to be run silently and be more easily controlled.\n\n" +
+        "WSL2 is the latest and recommended version.\n" +
+        "WSL1 has better compability with some systems.\n\n" +
+        "CCCP will now run a test to determine if your PC supports Hyper-V which is necessary for WSL2.\n\n"
+        , "OK");
+
+        bool installedSuccessfully = false;
+
+        // Define installation actions for WSL1 and WSL2
+        Action installWSL1 = async () => 
         {
-            SetStatus("WSL2 with Debian installation started. This may take some time.", Color.green);
+            SetStatus("Installing WSL1 with Debian...", Color.green);
             
-            // Give some time before checking again
-            await Task.Delay(5000);
-            CheckInstallationStatus();
+            if (EditorUtility.DisplayDialog("Install WSL1 with Debian", "This will install WSL1 with Debian. Do you want to continue?", "Yes", "No"))
+            {
+                await cmdProcess.RunPowerShellInstallCommand("dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart;", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand("wsl --set-default-version 1 && wsl --install -d Debian", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+                if (installedSuccessfully)
+                {
+                    await Task.Delay(5000);
+                    CheckInstallationStatus();
+                    if (hasWSL && hasDebian)
+                    {
+                        SetStatus("WSL1 with Debian installed successfully.", Color.green);
+                    }
+                    else
+                    {
+                        SetStatus("WSL1 with Debian installation failed. Please check console output.", Color.red);
+                    }
+                }
+            } else {
+                SetStatus("WSL1 with Debian installation cancelled.", Color.yellow);
+            }
+        };
+        
+        Action installWSL2 = async () => 
+        {
+            SetStatus("Installing WSL2 with Debian...", Color.green);
+            
+            if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
+            {
+                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand("wsl --install -d Debian", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+                if (installedSuccessfully)
+                {
+                    await Task.Delay(5000);
+                    CheckInstallationStatus();
+                    if (hasWSL && hasDebian)
+                    {
+                        SetStatus("WSL2 with Debian installed successfully.", Color.green);
+                    }
+                    else
+                    {
+                        SetStatus("WSL2 with Debian installation failed. Please check console output.", Color.red);
+                    }
+                }
+            } else {
+                SetStatus("WSL2 with Debian installation cancelled.", Color.yellow);
+            }
+        };
+
+        // Call CheckWSL2Support and wait for the user to make a choice in the dialog
+        // The actual installation will happen when the user clicks one of the buttons in the dialog,
+        // which will invoke either installWSL1 or installWSL2
+        SetStatus("Checking WSL2 compatibility...", Color.green);
+        await ServerCompabilityReport.CheckWSL2Support(true, installWSL1, installWSL2);
+
+        if (installedSuccessfully)
+        {           
+            // Display dialog informing user about Debian first-time setup
+            EditorUtility.DisplayDialog(
+                "Debian First-Time Setup",
+                "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
+                "OK"
+            );
+            // Launch visible Debian window
+            cmdProcess.OpenDebianWindow();
         }
     }
 
