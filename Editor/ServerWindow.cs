@@ -510,17 +510,18 @@ public class ServerWindow : EditorWindow
         
         bool serverRunning = serverStarted || isStartingUp;
         
-        EditorGUI.BeginDisabledGroup((!prerequisitesChecked || !hasWSL || !hasDebian) || serverRunning);
-        if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+        EditorGUI.BeginDisabledGroup(!prerequisitesChecked || !hasWSL || !hasDebian);
+        if (!serverRunning)
         {
-            StartServer();
-        }
-        EditorGUI.EndDisabledGroup();
-        
-        EditorGUI.BeginDisabledGroup(!serverRunning);
-        if (GUILayout.Button("Stop Server", GUILayout.Height(20)))
-        {
-            StopServer();
+            if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+            {
+                StartServer();
+            }
+        } else {
+            if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+            {
+                StopServer();
+            }
         }
         EditorGUI.EndDisabledGroup();
 

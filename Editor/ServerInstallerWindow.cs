@@ -3,12 +3,11 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-
+//ok
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerInstallerWindow : EditorWindow
 {
-    #region Variables
     private List<InstallerItem> installerItems = new List<InstallerItem>();
     private ServerCMDProcess cmdProcess;
     
@@ -20,7 +19,7 @@ public class ServerInstallerWindow : EditorWindow
     private double lastRepaintTime = 0;
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
-    // Cache for frequently used values
+    // EditorPrefs
     private string userName = "";
     
     // Styles
@@ -52,7 +51,7 @@ public class ServerInstallerWindow : EditorWindow
     
     // Settings
     private const string PrefsKeyPrefix = "ServerWindow_"; // Use the same prefix as ServerWindow
-    #endregion
+    private const string FirstTimeOpenKey = "ServerInstaller_FirstTimeOpen";
 
     [MenuItem("SpacetimeDB/Server Installer")]
     public static void ShowWindow()
@@ -65,6 +64,26 @@ public class ServerInstallerWindow : EditorWindow
     private void OnEnable()
     {
         cmdProcess = new ServerCMDProcess(LogMessage, false);
+        
+        // Check if this is the first time the window is opened
+        bool isFirstTime = !EditorPrefs.HasKey(FirstTimeOpenKey);
+        if (isFirstTime)
+        {
+            // Show first-time information dialog
+            EditorApplication.delayCall += () => {
+                EditorUtility.DisplayDialog(
+                    "SpacetimeDB AutomaticInstaller",
+                    "CCCP features an automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
+                    "This is an alpha version that has been tested on a number of configurations and has worked." +
+                    "That being said, no guarantees are left that this will fully work on your particular PC.\n\n" +
+                    "All named software in this window is official and publicly available software that belongs to the respective parties." +
+                    "Nothing is hosted in this app, it just calls the available repositories for the installation process for ease of use.",
+                    "OK");
+                
+                // Mark as opened
+                EditorPrefs.SetBool(FirstTimeOpenKey, true);
+            };
+        }
         
         // Load installation status from EditorPrefs
         hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
@@ -122,6 +141,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "Windows Subsystem for Linux 2 with Debian Linux distribution\n"+
                 "Note: May require a system restart",
                 isInstalled = hasDebian,
+                isEnabled = true, // Always enabled as it's the first prerequisite
                 installAction = InstallWSLDebian
             },
             new InstallerItem
@@ -131,6 +151,7 @@ public class ServerInstallerWindow : EditorWindow
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
+                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallDebianTrixie
             },
             new InstallerItem
@@ -139,15 +160,17 @@ public class ServerInstallerWindow : EditorWindow
                 description = "cURL is a command-line tool for transferring data with URLs.\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
+                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallCurl
             },
             new InstallerItem
             {
                 title = "Install SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
-                "Note: Will open a window and prompt for your user password to\n"+
-                "install to the default directory in your user's home directory",
+                "Note: Will show an installer window and install to the default directory\n"+ 
+                "in your user's home directory",
                 isInstalled = hasSpacetimeDBServer,
+                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBServer
             },
             new InstallerItem
@@ -155,6 +178,7 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasSpacetimeDBPath,
+                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBPath
             },
             new InstallerItem
@@ -163,6 +187,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "Rust is a programming language that runs 2x faster than C#.\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
+                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallRust
             },
             new InstallerItem
@@ -171,6 +196,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity. \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
+                isEnabled = true, // Always enabled as it doesn't depend on WSL
                 installAction = InstallSpacetimeDBUnitySDK
             }
         };
@@ -182,40 +208,50 @@ public class ServerInstallerWindow : EditorWindow
         foreach (var item in installerItems)
         {
             bool previousState = item.isInstalled;
+            bool previousEnabledState = item.isEnabled;
             bool newState = previousState; // Default to no change
+            bool newEnabledState = previousEnabledState;
             
             if (item.title.Contains("WSL2"))
             {
                 newState = hasWSL && hasDebian;
+                newEnabledState = true; // Always enabled
             }
             else if (item.title.Contains("Debian Trixie"))
             {
                 newState = hasDebianTrixie;
+                newEnabledState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("cURL"))
             {
                 newState = hasCurl;
+                newEnabledState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("SpacetimeDB Server"))
             {
                 newState = hasSpacetimeDBServer;
+                newEnabledState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
                 newState = hasSpacetimeDBPath;
+                newEnabledState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("Rust"))
             {
                 newState = hasRust;
+                newEnabledState = hasWSL && hasDebian;
             }
             else if (item.title.Contains("SpacetimeDB Unity SDK"))
             {
                 newState = hasSpacetimeDBUnitySDK;
+                newEnabledState = true; // Always enabled
             }
             
-            if (newState != previousState)
+            if (newState != previousState || newEnabledState != previousEnabledState)
             {
                 item.isInstalled = newState;
+                item.isEnabled = newEnabledState;
                 repaintNeeded = true; // Mark that a repaint is needed because item state changed
             }
         }
@@ -316,17 +352,6 @@ public class ServerInstallerWindow : EditorWindow
         // Add space between elements
         GUILayout.FlexibleSpace();
         
-        // Username field - only process changes when needed
-        EditorGUI.BeginChangeCheck();
-        EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(110));
-        string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(100));
-        if (EditorGUI.EndChangeCheck() && newUserName != userName)
-        {
-            userName = newUserName;
-            EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
-            cmdProcess.SetUserName(newUserName);
-        }
-        
         EditorGUILayout.EndHorizontal();
     }
     
@@ -375,6 +400,14 @@ public class ServerInstallerWindow : EditorWindow
         // Container box for each installer item
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         
+        // Determine if the item should be greyed out
+        bool isDisabled = !item.isEnabled;
+        Color originalColor = GUI.color;
+        if (isDisabled)
+        {
+            GUI.color = new Color(originalColor.r, originalColor.g, originalColor.b, 0.6f); // Make it semi-transparent
+        }
+        
         // Header with name and install button
         EditorGUILayout.BeginHorizontal();
         
@@ -391,6 +424,7 @@ public class ServerInstallerWindow : EditorWindow
             EditorGUILayout.Space(2);
             
             // Install button
+            EditorGUI.BeginDisabledGroup(isDisabled);
             if (GUILayout.Button("Install", installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
             {
                 // Use delayCall to avoid issues with GUI during install action
@@ -398,12 +432,41 @@ public class ServerInstallerWindow : EditorWindow
                     item.installAction?.Invoke();
                 };
             }
+            EditorGUI.EndDisabledGroup();
         }
         
         EditorGUILayout.EndHorizontal();
         
         // Description
         EditorGUILayout.LabelField(item.description, EditorStyles.wordWrappedMiniLabel);
+        
+        // Add username field for SpacetimeDB Server installer
+        if (item.title.Contains("SpacetimeDB Server"))
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
+            string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
+            if (EditorGUI.EndChangeCheck() && newUserName != userName)
+            {
+                userName = newUserName;
+                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
+                cmdProcess.SetUserName(newUserName);
+            }
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(2);
+        }
+        
+        // If disabled, add a note about prerequisites
+        if (isDisabled)
+        {
+            GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
+            prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange
+            EditorGUILayout.LabelField("Requires WSL2 with Debian to be installed first", prereqStyle);
+        }
+        
+        // Restore original color
+        GUI.color = originalColor;
         
         EditorGUILayout.EndVertical();
         EditorGUILayout.Space(2);
@@ -454,6 +517,15 @@ public class ServerInstallerWindow : EditorWindow
             hasSpacetimeDBServer = spacetime;
             hasSpacetimeDBPath = spacetimePath;
             hasRust = rust;
+
+            // Debug force to false to test the installer
+            //hasWSL = false;
+            //hasDebian = false;
+            //hasDebianTrixie = false;
+            //hasCurl = false;
+            //hasSpacetimeDBServer = false;
+            //hasSpacetimeDBPath = false;
+            //hasRust = false;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -726,8 +798,8 @@ public class ServerInstallerWindow : EditorWindow
     private async void InstallSpacetimeDBServer()
     {
         // Requires visible install processes and keep window open
-        // Because the user has to enter their userName password
-        // for SpacetimeDB to install in their user directory
+        // Because the user has to interact with the installer window
+        // Check if we can add yes to the command to auto-answer
         visibleInstallProcesses = true;
         keepWindowOpenForDebug = true;
 
@@ -739,7 +811,6 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("SpacetimeDB Server is already installed.", Color.green);
             return;
         }
-
         if (!hasWSL)
         {
             SetStatus("WSL2 with Debian is required to install SpacetimeDB Server. Please install WSL2 with Debian first.", Color.red);
@@ -755,11 +826,16 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("curl is required to install SpacetimeDB Server. Please install curl first.", Color.red);
             return;
         }
+        if (string.IsNullOrEmpty(userName))
+        {
+            SetStatus("Please enter your Debian username to install SpacetimeDB Server.", Color.red);
+            return;
+        }
         
         SetStatus("Installing SpacetimeDB Server...", Color.green);
         
         // Command to install SpacetimeDB Server
-        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"curl -sSf https://install.spacetimedb.com | sh\"";
+        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"yes | curl -sSf https://install.spacetimedb.com | sh\"";
 
         // Use the ServerCMDProcess method to run the PowerShell command
         bool success = await cmdProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
@@ -781,9 +857,8 @@ public class ServerInstallerWindow : EditorWindow
                 SetStatus("SpacetimeDB Server installation failed. Please install manually.", Color.red);
             }
         }
-        visibleInstallProcesses = false;
-        keepWindowOpenForDebug = false;
     }
+
     private async void InstallSpacetimeDBPath()
     {
         CheckInstallationStatus();
@@ -947,6 +1022,7 @@ public class ServerInstallerWindow : EditorWindow
         public string title;
         public string description;
         public bool isInstalled;
+        public bool isEnabled = true; // Whether the item is enabled or greyed out
         public Action installAction;
     }
     #endregion
