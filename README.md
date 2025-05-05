@@ -8,6 +8,7 @@
 SpacetimeDB is a revolutionary database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel (CCCP) is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.
 
 Install directly in your Unity package manager with this git URL
+
 ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
 
 ## Features
