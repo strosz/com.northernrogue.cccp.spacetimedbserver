@@ -21,7 +21,7 @@ public class ServerInstallerWindow : EditorWindow
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Cache for frequently used values
-    private string cachedUserName = "";
+    private string userName = "";
     
     // Styles
     private GUIStyle titleStyle;
@@ -42,7 +42,6 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasSpacetimeDBUnitySDK = false;
 
     // Debug
-    //private bool debugMode = false;
     private bool visibleInstallProcesses = true;
     private bool keepWindowOpenForDebug = true;
 
@@ -82,7 +81,7 @@ public class ServerInstallerWindow : EditorWindow
         keepWindowOpenForDebug = EditorPrefs.GetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", true);
         
         // Cache the current username
-        cachedUserName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         
         InitializeInstallerItems();
         
@@ -120,28 +119,34 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install WSL2 with Debian",
-                description = "Windows Subsystem for Linux 2 with Debian Linux distribution\n"+" (May require a system restart)",
+                description = "Windows Subsystem for Linux 2 with Debian Linux distribution\n"+
+                "Note: May require a system restart",
                 isInstalled = hasDebian,
                 installAction = InstallWSLDebian
             },
             new InstallerItem
             {
                 title = "Install Debian Trixie Update",
-                description = "Debian Trixie Update (Debian Version 13)\n"+" Required to run the SpacetimeDB Server",
+                description = "Debian Trixie Update (Debian Version 13)\n"+
+                "Required to run the SpacetimeDB Server\n"+
+                "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 installAction = InstallDebianTrixie
             },
             new InstallerItem
             {
                 title = "Install cURL",
-                description = "cURL is a command-line tool for transferring data with URLs.\n"+" Required to install the SpacetimeDB Server",
+                description = "cURL is a command-line tool for transferring data with URLs.\n"+
+                "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
                 installAction = InstallCurl
             },
             new InstallerItem
             {
                 title = "Install SpacetimeDB Server",
-                description = "SpacetimeDB Server Installation for Debian\n"+" Will install to the defalt directory in the user's home directory",
+                description = "SpacetimeDB Server Installation for Debian\n"+
+                "Note: Will open a window and prompt for your user password to\n"+
+                "install to the default directory in your user's home directory",
                 isInstalled = hasSpacetimeDBServer,
                 installAction = InstallSpacetimeDBServer
             },
@@ -155,14 +160,16 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install Rust",
-                description = "Rust is a programming language that runs 2x faster than C#.\n"+" Required to use the SpacetimeDB Server with Rust Language",
+                description = "Rust is a programming language that runs 2x faster than C#.\n"+
+                "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
                 installAction = InstallRust
             },
             new InstallerItem
             {
                 title = "Install SpacetimeDB Unity SDK",
-                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity. \n"+" Examples include a network manager that syncs the client state with the database",
+                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity. \n"+
+                "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 installAction = InstallSpacetimeDBUnitySDK
             }
@@ -279,43 +286,31 @@ public class ServerInstallerWindow : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
                
-        // Visibility and Debug toggles - wrap in change check for efficiency
-        EditorGUI.BeginChangeCheck();
-        
-        // Visibility toggle
-        EditorGUILayout.LabelField("Show install windows:", GUILayout.Width(125));
-        bool newVisibleValue = EditorGUILayout.Toggle(visibleInstallProcesses, GUILayout.Width(20));
-        
-        // Debug mode toggle
-        EditorGUILayout.LabelField("Keep windows open:", GUILayout.Width(115));
-        bool newDebugValue = EditorGUILayout.Toggle(keepWindowOpenForDebug, GUILayout.Width(20));
-        
-        // Force install toggle
-        EditorGUILayout.LabelField("Force install:", GUILayout.Width(70));
-        bool newForceInstallValue = EditorGUILayout.Toggle(forceInstall, GUILayout.Width(20));
-
-        // Only update when changed
-        if (EditorGUI.EndChangeCheck())
+        // Debug Dropdown
+        GUIContent debugContent = new GUIContent("Debug");
+        if (EditorGUILayout.DropdownButton(debugContent, FocusType.Passive, EditorStyles.toolbarDropDown, GUILayout.Width(60)))
         {
-            if (newVisibleValue != visibleInstallProcesses)
-            {
-                visibleInstallProcesses = newVisibleValue;
+            GenericMenu menu = new GenericMenu();
+
+            menu.AddItem(new GUIContent("Show Install Windows"), visibleInstallProcesses, () => {
+                visibleInstallProcesses = !visibleInstallProcesses;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
-            }
-            
-            if (newDebugValue != keepWindowOpenForDebug)
-            {
-                keepWindowOpenForDebug = newDebugValue;
+            });
+
+            menu.AddItem(new GUIContent("Keep Windows Open"), keepWindowOpenForDebug, () => {
+                keepWindowOpenForDebug = !keepWindowOpenForDebug;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", keepWindowOpenForDebug);
-            }
+            });
             
-            // Check if the force install toggle changed
-            if (newForceInstallValue != forceInstall)
-            {
-                forceInstall = newForceInstallValue;
+            menu.AddItem(new GUIContent("Force Install"), forceInstall, () => {
+                forceInstall = !forceInstall;
+                // Update dependent flags when forceInstall changes
                 alwaysShowInstall = forceInstall;
                 installIfAlreadyInstalled = forceInstall;
-            }
+                // No EditorPrefs for forceInstall as it's a transient state for the session
+            });
+
+            menu.ShowAsContext();
         }
 
         // Add space between elements
@@ -324,10 +319,10 @@ public class ServerInstallerWindow : EditorWindow
         // Username field - only process changes when needed
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(110));
-        string newUserName = EditorGUILayout.TextField(cachedUserName, GUILayout.Width(100));
-        if (EditorGUI.EndChangeCheck() && newUserName != cachedUserName)
+        string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(100));
+        if (EditorGUI.EndChangeCheck() && newUserName != userName)
         {
-            cachedUserName = newUserName;
+            userName = newUserName;
             EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
             cmdProcess.SetUserName(newUserName);
         }
@@ -668,6 +663,12 @@ public class ServerInstallerWindow : EditorWindow
     
     private async void InstallSpacetimeDBServer()
     {
+        // Requires visible install processes and keep window open
+        // Because the user has to enter their userName password
+        // for SpacetimeDB to install in their user directory
+        visibleInstallProcesses = true;
+        keepWindowOpenForDebug = true;
+
         CheckInstallationStatus();
         await Task.Delay(1000);
         
@@ -676,11 +677,10 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("SpacetimeDB Server is already installed.", Color.green);
             return;
         }
-        
-        // Check prerequisites
-        if (!hasCurl )
+
+        if (!hasWSL)
         {
-            SetStatus("curl is required to install SpacetimeDB Server. Please install curl first.", Color.red);
+            SetStatus("WSL2 with Debian is required to install SpacetimeDB Server. Please install WSL2 with Debian first.", Color.red);
             return;
         }
         if (!hasDebianTrixie)
@@ -688,18 +688,17 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Debian Trixie Update is required to install SpacetimeDB Server. Please install Debian Trixie Update first.", Color.red);
             return;
         }
-        if (!hasWSL)
+        if (!hasCurl )
         {
-            SetStatus("WSL2 with Debian is required to install SpacetimeDB Server. Please install WSL2 with Debian first.", Color.red);
+            SetStatus("curl is required to install SpacetimeDB Server. Please install curl first.", Color.red);
             return;
         }
         
         SetStatus("Installing SpacetimeDB Server...", Color.green);
         
         // Command to install SpacetimeDB Server
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        string spacetimeInstallCommand = $"wsl -d Debian -u root bash -c \"curl -sSf https://install.spacetimedb.com | sh\"";
-            
+        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"curl -sSf https://install.spacetimedb.com | sh\"";
+
         // Use the ServerCMDProcess method to run the PowerShell command
         bool success = await cmdProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         
@@ -720,6 +719,8 @@ public class ServerInstallerWindow : EditorWindow
                 SetStatus("SpacetimeDB Server installation failed. Please install manually.", Color.red);
             }
         }
+        visibleInstallProcesses = false;
+        keepWindowOpenForDebug = false;
     }
     private async void InstallSpacetimeDBPath()
     {
@@ -736,7 +737,6 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Installing SpacetimeDB PATH...", Color.green);
         
         // Use the ServerCMDProcess method to run the PowerShell command
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         string command = string.Format(
             "wsl -d Debian -u {0} bash -c \"echo \\\"export PATH=/home/{0}/.local/bin:\\$PATH\\\" >> ~/.bashrc\"",
             userName
@@ -769,13 +769,6 @@ public class ServerInstallerWindow : EditorWindow
         if (hasRust && !installIfAlreadyInstalled)
         {
             SetStatus("Rust is already installed.", Color.green);
-            return;
-        }
-        
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        if (string.IsNullOrEmpty(userName))
-        {
-            SetStatus("Please enter your Debian username first.", Color.red);
             return;
         }
         
