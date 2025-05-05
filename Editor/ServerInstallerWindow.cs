@@ -430,70 +430,93 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        SetStatus("Installing Debian Trixie Update...", Color.yellow);
+        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        if (string.IsNullOrEmpty(userName))
+        {
+            SetStatus("Please enter your Debian username first.", Color.red);
+            return;
+        }
         
-        // Step 1: Update and upgrade
-        string updateCommand = "wsl -d Debian -u root bash -c \"apt update && apt upgrade -y\"";
+        SetStatus("Installing Debian Trixie Update - Step 1: apt update", Color.yellow);
+        
+        // Step 1: Update
+        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
         bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses);
         if (!updateSuccess)
         {
             SetStatus("Failed to update Debian. Trixie installation aborted.", Color.red);
             return;
         }
+        await Task.Delay(2000); // Wait longer to ensure command completes
         
-        // Step 2: Install update-manager-core
-        SetStatus("Installing update-manager-core...", Color.yellow);
-        string coreCommand = "wsl -d Debian -u root bash -c \"apt install -y update-manager-core\"";
+        // Step 2: Upgrade
+        SetStatus("Installing Debian Trixie Update - Step 2: apt upgrade", Color.yellow);
+        string upgradeCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt upgrade -y\"";
+        bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses);
+        if (!upgradeSuccess)
+        {
+            SetStatus("Failed to upgrade Debian. Trixie installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(2000);
+        
+        // Step 3: Install update-manager-core
+        SetStatus("Installing Debian Trixie Update - Step 3: install update-manager-core", Color.yellow);
+        string coreCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y update-manager-core\"";
         bool coreSuccess = await cmdProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses);
         if (!coreSuccess)
         {
             SetStatus("Failed to install update-manager-core. Trixie installation aborted.", Color.red);
             return;
         }
+        await Task.Delay(2000);
         
-        // Step 3: Change sources.list to trixie
-        SetStatus("Updating sources to Trixie...", Color.yellow);
-        string sourcesCommand = "wsl -d Debian -u root bash -c \"sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
+        // Step 4: Change sources.list to trixie
+        SetStatus("Installing Debian Trixie Update - Step 4: update sources to Trixie", Color.yellow);
+        string sourcesCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
         bool sourcesSuccess = await cmdProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses);
         if (!sourcesSuccess)
         {
             SetStatus("Failed to update sources.list. Trixie installation aborted.", Color.red);
             return;
         }
+        await Task.Delay(2000);
         
-        // Step 4: Update again
-        SetStatus("Updating package lists for Trixie...", Color.yellow);
-        string updateTrixieCommand = "wsl -d Debian -u root bash -c \"apt update\"";
+        // Step 5: Update again for Trixie
+        SetStatus("Installing Debian Trixie Update - Step 5: update package lists for Trixie", Color.yellow);
+        string updateTrixieCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
         bool updateTrixieSuccess = await cmdProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses);
         if (!updateTrixieSuccess)
         {
             SetStatus("Failed to update package lists for Trixie. Installation aborted.", Color.red);
             return;
         }
+        await Task.Delay(2000);
         
-        // Step 5: Full upgrade
-        SetStatus("Performing full upgrade to Trixie...", Color.yellow);
-        string upgradeCommand = "wsl -d Debian -u root bash -c \"apt full-upgrade -y\"";
-        bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses);
-        if (!upgradeSuccess)
+        // Step 6: Full upgrade
+        SetStatus("Installing Debian Trixie Update - Step 6: performing full upgrade to Trixie", Color.yellow);
+        string fullUpgradeCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt full-upgrade -y\"";
+        bool fullUpgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses);
+        if (!fullUpgradeSuccess)
         {
             SetStatus("Failed to perform full upgrade to Trixie. Installation aborted.", Color.red);
             return;
         }
+        await Task.Delay(10000);
         
         SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
-        await Task.Delay(1000);
+        await Task.Delay(2000);
 
         // WSL Shutdown
         cmdProcess.ShutdownWsl();
-        await Task.Delay(3000);
+        await Task.Delay(5000); // Longer wait for shutdown
 
         // Restart WSL
         cmdProcess.StartWsl();
         SetStatus("WSL restarted. Checking installation status...", Color.green);
-        await Task.Delay(3000);
+        await Task.Delay(5000); // Longer wait for startup
         CheckInstallationStatus();
-        await Task.Delay(1000);
+        await Task.Delay(2000);
         if (hasDebianTrixie)
         {
             SetStatus("Debian Trixie Update installed successfully.", Color.green);
@@ -515,31 +538,58 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        SetStatus("Installing curl...", Color.yellow);
-        
-        // Command to install curl
         string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        string curlInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"apt install -y curl\"";
-            
-        // Use the ServerCMDProcess method to run the PowerShell command
-        bool success = await cmdProcess.RunPowerShellInstallCommand(curlInstallCommand, LogMessage, visibleInstallProcesses);
-        
-        if (success)
+        if (string.IsNullOrEmpty(userName))
         {
-            SetStatus("curl installation started. This may take some time.", Color.green);
-            
-            // Give some time before checking again
-            await Task.Delay(5000);
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (hasCurl)
-            {
-                SetStatus("curl installed successfully.", Color.green);
-            }
-            else
-            {
-                SetStatus("curl installation failed. Please install manually.", Color.red);
-            }
+            SetStatus("Please enter your Debian username first.", Color.red);
+            return;
+        }
+        
+        SetStatus("Installing curl - Step 1: Update package list", Color.yellow);
+        
+        // First update package list
+        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses);
+        if (!updateSuccess)
+        {
+            SetStatus("Failed to update package list. Curl installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(5000); // Wait longer for update to complete
+        
+        // Then install curl
+        SetStatus("Installing curl - Step 2: Installing curl package", Color.yellow);
+        string curlInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y curl\"";
+        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(curlInstallCommand, LogMessage, visibleInstallProcesses);
+        if (!installSuccess)
+        {
+            SetStatus("Failed to install curl. Installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(5000); // Wait longer for installation to complete
+        
+        SetStatus("Curl installation complete. Checking status...", Color.green);
+        await Task.Delay(2000);
+        
+        // Verify installation
+        string verifyCommand = "wsl -d Debian -u " + userName + " bash -c \"curl --version\"";
+        bool verifySuccess = await cmdProcess.RunPowerShellInstallCommand(verifyCommand, LogMessage, visibleInstallProcesses);
+        if (!verifySuccess)
+        {
+            SetStatus("Couldn't verify curl installation. Please check manually.", Color.yellow);
+        }
+        
+        // Check installation status
+        CheckInstallationStatus();
+        await Task.Delay(2000);
+        
+        if (hasCurl)
+        {
+            SetStatus("curl installed successfully.", Color.green);
+        }
+        else
+        {
+            SetStatus("curl installation failed. Please install manually.", Color.red);
         }
     }
     
@@ -643,36 +693,64 @@ public class ServerInstallerWindow : EditorWindow
         CheckInstallationStatus();
         await Task.Delay(1000);
         
-        if (hasRust)
+        if (hasRust && !installIfAlreadyInstalled)
         {
             SetStatus("Rust is already installed.", Color.green);
             return;
         }
         
-        SetStatus("Installing Rust...", Color.yellow);
-
-        // Command to install Rust
-        string rustInstallCommand = "wsl -d Debian -u root bash -c \"apt update && apt install -y rustc\""; 
-        
-        // Use the ServerCMDProcess method to run the PowerShell command
-        bool success = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses);
-
-        if (success)
+        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        if (string.IsNullOrEmpty(userName))
         {
-            SetStatus("Rust installation started. This may take some time.", Color.green);
-
-            // Give some time before checking again
-            await Task.Delay(5000);
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (hasRust)
-            {
-                SetStatus("Rust installed successfully.", Color.green);
-            }
-            else
-            {
-                SetStatus("Rust installation failed. Please install manually.", Color.red);
-            }
+            SetStatus("Please enter your Debian username first.", Color.red);
+            return;
+        }
+        
+        SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
+        
+        // First update package list
+        string updateCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt update\"";
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses);
+        if (!updateSuccess)
+        {
+            SetStatus("Failed to update package list. Rust installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(5000); // Wait longer for update to complete
+        
+        // Then install Rust
+        SetStatus("Installing Rust - Step 2: Installing rustc package", Color.yellow);
+        string rustInstallCommand = "wsl -d Debian -u " + userName + " bash -c \"sudo apt install -y rustc\"";
+        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses);
+        if (!installSuccess)
+        {
+            SetStatus("Failed to install Rust. Installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(5000); // Wait longer for installation to complete
+        
+        SetStatus("Rust installation complete. Checking status...", Color.green);
+        await Task.Delay(2000);
+        
+        // Verify installation
+        string verifyCommand = "wsl -d Debian -u " + userName + " bash -c \"rustc --version\"";
+        bool verifySuccess = await cmdProcess.RunPowerShellInstallCommand(verifyCommand, LogMessage, visibleInstallProcesses);
+        if (!verifySuccess)
+        {
+            SetStatus("Couldn't verify Rust installation. Please check manually.", Color.yellow);
+        }
+        
+        // Check installation status
+        CheckInstallationStatus();
+        await Task.Delay(2000);
+        
+        if (hasRust)
+        {
+            SetStatus("Rust installed successfully.", Color.green);
+        }
+        else
+        {
+            SetStatus("Rust installation failed. Please install manually.", Color.red);
         }
     }
     private async void InstallSpacetimeDBUnitySDK()
