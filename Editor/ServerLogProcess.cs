@@ -70,13 +70,13 @@ public class ServerLogProcess
         databaseLogContent = SessionState.GetString(SessionKeyDatabaseLog, "");
     }
     
-    public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName = "mchat")
+    public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
     {
         this.moduleName = moduleName;
         this.serverDirectory = serverDirectory;
         this.clearModuleLogAtStart = clearModuleLogAtStart;
         this.clearDatabaseLogAtStart = clearDatabaseLogAtStart;
-        this.userName = string.IsNullOrEmpty(userName) ? "" : userName;
+        this.userName = userName;
         
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}");
     }

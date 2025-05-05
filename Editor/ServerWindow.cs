@@ -144,7 +144,7 @@ public class ServerWindow : EditorWindow
         prerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "PrerequisitesChecked", false);
         serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
         clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
-        serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
+        serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "http://0.0.0.0:3000/");
         spacetimePort = EditorPrefs.GetInt(PrefsKeyPrefix + "SpacetimePort", 3000);
         serverLang = EditorPrefs.GetString(PrefsKeyPrefix + "ServerLang", "rust");
         moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
@@ -1368,9 +1368,14 @@ public class ServerWindow : EditorWindow
     
     private void StartServer()
     {
-        if (!hasWSL || !hasDebian)
+        if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
         {
             LogMessage("Cannot start server. Missing prerequisites.", -1);
+            return;
+        }
+        if (string.IsNullOrEmpty(userName))
+        {
+            LogMessage("Cannot start server. User name is not set.", -1);
             return;
         }
 
@@ -1394,7 +1399,7 @@ public class ServerWindow : EditorWindow
         try
         {
             // Configure log processor with current settings
-            logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart);
+            logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
             
             if (silentMode)
             {
