@@ -1,13 +1,14 @@
 # Cosmos Cove Control Panel (CCCP) for SpacetimeDB
-
-[![Made with Unity](https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity)](https://unity3d.com) 
+<p align="center">
+<a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity"></a>
+<a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
 <!-- Add other relevant badges here, e.g., license, version -->
-
+</p>
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
 SpacetimeDB is a revolutionary database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel (CCCP) is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.
 
-Install directly in your Unity package manager with this git URL
+Install directly in your Unity Package Manager with this git URL
 
 ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
 
@@ -48,7 +49,7 @@ Install directly in your Unity package manager with this git URL
 
 ## Supported Platforms
 
-*   **Windows:** Requires WSL2 (Windows Subsystem for Linux) with Debian.
+*   **Windows:** Requires WSL (Windows Subsystem for Linux) with Debian.
     *   Includes setup instructions and an automatic pre-requisite check within Unity.
     *   Includes an optional automatic installer for all pre-requisites (alpha version).
 
@@ -59,7 +60,7 @@ Install directly in your Unity package manager with this git URL
 ## Upcoming features
    - Server profiles.
    - Maincloud support.
-   - Get notified and update to new SpacetimeDB version.
+   - Get notified and update to a new SpacetimeDB version.
 
 ## License
 
