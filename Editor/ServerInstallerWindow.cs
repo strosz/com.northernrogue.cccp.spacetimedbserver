@@ -72,12 +72,10 @@ public class ServerInstallerWindow : EditorWindow
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
                 EditorUtility.DisplayDialog(
-                    "SpacetimeDB AutomaticInstaller",
-                    "CCCP features an automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
-                    "This is an alpha version that has been tested on a number of configurations and has worked." +
-                    "That being said, no guarantees are left that this will fully work on your particular PC.\n\n" +
-                    "All named software in this window is official and publicly available software that belongs to the respective parties." +
-                    "Nothing is hosted in this app, it just calls the available repositories for the installation process for ease of use.",
+                    "SpacetimeDB Automatic Installer",
+                    "This is an automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
+                    "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n\n" +
+                    "Nothing is packaged in this asset. It calls the available repositories for the installation process for the purpose of ease of use.",
                     "OK");
                 
                 // Mark as opened
@@ -957,21 +955,47 @@ public class ServerInstallerWindow : EditorWindow
         
         SetStatus("Installing SpacetimeDB Unity SDK...", Color.yellow);
 
-        // Use the ServerSpacetimeSDKInstaller to install the SDK
-        ServerSpacetimeSDKInstaller.InstallSDK((success, errorMessage) => 
+        // Display a warning to users about the installation process
+        if (EditorUtility.DisplayDialog(
+            "SpacetimeDB SDK Installation",
+            "Installing the SpacetimeDB SDK will add a package from GitHub and may trigger a script reload.\n\n" +
+            "The installation process may take up to a minute. Please don't close Unity during this time.",
+            "Install",
+            "Cancel"))
         {
-            if (success)
+            // Use the ServerSpacetimeSDKInstaller to install the SDK
+            ServerSpacetimeSDKInstaller.InstallSDK((success, errorMessage) => 
             {
-                SetStatus("SpacetimeDB Unity SDK installed successfully.", Color.green);
-                hasSpacetimeDBUnitySDK = true;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", true);
-                UpdateInstallerItemsStatus();
-            }
-            else
-            {
-                SetStatus($"SpacetimeDB Unity SDK installation failed: {errorMessage}", Color.red);
-            }
-        });
+                if (success)
+                {
+                    SetStatus("SpacetimeDB Unity SDK installed successfully.", Color.green);
+                    hasSpacetimeDBUnitySDK = true;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", true);
+                    UpdateInstallerItemsStatus();
+                    
+                    // After successful installation, ensure the window updates properly
+                    EditorApplication.delayCall += () => {
+                        CheckInstallationStatus();
+                    };
+                }
+                else
+                {
+                    string errorMsg = string.IsNullOrEmpty(errorMessage) ? "Unknown error" : errorMessage;
+                    SetStatus($"SpacetimeDB Unity SDK installation failed: {errorMsg}", Color.red);
+                    
+                    // Show a more detailed error dialog
+                    EditorUtility.DisplayDialog(
+                        "Installation Failed",
+                        $"Failed to install SpacetimeDB Unity SDK: {errorMsg}\n\n" +
+                        "You can try again later or install it manually via Package Manager (Window > Package Manager > Add package from git URL).",
+                        "OK");
+                }
+            });
+        }
+        else
+        {
+            SetStatus("SpacetimeDB Unity SDK installation cancelled.", Color.yellow);
+        }
     }
     #endregion
     

@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
+using System;
 
 namespace NorthernRogue.CCCP.Editor
 {
@@ -11,6 +12,10 @@ namespace NorthernRogue.CCCP.Editor
         private static AddRequest s_AddRequest;
         private static bool s_IsCheckingInstalled = false;
         private static bool s_IsInstalling = false;
+        private static float s_TimeoutStartTime = 0f;
+        private static float s_TimeoutDuration = 60f; // 1 minute timeout
+        private const string SDK_PACKAGE_NAME = "com.clockworklabs.spacetimedbsdk";
+        private const string SDK_PACKAGE_URL = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git";
 
         // Callback delegates
         public delegate void CheckCompletedCallback(bool isInstalled);
@@ -25,14 +30,28 @@ namespace NorthernRogue.CCCP.Editor
             if (s_IsCheckingInstalled)
             {
                 Debug.LogWarning("[SpacetimeDB] Already checking if SDK is installed");
+                callback?.Invoke(false);
                 return;
             }
 
             s_IsCheckingInstalled = true;
+            s_TimeoutStartTime = Time.realtimeSinceStartup;
             s_ListRequest = Client.List();
             
-            EditorApplication.update += () =>
+            EditorApplication.update += CheckInstalledUpdate;
+
+            void CheckInstalledUpdate()
             {
+                // Check for timeout
+                if (Time.realtimeSinceStartup - s_TimeoutStartTime > s_TimeoutDuration)
+                {
+                    Debug.LogWarning("[SpacetimeDB] SDK check timed out after " + s_TimeoutDuration + " seconds");
+                    EditorApplication.update -= CheckInstalledUpdate;
+                    s_IsCheckingInstalled = false;
+                    callback?.Invoke(false);
+                    return;
+                }
+
                 if (!s_ListRequest.IsCompleted) return;
                 
                 EditorApplication.update -= CheckInstalledUpdate;
@@ -43,7 +62,7 @@ namespace NorthernRogue.CCCP.Editor
                 {
                     foreach (var pkg in s_ListRequest.Result)
                     {
-                        if (pkg.name == "com.clockworklabs.spacetimedbsdk")
+                        if (pkg.name == SDK_PACKAGE_NAME)
                         {
                             isInstalled = true;
                             break;
@@ -52,7 +71,7 @@ namespace NorthernRogue.CCCP.Editor
                 }
                 
                 callback?.Invoke(isInstalled);
-            };
+            }
         }
 
         /// <summary>
@@ -64,6 +83,7 @@ namespace NorthernRogue.CCCP.Editor
             if (s_IsInstalling)
             {
                 Debug.LogWarning("[SpacetimeDB] SDK installation already in progress");
+                callback?.Invoke(false, "Installation already in progress");
                 return;
             }
 
@@ -72,50 +92,62 @@ namespace NorthernRogue.CCCP.Editor
             {
                 if (isInstalled)
                 {
+                    Debug.Log("[SpacetimeDB] SDK is already installed");
                     callback?.Invoke(true);
                     return;
                 }
 
-                s_IsInstalling = true;
-                Debug.Log("[SpacetimeDB] Installing SDK from Git...");
-                s_AddRequest = Client.Add("https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git");
-
-                EditorApplication.update += () =>
+                try
                 {
-                    if (s_AddRequest == null || !s_AddRequest.IsCompleted) return;
+                    s_IsInstalling = true;
+                    s_TimeoutStartTime = Time.realtimeSinceStartup;
+                    Debug.Log("[SpacetimeDB] Installing SDK from Git: " + SDK_PACKAGE_URL);
+                    
+                    // Try to add with specific version
+                    s_AddRequest = Client.Add(SDK_PACKAGE_URL);
+                    EditorApplication.update += InstallUpdate;
+                    
+                    void InstallUpdate()
+                    {
+                        // Check for timeout
+                        if (Time.realtimeSinceStartup - s_TimeoutStartTime > s_TimeoutDuration)
+                        {
+                            Debug.LogWarning("[SpacetimeDB] SDK installation timed out after " + s_TimeoutDuration + " seconds");
+                            EditorApplication.update -= InstallUpdate;
+                            s_IsInstalling = false;
+                            callback?.Invoke(false, "Installation timed out");
+                            return;
+                        }
+                        
+                        if (s_AddRequest == null || !s_AddRequest.IsCompleted) return;
 
-                    EditorApplication.update -= InstallUpdate;
+                        EditorApplication.update -= InstallUpdate;
+                        s_IsInstalling = false;
+
+                        if (s_AddRequest.Status == StatusCode.Success)
+                        {
+                            Debug.Log("[SpacetimeDB] SDK installed successfully!");
+                            
+                            // Force a domain reload to prevent editor freeze
+                            EditorUtility.RequestScriptReload();
+                            
+                            callback?.Invoke(true);
+                        }
+                        else if (s_AddRequest.Status >= StatusCode.Failure)
+                        {
+                            string errorMessage = s_AddRequest.Error != null ? s_AddRequest.Error.message : "Unknown error";
+                            Debug.LogError($"[SpacetimeDB] Failed to install SDK: {errorMessage}");
+                            callback?.Invoke(false, errorMessage);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
                     s_IsInstalling = false;
-
-                    if (s_AddRequest.Status == StatusCode.Success)
-                    {
-                        Debug.Log("[SpacetimeDB] SDK installed successfully!");
-                        callback?.Invoke(true);
-                    }
-                    else if (s_AddRequest.Status >= StatusCode.Failure)
-                    {
-                        string errorMessage = s_AddRequest.Error.message;
-                        Debug.LogError($"[SpacetimeDB] Failed to install SDK: {errorMessage}");
-                        callback?.Invoke(false, errorMessage);
-                    }
-                };
+                    Debug.LogException(ex);
+                    callback?.Invoke(false, ex.Message);
+                }
             });
-        }
-
-        private static void CheckInstalledUpdate()
-        {
-            if (!s_ListRequest.IsCompleted) return;
-            
-            EditorApplication.update -= CheckInstalledUpdate;
-            s_IsCheckingInstalled = false;
-        }
-
-        private static void InstallUpdate()
-        {
-            if (s_AddRequest == null || !s_AddRequest.IsCompleted) return;
-
-            EditorApplication.update -= InstallUpdate;
-            s_IsInstalling = false;
         }
     }
 }

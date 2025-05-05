@@ -1,7 +1,7 @@
 {
   "name": "com.northernrogue.cccp.spacetimedbserver",
   "displayName": "CCCP SpacetimeDB Server Manager",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
