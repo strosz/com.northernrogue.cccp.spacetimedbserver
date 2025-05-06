@@ -136,7 +136,7 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install WSL with Debian",
-                description = "Windows Subsystem for Linux 2 with Debian Linux distribution\n"+
+                description = "Windows Subsystem for Linux with Debian distribution\n"+
                 "Important: Will launch a checker tool that determines if your system supports WSL1 or WSL2\n"+
                 "Note: May require a system restart",
                 isInstalled = hasDebian,

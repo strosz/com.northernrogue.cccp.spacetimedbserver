@@ -485,7 +485,7 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.BeginHorizontal();
             string tokenTooltip = 
             "Required for Server Data Viewing. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
-            "Important: Keep this token secret and do not share it with anyone of your team.";
+            "Important: Keep this token secret and do not share it with anyone outside of your team.";
             EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
             string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(130));
             if (newAuthToken != authToken)

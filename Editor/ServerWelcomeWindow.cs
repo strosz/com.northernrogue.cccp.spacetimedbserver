@@ -29,8 +29,8 @@ namespace NorthernRogue.CCCP.Editor
         public static void ShowWindow()
         {
             ServerWelcomeWindow window = GetWindow<ServerWelcomeWindow>("Welcome to Cosmos Cove");
-            window.minSize = new Vector2(450f, 500f);
-            window.maxSize = new Vector2(450f, 500f);
+            window.minSize = new Vector2(450f, 530f);
+            window.maxSize = new Vector2(450f, 530f);
         }
         
         private void OnGUI()
@@ -75,7 +75,7 @@ namespace NorthernRogue.CCCP.Editor
             "The menu item SpacetimeDB has been added to your toolbar.\n" +
             "There you will find all the main windows of Cosmos Cove Control Panel.\n\n" +
             "Please begin by opening the Server Installer Window to check if you have the pre-requisites installed and there you can also install them directly (alpha).\n\n" +
-            "The main control panel is the Server Manager Panel. From there you can start your server and launch all other functionality.";
+            "The main window is the Server Manager Panel. From there you can start your server and launch all other functionality by entering your server information in the pre-requisites.";
             
             EditorGUILayout.LabelField(welcomeText, textStyle);
             

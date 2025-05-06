@@ -25,9 +25,13 @@ Install directly in your Unity Package Manager with this git URL
    - Detects changes in your server code.
    - Auto Publish/Generate mode keeps your server up-to-date.
 
+🌱 **Automatic Installer:**
+   - Server Installer Window that installs everything necessary from the ground up.
+   - Checks what you need and gives you detailed feedback on important steps.
+
 📊 **Real-time Monitoring & Control:**
    - Monitor server status and port availability directly in Unity.
-   - View real-time server logs within the editor.
+   - View real-time server logs within the editor and save them.
    - Server errors are mirrored in the Unity console for easy debugging.
 
 💾 **Backup & Restore:**
@@ -38,13 +42,13 @@ Install directly in your Unity Package Manager with this git URL
    - Get a quick overview of all your tables and columns.
    - Easily clear tables or delete specific rows.
 
-🔧 **Run Reducers In-Editor:**
+✅ **Run Reducers:**
    - Access a list of all your SpacetimeDB reducers (server methods).
    - Call reducers directly from the Unity editor interface.
 
 ⬇️⬆️ **Data Import/Export:**
    - Export all database tables to JSON or CSV format.
-   - Import single tables or entire folders in JSON or CSV format.
+   - Import single tables or entire folders in JSON or CSV format (with manual steps).
 
 ⚡ **Performance:**
    - No noticeable performance impact during editor runtime.
@@ -56,8 +60,11 @@ Install directly in your Unity Package Manager with this git URL
     *   Includes an optional automatic installer for all pre-requisites (alpha version).
 
 ## Getting Started
+   - 1. Install the asset using the .git address above in the Package Manager´s + menu.
+   - 2. A Welcome Window displays if successful.
+   - 3. Let the Server Installer Window determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the free and publicly available software one by one starting from the top. Now you can run SpacetimeDB directly in Unity!
 
-## Usage
+   **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. For a manual install process please check the documentation button available in the Welcome Window.
 
 ## Upcoming features
    - Server profiles.
@@ -65,7 +72,13 @@ Install directly in your Unity Package Manager with this git URL
    - Get notified and update to a new SpacetimeDB version.
 
 ## License
+   - To be determined.
 
 ## Disclaimer
 
-**Note:** This is an unofficial SpacetimeDB server manager. SpaceTimeDB® is a registered trademark of Clockwork Labs. This asset is neither endorsed by nor affiliated with Clockwork Labs.
+> This code is provided **“as is”**, without warranty of any kind, express or implied,  
+> including but not limited to the warranties of merchantability, fitness for a particular  
+> purpose, and noninfringement. In no event shall the authors be liable for any claim,  
+> damages, or other liability arising from, out of, or in connection with the software.
+
+   **Note:** This is an unofficial SpacetimeDB server manager. SpaceTimeDB® is a registered trademark of Clockwork Labs. This asset is neither endorsed by nor affiliated with Clockwork Labs.
