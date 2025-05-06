@@ -252,11 +252,19 @@ public class ServerDataWindow : EditorWindow
         EditorGUI.BeginDisabledGroup(isRefreshing || isImporting); // Also disable during import
         if (GUILayout.Button("Import from Folder...", EditorStyles.toolbarButton, GUILayout.Width(130)))
         {
-            ImportFromJson();
+            // Show editor dialog with a warning
+            if (EditorUtility.DisplayDialog("Import from Folder", "This currently requires a manually created import reducer in your lib.rs and will soon be updated for ease of use.\n\nAre you sure you want to continue?", "Yes", "Cancel"))
+            {
+                ImportFromJson();
+            }
         }
         if (GUILayout.Button("Import Single File...", EditorStyles.toolbarButton, GUILayout.Width(130)))
         {
-            ImportSingleFileFromJson();
+            // Show editor dialog with a warning
+            if (EditorUtility.DisplayDialog("Import Single File", "This currently requires a manually created import reducer in your lib.rs and will soon be updated for ease of use.\n\nAre you sure you want to continue?", "Yes", "Cancel"))
+            {
+                ImportSingleFileFromJson();
+            }
         }
         EditorGUI.EndDisabledGroup(); // End group for import buttons
 
