@@ -26,8 +26,8 @@ Install directly in your Unity Package Manager with this git URL
    - Auto Publish/Generate mode keeps your server up-to-date.
 
 🌱 **Automatic Installer:**
-   - Server Installer Window that installs everything necessary from the ground up.
-   - Checks what you need and gives you detailed feedback on important steps.
+   - Server Installer Window which installs everything necessary from the ground up.
+   - If starting fresh it gets you running your own local SpacetimeDB server in no-time.
 
 📊 **Real-time Monitoring & Control:**
    - Monitor server status and port availability directly in Unity.
@@ -60,9 +60,9 @@ Install directly in your Unity Package Manager with this git URL
     *   Includes an optional automatic installer for all pre-requisites (alpha version).
 
 ## Getting Started
-   - 1. Install the asset using the .git address above in the Package Manager´s + menu.
-   - 2. A Welcome Window displays if successful.
-   - 3. Let the Server Installer Window determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the free and publicly available software one by one starting from the top. Now you can run SpacetimeDB directly in Unity!
+   - Install the asset using the .git address above in the Package Manager´s + menu.
+   - A Welcome Window displays if successful.
+   - Let the Server Installer Window determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the free and publicly available software one by one starting from the top. Now you can run SpacetimeDB directly in Unity!
 
    **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. For a manual install process please check the documentation button available in the Welcome Window.
 

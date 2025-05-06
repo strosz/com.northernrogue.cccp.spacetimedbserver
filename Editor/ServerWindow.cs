@@ -1597,22 +1597,6 @@ public class ServerWindow : EditorWindow
             LogMessage("Server is not running.", -1);
         }
     }
-
-    // Keep WSL Helper Methods (needed for Start/Stop)
-    private bool CheckIfServerRunningWsl()
-    {
-        return cmdProcessor.CheckIfServerRunningWsl();
-    }
-
-    private void RemoveStalePidWsl()
-    {
-        cmdProcessor.RemoveStalePidWsl();
-    }
-
-    private int RunWslCommandSilent(string bashCommand)
-    {
-        return cmdProcessor.RunWslCommandSilent(bashCommand);
-    }
     #endregion
 
     #region CheckStatus
@@ -2026,7 +2010,7 @@ public class ServerWindow : EditorWindow
         }
     }
     
-    private void LogMessage(string message, int style)
+    public void LogMessage(string message, int style)
     {
         // Skip warning messages if hideWarnings is enabled
         if (hideWarnings && message.Contains("WARNING"))
