@@ -53,7 +53,7 @@ public class ServerInstallerWindow : EditorWindow
     private const string PrefsKeyPrefix = "ServerWindow_"; // Use the same prefix as ServerWindow
     private const string FirstTimeOpenKey = "ServerInstaller_FirstTimeOpen";
 
-    [MenuItem("SpacetimeDB/Server Installer")]
+    [MenuItem("SpacetimeDB/Server Installer", priority = -10001)]
     public static void ShowWindow()
     {
         ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");

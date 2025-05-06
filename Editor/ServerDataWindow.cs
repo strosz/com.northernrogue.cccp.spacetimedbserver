@@ -32,6 +32,7 @@ public class ServerDataWindow : EditorWindow
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss"); // Track when status was set
     private bool isRefreshing = false;
     private bool isImporting = false; // Added flag for import process
+    private bool showServerReachableInformation = false;
 
     // List of tables expected to be public and queryable via SQL API
     private readonly List<string> queryablePublicTables = new List<string>
@@ -636,6 +637,10 @@ public class ServerDataWindow : EditorWindow
             else
             {
                 EditorGUILayout.LabelField(tableNames.Any() ? "Select a table from the left." : "Refresh to load tables.", EditorStyles.centeredGreyMiniLabel);
+                if (showServerReachableInformation)
+                {
+                    EditorGUILayout.HelpBox("Check that you have entered the correct server URL and module name.", MessageType.Info);
+                }
             }
             
             GUILayout.EndVertical(); // End main vertical layout
@@ -1008,6 +1013,7 @@ public class ServerDataWindow : EditorWindow
         {
             UnityEngine.Debug.LogError($"[ServerDataWindow] Schema request (HttpClient) failed: {schemaFetchError}\nURL: {schemaUrl}");
             callback?.Invoke(false, $"Error fetching schema: {schemaFetchError}");
+            showServerReachableInformation = true;
             yield break; // Stop coroutine on schema failure
         }
 

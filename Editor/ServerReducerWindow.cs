@@ -254,7 +254,8 @@ namespace NorthernRogue.CCCP.Editor
             
             if (reducers.Count == 0)
             {
-                EditorGUILayout.HelpBox("No reducers found. Click 'Refresh Reducers' to fetch available reducers.", MessageType.Info);
+                EditorGUILayout.HelpBox("No reducers found. Click 'Refresh Reducers' to fetch available reducers.\n" +
+                "If you are running a local server, make sure it is running and the module is loaded.", MessageType.Info);
             }
             else
             {

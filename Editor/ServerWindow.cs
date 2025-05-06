@@ -75,7 +75,7 @@ public class ServerWindow : EditorWindow
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
 
-    [MenuItem("SpacetimeDB/Server Management Panel", priority = -10000)]
+    [MenuItem("SpacetimeDB/Server Management Panel", priority = -9000)]
     public static void ShowWindow()
     {
         ServerWindow window = GetWindow<ServerWindow>("Server");
@@ -481,7 +481,7 @@ public class ServerWindow : EditorWindow
             // URL setting
             EditorGUILayout.BeginHorizontal();
             string urlTooltip = 
-            "Required for Server Data Viewing. The URL of the SpacetimeDB server\nDefault: http://127.0.0.1:3000/";
+            "Required for Server Data Viewing. The full URL of your SpacetimeDB server including port number.\nDefault: http://127.0.0.1:3000/";
             EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
             string newUrl = EditorGUILayout.TextField(serverUrl, GUILayout.Width(130));
             if (newUrl != serverUrl)
@@ -2140,5 +2140,12 @@ public class ServerWindow : EditorWindow
             logProcessor.AttemptDatabaseLogRestartAfterReload();
         }
     }
+
+    // Display Cosmos Cove Control Panel title text in the menu bar
+    [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", priority = -11000)]
+    private static void CosmosCoveControlPanel(){}
+    [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", true, priority = -11000)]
+    private static bool ValidateCosmosCoveControlPanel(){return false;}
+
 } // Class
 } // Namespace
