@@ -135,8 +135,9 @@ public class ServerInstallerWindow : EditorWindow
         {
             new InstallerItem
             {
-                title = "Install WSL2 with Debian",
+                title = "Install WSL with Debian",
                 description = "Windows Subsystem for Linux 2 with Debian Linux distribution\n"+
+                "Important: Will launch a checker tool that determines if your system supports WSL1 or WSL2\n"+
                 "Note: May require a system restart",
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
@@ -555,7 +556,7 @@ public class ServerInstallerWindow : EditorWindow
         }
 
         EditorUtility.DisplayDialog("About WSL1 and WSL2", 
-        "WSL1 and WSL2 allows you to run a Linux distribution within Windows. This allows SpacetimeDB to be run silently and be more easily controlled.\n\n" +
+        "WSL1 and WSL2 allows you to run a Linux distribution within Windows. This allows SpacetimeDB to run silently and be more easily controlled when running locally.\n\n" +
         "WSL2 is the latest and recommended version.\n" +
         "WSL1 has better compability with some systems.\n\n" +
         "CCCP will now run a test to determine if your PC supports Hyper-V which is necessary for WSL2.\n\n"
@@ -618,7 +619,6 @@ public class ServerInstallerWindow : EditorWindow
         // Call CheckWSL2Support and wait for the user to make a choice in the dialog
         // The actual installation will happen when the user clicks one of the buttons in the dialog,
         // which will invoke either installWSL1 or installWSL2
-        SetStatus("Checking WSL2 compatibility...", Color.green);
         await ServerCompabilityReport.CheckWSL2Support(true, installWSL1, installWSL2);
 
         if (installedSuccessfully)

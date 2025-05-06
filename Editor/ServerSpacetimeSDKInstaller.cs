@@ -27,6 +27,25 @@ namespace NorthernRogue.CCCP.Editor
         /// <param name="callback">Callback that will be invoked with the result</param>
         public static void IsSDKInstalled(CheckCompletedCallback callback)
         {
+            // First check if we can find the SDK assembly directly - this is faster than using Package Manager
+            try
+            {
+                var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
+                foreach (var assembly in assemblies)
+                {
+                    if (assembly.GetName().Name == "ClockworkLabs.SpacetimeDBSDK")
+                    {
+                        callback?.Invoke(true);
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[SpacetimeDB] Error checking SDK assembly: {ex.Message}");
+                // Continue with package manager check if assembly check fails
+            }
+
             if (s_IsCheckingInstalled)
             {
                 Debug.LogWarning("[SpacetimeDB] Already checking if SDK is installed");
@@ -36,7 +55,7 @@ namespace NorthernRogue.CCCP.Editor
 
             s_IsCheckingInstalled = true;
             s_TimeoutStartTime = Time.realtimeSinceStartup;
-            s_ListRequest = Client.List();
+            s_ListRequest = Client.List(true); // Request offlineMode=true for faster response
             
             EditorApplication.update += CheckInstalledUpdate;
 
@@ -48,11 +67,12 @@ namespace NorthernRogue.CCCP.Editor
                     Debug.LogWarning("[SpacetimeDB] SDK check timed out after " + s_TimeoutDuration + " seconds");
                     EditorApplication.update -= CheckInstalledUpdate;
                     s_IsCheckingInstalled = false;
+                    s_ListRequest = null;
                     callback?.Invoke(false);
                     return;
                 }
 
-                if (!s_ListRequest.IsCompleted) return;
+                if (s_ListRequest == null || !s_ListRequest.IsCompleted) return;
                 
                 EditorApplication.update -= CheckInstalledUpdate;
                 s_IsCheckingInstalled = false;
@@ -69,7 +89,12 @@ namespace NorthernRogue.CCCP.Editor
                         }
                     }
                 }
+                else
+                {
+                    Debug.LogWarning($"[SpacetimeDB] SDK check failed: {(s_ListRequest.Error != null ? s_ListRequest.Error.message : "Unknown error")}");
+                }
                 
+                s_ListRequest = null;
                 callback?.Invoke(isInstalled);
             }
         }
@@ -115,6 +140,7 @@ namespace NorthernRogue.CCCP.Editor
                             Debug.LogWarning("[SpacetimeDB] SDK installation timed out after " + s_TimeoutDuration + " seconds");
                             EditorApplication.update -= InstallUpdate;
                             s_IsInstalling = false;
+                            s_AddRequest = null;
                             callback?.Invoke(false, "Installation timed out");
                             return;
                         }
@@ -139,6 +165,8 @@ namespace NorthernRogue.CCCP.Editor
                             Debug.LogError($"[SpacetimeDB] Failed to install SDK: {errorMessage}");
                             callback?.Invoke(false, errorMessage);
                         }
+                        
+                        s_AddRequest = null;
                     }
                 }
                 catch (Exception ex)

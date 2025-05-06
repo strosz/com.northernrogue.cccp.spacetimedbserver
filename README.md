@@ -1,9 +1,11 @@
-# Cosmos Cove Control Panel (CCCP) for SpacetimeDB
+# Cosmos Cove Control Panel for SpacetimeDB
 <p align="center">
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity"></a>
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
+<a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/buy%20me%20a%20ko-fi-8A2BE2"></a>
 <!-- Add other relevant badges here, e.g., license, version -->
 </p>
+
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
 SpacetimeDB is a revolutionary database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel (CCCP) is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.

@@ -86,13 +86,36 @@ public class ServerWindow : EditorWindow
     private void OnGUI()
     {
         EditorGUILayout.BeginVertical();
-        
-        GUIStyle titleStyle = new GUIStyle(EditorStyles.whiteLargeLabel);
-        titleStyle.alignment = TextAnchor.MiddleCenter;
-        titleStyle.fontSize = 15;
-        GUILayout.Label("SpacetimeDB Server Management", titleStyle);
-        GUILayout.Label("Control your SpacetimeDB server and run commands.\n If starting fresh check the pre-requisites first.", EditorStyles.centeredGreyMiniLabel);
-        EditorGUILayout.Space();
+               
+        // Load and display the logo image
+        Texture2D logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/cosmos_logo.png");
+        if (logoTexture != null)
+        {
+            float maxHeight = 70f;
+            float aspectRatio = (float)logoTexture.width / logoTexture.height;
+            float width = maxHeight * aspectRatio;
+            float height = maxHeight;
+            
+            // Center the image
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(logoTexture, GUILayout.Width(width), GUILayout.Height(height));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            EditorGUILayout.Space(-10);
+            // Add the subtitle
+            GUILayout.Label("Control your SpacetimeDB server and run commands.\n If starting fresh check the pre-requisites first.", EditorStyles.centeredGreyMiniLabel);
+        }
+        else
+        {
+            // Fallback if image not found
+            GUIStyle titleStyle = new GUIStyle(EditorStyles.whiteLargeLabel);
+            titleStyle.alignment = TextAnchor.MiddleCenter;
+            titleStyle.fontSize = 15;
+            GUILayout.Label("SpacetimeDB Server Management", titleStyle);
+            GUILayout.Label("Control your SpacetimeDB server and run commands.\n If starting fresh check the pre-requisites first.", EditorStyles.centeredGreyMiniLabel);
+            EditorGUILayout.Space();
+        }
         
         DrawPrerequisitesSection();
         EditorGUILayout.Space(10);
