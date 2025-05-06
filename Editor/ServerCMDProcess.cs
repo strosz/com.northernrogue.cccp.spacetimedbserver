@@ -13,9 +13,6 @@ public class ServerCMDProcess
     private string userName = "";
     private const string PrefsKeyPrefix = "ServerWindow_";
     
-    // Port constants
-    public const int SpacetimePort = 3000;
-    
     // Path constants for WSL
     public const string WslPidPath = "/tmp/spacetime.pid";
     

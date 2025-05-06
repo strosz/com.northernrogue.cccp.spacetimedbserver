@@ -35,16 +35,12 @@ public class ServerDataWindow : EditorWindow
     private bool showServerReachableInformation = false;
 
     // List of tables expected to be public and queryable via SQL API
-    private readonly List<string> queryablePublicTables = new List<string>
+    // This is now kept as a fallback for use without schema parsing
+    private readonly List<string> fallbackQueryablePublicTables = new List<string>
     {
-        "config",
-        "entity",
-        "mob",
-        "movement_component",
-        "player",
-        "logged_out_player",
-        "message",
-        "messages"
+        "your",
+        "tables",
+        "here",
     };
 
     // Scroll positions
@@ -67,7 +63,17 @@ public class ServerDataWindow : EditorWindow
     [Serializable]
     private class SchemaResponse { public List<TableDef> tables; }
     [Serializable]
-    private class TableDef { public string name; /* Other schema details ignored for now */ }
+    private class TableDef 
+    { 
+        public string name; 
+        public TableAccessDef table_access; 
+        /* Other schema details ignored for now */ 
+    }
+    [Serializable]
+    private class TableAccessDef
+    {
+        public JArray Public;
+    }
     [Serializable]
     private class SqlRequest { public string query; }
     // SqlResponse structure is complex (includes schema + rows), handle dynamically with JObject for now
@@ -253,7 +259,11 @@ public class ServerDataWindow : EditorWindow
         if (GUILayout.Button("Import from Folder...", EditorStyles.toolbarButton, GUILayout.Width(130)))
         {
             // Show editor dialog with a warning
-            if (EditorUtility.DisplayDialog("Import from Folder", "This currently requires a manually created import reducer in your lib.rs and will soon be updated for ease of use.\n\nAre you sure you want to continue?", "Yes", "Cancel"))
+            string importMessage = 
+            "Importing is an experimental feature that currently requires a manually created import reducer in your lib.rs and will be updated for ease of use.\n\n"+
+            "Please refer to the documentation for more information.\n\n"+
+            "Have you updated your import reducer and want to continue?";
+            if (EditorUtility.DisplayDialog("Import from Folder", importMessage, "Yes", "Cancel"))
             {
                 ImportFromJson();
             }
@@ -261,7 +271,11 @@ public class ServerDataWindow : EditorWindow
         if (GUILayout.Button("Import Single File...", EditorStyles.toolbarButton, GUILayout.Width(130)))
         {
             // Show editor dialog with a warning
-            if (EditorUtility.DisplayDialog("Import Single File", "This currently requires a manually created import reducer in your lib.rs and will soon be updated for ease of use.\n\nAre you sure you want to continue?", "Yes", "Cancel"))
+            string importMessage = 
+            "Importing is an experimental feature that currently requires a manually created import reducer in your lib.rs and will be updated for ease of use.\n\n"+
+            "Please refer to the documentation for more information.\n\n"+
+            "Have you updated your import reducer and want to continue?";
+            if (EditorUtility.DisplayDialog("Import Single File", importMessage, "Yes", "Cancel"))
             {
                 ImportSingleFileFromJson();
             }
@@ -1019,7 +1033,7 @@ public class ServerDataWindow : EditorWindow
         // Check result
         if (!schemaFetchOk)
         {
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Schema request (HttpClient) failed: {schemaFetchError}\nURL: {schemaUrl}");
+            UnityEngine.Debug.LogWarning($"[ServerDataWindow] Schema request (HttpClient) failed: {schemaFetchError}\nURL: {schemaUrl} \nResponse: Make sure you have entered the correct server URL and module name and that the server is running.");
             callback?.Invoke(false, $"Error fetching schema: {schemaFetchError}");
             showServerReachableInformation = true;
             yield break; // Stop coroutine on schema failure
@@ -1035,8 +1049,19 @@ public class ServerDataWindow : EditorWindow
             {
                  // Get all tables from the schema
                  var allSchemaTables = schemaResponse.tables.Select(t => t.name).ToList();
-                 // Filter the list for the UI based on our queryable list
-                 tableNames = allSchemaTables.Where(tn => queryablePublicTables.Contains(tn)).ToList();
+                 
+                 // Filter to get only public tables based on the table_access field
+                 tableNames = schemaResponse.tables
+                     .Where(t => t.table_access != null && t.table_access.Public != null)
+                     .Select(t => t.name)
+                     .ToList();
+                     
+                 // If we couldn't find any public tables via schema, fall back to the predefined list
+                 if (!tableNames.Any())
+                 {
+                     UnityEngine.Debug.LogWarning("[ServerDataWindow] Could not detect public tables from schema. Falling back to predefined list.");
+                     tableNames = allSchemaTables.Where(tn => fallbackQueryablePublicTables.Contains(tn)).ToList();
+                 }
 
                  // Log excluded tables (optional)
                  var excludedTables = allSchemaTables.Except(tableNames).ToList();
@@ -1079,16 +1104,16 @@ public class ServerDataWindow : EditorWindow
         string sqlUrl = $"{urlBase}/database/{moduleName}/sql";
 
         // ONLY fetch data for tables we know are public and queryable
-        foreach (var tableName in queryablePublicTables)
+        foreach (var tableName in tableNames)
         {
-            // Check if this table actually exists in the schema we fetched
-            if (!tableNames.Contains(tableName))
+            // Skip if table name is null or empty (shouldn't happen)
+            if (string.IsNullOrEmpty(tableName))
             {
-                 UnityEngine.Debug.LogWarning($"[ServerDataWindow] Skipping data fetch for table '{tableName}' as it was not found in the fetched schema.");
-                 continue; // Skip to next queryable table
+                UnityEngine.Debug.LogWarning("[ServerDataWindow] Skipping data fetch for null or empty table name.");
+                continue;
             }
 
-            SetStatus($"Fetching data for '{tableName}' ({tablesRefreshed + errorCount + 1}/{queryablePublicTables.Count})...", Color.yellow);
+            SetStatus($"Fetching data for '{tableName}' ({tablesRefreshed + errorCount + 1}/{tableNames.Count})...", Color.yellow);
             Repaint();
 
             string sqlQuery = $"SELECT * FROM {tableName};";
@@ -1568,6 +1593,13 @@ public class ServerDataWindow : EditorWindow
             SetStatus("Error: Module/DB Name not set in ServerWindow.", Color.red);
             return;
         }
+        
+        // Ensure tableNames is populated if schema hasn't been loaded yet
+        if (!tableNames.Any())
+        {
+            tableNames = new List<string>(fallbackQueryablePublicTables);
+            UnityEngine.Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
+        }
 
         // 1. Ask user to select a single JSON file
         string selectedFilePath = EditorUtility.OpenFilePanel("Select SpacetimeDB Table JSON or CSV File", backupDirectory, "json,csv");
@@ -1585,7 +1617,7 @@ public class ServerDataWindow : EditorWindow
         {
             string tableName = Path.GetFileNameWithoutExtension(selectedFilePath);
             // Basic validation: Check if table name is in our known list (optional but good)
-            if (!queryablePublicTables.Contains(tableName))
+            if (!tableNames.Contains(tableName))
             {
                 errorMessage = $"Selected file '{Path.GetFileName(selectedFilePath)}' corresponds to table '{tableName}', which is not in the queryable list. Import aborted.";
                 UnityEngine.Debug.LogWarning($"[ServerDataWindow] {errorMessage}");
@@ -1688,7 +1720,15 @@ public class ServerDataWindow : EditorWindow
             SetStatus("Error: Module/DB Name not set in ServerWindow.", Color.red);
             return;
         }
-         if (string.IsNullOrEmpty(backupDirectory))
+        
+        // Ensure tableNames is populated if schema hasn't been loaded yet
+        if (!tableNames.Any())
+        {
+            tableNames = new List<string>(fallbackQueryablePublicTables);
+            UnityEngine.Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
+        }
+         
+        if (string.IsNullOrEmpty(backupDirectory))
         {
             SetStatus("Warning: Default Backup Directory not set, but proceeding.", Color.yellow);
             // Don't strictly require it, as user selects folder anyway.
@@ -1735,7 +1775,7 @@ public class ServerDataWindow : EditorWindow
             {
                  string tableName = Path.GetFileNameWithoutExtension(filePath);
                  // Basic validation: Check if table name is in our known list (optional but good)
-                 if (!queryablePublicTables.Contains(tableName)) {
+                 if (!tableNames.Contains(tableName)) {
                      UnityEngine.Debug.LogWarning($"[ServerDataWindow] Skipping import for file '{Path.GetFileName(filePath)}' as table '{tableName}' is not in the queryable list.");
                      continue;
                  }
@@ -2342,7 +2382,8 @@ public class ServerDataWindow : EditorWindow
         // the schema from the server or use a predefined map
         
         // Let's hard-code a few known patterns for specific types
-        foreach (var table in queryablePublicTables)
+        // Using our fallback list for type patterns
+        foreach (var table in fallbackQueryablePublicTables)
         {
             if (table == tableName)
             {
