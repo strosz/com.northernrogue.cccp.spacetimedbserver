@@ -2378,88 +2378,162 @@ public class ServerDataWindow : EditorWindow
     {
         Dictionary<string, string> columnTypes = new Dictionary<string, string>();
         
-        // This is a simplified implementation - in a real scenario, you might want to query
-        // the schema from the server or use a predefined map
-        
-        // Let's hard-code a few known patterns for specific types
-        // Using our fallback list for type patterns
-        foreach (var table in fallbackQueryablePublicTables)
+        try
         {
-            if (table == tableName)
+            // Get the schema from the server
+            string urlBase = GetApiBaseUrl(serverURL);
+            string schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+            
+            // Make a synchronous request since this is called from a synchronous context
+            var response = httpClient.GetAsync(schemaUrl).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
             {
-                // Special handling for known tables
-                if (table == "message" || table == "messages")
+                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Failed to fetch schema for column types: {response.StatusCode}");
+                return columnTypes;
+            }
+            
+            string schemaJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            JObject schema = JObject.Parse(schemaJson);
+            
+            // Find the table in the schema
+            JArray tables = schema["tables"] as JArray;
+            if (tables == null) return columnTypes;
+            
+            JObject targetTable = null;
+            foreach (JObject table in tables)
+            {
+                if (table["name"]?.ToString() == tableName)
                 {
-                    columnTypes["id"] = "identity"; // Primary key
-                    columnTypes["sender"] = "identity"; // Player identity
-                    columnTypes["sent"] = "timestamp"; // Timestamp
-                    columnTypes["text"] = "string"; // Text content
-                    columnTypes["sender_name"] = "string"; // Player name
+                    targetTable = table;
+                    break;
                 }
-                else if (table == "player" || table == "logged_out_player")
-                {
-                    columnTypes["identity"] = "identity";
-                    columnTypes["player_id"] = "u32";
-                    columnTypes["name"] = "string";
-                    columnTypes["entity_id"] = "entity_id_option"; // This is an Option<u32> in Rust
-                }
-                else if (table == "entity")
-                {
-                    columnTypes["entity_id"] = "u32"; // This MUST be a numeric value
-                    columnTypes["position"] = "vector3"; // DbVector3 type
-                }
-                else if (table == "mob")
-                {
-                    columnTypes["entity_id"] = "u32"; // Primary key
-                    columnTypes["speed"] = "f32"; // Float value
-                }
-                else if (table == "movement_component")
-                {
-                    columnTypes["entity_id"] = "u32"; // Primary key
-                    columnTypes["direction"] = "vector3"; // DbVector3 type
-                    columnTypes["speed"] = "f32"; // Float value
-                }
-                else if (table == "config")
-                {
-                    columnTypes["id"] = "u32"; // Primary key
-                    columnTypes["world_size"] = "u64"; // World size value
-                }
+            }
+            
+            if (targetTable == null) return columnTypes;
+            
+            // Get the product type reference for this table
+            int productTypeRef = targetTable["product_type_ref"].Value<int>();
+            
+            // Find the corresponding type in the typespace
+            JArray types = schema["typespace"]?["types"] as JArray;
+            if (types == null) return columnTypes;
+            
+            JObject productType = types[productTypeRef]?["Product"] as JObject;
+            if (productType == null) return columnTypes;
+            
+            // Get the elements array which contains the column definitions
+            JArray elements = productType["elements"] as JArray;
+            if (elements == null) return columnTypes;
+            
+            // Process each column
+            foreach (JObject element in elements)
+            {
+                string columnName = element["name"]?["some"]?.ToString();
+                if (string.IsNullOrEmpty(columnName)) continue;
                 
-                // Add more table-specific mappings as needed
-                break;
+                JObject algebraicType = element["algebraic_type"] as JObject;
+                if (algebraicType == null) continue;
+                
+                // Determine the type based on the algebraic_type structure
+                if (algebraicType["U32"] != null)
+                {
+                    columnTypes[columnName] = "u32";
+                }
+                else if (algebraicType["U64"] != null)
+                {
+                    columnTypes[columnName] = "u64";
+                }
+                else if (algebraicType["I64"] != null)
+                {
+                    columnTypes[columnName] = "i64";
+                }
+                else if (algebraicType["F32"] != null)
+                {
+                    columnTypes[columnName] = "f32";
+                }
+                else if (algebraicType["String"] != null)
+                {
+                    columnTypes[columnName] = "string";
+                }
+                else if (algebraicType["Product"] != null)
+                {
+                    // Check for special product types
+                    JObject product = algebraicType["Product"] as JObject;
+                    JArray productElements = product["elements"] as JArray;
+                    
+                    if (productElements != null && productElements.Count > 0)
+                    {
+                        JObject firstElement = productElements[0] as JObject;
+                        string elementName = firstElement["name"]?["some"]?.ToString();
+                        
+                        if (elementName == "__identity__")
+                        {
+                            columnTypes[columnName] = "identity";
+                        }
+                        else if (elementName == "__timestamp_micros_since_unix_epoch__")
+                        {
+                            columnTypes[columnName] = "timestamp";
+                        }
+                        else if (elementName == "x" || elementName == "y" || elementName == "z")
+                        {
+                            columnTypes[columnName] = "vector3";
+                        }
+                    }
+                }
+                else if (algebraicType["Sum"] != null)
+                {
+                    // Check for Option types (Sum with some/none variants)
+                    JObject sum = algebraicType["Sum"] as JObject;
+                    JArray variants = sum["variants"] as JArray;
+                    
+                    if (variants != null && variants.Count == 2)
+                    {
+                        string variant1Name = variants[0]["name"]?["some"]?.ToString();
+                        string variant2Name = variants[1]["name"]?["some"]?.ToString();
+                        
+                        if ((variant1Name == "some" && variant2Name == "none") ||
+                            (variant1Name == "none" && variant2Name == "some"))
+                        {
+                            columnTypes[columnName] = "entity_id_option";
+                        }
+                    }
+                }
+                else if (algebraicType["Ref"] != null)
+                {
+                    // Handle references to other types
+                    int refIndex = algebraicType["Ref"].Value<int>();
+                    JObject refType = types[refIndex]?["Product"] as JObject;
+                    
+                    if (refType != null)
+                    {
+                        JArray refElements = refType["elements"] as JArray;
+                        if (refElements != null && refElements.Count >= 3)
+                        {
+                            bool isVector3 = true;
+                            foreach (JObject refElement in refElements)
+                            {
+                                string refElementName = refElement["name"]?["some"]?.ToString();
+                                if (refElementName != "x" && refElementName != "y" && refElementName != "z")
+                                {
+                                    isVector3 = false;
+                                    break;
+                                }
+                            }
+                            
+                            if (isVector3)
+                            {
+                                columnTypes[columnName] = "vector3";
+                            }
+                        }
+                    }
+                }
             }
         }
-        
-        // Some common column names
-        if (!columnTypes.ContainsKey("id"))
-            columnTypes["id"] = "u32"; // Default to u32 for numeric IDs
-            
-        if (!columnTypes.ContainsKey("identity"))
-            columnTypes["identity"] = "identity";
-            
-        if (!columnTypes.ContainsKey("entity_id"))
-            columnTypes["entity_id"] = "u32"; // Default entity IDs to u32
-            
-        if (!columnTypes.ContainsKey("player_id"))
-            columnTypes["player_id"] = "u32";
-            
-        // Add any columns that look like timestamps
-        foreach (string column in new[] { "timestamp", "created_at", "updated_at", "time", "date" })
+        catch (Exception ex)
         {
-            if (!columnTypes.ContainsKey(column))
-                columnTypes[column] = "timestamp";
+            UnityEngine.Debug.LogError($"[ServerDataWindow] Error getting column types from schema: {ex.Message}");
         }
         
-        // Handle common numeric ID patterns
-        foreach (var key in columnTypes.Keys.ToArray())
-        {
-            if ((key.EndsWith("_id") || key == "id") && columnTypes[key] != "entity_id_option" && 
-                columnTypes[key] != "identity")
-            {
-                columnTypes[key] = "u32"; // Most IDs are u32
-            }
-        }
-            
         return columnTypes;
     }
 

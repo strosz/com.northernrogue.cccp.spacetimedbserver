@@ -10,9 +10,9 @@ public static class ServerWindowInitializer
     static ServerWindowInitializer()
     {
         EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-        EditorApplication.quitting += OnEditorQuitting; // Register for quit event
-         // Optional: Run a check once on editor load/recompile too
-         EditorApplication.delayCall += CheckTailProcessAfterReload; // Check on initial load too
+        EditorApplication.quitting += OnEditorQuitting;
+        EditorApplication.delayCall += CheckTailProcessAfterReload;
+        EditorApplication.wantsToQuit += OnEditorWantsToQuit;
     }
 
     private static void OnPlayModeStateChanged(PlayModeStateChange state)
@@ -59,6 +59,22 @@ public static class ServerWindowInitializer
         }
     }
 
+    // Stop WSL on editor quit
+    private static bool OnEditorWantsToQuit()
+    {
+        bool autoCloseWsl = EditorPrefs.GetBool("ServerWindow_AutoCloseWsl", true);
+        if (autoCloseWsl)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] AutoCloseWsl is enabled. Attempting to close WSL.");
+            ServerCMDProcess cmdProcessor = new ServerCMDProcess((msg, level) => {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerWindowInitializer] {msg}");
+            }, debugMode);
+            cmdProcessor.ShutdownWsl();
+        }
+        return true;
+    }
+
+    // Stop log processes on Debian
     private static void OnEditorQuitting()
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] Editor is quitting. Attempting to find ServerWindow to stop tail process.");
@@ -73,7 +89,6 @@ public static class ServerWindowInitializer
                  {
                      ServerWindow window = windows[0];
                      if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] Found ServerWindow instance. Calling StopTailProcessExplicitly.");
-                     // Need a new public method on ServerWindow to *just* stop the tail process
                      window.StopTailProcessExplicitly();
                  }
              }
@@ -83,5 +98,5 @@ public static class ServerWindowInitializer
              }
         }
     }
-}
-}
+} // Class
+} // Namespace

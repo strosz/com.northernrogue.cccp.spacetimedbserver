@@ -16,15 +16,17 @@ public class ServerLogProcess
     // Log contents
     private string silentServerCombinedLog = "";
     private string databaseLogContent = "";
+    private string cachedDatabaseLogContent = ""; // Add cached version of database logs
     
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
+    private const string SessionKeyCachedDatabaseLog = "ServerWindow_CachedDatabaseLog"; // Add session key for cached logs
     private const string SessionKeyDatabaseLogRunning = "ServerWindow_DatabaseLogRunning";
     private const string PrefsKeyPrefix = "ServerWindow_"; // Same prefix as ServerWindow
     
     // Settings
-    public bool debugMode = false;
+    public static bool debugMode = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
     private string userName = "";
@@ -59,7 +61,7 @@ public class ServerLogProcess
         this.onModuleLogUpdated = onModuleLogUpdated;
         this.onDatabaseLogUpdated = onDatabaseLogUpdated;
         this.cmdProcessor = cmdProcessor;
-        this.debugMode = debugMode;
+        ServerLogProcess.debugMode = debugMode;
         
         // Load username from EditorPrefs
         this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
@@ -68,6 +70,7 @@ public class ServerLogProcess
         // Load log content from session state
         silentServerCombinedLog = SessionState.GetString(SessionKeyCombinedLog, "");
         databaseLogContent = SessionState.GetString(SessionKeyDatabaseLog, "");
+        cachedDatabaseLogContent = SessionState.GetString(SessionKeyCachedDatabaseLog, ""); // Load cached logs
     }
     
     public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
@@ -111,9 +114,11 @@ public class ServerLogProcess
     {
         if (debugMode) logCallback("Clearing database log...", 0);
         
-        // Clear the in-memory database log content
+        // Clear both the in-memory database log content and the cache
         databaseLogContent = "";
+        cachedDatabaseLogContent = "";
         SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         
         // Notify that the log has been cleared
         if (debugMode) logCallback("Database log cleared successfully", 1);
@@ -126,7 +131,8 @@ public class ServerLogProcess
     
     public string GetDatabaseLogContent()
     {
-        return databaseLogContent;
+        // Return cached logs if server is not running, otherwise return current logs
+        return serverRunning ? databaseLogContent : cachedDatabaseLogContent;
     }
     
     public void StartLogging()
@@ -571,6 +577,9 @@ public class ServerLogProcess
                             // Append to in-memory log
                             databaseLogContent += line + "\n";
                             
+                            // Also update the cached version
+                            cachedDatabaseLogContent += line + "\n";
+                            
                             // Limit the log size
                             const int maxLogLength = 75000;
                             const int trimToLength = 50000;
@@ -578,10 +587,12 @@ public class ServerLogProcess
                             {
                                 if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars.");
                                 databaseLogContent = "[... Log Truncated ...]\n" + databaseLogContent.Substring(databaseLogContent.Length - trimToLength);
+                                cachedDatabaseLogContent = databaseLogContent; // Keep cache in sync
                             }
                             
                             // Store in SessionState
                             SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
                             
                             // Notify subscribers
                             if (onDatabaseLogUpdated != null)
@@ -597,9 +608,9 @@ public class ServerLogProcess
                 }
             };
             
-            // Handle error data received
+            // Handle error data received (Only enabled if debugMode is true)
             databaseLogProcess.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null)
+                if (args.Data != null && debugMode)
                 {
                     EditorApplication.delayCall += () => {
                         try
@@ -610,11 +621,13 @@ public class ServerLogProcess
                             // Log to the console for visibility
                             if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
                             
-                            // Append to the log
+                            // Append to both current and cached logs
                             databaseLogContent += formattedLine + "\n";
+                            cachedDatabaseLogContent += formattedLine + "\n";
                             
                             // Store in SessionState
                             SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
                             
                             // Notify subscribers
                             if (onDatabaseLogUpdated != null)
@@ -638,14 +651,22 @@ public class ServerLogProcess
                         int exitCode = -1;
                         try { exitCode = databaseLogProcess.ExitCode; } catch {}
                         
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log process exited with code: {exitCode}");
-                        
-                        // Add a message to the log with current time formatted in the same way
-                        string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-                        databaseLogContent += $"\n{timestamp} [DATABASE LOG STOPPED]\n";
+                        if (debugMode) // If we want more information
+                        {
+                            UnityEngine.Debug.Log($"[ServerLogProcess] Database log process exited with code: {exitCode}");
+                            
+                            // Add a message to the log with current time formatted in the same way
+                            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+                            string stopMessage = $"\n{timestamp} [DATABASE LOG STOPPED]\n";
+                            
+                            // Update both current and cached logs
+                            databaseLogContent += stopMessage;
+                            cachedDatabaseLogContent += stopMessage;
+                        }
                         
                         // Store in SessionState
                         SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
                         
                         // Clear the process reference
                         databaseLogProcess = null;
@@ -746,7 +767,7 @@ public class ServerLogProcess
                 string result = logLine.Replace(originalTimestamp, "").Trim();
                 
                 // Add error indicator if needed
-                string errorPrefix = isError ? " [DATABASE ERROR]" : " [DATABASE]";
+                string errorPrefix = isError ? " [DATABASE LOG ERROR]" : ""; // No prefix for normal logs
                 
                 // Return formatted output with timestamp at the start
                 return $"{formattedTimestamp}{errorPrefix} {result}";
@@ -755,7 +776,7 @@ public class ServerLogProcess
         
         // If no timestamp found or parsing failed, use current time
         string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-        string errorSuffix = isError ? " [DATABASE ERROR]" : " [DATABASE]";
+        string errorSuffix = isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{fallbackTimestamp}{errorSuffix} {logLine}";
     }
     

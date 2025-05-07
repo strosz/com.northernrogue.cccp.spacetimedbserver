@@ -161,9 +161,15 @@ public class ServerWindow : EditorWindow
     #region OnEnable
     private void OnEnable()
     {
-        // Load Editor Prefs - Pre-Requisites
+        // Load Editor Prefs - Pre-Requisites Installed items
         hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
         hasDebian = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebian", false);
+        hasDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebianTrixie", false);
+        hasCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCurl", false);
+        hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
+        hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
+        hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
+        // Load Editor Prefs - Pre-Requisites Settings
         prerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "PrerequisitesChecked", false);
         serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
         clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
@@ -182,7 +188,7 @@ public class ServerWindow : EditorWindow
         publishAndGenerateMode = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishAndGenerateMode", true);
         silentMode = EditorPrefs.GetBool(PrefsKeyPrefix + "SilentMode", true);
         debugMode = EditorPrefs.GetBool(PrefsKeyPrefix + "DebugMode", false);
-        autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", false);
+        autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
 
@@ -759,11 +765,10 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string wslCloseTooltip = 
-            "Close WSL at Server Stop: The server will close the WSL process when it is stopped. \n"+
-            "Saves resources when server is not in use.\n\n"+
-            "Keep Running: The server will keep the WSL process running after it is stopped.\n"+
-            "Allows viewing of database logs after server stop if enabled.\n\n"+
-            "Recommended: Keep Running.";
+            "Close WSL at Server Stop: The server will close the WSL process when it is stopped or Unity is closed. \n"+
+            "Saves resources when server is not in use. WSL may otherwise leave several processes running.\n\n"+
+            "Keep Running: The server will keep the WSL process running after it is stopped or Unity is closed.\n\n"+
+            "Recommended: Close WSL at Server Stop";
             EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
             if (autoCloseWsl)
@@ -778,7 +783,7 @@ public class ServerWindow : EditorWindow
             {
                 autoCloseWsl = !autoCloseWsl;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", autoCloseWsl);
-                LogMessage(autoCloseWsl ? "WSL will be shut down when the server is stopped." : "WSL will keep running after the server stops.", 0);
+                LogMessage(autoCloseWsl ? "WSL will be shut down when the server is stopped or Unity is closed." : "WSL will keep running after the server stops or Unity is closed.", 0);
                 if (autoCloseWsl) LogMessage("Database logs will disappear at server stop, if WSL Auto Close is enabled." , -2);
             }
             EditorGUILayout.EndHorizontal();
@@ -883,6 +888,9 @@ public class ServerWindow : EditorWindow
                 LogMessage(debugMode ? "Debug Mode Enabled - Verbose logs will be shown" : "Debug Mode Hidden", 0);
                 ServerOutputWindow.debugMode = debugMode; // Update ServerOutputWindow's debug mode
                 ServerWindowInitializer.debugMode = debugMode; // Update ServerWindowInitializer's debug mode
+                ServerUpdateProcess.debugMode = debugMode; // Update ServerUpdateProcess's debug mode
+                ServerLogProcess.debugMode = debugMode; // Update ServerLogProcess's debug mode
+                ServerCMDProcess.debugMode = debugMode; // Update ServerCMDProcess's debug mode
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1393,12 +1401,7 @@ public class ServerWindow : EditorWindow
     {
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
         {
-            CheckPrerequisites();
-            if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
-            {
-                LogMessage("Cannot start server. Missing prerequisites.", -1);
-                return;
-            }
+            LogMessage("Missing required installed items. Will attempt to start server.", -1);
         }
         if (string.IsNullOrEmpty(userName))
         {

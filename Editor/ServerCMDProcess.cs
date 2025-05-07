@@ -9,7 +9,7 @@ namespace NorthernRogue.CCCP.Editor {
 public class ServerCMDProcess
 {
     // Settings
-    public bool debugMode = false;
+    public static bool debugMode = false;
     private string userName = "";
     private const string PrefsKeyPrefix = "ServerWindow_";
     
@@ -30,7 +30,7 @@ public class ServerCMDProcess
     public ServerCMDProcess(Action<string, int> logCallback, bool debugMode = false)
     {
         this.logCallback = logCallback;
-        this.debugMode = debugMode;
+        ServerCMDProcess.debugMode = debugMode;
         
         // Load username from EditorPrefs
         this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");

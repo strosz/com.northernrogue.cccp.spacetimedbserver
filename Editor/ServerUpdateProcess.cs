@@ -15,16 +15,15 @@ public class ServerUpdateProcess : EditorWindow
     private const string branch = "main";
 
     private static string latestCommitSha = "";
-    private bool debugMode = false;
+    public static bool debugMode = false;
 
-    // Cosmos Unity Update Checker
+    // Cosmos Unity Update Checker // To be created
     //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";
 
-    // SpacetimeDB Update Checker
+    // SpacetimeDB Update Checker // To be created
     //private const string SpacetimeDBUpdateAvailablePrefKey = "CCCP_SpacetimeDBUpdateAvailable";
 
-    // SpacetimeDB Update Installer
-    // To be created
+    // SpacetimeDB Update Installer // To be created
 
     // Static constructor is called on editor startup
     static ServerUpdateProcess()
@@ -111,17 +110,19 @@ public class ServerUpdateProcess : EditorWindow
     }
     
     // Public static method for other scripts to check update status
-    public static bool IsUpdateAvailable()
+    public static bool IsGithubUpdateAvailable()
     {
         // EditorPrefs can also be called directly
         return EditorPrefs.GetBool(CosmosGithubUpdateAvailablePrefKey, false);
     }
 
-    // Display the update available message in the ServerWindow
+    // Display the update available message once in the ServerWindow
     private void DisplayGithubUpdateAvailable()
     {
         ServerWindow window = GetWindow<ServerWindow>();
         window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
+        // The EditorPref is set to false in ProcessCommitResponse() when no new commit is found
+        // So this message will only be displayed once
     }
 
     // Data model for JSON response
