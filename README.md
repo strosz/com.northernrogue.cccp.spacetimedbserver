@@ -3,7 +3,6 @@
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity"></a>
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
 <a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/buy%20me%20a%20ko-fi-8A2BE2"></a>
-<!-- Add other relevant badges here, e.g., license, version -->
 </p>
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
@@ -50,13 +49,12 @@ Install directly in your Unity Package Manager with this git URL
    - Export all database tables to JSON or CSV format.
    - Import single tables or entire folders in JSON or CSV format (with manual steps).
 
-⚡ **Performance:**
+⚡ **Performance**
    - No noticeable performance impact during editor runtime.
 
-🔧 **Open Source and Community Made**
-   - Full source code available on Github for free.
-   - Unity Asset Store version is the same project, but with premium support.
-   - Made by a solo developer for the community.
+🔧 **Open Source**
+   - Open source and the full source code is available on Github for free, but please consider to donate if you are using this tool actively.
+   - Unity Asset Store version is the same project and soon available.
 
 ## Supported Platforms
 
@@ -77,7 +75,8 @@ Install directly in your Unity Package Manager with this git URL
    - Get notified and update to a new SpacetimeDB version.
 
 ## Community Made
-   - This asset is created by a Swedish artist and MMO developer who wanted a way to manage SpacetimeDB directly in Unity for their own ongoing indie game project. If you like this asset and would buy me a coffee or beer if we met in real life,
+   - Created by an MMO developer who wanted to manage SpacetimeDB directly in Unity.
+   If you like this asset and would buy me a coffee or beer if we met in real life,
    please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License

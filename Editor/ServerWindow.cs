@@ -88,7 +88,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginVertical();
                
         // Load and display the logo image
-        Texture2D logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/cosmos_logo.png");
+        Texture2D logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo.png");
         if (logoTexture != null)
         {
             float maxHeight = 70f;
@@ -462,7 +462,7 @@ public class ServerWindow : EditorWindow
             // URL setting
             EditorGUILayout.BeginHorizontal();
             string urlTooltip = 
-            "Required for Server Data Viewing. The full URL of your SpacetimeDB server including port number.\nDefault: http://127.0.0.1:3000/";
+            "Required for the Server Database Window. The full URL of your SpacetimeDB server including port number.\nDefault: http://127.0.0.1:3000/";
             EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
             string newUrl = EditorGUILayout.TextField(serverUrl, GUILayout.Width(130));
             if (newUrl != serverUrl)
@@ -476,7 +476,7 @@ public class ServerWindow : EditorWindow
             // Port setting
             EditorGUILayout.BeginHorizontal();
             string portTooltip = 
-            "Required for Server Data Viewing. The port of the SpacetimeDB server\nDefault: 3000";
+            "Required for the Server Database Window. The port of the SpacetimeDB server\nDefault: 3000";
             EditorGUILayout.LabelField(new GUIContent("Port:", portTooltip), GUILayout.Width(110));
             string newPort = EditorGUILayout.TextField(spacetimePort.ToString(), GUILayout.Width(130));
             if (newPort != spacetimePort.ToString())
@@ -490,7 +490,7 @@ public class ServerWindow : EditorWindow
             // Auth Token setting
             EditorGUILayout.BeginHorizontal();
             string tokenTooltip = 
-            "Required for Server Data Viewing. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+            "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
             "Important: Keep this token secret and do not share it with anyone outside of your team.";
             EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
             string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(130));
@@ -1267,17 +1267,17 @@ public class ServerWindow : EditorWindow
         
         if (publishAndGenerateMode) {
         EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.\n" + 
-                                    "Click + Ctrl to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+                                    "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
         } else {
         EditorGUILayout.LabelField("First Publish then Generate Unity Files.\n" + 
-                        "Click + Ctrl to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
         }
         
         // Add Publish Module button
         EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(moduleName));
         
         // Check if control key is held
-        bool resetDatabase = Event.current.control;
+        bool resetDatabase = Event.current.control && Event.current.alt;
         
         // Create button style based on control key state
         GUIStyle publishButtonStyle = new GUIStyle(GUI.skin.button);
@@ -1288,6 +1288,7 @@ public class ServerWindow : EditorWindow
             ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
             publishButtonStyle.normal.textColor = warningColor;
             publishButtonStyle.hover.textColor = warningColor;
+            Repaint();
         }
         
         // Dynamic button text based on control key state

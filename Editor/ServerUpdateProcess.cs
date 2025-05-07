@@ -8,7 +8,7 @@ namespace NorthernRogue.CCCP.Editor {
 [InitializeOnLoad]
 public class ServerUpdateProcess : EditorWindow
 {
-    // Cosmos Github Update Checker
+    /////////////////////////////// Cosmos Github Update Checker ///////////////////////////////
     private const string CosmosGithubUpdateAvailablePrefKey = "CCCP_GithubUpdateAvailable";
     private const string owner = "strosz";
     private const string repo = "com.northernrogue.cccp.spacetimedbserver";
@@ -17,15 +17,15 @@ public class ServerUpdateProcess : EditorWindow
     private static string latestCommitSha = "";
     public static bool debugMode = false;
 
-    // Cosmos Unity Update Checker // To be created
+    /////////////////////////////// Cosmos Unity Update Checker ///////////////////////////////
     //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";
 
-    // SpacetimeDB Update Checker // To be created
+    /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////
     //private const string SpacetimeDBUpdateAvailablePrefKey = "CCCP_SpacetimeDBUpdateAvailable";
 
-    // SpacetimeDB Update Installer // To be created
+    /////////////////////////////// SpacetimeDB Update Installer ///////////////////////////////
+    // To be created
 
-    // Static constructor is called on editor startup
     static ServerUpdateProcess()
     {
         EditorApplication.delayCall += () => {
@@ -34,7 +34,7 @@ public class ServerUpdateProcess : EditorWindow
         };
     }
 
-    // Call this to check for updates, returns true if update is available
+    #region Github Update
     public bool CheckForNewCommit()
     {
         string storedSha = EditorPrefs.GetString("CCCP_LastCommitSha", "");
@@ -122,14 +122,16 @@ public class ServerUpdateProcess : EditorWindow
         ServerWindow window = GetWindow<ServerWindow>();
         window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
         // The EditorPref is set to false in ProcessCommitResponse() when no new commit is found
-        // So this message will only be displayed once
+        // So this LogMessage will only be displayed once
     }
 
-    // Data model for JSON response
+    // Data model for Github API response
     [Serializable]
     private class CommitData
     {
         public string sha;
     }
+    #endregion
+
 } // Class
 } // Namespace
