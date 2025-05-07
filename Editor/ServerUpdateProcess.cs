@@ -2,6 +2,8 @@ using System;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEditor;
+using UnityEditor.PackageManager;
+using UnityEditor.PackageManager.Requests;
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -15,6 +17,8 @@ public class ServerUpdateProcess : EditorWindow
     private const string branch = "main";
 
     private static string latestCommitSha = "";
+    private static AddRequest addRequest;
+    private static ServerWindow window;
     public static bool debugMode = false;
 
     /////////////////////////////// Cosmos Unity Update Checker ///////////////////////////////
@@ -119,10 +123,29 @@ public class ServerUpdateProcess : EditorWindow
     // Display the update available message once in the ServerWindow
     private void DisplayGithubUpdateAvailable()
     {
-        ServerWindow window = GetWindow<ServerWindow>();
-        window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
+        //window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
         // The EditorPref is set to false in ProcessCommitResponse() when no new commit is found
         // So this LogMessage will only be displayed once
+    }
+
+    public static void UpdateGithubPackage()
+    {
+        addRequest = Client.Add(repo);
+        
+        EditorApplication.update += GithubUpdateProgress;
+    }
+
+    private static void GithubUpdateProgress()
+    {
+        if (addRequest.IsCompleted)
+        {
+            if (addRequest.Status == StatusCode.Success)
+                window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
+            else if (addRequest.Status == StatusCode.Failure)
+                window.LogMessage("Package update failed: " + addRequest.Error.message, 1);
+                
+            EditorApplication.update -= GithubUpdateProgress;
+        }
     }
 
     // Data model for Github API response

@@ -241,8 +241,8 @@ public class ServerOutputWindow : EditorWindow
             return;
         }
 
-        string newOutputLog = SessionState.GetString(SessionKeyCombinedLog, "(No Log Found. Start your server to view logs.)");
-        string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Logs Found. Use 'View Database Logs' in Server Management to view logs.)");
+        string newOutputLog = SessionState.GetString(SessionKeyCombinedLog, "(No Module Log Found. Start your server to view logs.)");
+        string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found. Start your server to view logs.)");
         
         // Only update and invalidate cache if log content changed
         if (newOutputLog != outputLogFull || newDatabaseLog != databaseLogFull)

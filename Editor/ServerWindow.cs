@@ -48,6 +48,7 @@ public class ServerWindow : EditorWindow
     // UI
     private Vector2 scrollPosition;
     private string outputLog = "";
+    private bool autoscroll = true;
     
     // Settings
     private const string PrefsKeyPrefix = "ServerWindow_";
@@ -131,13 +132,38 @@ public class ServerWindow : EditorWindow
         
         // Output log header with Clear button
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.ExpandWidth(true));
-        
+        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.Width(120));
+
+        GUILayout.FlexibleSpace();
+
+        // Autoscroll button - now more subtle
+        EditorGUILayout.BeginVertical();
+        EditorGUILayout.Space(2);
+        GUIStyle autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
+        autoscrollStyle.fontSize = 12;
+        autoscrollStyle.normal.textColor = autoscroll ? new Color(0.43f, 0.43f, 0.43f) : new Color(0.3f, 0.3f, 0.3f);
+        if (GUILayout.Button("autoscroll", autoscrollStyle, GUILayout.Width(75)))
+        {
+            autoscroll = !autoscroll;
+            Repaint();
+        }
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(-10);
+
         // Clear button
-        if (GUILayout.Button("Clear", GUILayout.Width(50)))
+        EditorGUILayout.BeginVertical();
+        EditorGUILayout.Space(2);
+        GUIStyle clearStyle = new GUIStyle(EditorStyles.miniLabel);
+        clearStyle.fontSize = 12;
+        clearStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+        if (GUILayout.Button("clear", clearStyle, GUILayout.Width(50)))
         {
             outputLog = "";
+            Repaint();
         }
+        EditorGUILayout.EndVertical();
+
         EditorGUILayout.EndHorizontal();
         
         // Output log with rich text support
@@ -147,6 +173,21 @@ public class ServerWindow : EditorWindow
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
         EditorGUILayout.TextArea(outputLog, richTextStyle, GUILayout.ExpandHeight(true));
         EditorGUILayout.EndScrollView();
+        
+        // Auto-scroll to bottom if enabled
+        if (autoscroll && Event.current.type == EventType.Repaint)
+        {
+            scrollPosition.y = float.MaxValue;
+        }
+
+        // Github Update Button
+        if (ServerUpdateProcess.IsGithubUpdateAvailable())
+        {
+            if (GUILayout.Button("Update Available"))
+            {
+                ServerUpdateProcess.UpdateGithubPackage();
+            }
+        }
         
         EditorGUILayout.EndVertical();
 
@@ -1702,7 +1743,7 @@ public class ServerWindow : EditorWindow
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(false);
                     
-                    LogMessage("Server state updated to stopped due to port check failure.", -1);
+                    if (debugMode) LogMessage("Server state updated to stopped due to port closed.", -1);
                 } else {
                     // If we confirmed it IS running again, clear the stop flag
                     justStopped = false;
