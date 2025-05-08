@@ -79,7 +79,6 @@ public class ServerOutputWindow : EditorWindow
     // Called by ServerWindow when new log data arrives
     public static void RefreshOpenWindow()
     {
-        // Rate limiting: only allow updates every REFRESH_INTERVAL seconds
         double currentTime = EditorApplication.timeSinceStartup;
         if (currentTime - lastRefreshTime < REFRESH_INTERVAL)
         {
@@ -87,15 +86,15 @@ public class ServerOutputWindow : EditorWindow
         }
         lastRefreshTime = currentTime;
 
-        // Add Check: Don't try to refresh if editor is changing play mode.
-        // This helps prevent UI calls during potentially unstable state transitions.
+        // This helps prevent UI calls during potentially unstable Editor state transitions.
         if (EditorApplication.isPlayingOrWillChangePlaymode)
         {
             if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] RefreshOpenWindow skipped due to play mode change.");
             return;
         }
 
-        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
+        // To debug how often this is called, uncomment the line below
+        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
         
         // Get the latest log from SessionState
         string newLog = SessionState.GetString(SessionKeyCombinedLog, "");

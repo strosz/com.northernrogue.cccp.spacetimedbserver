@@ -723,5 +723,68 @@ public class ServerCMDProcess
     }
     
     #endregion
+
+    #region PingServer
+    
+    public void PingServer(string serverUrl, Action<bool, string> callback)
+    {
+        // Validate username before proceeding
+        if (!ValidateUserName())
+        {
+            callback(false, "Error: No Debian username set. Please set a valid username in the Server Window.");
+            return;
+        }
+
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "wsl.exe";
+            process.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"spacetime server ping {serverUrl}\"";
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            
+            process.Start();
+            
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            
+            // Combine output and error for parsing
+            string fullOutput = output + error;
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Ping result: {fullOutput}");
+            
+            // Check if server is online by looking for "Server is online" in the output
+            bool isOnline = fullOutput.Contains("Server is online");
+            
+            // Prepare a clean message for display
+            string message = fullOutput;
+            
+            // Remove the "WARNING: This command is UNSTABLE" line if present
+            if (message.Contains("WARNING: This command is UNSTABLE"))
+            {
+                int warningIndex = message.IndexOf("WARNING:");
+                int newlineIndex = message.IndexOf('\n', warningIndex);
+                if (newlineIndex > warningIndex)
+                {
+                    message = message.Remove(warningIndex, newlineIndex + 1 - warningIndex);
+                }
+            }
+            
+            // Trim and clean up the message
+            message = message.Trim();
+            
+            callback(isOnline, message);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerCMDProcess] Error pinging server: {ex.Message}");
+            callback(false, $"Error pinging server: {ex.Message}");
+        }
+    }
+    
+    #endregion
 } // Class
 } // Namespace

@@ -43,6 +43,7 @@ public class ServerWindow : EditorWindow
     private const double checkInterval = 5.0;
     private bool serverConfirmedRunning = false;
     private bool justStopped = false;
+    private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
 
     // UI
@@ -595,14 +596,6 @@ public class ServerWindow : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
 
-        /*EditorGUI.BeginDisabledGroup(!serverRunning); // May not be needed
-        if (GUILayout.Button("Restart Server", GUILayout.Height(20)))
-        {
-            StopServer();
-            EditorApplication.delayCall += () => StartServer();
-        }
-        EditorGUI.EndDisabledGroup();*/
-
         EditorGUI.BeginDisabledGroup(!serverStarted && !silentMode);
         if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
         {
@@ -925,7 +918,7 @@ public class ServerWindow : EditorWindow
             {
                 debugMode = !debugMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "DebugMode", debugMode);
-                LogMessage(debugMode ? "Debug Mode Enabled - Verbose logs will be shown" : "Debug Mode Hidden", 0);
+                if (debugMode) LogMessage("Debug Mode Enabled - Verbose logs will be shown for all scripts.", 0);
                 ServerOutputWindow.debugMode = debugMode; // Update ServerOutputWindow's debug mode
                 ServerWindowInitializer.debugMode = debugMode; // Update ServerWindowInitializer's debug mode
                 ServerUpdateProcess.debugMode = debugMode; // Update ServerUpdateProcess's debug mode
@@ -965,6 +958,11 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
             {
                 RunServerCommand("spacetime list", "Showing active modules");
+            }
+            
+            if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+            {
+                PingServer(true);
             }
             
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
@@ -1375,6 +1373,12 @@ public class ServerWindow : EditorWindow
         }
         
         EditorGUI.EndDisabledGroup();
+
+        // To debug server online state
+        /*if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+        {
+            LogMessage("Online: "+PingServerStatus(),0);
+        }*/
         
         EditorGUILayout.EndVertical();
     }
@@ -1437,6 +1441,9 @@ public class ServerWindow : EditorWindow
         logProcessor.ClearDatabaseLog();
         if (debugMode) LogMessage("Database log cleared successfully", 1);
     }
+    #endregion
+
+    #region Start
     
     private void StartServer()
     {
@@ -1449,24 +1456,9 @@ public class ServerWindow : EditorWindow
             LogMessage("Cannot start server. Debian username is not set.", -1);
             return;
         }
-
-        if (cmdProcessor.CheckIfServerRunningWsl()) // Check if server is running
-        {
-            LogMessage("Server appears to be already running (checked via WSL PID).", 1);
-            if (!serverStarted)
-            {
-                serverStarted = true;
-                isStartingUp = false;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-                Repaint();
-            }
-            return; 
-        }
-        else
-        {
-             cmdProcessor.RemoveStalePidWsl(); // Clean up PID if server not running
-        }
-
+        
+        LogMessage("Start sequence initiated. Waiting for confirmation...", 0);
+        
         try
         {
             // Configure log processor with current settings
@@ -1485,12 +1477,14 @@ public class ServerWindow : EditorWindow
             }
             else
             {
-                // Start visible mode
+                // Start visible CMD server process
                 LogMessage("Starting Spacetime Server (Visible CMD)...", 0);
                 serverProcess = cmdProcessor.StartVisibleServerProcess(serverDirectory);
                 if (serverProcess == null) throw new Exception("Failed to start visible server process");
             }
-            
+
+            LogMessage("Server Succesfully Started!",1);
+        
             // Mark server as starting up
             isStartingUp = true;
             startupTime = (float)EditorApplication.timeSinceStartup;
@@ -1499,8 +1493,6 @@ public class ServerWindow : EditorWindow
             
             // Update log processor state
             logProcessor.SetServerRunningState(true);
-            
-            LogMessage("Start sequence initiated. Waiting for confirmation...", 0);
         }
         catch (Exception ex)
         {
@@ -1519,38 +1511,13 @@ public class ServerWindow : EditorWindow
             Repaint(); 
         }
     }
+    #endregion
 
-    // Separate Exited handler for the background process (Silent Mode)
-    private void HandleBackgroundProcessExited(object sender, EventArgs e)
-    {
-         EditorApplication.delayCall += () => {
-            try {
-                int exitCode = -999;
-                string exitMsg = "Background WSL process exited.";
-                Process p = sender as Process;
-                if(p != null) { try { exitCode = p.ExitCode; } catch { exitCode = -998; } }
-                
-                // This exit doesn't necessarily mean the *server* stopped, just the initial WSL command finished.
-                // Only log it, don't change serverStarted state here. CheckServerStatus handles actual server state.
-                if (debugMode) LogMessage($"{exitMsg} Exit Code: {exitCode}. (CheckServerStatus confirms actual server state via port).", 0);
-
-                if(p == serverProcess) serverProcess = null; // Clear our reference to this process
-                Repaint();
-            } catch (Exception ex) {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow Background Exited Handler Error]: {ex}");
-            }
-        };
-    }
-
-    // Helper to convert path for Visible mode command
-    private string GetWslPath(string windowsPath)
-    {
-        return cmdProcessor.GetWslPath(windowsPath);
-    }
+    #region Stop
 
     private void StopServer()
     {
-        if (debugMode) LogMessage("Stop Server button clicked.", 0);
+        if (debugMode) LogMessage("Stop Server process has been called.", 0);
         isStartingUp = false; // Ensure startup flag is cleared
         serverConfirmedRunning = false; // Reset confirmed state
 
@@ -1578,8 +1545,7 @@ public class ServerWindow : EditorWindow
             justStopped = true; // Set flag indicating stop was just initiated
             stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
 
-            if (debugMode) LogMessage("Stop sequence finished. Server state set to stopped.", 0);
-            else LogMessage("Server Successfully Stopped.", 1);
+            LogMessage("Server Successfully Stopped.", 1);
             
             // Update log processor state
             logProcessor.SetServerRunningState(false);
@@ -1591,54 +1557,6 @@ public class ServerWindow : EditorWindow
             }
 
             Repaint();
-        }
-    }
-
-    private void ViewServerLogs()
-    {
-        if (silentMode)
-        {
-            // In silent mode, ALWAYS open the output window 
-            if (debugMode) LogMessage("Opening/focusing silent server output window...", 0);
-            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
-        }
-        else if (serverStarted)
-        {
-            // In CMD mode, both remind about server logs and open a new window for database logs
-            LogMessage("Server logs are in the SpacetimeDB server CMD window.", 0);
-            
-            // Open a new Debian window to view database logs
-            LogMessage("Opening a new window for database logs...", 0);
-            
-            try
-            {
-                // Create a process to run "spacetime logs moduleName -f" in a visible window
-                Process dbLogProcess = new Process();
-                dbLogProcess.StartInfo.FileName = "cmd.exe";
-                
-                // Build command to show database logs
-                string wslPath = cmdProcessor.GetWslPath(serverDirectory);
-                string logCommand = $"cd \"{wslPath}\" && spacetime logs {moduleName} -f";
-                
-                // Build full command with appropriate escaping
-                string escapedCommand = logCommand.Replace("\"", "\\\"");
-                dbLogProcess.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l -c \"{escapedCommand}\"";
-                dbLogProcess.StartInfo.UseShellExecute = true;
-                dbLogProcess.StartInfo.WindowStyle = ProcessWindowStyle.Normal;
-                dbLogProcess.StartInfo.CreateNoWindow = false;
-                
-                dbLogProcess.Start();
-                LogMessage("Database logs window opened. Close the window when finished.", 0);
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error opening database logs window: {ex.Message}", -1);
-            }
-        }
-        else
-        {
-            // Not silent, not running
-            LogMessage("Server is not running.", -1);
         }
     }
     #endregion
@@ -1653,8 +1571,8 @@ public class ServerWindow : EditorWindow
         // Check if port is in use
         bool isPortOpen = await cmdProcessor.CheckPortAsync(spacetimePort);
         
-        // --- Reset justStopped flag if grace period expired ---
-        const double stopGracePeriod = 10.0; // Grace period in seconds
+        // --- Reset justStopped flag after 5 seconds if grace period expired ---
+        const double stopGracePeriod = 5.0;
         if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
         {
             if (debugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
@@ -1670,7 +1588,6 @@ public class ServerWindow : EditorWindow
             if (isPortOpen)
             {
                 if (debugMode) LogMessage($"Startup confirmed: Port {spacetimePort} is now open.", 1);
-                else LogMessage("Server Successfully Started!", 1);
                 isStartingUp = false;
                 serverStarted = true; // Explicitly confirm started state
                 serverConfirmedRunning = true;
@@ -1685,11 +1602,11 @@ public class ServerWindow : EditorWindow
                 // Auto-publish check if applicable
                 if (autoPublishMode && serverChangesDetected && !string.IsNullOrEmpty(moduleName))
                 {
-                     LogMessage("Server running with pending changes - auto-publishing...", 0);
-                     RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
-                     serverChangesDetected = false;
-                     originalFileSizes.Clear();
-                     currentFileSizes.Clear();
+                    LogMessage("Server running with pending changes - auto-publishing...", 0);
+                    RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
+                    serverChangesDetected = false;
+                    originalFileSizes.Clear();
+                    currentFileSizes.Clear();
                 }
                 return; // Confirmed, skip further checks this cycle
             }
@@ -1765,16 +1682,19 @@ public class ServerWindow : EditorWindow
             }
             else
             {
-                // Port detected, not recently stopped -> likely external start/recovery
-                LogMessage($"Detected server running on port {spacetimePort}.", 1);
-                serverStarted = true;
-                serverConfirmedRunning = true;
-                isStartingUp = false; 
-                justStopped = false; // Ensure flag is clear if we recover state
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-                
-                // Update logProcessor state
-                logProcessor.SetServerRunningState(true);
+                if (PingServerStatus()) // Also ping the server to check if the port information is correct
+                {
+                    // Port detected, not recently stopped -> likely external start/recovery
+                    LogMessage($"Detected server running on port {spacetimePort}.", 1);
+                    serverStarted = true;
+                    serverConfirmedRunning = true;
+                    isStartingUp = false; 
+                    justStopped = false; // Ensure flag is clear if we recover state
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
+                    
+                    // Update logProcessor state
+                    logProcessor.SetServerRunningState(true);
+                }
                 
                 Repaint();
             }
@@ -1991,6 +1911,44 @@ public class ServerWindow : EditorWindow
     {
         cmdProcessor.OpenDebianWindow();
     }
+
+    public bool PingServerStatus()
+    {
+        PingServer(false);
+        return pingShowsOnline;
+    }
+    
+    private void PingServer(bool showLog)
+    {
+        string url = !string.IsNullOrEmpty(serverUrl) ? serverUrl : "http://127.0.0.1:3000";
+        if (url.EndsWith("/"))
+        {
+            url = url.TrimEnd('/');
+        }
+        if (debugMode) LogMessage($"Pinging server at {url}...", 0);
+        
+        cmdProcessor.PingServer(url, (isOnline, message) => {
+            EditorApplication.delayCall += () => {
+                if (isOnline)
+                {
+                    if (showLog) LogMessage($"Server is online: {url}", 1);
+                    pingShowsOnline = true;
+                }
+                else
+                {
+                    if (showLog) LogMessage($"Server is offline: {message}", -1);
+                    pingShowsOnline = false;
+                }
+                
+                Repaint();
+            };
+        });
+    }
+
+    private string GetWslPath(string windowsPath)
+    {
+        return cmdProcessor.GetWslPath(windowsPath);
+    }
     
     private string GetStatusIcon(bool status)
     {
@@ -2054,6 +2012,9 @@ public class ServerWindow : EditorWindow
             return defaultPath;
         }
     }
+    #endregion
+
+    #region LogMessage
     
     public void LogMessage(string message, int style)
     {
@@ -2090,6 +2051,54 @@ public class ServerWindow : EditorWindow
         }
         
         Repaint();
+    }
+
+    // Opens Output Log window in silent mode or CMD window with Database logs in CMD mode
+    private void ViewServerLogs()
+    {
+        if (silentMode)
+        {
+            if (debugMode) LogMessage("Opening/focusing silent server output window...", 0);
+            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
+        }
+        else if (serverStarted)
+        {
+            // In CMD mode, both remind about server logs and open a new window for database logs
+            LogMessage("Server logs are in the SpacetimeDB server CMD window.", 0);
+            
+            // Open a new Debian window to view database logs
+            LogMessage("Opening a new window for database logs...", 0);
+            
+            try
+            {
+                // Create a process to run "spacetime logs moduleName -f" in a visible window
+                Process dbLogProcess = new Process();
+                dbLogProcess.StartInfo.FileName = "cmd.exe";
+                
+                // Build command to show database logs
+                string wslPath = cmdProcessor.GetWslPath(serverDirectory);
+                string logCommand = $"cd \"{wslPath}\" && spacetime logs {moduleName} -f";
+                
+                // Build full command with appropriate escaping
+                string escapedCommand = logCommand.Replace("\"", "\\\"");
+                dbLogProcess.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l -c \"{escapedCommand}\"";
+                dbLogProcess.StartInfo.UseShellExecute = true;
+                dbLogProcess.StartInfo.WindowStyle = ProcessWindowStyle.Normal;
+                dbLogProcess.StartInfo.CreateNoWindow = false;
+                
+                dbLogProcess.Start();
+                LogMessage("Database logs window opened. Close the window when finished.", 0);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error opening database logs window: {ex.Message}", -1);
+            }
+        }
+        else
+        {
+            // Not silent, not running
+            LogMessage("Server is not running.", -1);
+        }
     }
 
     private void CopyDirectory(string sourceDir, string destDir)
@@ -2168,6 +2177,28 @@ public class ServerWindow : EditorWindow
         {
             logProcessor.AttemptDatabaseLogRestartAfterReload();
         }
+    }
+
+    // Separate Exited handler for the background process (Silent Mode)
+    private void HandleBackgroundProcessExited(object sender, EventArgs e)
+    {
+         EditorApplication.delayCall += () => {
+            try {
+                int exitCode = -999;
+                string exitMsg = "Background WSL process exited.";
+                Process p = sender as Process;
+                if(p != null) { try { exitCode = p.ExitCode; } catch { exitCode = -998; } }
+                
+                // This exit doesn't necessarily mean the *server* stopped, just the initial WSL command finished.
+                // Only log it, don't change serverStarted state here. CheckServerStatus handles actual server state.
+                if (debugMode) LogMessage($"{exitMsg} Exit Code: {exitCode}. (CheckServerStatus confirms actual server state via port).", 0);
+
+                if(p == serverProcess) serverProcess = null; // Clear our reference to this process
+                Repaint();
+            } catch (Exception ex) {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow Background Exited Handler Error]: {ex}");
+            }
+        };
     }
 
     // Display Cosmos Cove Control Panel title text in the menu bar
