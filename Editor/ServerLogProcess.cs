@@ -1,6 +1,7 @@
 using UnityEditor;
 using System.Diagnostics;
 using System;
+using System.Text;
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -17,6 +18,12 @@ public class ServerLogProcess
     private string silentServerCombinedLog = "";
     private string databaseLogContent = "";
     private string cachedDatabaseLogContent = ""; // Add cached version of database logs
+    
+    // Added for performance - accumulated logs between SessionState updates
+    private StringBuilder moduleLogAccumulator = new StringBuilder();
+    private StringBuilder databaseLogAccumulator = new StringBuilder();
+    private DateTime lastSessionStateUpdateTime = DateTime.MinValue;
+    private const double sessionStateUpdateInterval = 1.0; // Update SessionState at most once per second
     
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
@@ -335,7 +342,33 @@ public class ServerLogProcess
                         try {
                             // Format original timestamp if present, otherwise add one
                             string formattedLine = FormatServerLogLine(args.Data);
-                            onNewLine(formattedLine); // Pass the formatted line to handler
+                            
+                            // Update in-memory log immediately
+                            silentServerCombinedLog += formattedLine + "\n";
+                            
+                            // Add to accumulator
+                            moduleLogAccumulator.AppendLine(formattedLine);
+                            
+                            // Manage log size immediately
+                            const int maxLogLength = 75000;
+                            const int trimToLength = 50000;
+                            if (silentServerCombinedLog.Length > maxLogLength)
+                            {
+                                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
+                                silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                            }
+                            
+                            // Update SessionState less frequently
+                            UpdateSessionStateIfNeeded();
+                            
+                            // Call callback for immediate UI update regardless of SessionState update
+                            onNewLine(formattedLine);
+                            
+                            // Notify subscribers
+                            if (onModuleLogUpdated != null)
+                            {
+                                onModuleLogUpdated();
+                            }
                         }
                         catch (Exception ex) {
                             if (debugMode) UnityEngine.Debug.LogError($"[Tail Output Handler Error]: {ex}");
@@ -509,6 +542,23 @@ public class ServerLogProcess
         StopTailingLogs();
     }
     
+    // Helper method to update SessionState less frequently
+    private void UpdateSessionStateIfNeeded()
+    {
+        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;
+        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
+        {
+            SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+            lastSessionStateUpdateTime = DateTime.Now;
+            
+            // Clear accumulators after update
+            moduleLogAccumulator.Clear();
+            databaseLogAccumulator.Clear();
+        }
+    }
+    
     #endregion
     
     #region Database Log Management
@@ -580,6 +630,9 @@ public class ServerLogProcess
                             // Also update the cached version
                             cachedDatabaseLogContent += line + "\n";
                             
+                            // Add to accumulator
+                            databaseLogAccumulator.AppendLine(line);
+                            
                             // Limit the log size
                             const int maxLogLength = 75000;
                             const int trimToLength = 50000;
@@ -590,11 +643,10 @@ public class ServerLogProcess
                                 cachedDatabaseLogContent = databaseLogContent; // Keep cache in sync
                             }
                             
-                            // Store in SessionState
-                            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+                            // Update SessionState less frequently
+                            UpdateSessionStateIfNeeded();
                             
-                            // Notify subscribers
+                            // Notify subscribers regardless of SessionState update
                             if (onDatabaseLogUpdated != null)
                             {
                                 onDatabaseLogUpdated();

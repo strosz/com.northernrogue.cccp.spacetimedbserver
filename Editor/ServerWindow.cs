@@ -825,7 +825,6 @@ public class ServerWindow : EditorWindow
                 autoCloseWsl = !autoCloseWsl;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", autoCloseWsl);
                 LogMessage(autoCloseWsl ? "WSL will be shut down when the server is stopped or Unity is closed." : "WSL will keep running after the server stops or Unity is closed.", 0);
-                if (autoCloseWsl) LogMessage("Database logs will disappear at server stop, if WSL Auto Close is enabled." , -2);
             }
             EditorGUILayout.EndHorizontal();
 
@@ -1658,6 +1657,7 @@ public class ServerWindow : EditorWindow
         const double stopGracePeriod = 10.0; // Grace period in seconds
         if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
         {
+            if (debugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
             justStopped = false;
         }
         
@@ -1732,7 +1732,7 @@ public class ServerWindow : EditorWindow
                 string msg = isActuallyRunning
                     ? $"Server running confirmed (Port {spacetimePort}: open)"
                     : $"Server appears to have stopped (Port {spacetimePort}: closed)";
-                LogMessage(msg, isActuallyRunning ? 1 : -1);
+                LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                 // If state changed to NOT running, update the main serverStarted flag
                 if (!isActuallyRunning)

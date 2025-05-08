@@ -52,9 +52,10 @@ Install directly in your Unity Package Manager with this git URL
 ⚡ **Performance**
    - No noticeable performance impact during editor runtime.
 
-🔧 **Open Source**
+🔧 **Source Available, Free and soon Open Source**
    - The full source code is available on Github for free. Please consider to donate if you are using this tool actively.
-   - Unity Asset Store version is the same project and soon available.
+   - Unity Asset Store version is the same version.
+   - Soon releasing it under MIT license.
 
 ## Supported Platforms
 
@@ -72,11 +73,11 @@ Install directly in your Unity Package Manager with this git URL
 ## Upcoming Features
    - Server profiles.
    - Maincloud support.
-   - Get notified and update to a new SpacetimeDB version.
+   - Notification and updater to a new SpacetimeDB server version.
 
 ## Community Made
    - Created by an MMO developer who wanted to manage SpacetimeDB directly in Unity.
-   If you like this asset and would buy me a coffee or beer if we met in real life,
+   If you like this asset and would buy me a coffee or beer if we met,
    please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License
