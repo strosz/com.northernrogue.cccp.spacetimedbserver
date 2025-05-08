@@ -48,6 +48,10 @@ public class ServerOutputWindow : EditorWindow
     private double lastRepaintTime = 0; // For limiting repaints
     private const double MIN_REPAINT_INTERVAL = 0.1; // Minimum time between repaints in seconds
     private const int MAX_TEXT_LENGTH = 100000; // Maximum text length to show
+
+    // RefreshOpenWindow rate limiting
+    private static double lastRefreshTime = 0;
+    private const double REFRESH_INTERVAL = 1.0; // How often it can echo to console, won't affect rate of logs in window
     
     // Style-related fields
     private GUIStyle logStyle;
@@ -75,6 +79,14 @@ public class ServerOutputWindow : EditorWindow
     // Called by ServerWindow when new log data arrives
     public static void RefreshOpenWindow()
     {
+        // Rate limiting: only allow updates every REFRESH_INTERVAL seconds
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (currentTime - lastRefreshTime < REFRESH_INTERVAL)
+        {
+            return;
+        }
+        lastRefreshTime = currentTime;
+
         // Add Check: Don't try to refresh if editor is changing play mode.
         // This helps prevent UI calls during potentially unstable state transitions.
         if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -83,7 +95,7 @@ public class ServerOutputWindow : EditorWindow
             return;
         }
 
-        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called.");
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
         
         // Get the latest log from SessionState
         string newLog = SessionState.GetString(SessionKeyCombinedLog, "");

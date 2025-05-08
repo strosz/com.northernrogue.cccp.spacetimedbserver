@@ -55,8 +55,8 @@ public class ServerCMDProcess
         EditorPrefs.SetString(PrefsKeyPrefix + "UserName", this.userName);
     }
     
-    #region Installation Methods
-    
+    #region Installation
+
     public async Task<bool> RunPowerShellInstallCommand(string command, Action<string, int> statusCallback = null, bool visibleProcess = true, bool keepWindowOpenForDebug = false)
     {
         Process process = null;
@@ -273,6 +273,9 @@ public class ServerCMDProcess
             logCallback($"Error opening Debian window: {ex.Message}", -1);
         }
     }
+    #endregion
+
+    #region WSL Control
     
     public void ShutdownWsl()
     {
@@ -313,6 +316,9 @@ public class ServerCMDProcess
             if (debugMode) logCallback($"Error attempting to start WSL: {ex.Message}", -1);
         }
     }
+    #endregion
+
+    #region CheckPort
     
     public async Task<bool> CheckPortAsync(int port)
     {
@@ -395,7 +401,10 @@ public class ServerCMDProcess
             return false;
         }
     }
+    #endregion
     
+    #region CheckPrereq
+
     public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool> callback)
     {
         logCallback("Checking pre-requisites...", 0);
@@ -464,6 +473,9 @@ public class ServerCMDProcess
         }
         callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust);
     }
+    #endregion
+
+    #region StopServer
     
     public bool StopServer(string commandPattern = null)
     {
@@ -550,7 +562,10 @@ public class ServerCMDProcess
         string command = $"rm -f {WslPidPath}";
         RunWslCommandSilent(command);
     }
-    
+    #endregion
+
+    #region RunWSLCommand
+
     public int RunWslCommandSilent(string bashCommand)
     {
         // Validate username before proceeding
@@ -583,7 +598,10 @@ public class ServerCMDProcess
             return -1; // Indicate failure
         }
     }
+    #endregion
     
+    #region RunServerCommand
+
     public async Task<(string output, string error, bool success)> RunServerCommandAsync(string command, string serverDirectory = null)
     {
         // Validate username before proceeding

@@ -2,6 +2,9 @@ using UnityEditor;
 using System.Diagnostics;
 using System;
 using System.Text;
+using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -56,6 +59,16 @@ public class ServerLogProcess
     
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
+
+    // Thread-safe queue and processing fields
+    private readonly ConcurrentQueue<string> databaseLogQueue = new ConcurrentQueue<string>();
+    private readonly object logLock = new object();
+    private CancellationTokenSource processingCts;
+    private Task processingTask;
+    private const int PROCESS_INTERVAL_MS = 100; // Process queued logs every 100ms
+    private const int BUFFER_SIZE = 300000; // Equals to around 700kB
+    private const int TARGET_SIZE = 50000;
+    private volatile bool isProcessing = false;
     
     public ServerLogProcess(
         Action<string, int> logCallback, 
@@ -78,6 +91,9 @@ public class ServerLogProcess
         silentServerCombinedLog = SessionState.GetString(SessionKeyCombinedLog, "");
         databaseLogContent = SessionState.GetString(SessionKeyDatabaseLog, "");
         cachedDatabaseLogContent = SessionState.GetString(SessionKeyCachedDatabaseLog, ""); // Load cached logs
+
+        processingCts = new CancellationTokenSource();
+        StartLogLimiter();
     }
     
     public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
@@ -190,6 +206,14 @@ public class ServerLogProcess
     
     public void StopLogging()
     {
+        processingCts?.Cancel();
+        try
+        {
+            processingTask?.Wait(1000);
+        }
+        catch (Exception) { }
+        
+        processingCts = new CancellationTokenSource();
         StopTailingLogs();
         StopDatabaseLogProcess();
     }
@@ -602,61 +626,12 @@ public class ServerLogProcess
             databaseLogProcess.StartInfo.RedirectStandardError = true;
             databaseLogProcess.EnableRaisingEvents = true;
             
-            // Counter for initial log entries we want to skip
-            int initialLogsToSkip = clearDatabaseLogAtStart ? 10 : 0;
-            int logLineCount = 0;
-            
             // Handle output data received
             databaseLogProcess.OutputDataReceived += (sender, args) => {
                 if (args.Data != null)
                 {
-                    EditorApplication.delayCall += () => {
-                        try
-                        {
-                            // Skip first few logs if clearDatabaseLogAtStart is enabled
-                            if (clearDatabaseLogAtStart && logLineCount < initialLogsToSkip)
-                            {
-                                logLineCount++;
-                                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Skipping initial database log line {logLineCount}/{initialLogsToSkip}");
-                                return;
-                            }
-                            
-                            // Extract and format timestamp from the original log line
-                            string line = FormatDatabaseLogLine(args.Data);
-                            
-                            // Append to in-memory log
-                            databaseLogContent += line + "\n";
-                            
-                            // Also update the cached version
-                            cachedDatabaseLogContent += line + "\n";
-                            
-                            // Add to accumulator
-                            databaseLogAccumulator.AppendLine(line);
-                            
-                            // Limit the log size
-                            const int maxLogLength = 75000;
-                            const int trimToLength = 50000;
-                            if (databaseLogContent.Length > maxLogLength)
-                            {
-                                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars.");
-                                databaseLogContent = "[... Log Truncated ...]\n" + databaseLogContent.Substring(databaseLogContent.Length - trimToLength);
-                                cachedDatabaseLogContent = databaseLogContent; // Keep cache in sync
-                            }
-                            
-                            // Update SessionState less frequently
-                            UpdateSessionStateIfNeeded();
-                            
-                            // Notify subscribers regardless of SessionState update
-                            if (onDatabaseLogUpdated != null)
-                            {
-                                onDatabaseLogUpdated();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            if (debugMode) UnityEngine.Debug.LogError($"[Database Log Handler Error]: {ex}");
-                        }
-                    };
+                    string line = FormatDatabaseLogLine(args.Data);
+                    databaseLogQueue.Enqueue(line);
                 }
             };
             
@@ -664,34 +639,9 @@ public class ServerLogProcess
             databaseLogProcess.ErrorDataReceived += (sender, args) => {
                 if (args.Data != null && debugMode)
                 {
-                    EditorApplication.delayCall += () => {
-                        try
-                        {
-                            // Don't skip error messages
-                            string formattedLine = FormatDatabaseLogLine(args.Data, true);
-                            
-                            // Log to the console for visibility
-                            if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
-                            
-                            // Append to both current and cached logs
-                            databaseLogContent += formattedLine + "\n";
-                            cachedDatabaseLogContent += formattedLine + "\n";
-                            
-                            // Store in SessionState
-                            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-                            
-                            // Notify subscribers
-                            if (onDatabaseLogUpdated != null)
-                            {
-                                onDatabaseLogUpdated();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error Handler Error]: {ex}");
-                        }
-                    };
+                    string formattedLine = FormatDatabaseLogLine(args.Data, true);
+                    if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
+                    databaseLogQueue.Enqueue(formattedLine);
                 }
             };
             
@@ -830,6 +780,77 @@ public class ServerLogProcess
         string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string errorSuffix = isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{fallbackTimestamp}{errorSuffix} {logLine}";
+    }
+    #endregion
+
+    #region Log Limiter
+
+    private void StartLogLimiter() // Background log length processor
+    {
+        if (isProcessing) return;
+        
+        isProcessing = true;
+        processingTask = Task.Run(async () => {
+            try
+            {
+                while (!processingCts.Token.IsCancellationRequested)
+                {
+                    ProcessLogQueue();
+                    await Task.Delay(PROCESS_INTERVAL_MS, processingCts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal cancellation
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Log processor error: {ex}");
+            }
+            finally
+            {
+                isProcessing = false;
+            }
+        }, processingCts.Token);
+    }
+
+    private void ProcessLogQueue()
+    {
+        if (databaseLogQueue.IsEmpty) return;
+
+        StringBuilder batchedLogs = new StringBuilder();
+        while (databaseLogQueue.TryDequeue(out string logLine))
+        {
+            batchedLogs.AppendLine(logLine);
+        }
+
+        if (batchedLogs.Length > 0)
+        {
+            lock (logLock)
+            {
+                databaseLogContent += batchedLogs.ToString();
+                cachedDatabaseLogContent += batchedLogs.ToString();
+
+                // Check if we need to truncate
+                if (databaseLogContent.Length > BUFFER_SIZE)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars. If this happens frequently, please fix your database error or raise the buffer size.");
+                    string truncatedContent = "[... Log Truncated ...]\n" + 
+                        databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
+                    databaseLogContent = truncatedContent;
+                    cachedDatabaseLogContent = truncatedContent;
+                }
+            }
+
+            // Update UI on main thread
+            EditorApplication.delayCall += () => {
+                UpdateSessionStateIfNeeded();
+                if (onDatabaseLogUpdated != null)
+                {
+                    onDatabaseLogUpdated();
+                }
+            };
+        }
     }
     
     #endregion
