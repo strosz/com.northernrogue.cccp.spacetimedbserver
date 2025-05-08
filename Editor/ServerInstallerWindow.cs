@@ -559,7 +559,7 @@ public class ServerInstallerWindow : EditorWindow
         "WSL1 and WSL2 allows you to run a Linux distribution within Windows. This allows SpacetimeDB to run silently and be more easily controlled when running locally.\n\n" +
         "WSL2 is the latest and recommended version.\n" +
         "WSL1 has better compability with some systems.\n\n" +
-        "CCCP will now run a test to determine if your PC supports Hyper-V which is necessary for WSL2.\n\n"
+        "Cosmos Cove Control Panel will now run a compability test to determine if your PC supports Virtualization and Hyper-V which is necessary for WSL2.\n\n"
         , "OK");
 
         bool installedSuccessfully = false;
@@ -585,6 +585,8 @@ public class ServerInstallerWindow : EditorWindow
                     {
                         SetStatus("WSL1 with Debian installation failed. Please check console output.", Color.red);
                     }
+                } else {
+                    SetStatus("WSL1 with Debian installation failed. Please check console output.", Color.red);
                 }
             } else {
                 SetStatus("WSL1 with Debian installation cancelled.", Color.yellow);

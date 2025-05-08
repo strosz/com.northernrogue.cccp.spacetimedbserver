@@ -119,16 +119,16 @@ public class ServerWindow : EditorWindow
         }
         
         DrawPrerequisitesSection();
-        EditorGUILayout.Space(10);
+        EditorGUILayout.Space(5);
         
         DrawSettingsSection();
-        EditorGUILayout.Space(10);
+        EditorGUILayout.Space(5);
 
         DrawServerSection();
-        EditorGUILayout.Space(10);
+        EditorGUILayout.Space(5);
         
         DrawCommandsSection();
-        EditorGUILayout.Space(10);
+        EditorGUILayout.Space(5);
         
         // Output log header with Clear button
         EditorGUILayout.BeginHorizontal();
@@ -183,7 +183,7 @@ public class ServerWindow : EditorWindow
         // Github Update Button
         if (ServerUpdateProcess.IsGithubUpdateAvailable())
         {
-            if (GUILayout.Button("Update Available"))
+            if (GUILayout.Button("New Update for CCCP Available"))
             {
                 ServerUpdateProcess.UpdateGithubPackage();
             }
@@ -595,13 +595,13 @@ public class ServerWindow : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
 
-        EditorGUI.BeginDisabledGroup(!serverRunning);
+        /*EditorGUI.BeginDisabledGroup(!serverRunning); // May not be needed
         if (GUILayout.Button("Restart Server", GUILayout.Height(20)))
         {
             StopServer();
             EditorApplication.delayCall += () => StartServer();
         }
-        EditorGUI.EndDisabledGroup();
+        EditorGUI.EndDisabledGroup();*/
 
         EditorGUI.BeginDisabledGroup(!serverStarted && !silentMode);
         if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))

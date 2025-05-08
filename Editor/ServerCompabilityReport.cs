@@ -166,17 +166,17 @@ public class ServerCompabilityReport : EditorWindow
         try
         {
             
-            hyperVAvailable = await CheckHyperVAvailableAsync();
+            hyperVAvailable = await CheckCPUVirtualizationSupportAsync();
         }
         catch (Exception ex)
         {
             UnityEngine.Debug.LogError($"Error checking Hyper-V availability: {ex.Message}");
-            currentResultDetails += $"✓ Hyper-V Available: Error checking - {ex.Message}\n";
+            currentResultDetails += $"✓ Hyper-V Supported: Error checking - {ex.Message}\n";
         }
         
         if (!currentResultDetails.Contains("Hyper-V Available: Error"))
         {
-            currentResultDetails += $"✓ Hyper-V Available: {(hyperVAvailable ? "Yes" : "No - Your CPU may not support required virtualization features")}\n";
+            currentResultDetails += $"✓ Hyper-V Supported: {(hyperVAvailable ? "Yes" : "No - Your CPU may not support required virtualization features")}\n";
         }
 
         // Determine overall compatibility
@@ -189,9 +189,11 @@ public class ServerCompabilityReport : EditorWindow
             currentResultDetails += 
             "It's recommended to install WSL2 for your system for best performance.\n" +
             "Regardless of chosen WSL, remember to always backup anything important\n" +
-            "on your PC before continuing.\n" +
+            "on your PC before continuing.\n\n" +
             "WSL2 enables a Virtual Machine Platform hypervisor, which can be\n" +
-            "incompatible with WMWare and VirtualBox. Make sure to check this before.\n" +
+            "incompatible with WMWare and VirtualBox. Some older Windows PCs may\n" +
+            "also not support WSL2. While this compability tool should be accurate\n" +
+            "I leave no responsibility for any issues that may occur from installing WSL2.\n" +
             "Refer to the CCCP documentation if the automatic installation fails.";
         } else {
             currentResultDetails += 
@@ -238,19 +240,11 @@ public class ServerCompabilityReport : EditorWindow
             using (Process process = new Process())
             {
                 process.StartInfo.FileName = "powershell";
-                // Simple, fast command that only checks CPU virtualization via CPU flags
                 process.StartInfo.Arguments = @"-Command ""
                     try {
-                        # Check for 'vmx' (Intel) or 'svm' (AMD) flags in CPU info
-                        $flags = (Get-CimInstance -ClassName Win32_Processor -Property 'ProcessorId' -ErrorAction Stop | 
-                                Select-Object -First 1).ProcessorId;
-                        
-                        # Default to true since Task Manager shows virtualization is enabled
-                        # This is a fallback since we know from user feedback that virtualization is enabled
-                        $result = $true;
-                        
-                        # Output the result
-                        Write-Output 'True';
+                        # Check for virtualization firmware enabled
+                        $result = (Get-WmiObject Win32_Processor).VirtualizationFirmwareEnabled;
+                        Write-Output $result.ToString();
                     } 
                     catch {
                         # If anything goes wrong, output false
@@ -308,7 +302,7 @@ public class ServerCompabilityReport : EditorWindow
     }
 
     // Made static and async with timeout
-    private static async Task<bool> CheckHyperVAvailableAsync()
+    /*private static async Task<bool> CheckHyperVAvailableAsync()
     {
         try
         {
@@ -374,7 +368,7 @@ public class ServerCompabilityReport : EditorWindow
                 return false; // Both checks failed
             }
         }
-    }
+    }*/
 
     // Made static and async with timeout
     private static async Task<bool> CheckCPUVirtualizationSupportAsync()
@@ -384,8 +378,7 @@ public class ServerCompabilityReport : EditorWindow
             using (Process process = new Process())
             {
                 process.StartInfo.FileName = "powershell";
-                // Corrected PowerShell command to handle potential $null result better
-                process.StartInfo.Arguments = "-Command \"try { $proc = Get-WmiObject Win32_Processor; if ($proc.VirtualizationFirmwareEnabled -or $proc.VMMonitorModeExtensions) { Write-Output 'True' } else { Write-Output 'False' } } catch { Write-Output 'False' }\"";
+                process.StartInfo.Arguments = "-Command \"systeminfo | Select-String 'Hyper-V Requirements' -Context 0,10\"";
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.CreateNoWindow = true;
@@ -415,8 +408,18 @@ public class ServerCompabilityReport : EditorWindow
                         {
                             try { process.Kill(); } catch { }
                         }
-                        
-                        return output.Equals("True", StringComparison.OrdinalIgnoreCase);
+
+                        // Check if a hypervisor is already running
+                        if (output.Contains("A hypervisor has been detected"))
+                        {
+                            return true;
+                        }
+
+                        // Check for required virtualization features
+                        bool hasVMMonitorModeExtensions = output.Contains("VM Monitor Mode Extensions: Yes");
+                        bool hasSecondLevelAddressTranslation = output.Contains("Second Level Address Translation: Yes");
+
+                        return hasVMMonitorModeExtensions && hasSecondLevelAddressTranslation;
                     }
                     catch (TaskCanceledException)
                     {
@@ -437,9 +440,8 @@ public class ServerCompabilityReport : EditorWindow
 
     #region GUI
     private void OnGUI()
-    {
-        EditorGUILayout.LabelField("WSL2 Support Checker", EditorStyles.boldLabel);
-        EditorGUILayout.Space();
+    {      
+        EditorGUILayout.Space(10);
         
         // Display current status or results
         if (isChecking)
@@ -503,14 +505,11 @@ public class ServerCompabilityReport : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
         
-        // Copy button enabled only when results are available
-        EditorGUI.BeginDisabledGroup(isChecking || string.IsNullOrEmpty(resultDetails) || resultDetails.StartsWith("Click the button"));
-        if (GUILayout.Button("Copy Results to Clipboard"))
+        // Documentation 
+        if (GUILayout.Button("Documentation"))
         {
-            EditorGUIUtility.systemCopyBuffer = resultDetails;
-            ShowNotification(new GUIContent("Results copied to clipboard!"));
+            Application.OpenURL("https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing");
         }
-        EditorGUI.EndDisabledGroup();
     }
 
     /// <summary>

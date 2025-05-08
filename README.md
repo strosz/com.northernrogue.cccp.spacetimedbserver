@@ -53,7 +53,7 @@ Install directly in your Unity Package Manager with this git URL
    - No noticeable performance impact during editor runtime.
 
 🔧 **Open Source**
-   - Open source and the full source code is available on Github for free, but please consider to donate if you are using this tool actively.
+   - The full source code is available on Github for free. Please consider to donate if you are using this tool actively.
    - Unity Asset Store version is the same project and soon available.
 
 ## Supported Platforms
@@ -80,13 +80,12 @@ Install directly in your Unity Package Manager with this git URL
    please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License
-   - To be determined.
+> You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell **products and services** that incorporate or are built with this Unity asset.  
+>  
+> You may **not sell, sublicense, or distribute the Unity asset itself**, in whole or in substantial part, as a **standalone product**, without written permission from the original author.  
+>  
+> The Software is provided "as is", without warranty of any kind. In no event shall the author be liable for any claim, damages, or other liability from the use of the Software.
 
 ## Disclaimer
 
-> This code is provided **“as is”**, without warranty of any kind, express or implied,  
-> including but not limited to the warranties of merchantability, fitness for a particular  
-> purpose, and noninfringement. In no event shall the authors be liable for any claim,  
-> damages, or other liability arising from, out of, or in connection with the software.
-
-   **Note:** This is an unofficial SpacetimeDB server manager. SpaceTimeDB® is a registered trademark of Clockwork Labs. This asset is neither endorsed by nor affiliated with Clockwork Labs.
+   **Note:** This is an unofficial SpacetimeDB server manager asset for Unity. SpaceTimeDB® is a registered trademark of Clockwork Labs. This asset is neither endorsed by nor affiliated with Clockwork Labs.
