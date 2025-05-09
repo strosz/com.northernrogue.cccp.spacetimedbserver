@@ -5,6 +5,7 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor.PackageManager;
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -76,6 +77,8 @@ public class ServerWindow : EditorWindow
     
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
+
+    public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
     [MenuItem("SpacetimeDB/Server Management Panel", priority = -9000)]
     public static void ShowWindow()
@@ -940,7 +943,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.BeginDisabledGroup(!serverStarted);
         
         // Add a foldout for utility commands
-        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", true);
+        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", false);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", showUtilityCommands);
         
         if (showUtilityCommands)
@@ -1912,12 +1915,12 @@ public class ServerWindow : EditorWindow
         cmdProcessor.OpenDebianWindow();
     }
 
+    // Any PingServer method will start WSL to check if Server is running
     public bool PingServerStatus()
     {
         PingServer(false);
         return pingShowsOnline;
     }
-    
     private void PingServer(bool showLog)
     {
         string url = !string.IsNullOrEmpty(serverUrl) ? serverUrl : "http://127.0.0.1:3000";
@@ -1955,7 +1958,6 @@ public class ServerWindow : EditorWindow
         return status ? "✓" : "○";
     }
     
-    // Helper method to convert client directory to relative path for generate command
     private string GetRelativeClientPath()
     {
         // Default path if nothing else works

@@ -7,7 +7,7 @@ namespace NorthernRogue.CCCP.Editor {
     
 public class ServerWelcomeWindow : EditorWindow
 {
-    private const string WelcomeWindowShownKey = "WelcomeWindowShown";
+    private const string WelcomeWindowShownKey = "ServerWelcomeWindow_WelcomeWindowShown";
 
     [InitializeOnLoadMethod]
     private static void Initialize()
@@ -73,7 +73,7 @@ public class ServerWelcomeWindow : EditorWindow
         textStyle.fontSize = 12;
         
         string welcomeText = 
-        "Cosmos Cove Control Panel is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.\n\n" +
+        "Cosmos Cove Control Panel is a Windows WSL integration of SpacetimeDB within Unity, allowing you to develop MMO experiences in Unity faster and easier than ever.\n\n" +
         "The menu item SpacetimeDB has been added to your toolbar.\n" +
         "There you will find all the main windows of Cosmos Cove Control Panel.\n\n" +
         "Please begin by opening the Server Installer Window to check if you have the pre-requisites installed and there you can also install them directly (alpha).\n\n" +
@@ -110,7 +110,7 @@ public class ServerWelcomeWindow : EditorWindow
         GUILayout.FlexibleSpace();
         if (GUILayout.Button("Documentation", GUILayout.Height(30), GUILayout.Width(200)))
         {
-            Application.OpenURL("https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing");
+            Application.OpenURL(ServerWindow.Documentation);
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();

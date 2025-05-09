@@ -7,7 +7,7 @@
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
-SpacetimeDB is a revolutionary database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.
+SpacetimeDB is a revolutionary database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is an unofficial Windows WSL integration that streamlines the SpacetimeDB experience within Unity, making local server management a breeze.
 
 Install directly in your Unity Package Manager with this git URL
 
@@ -21,12 +21,13 @@ Install directly in your Unity Package Manager with this git URL
    - No extra command-line windows needed!
 
 🔄 **Automatic Workflow**
-   - Detects changes in your server code.
+   - Detects changes in your server code as you develop.
    - Auto Publish/Generate mode keeps your server up-to-date.
 
 🌱 **Automatic Installer**
    - Server Installer Window which installs everything necessary from the ground up.
    - If starting fresh you will have your own local SpacetimeDB server in no-time.
+   - Extra compability checks for important steps.
 
 📊 **Real-time Monitoring**
    - Monitor server status and port availability directly in Unity.
@@ -34,8 +35,8 @@ Install directly in your Unity Package Manager with this git URL
    - Server errors are mirrored in the Unity console for easy debugging.
 
 💾 **Backup and Restore**
-   - Create and restore highly compressed backups of your entire server quickly.
-   - Restore previous states with a single click.
+   - Create and restore highly compressed backups of your entire server.
+   - Restore previous states in seconds.
 
 🔍 **Database Browser**
    - Get a quick overview of all your tables and columns.
@@ -53,7 +54,7 @@ Install directly in your Unity Package Manager with this git URL
    - No noticeable performance impact during editor runtime.
 
 🔧 **Source Available, Free and soon Open Source**
-   - The full source code is available on Github for free. Please consider to donate if you are using this tool actively.
+   - The full source code is available on Github for free.
    - Unity Asset Store version is the same version.
    - Soon releasing it under MIT license.
 
@@ -64,9 +65,10 @@ Install directly in your Unity Package Manager with this git URL
     *   Includes an optional automatic installer for all pre-requisites (alpha version).
 
 ## Getting Started
-   - Install the asset using the .git address above in the Package Manager´s + menu.
-   - A Welcome Window displays if successful.
-   - Let the Server Installer Window determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the listed free and publicly available software one by one starting from the top. Now you can run SpacetimeDB directly from Unity!
+   - Install the asset using this .git URL in the Package Manager´s + menu.
+   ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
+   - A Welcome Window displays if successful with a link to the Server Installer Window which will determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the listed free and publicly available software one by one starting from the top. 
+   - Now you can run SpacetimeDB directly from Unity!
 
    **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. For a manual install process please check the documentation button available in the Welcome Window.
 
@@ -81,9 +83,9 @@ Install directly in your Unity Package Manager with this git URL
    please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License
-> You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell **products and services** that incorporate or are built with this Unity asset.  
+> You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell **products and services** that incorporate or are built with this Unity editor asset.  
 >  
-> You may **not sell, sublicense, or distribute the Unity asset itself**, in whole or in substantial part, as a **standalone product**, without written permission from the original author.  
+> You may **not sell, sublicense, or distribute the Unity editor asset itself**, in whole or in substantial part, as a **standalone product**, without written permission from the original author.  
 >  
 > The Software is provided "as is", without warranty of any kind. In no event shall the author be liable for any claim, damages, or other liability from the use of the Software.
 

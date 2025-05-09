@@ -50,8 +50,8 @@ public class ServerInstallerWindow : EditorWindow
     private bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
     
     // Settings
-    private const string PrefsKeyPrefix = "ServerWindow_"; // Use the same prefix as ServerWindow
-    private const string FirstTimeOpenKey = "ServerInstaller_FirstTimeOpen";
+    private const string PrefsKeyPrefix = "ServerInstaller_"; // Use the same prefix as ServerWindow
+    private const string FirstTimeOpenKey = "FirstTimeOpen";
 
     [MenuItem("SpacetimeDB/Server Installer", priority = -10001)]
     public static void ShowWindow()
@@ -66,20 +66,23 @@ public class ServerInstallerWindow : EditorWindow
         cmdProcess = new ServerCMDProcess(LogMessage, false);
         
         // Check if this is the first time the window is opened
-        bool isFirstTime = !EditorPrefs.HasKey(FirstTimeOpenKey);
+        bool isFirstTime = !EditorPrefs.HasKey(PrefsKeyPrefix+FirstTimeOpenKey);
         if (isFirstTime)
         {
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
-                EditorUtility.DisplayDialog(
+                bool continuePressed = EditorUtility.DisplayDialog(
                     "SpacetimeDB Automatic Installer",
                     "This is an automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
                     "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n\n" +
                     "Nothing is packaged in this asset. It calls the available repositories for the installation process for the purpose of ease of use.",
-                    "OK");
+                    "Continue", "Documentation");
                 
-                // Mark as opened
-                EditorPrefs.SetBool(FirstTimeOpenKey, true);
+                if (!continuePressed) {
+                    Application.OpenURL(ServerWindow.Documentation);
+                }
+
+                EditorPrefs.SetBool(PrefsKeyPrefix+FirstTimeOpenKey, true);
             };
         }
         
@@ -156,7 +159,7 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install cURL",
-                description = "cURL is a command-line tool for transferring data with URLs.\n"+
+                description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
                 isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
@@ -166,8 +169,7 @@ public class ServerInstallerWindow : EditorWindow
             {
                 title = "Install SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
-                "Note: Will show an installer window and install to the default directory\n"+ 
-                "in your user's home directory",
+                "Note: Only supports installing to the users home directory (SpacetimedDB default)",
                 isInstalled = hasSpacetimeDBServer,
                 isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBServer
@@ -183,7 +185,7 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install Rust",
-                description = "Rust is a programming language that runs 2x faster than C#.\n"+
+                description = "Rust is a programming language that runs 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
                 isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
@@ -192,7 +194,7 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install SpacetimeDB Unity SDK",
-                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity. \n"+
+                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
