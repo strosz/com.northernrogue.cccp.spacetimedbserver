@@ -135,6 +135,9 @@ public class ServerUpdateProcess : EditorWindow
     {
         addRequest = Client.Add(repo);
         
+        // Find the ServerWindow instance if it exists
+        window = EditorWindow.GetWindow<ServerWindow>(false, "Server", false);
+        
         EditorApplication.update += GithubUpdateProgress;
     }
 
@@ -143,9 +146,17 @@ public class ServerUpdateProcess : EditorWindow
         if (addRequest.IsCompleted)
         {
             if (addRequest.Status == StatusCode.Success)
-                window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
+            {
+                Debug.Log("Package updated successfully: " + addRequest.Result.packageId);
+                if (window != null)
+                    window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
+            }
             else if (addRequest.Status == StatusCode.Failure)
-                window.LogMessage("Package update failed: " + addRequest.Error.message, 1);
+            {
+                Debug.LogError("Package update failed: " + addRequest.Error.message);
+                if (window != null)
+                    window.LogMessage("Package update failed: " + addRequest.Error.message, -1);
+            }
                 
             EditorApplication.update -= GithubUpdateProgress;
         }
