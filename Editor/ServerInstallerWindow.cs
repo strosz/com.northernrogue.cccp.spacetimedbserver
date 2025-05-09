@@ -132,9 +132,9 @@ public class ServerInstallerWindow : EditorWindow
         // Clean up the update callback when the window is closed
         EditorApplication.update -= OnEditorUpdate;
 
-        // Update Pre-requisities so server can be started if requirements are met.
-        ServerWindow serverWindow = GetWindow<ServerWindow>();
-        serverWindow.CheckPrerequisites(); 
+        // Update Pre-requisities so server can be started if requirements are met. // Added button instead
+        //ServerWindow serverWindow = GetWindow<ServerWindow>();
+        //serverWindow.CheckPrerequisites(); 
     }
 
     private void OnEditorUpdate()
@@ -230,7 +230,7 @@ public class ServerInstallerWindow : EditorWindow
             bool newState = previousState; // Default to no change
             bool newEnabledState = previousEnabledState;
             
-            if (item.title.Contains("WSL2"))
+            if (item.title.Contains("WSL"))
             {
                 newState = hasWSL && hasDebian;
                 newEnabledState = true; // Always enabled
