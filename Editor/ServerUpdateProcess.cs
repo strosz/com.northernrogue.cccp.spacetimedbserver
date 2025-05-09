@@ -133,7 +133,12 @@ public class ServerUpdateProcess : EditorWindow
 
     public static void UpdateGithubPackage()
     {
-        addRequest = Client.Add(repo);
+        // Use the full GitHub URL format for package updates
+        string gitUrl = $"https://github.com/{owner}/{repo}.git";
+        
+        if (debugMode) Debug.Log($"Updating package from: {gitUrl}");
+        
+        addRequest = Client.Add(gitUrl);
         
         // Find the ServerWindow instance if it exists
         window = EditorWindow.GetWindow<ServerWindow>(false, "Server", false);
