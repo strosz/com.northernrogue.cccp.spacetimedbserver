@@ -14,6 +14,7 @@ public class ServerInstallerWindow : EditorWindow
     // UI
     private Vector2 scrollPosition;
     private string statusMessage = "Ready to install components.";
+    private bool userNamePrompt = false;
     private Color statusColor = Color.grey;
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
     private double lastRepaintTime = 0;
@@ -21,6 +22,8 @@ public class ServerInstallerWindow : EditorWindow
     
     // EditorPrefs
     private string userName = "";
+    // Temporary field for username input
+    private string tempUserNameInput = "";
     
     // Styles
     private GUIStyle titleStyle;
@@ -102,6 +105,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Cache the current username
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        tempUserNameInput = userName; // Initialize the temp input with the stored username
         
         InitializeInstallerItems();
         
@@ -375,6 +379,74 @@ public class ServerInstallerWindow : EditorWindow
         "Alpha Version - May yet require manual control.",
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
         
+        // To debug showusernameprompt
+        //hasWSL = true; hasDebian = true; hasDebianTrixie = true; 
+        //hasCurl = false; hasSpacetimeDBServer = false; hasSpacetimeDBPath = false; hasRust = false;
+
+        // Show usernameprompt for clarity before SpacetimeDB install
+        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian && hasDebianTrixie && 
+                                  !hasCurl && !hasSpacetimeDBServer && !hasSpacetimeDBPath && !hasRust;
+        
+        if (showUsernamePrompt)
+        {
+            foreach (var item in installerItems) item.isEnabled = false;
+            userNamePrompt = true;
+
+            EditorGUILayout.Space(10);
+
+            // Center the helpbox by using FlexibleSpace before and after
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Width(330));
+            
+            EditorGUILayout.LabelField("Please enter your Debian username to continue", itemTitleStyle);
+            
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(120));
+            
+            // Store the control ID before TextField to detect when Enter is pressed
+            GUI.SetNextControlName("UsernameField");
+            // Use the temporary input field instead of directly modifying userName
+            tempUserNameInput = EditorGUILayout.TextField(tempUserNameInput, GUILayout.Width(150));
+            
+            // Handle Enter key press - must use current event and keycode
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Return && 
+                GUI.GetNameOfFocusedControl() == "UsernameField" && !string.IsNullOrEmpty(tempUserNameInput))
+            {
+                // Submit the username only on Enter
+                userName = tempUserNameInput;
+                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                cmdProcess.SetUserName(userName);
+                foreach (var item in installerItems) item.isEnabled = true;
+                userNamePrompt = false;
+                Debug.Log("Username submitted via Enter: " + userName);
+                
+                // Use the current event to prevent it from propagating
+                e.Use();
+            }
+            
+            // Add a submit button for clarity
+            if (GUILayout.Button("Set", GUILayout.Width(50)) && !string.IsNullOrEmpty(tempUserNameInput))
+            {
+                // Submit the username only on button click
+                userName = tempUserNameInput;
+                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                cmdProcess.SetUserName(userName);
+                foreach (var item in installerItems) item.isEnabled = true;
+                userNamePrompt = false;
+                Debug.Log("Username submitted via button: " + userName);
+            }
+            
+            EditorGUILayout.EndHorizontal();
+            
+            EditorGUILayout.EndVertical();
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
+        }
+        
         // Begin the scrollview for the installer items
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         
@@ -459,7 +531,7 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         // If disabled, add a note about prerequisites
-        if (isDisabled)
+        if (isDisabled && !userNamePrompt)
         {
             GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
             prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange

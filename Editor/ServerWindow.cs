@@ -49,7 +49,7 @@ public class ServerWindow : EditorWindow
 
     // UI
     private Vector2 scrollPosition;
-    private string outputLog = "";
+    private string commandOutputLog = "";
     private bool autoscroll = true;
     
     // Settings
@@ -163,7 +163,7 @@ public class ServerWindow : EditorWindow
         clearStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
         if (GUILayout.Button("clear", clearStyle, GUILayout.Width(50)))
         {
-            outputLog = "";
+            commandOutputLog = "";
             Repaint();
         }
         EditorGUILayout.EndVertical();
@@ -175,7 +175,7 @@ public class ServerWindow : EditorWindow
         richTextStyle.richText = true;
         
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
-        EditorGUILayout.TextArea(outputLog, richTextStyle, GUILayout.ExpandHeight(true));
+        EditorGUILayout.TextArea(commandOutputLog.TrimEnd('\n'), richTextStyle, GUILayout.ExpandHeight(true));
         EditorGUILayout.EndScrollView();
         
         // Auto-scroll to bottom if enabled
@@ -2029,27 +2029,27 @@ public class ServerWindow : EditorWindow
         if (style == 1) // Success
         {
             string coloredMessage = $"<color=#00FF00>{message}</color>";
-            outputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         } 
         else if (style == -1) // Error
         {
             string coloredMessage = $"<color=#FF0000>{message}</color>";
-            outputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         }
         else if (style == -2) // Warning
         {
             string coloredMessage = $"<color=#e0a309>{message}</color>";
-            outputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         }
         else // Normal (style == 0) Also catches any other style
         { 
-            outputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {message}\n";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {message}\n";
         }
         
         // Trim log if it gets too long
-        if (outputLog.Length > 10000)
+        if (commandOutputLog.Length > 10000)
         {
-            outputLog = outputLog.Substring(outputLog.Length - 10000);
+            commandOutputLog = commandOutputLog.Substring(commandOutputLog.Length - 10000);
         }
         
         Repaint();

@@ -9,19 +9,16 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerOutputWindow : EditorWindow
 {
-    // Keep track of open instances
-    private static List<ServerOutputWindow> openWindows = new List<ServerOutputWindow>();
     public static bool debugMode = false; // Controlled by ServerWindow
-    public static bool echoToConsole = false; // Whether to echo important logs to Unity Console
-    private static HashSet<string> loggedToConsole = new HashSet<string>(); // Track logs already sent to console
 
     // Add EditorPrefs keys
     private const string PrefsKeyPrefix = "ServerOutputWindow_";
     private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
     private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
 
-    private string outputLogFull = ""; // Restore separate logs
-    private string databaseLogFull = ""; // Store database logs
+    // Logs
+    private string outputLogFull = ""; // Module logs
+    private string databaseLogFull = ""; // Database logs
     private Vector2 scrollPosition;
     private int selectedTab = 0;
     private string[] tabs = { "Module All", "Module Errors", "Database All", "Database Errors" };
@@ -30,8 +27,13 @@ public class ServerOutputWindow : EditorWindow
     private int lastKnownLogHash; // For detecting changes
     private int lastKnownDbLogHash; // For detecting database log changes
     private float lastUpdateTime; // For throttling updates
-    private const float UPDATE_INTERVAL = 1f; // Check every 1000ms
-    public static string logHash; // So it can be cleared
+    private const float UPDATE_INTERVAL = 1f; // Log update interval
+    public static string logHashModule; // For echo to console
+    public static string logHashDatabase; // For echo to console
+
+    // Echo Logs to Console
+    public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
+    private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
 
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
@@ -63,9 +65,12 @@ public class ServerOutputWindow : EditorWindow
     private Color cmdTextColor = new Color(0.8f, 0.8f, 0.8f);
     private Texture2D backgroundTexture;
     
-    // Tracking data changes
+    // Track data changes
     private bool scrollToBottom = false;
     private string displayedText = string.Empty;
+
+    // Track instances
+    private static List<ServerOutputWindow> openWindows = new List<ServerOutputWindow>();
 
     [MenuItem("SpacetimeDB/Server Logs (Silent)")]
     public static void ShowWindow()
@@ -76,54 +81,7 @@ public class ServerOutputWindow : EditorWindow
         window.ReloadLogs(); 
     }
 
-    // Called by ServerWindow when new log data arrives
-    public static void RefreshOpenWindow()
-    {
-        double currentTime = EditorApplication.timeSinceStartup;
-        if (currentTime - lastRefreshTime < REFRESH_INTERVAL)
-        {
-            return;
-        }
-        lastRefreshTime = currentTime;
-
-        // This helps prevent UI calls during potentially unstable Editor state transitions.
-        if (EditorApplication.isPlayingOrWillChangePlaymode)
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] RefreshOpenWindow skipped due to play mode change.");
-            return;
-        }
-
-        // To debug how often this is called, uncomment the line below
-        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
-        
-        // Get the latest log from SessionState
-        string newLog = SessionState.GetString(SessionKeyCombinedLog, "");
-        
-        // If echoToConsole is enabled, check for errors/warnings to send to Unity Console
-        if (echoToConsole)
-        {
-            EchoImportantLogsToConsole(newLog);
-        }
-        
-        // Mark windows for update without immediate repaint
-        var windowsToRefresh = openWindows.ToList(); 
-        foreach (var window in windowsToRefresh)
-        {
-            if (window != null)
-            {
-                try
-                {
-                    window.needsRepaint = true;
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Exception during RefreshOpenWindow for window '{window.titleContent.text}': {ex.Message}");
-                }
-            }
-        }
-        openWindows.RemoveAll(item => item == null); // Clean up null entries just in case
-    }
-
+    #region OnEnable
     private void OnEnable()
     {
         // Add this window to the list of open windows
@@ -137,7 +95,7 @@ public class ServerOutputWindow : EditorWindow
         
         // Load settings from EditorPrefs
         autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
-        echoToConsole = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
+        echoToConsoleModule = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
         
         // Load the log data
         ReloadLogs();
@@ -183,6 +141,53 @@ public class ServerOutputWindow : EditorWindow
         InitializeStyles();
     }
 
+    // Called by ServerWindow when new log data arrives
+    public static void RefreshOpenWindow()
+    {
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (currentTime - lastRefreshTime < REFRESH_INTERVAL)
+        {
+            return;
+        }
+        lastRefreshTime = currentTime;
+
+        // This helps prevent UI calls during potentially unstable Editor state transitions.
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] RefreshOpenWindow skipped due to play mode change.");
+            return;
+        }
+
+        // To debug how often this is called, uncomment the line below
+        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
+        
+        // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
+        if (echoToConsoleModule)
+        {
+            EchoLogsToConsole(SessionState.GetString(SessionKeyCombinedLog, ""), true);
+        }
+        
+        // Mark windows for update without immediate repaint
+        var windowsToRefresh = openWindows.ToList(); 
+        foreach (var window in windowsToRefresh)
+        {
+            if (window != null)
+            {
+                try
+                {
+                    window.needsRepaint = true;
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Exception during RefreshOpenWindow for window '{window.titleContent.text}': {ex.Message}");
+                }
+            }
+        }
+        openWindows.RemoveAll(item => item == null); // Clean up null entries just in case
+    }
+    #endregion
+
+    #region Styles
     // Initialize styles for CMD-like appearance
     private void InitializeStyles()
     {
@@ -275,7 +280,9 @@ public class ServerOutputWindow : EditorWindow
             }
         }
     }
+    #endregion
 
+    #region OnGUI
     private void OnGUI()
     {
         isWindowEnabled = true;
@@ -302,7 +309,7 @@ public class ServerOutputWindow : EditorWindow
             needsRepaint = true;
         }
         
-        if (GUILayout.Button("Clear Logs", toolbarButtonStyle, GUILayout.Width(100)))
+        if (GUILayout.Button("Clear Logs", toolbarButtonStyle, GUILayout.Width(80)))
         {
             GetWindow<ServerWindow>().ClearModuleLogFile();
             GetWindow<ServerWindow>().ClearDatabaseLog();
@@ -310,7 +317,7 @@ public class ServerOutputWindow : EditorWindow
             databaseLogFull = "";
             SessionState.SetString(SessionKeyCombinedLog, "");
             SessionState.SetString(SessionKeyDatabaseLog, "");
-            ServerOutputWindow.loggedToConsole.Clear();
+            ServerOutputWindow.loggedToConsoleModule.Clear();
             formattedLogCache.Clear();
             scrollPosition = Vector2.zero;
             autoScroll = true;
@@ -339,15 +346,15 @@ public class ServerOutputWindow : EditorWindow
         }
         
         // Echo to Console toggle
-        bool newEchoToConsole = GUILayout.Toggle(echoToConsole, "Echo to Console", GUILayout.Width(120));
-        if (newEchoToConsole != echoToConsole)
+        bool newEchoToConsole = GUILayout.Toggle(echoToConsoleModule, "Echo to Console", GUILayout.Width(120));
+        if (newEchoToConsole != echoToConsoleModule)
         {
-            echoToConsole = newEchoToConsole;
-            EditorPrefs.SetBool(PrefsKeyEchoToConsole, echoToConsole);
+            echoToConsoleModule = newEchoToConsole;
+            EditorPrefs.SetBool(PrefsKeyEchoToConsole, echoToConsoleModule);
             
-            if (echoToConsole)
+            if (echoToConsoleModule)
             {
-                ServerOutputWindow.loggedToConsole.Clear();
+                loggedToConsoleModule.Clear();
             }
         }
         EditorGUILayout.EndHorizontal();
@@ -409,13 +416,7 @@ public class ServerOutputWindow : EditorWindow
         {
             GUIUtility.keyboardControl = controlID;
         }
-        
-        // Detect scrolling // If we want to detect manual scrolling, uncomment this
-        //if (Event.current.type == EventType.ScrollWheel)
-        //{
-            //userScrolledManually = true;
-        //}
-        
+               
         GUI.EndScrollView();
         
         // Only request repaint if needed and not too frequent
@@ -468,6 +469,25 @@ public class ServerOutputWindow : EditorWindow
         //return 1300f;
     }
 
+    
+    // Public method to select the Database All tab
+    public void SelectDatabaseTab()
+    {
+        selectedTab = 2; // Index for "Database All" tab
+        needsRepaint = true;
+        Repaint();
+    }
+
+    // Public method to select the Database Errors tab
+    public void SelectDatabaseErrorsTab()
+    {
+        selectedTab = 3; // Index for "Database Errors" tab
+        needsRepaint = true;
+        Repaint();
+    }
+    #endregion
+
+    #region Logs
     // Helper method to select and limit log content based on tab
     private string GetLogForCurrentTab()
     {
@@ -675,9 +695,10 @@ public class ServerOutputWindow : EditorWindow
             CheckForLogUpdates();
         }
     }
+    #endregion
 
-    // New method to echo important logs to Unity Console
-    private static void EchoImportantLogsToConsole(string log)
+    #region Echo Logs
+    private static void EchoLogsToConsole(string log, bool isModule) // Is database if false
     {
         if (string.IsNullOrEmpty(log)) return;
         
@@ -692,27 +713,27 @@ public class ServerOutputWindow : EditorWindow
             
             // Create a hash of the line to track what we've logged
             // Strip timestamps or other variable data to avoid re-logging the same error
-            logHash = GetLogHash(trimmedLine);
+            logHashModule = GetLogHash(trimmedLine);
             
-            if (!string.IsNullOrEmpty(logHash) && !loggedToConsole.Contains(logHash))
+            if (!string.IsNullOrEmpty(logHashModule) && !loggedToConsoleModule.Contains(logHashModule))
             {
                 // Check for errors or warnings (adjust patterns as needed)
                 if (trimmedLine.Contains("ERROR") || trimmedLine.Contains("error:") || 
                     trimmedLine.ToLower().Contains("exception"))
                 {
-                    UnityEngine.Debug.LogError($"[SpacetimeDB Server] {trimmedLine}");
-                    loggedToConsole.Add(logHash);
+                    UnityEngine.Debug.LogError($"[SpacetimeDB Module] {trimmedLine}");
+                    loggedToConsoleModule.Add(logHashModule);
                 }
                 else if (trimmedLine.Contains("WARNING") || trimmedLine.Contains("warning:"))
                 {
-                    UnityEngine.Debug.LogWarning($"[SpacetimeDB Server] {trimmedLine}");
-                    loggedToConsole.Add(logHash);
+                    UnityEngine.Debug.LogWarning($"[SpacetimeDB Module] {trimmedLine}");
+                    loggedToConsoleModule.Add(logHashModule);
                 }
                 
                 // Limit tracked messages to prevent memory issues
-                if (loggedToConsole.Count > 1000)
+                if (loggedToConsoleModule.Count > 1000)
                 {
-                    loggedToConsole.Clear(); // Just reset if we hit the limit
+                    loggedToConsoleModule.Clear(); // Just reset if we hit the limit
                 }
             }
         }
@@ -730,23 +751,9 @@ public class ServerOutputWindow : EditorWindow
         }
         return line.Trim();
     }
+    #endregion
 
-    // Public method to select the Database All tab
-    public void SelectDatabaseTab()
-    {
-        selectedTab = 2; // Index for "Database All" tab
-        needsRepaint = true;
-        Repaint();
-    }
-
-    // Public method to select the Database Errors tab
-    public void SelectDatabaseErrorsTab()
-    {
-        selectedTab = 3; // Index for "Database Errors" tab
-        needsRepaint = true;
-        Repaint();
-    }
-
+    #region Save Logs
     // New method to save the current log to a file
     private void SaveCurrentLogToFile()
     {
@@ -820,5 +827,6 @@ public class ServerOutputWindow : EditorWindow
             Debug.LogError($"Error saving log: {ex}");
         }
     }
-}
-}
+    #endregion
+} // Class
+} // Namespace
