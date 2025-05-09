@@ -155,6 +155,7 @@ public class ServerUpdateProcess : EditorWindow
                 Debug.Log("Package updated successfully: " + addRequest.Result.packageId);
                 if (window != null)
                     window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
+                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false);
             }
             else if (addRequest.Status == StatusCode.Failure)
             {
