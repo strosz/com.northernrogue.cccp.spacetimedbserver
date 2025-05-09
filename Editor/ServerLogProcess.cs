@@ -6,6 +6,9 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
+// Processes the logs when the server is running in silent mode ///
+///////// made by Northern Rogue /// Mathias Toivonen /////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerLogProcess
@@ -33,7 +36,7 @@ public class ServerLogProcess
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
     private const string SessionKeyCachedDatabaseLog = "ServerWindow_CachedDatabaseLog"; // Add session key for cached logs
     private const string SessionKeyDatabaseLogRunning = "ServerWindow_DatabaseLogRunning";
-    private const string PrefsKeyPrefix = "ServerWindow_"; // Same prefix as ServerWindow
+    private const string PrefsKeyPrefix = "CCCP_"; // Same prefix as ServerWindow
     
     // Settings
     public static bool debugMode = false;

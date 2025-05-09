@@ -5,6 +5,9 @@ using System.Linq;
 using System;
 using System.Text.RegularExpressions;
 
+// Handles and displays the logs from both the SpacetimeDB module and the database ///
+//////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerOutputWindow : EditorWindow
@@ -12,7 +15,7 @@ public class ServerOutputWindow : EditorWindow
     public static bool debugMode = false; // Controlled by ServerWindow
 
     // Add EditorPrefs keys
-    private const string PrefsKeyPrefix = "ServerOutputWindow_";
+    private const string PrefsKeyPrefix = "CCCP_";
     private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
     private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
 

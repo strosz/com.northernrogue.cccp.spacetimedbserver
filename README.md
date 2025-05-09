@@ -78,8 +78,8 @@ Install directly in your Unity Package Manager with this git URL
    - Notification and updater to a new SpacetimeDB server version.
 
 ## Community Made
-   - Created by an MMO developer who wanted to manage SpacetimeDB directly in Unity.
-   If you like this asset and would buy me a coffee or beer if we met,
+   - Created by an MMO developer who wanted to see SpacetimeDB directly in Unity.
+   - If you like this asset and would buy me a coffee or beer if we met,
    please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License

@@ -3,7 +3,10 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-//ok
+
+// Check and install everything necessary to run SpacetimeDB in WSL with this window ///
+////////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerInstallerWindow : EditorWindow
@@ -43,6 +46,9 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasRust = false;
     private bool hasSpacetimeDBUnitySDK = false;
 
+    // WSL 1 requires unique install logic for Debian apps
+    private bool WSL1Installed;
+
     // Debug
     private bool visibleInstallProcesses = true;
     private bool keepWindowOpenForDebug = true;
@@ -53,7 +59,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
     
     // Settings
-    private const string PrefsKeyPrefix = "ServerInstaller_"; // Use the same prefix as ServerWindow
+    private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
     private const string FirstTimeOpenKey = "FirstTimeOpen";
 
     [MenuItem("SpacetimeDB/Server Installer", priority = -10001)]
@@ -76,9 +82,9 @@ public class ServerInstallerWindow : EditorWindow
             EditorApplication.delayCall += () => {
                 bool continuePressed = EditorUtility.DisplayDialog(
                     "SpacetimeDB Automatic Installer",
-                    "This is an automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
+                    "Welcome to the automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
                     "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n\n" +
-                    "Nothing is packaged in this asset. It calls the available repositories for the installation process for the purpose of ease of use.",
+                    "It works by entering the same commands as in the manual installation process for the purpose of ease of use.",
                     "Continue", "Documentation");
                 
                 if (!continuePressed) {
@@ -98,6 +104,9 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
+
+        // WSL 1 requires unique install logic for Debian apps
+        WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
         
         // Load install debug settings from EditorPrefs
         visibleInstallProcesses = EditorPrefs.GetBool(PrefsKeyPrefix + "VisibleInstallProcesses", true);
@@ -122,6 +131,10 @@ public class ServerInstallerWindow : EditorWindow
     {
         // Clean up the update callback when the window is closed
         EditorApplication.update -= OnEditorUpdate;
+
+        // Update Pre-requisities so server can be started if requirements are met.
+        ServerWindow serverWindow = GetWindow<ServerWindow>();
+        serverWindow.CheckPrerequisites(); 
     }
 
     private void OnEditorUpdate()
@@ -235,12 +248,12 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB Server"))
             {
                 newState = hasSpacetimeDBServer;
-                newEnabledState = hasWSL && hasDebian;
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie;
             }
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
                 newState = hasSpacetimeDBPath;
-                newEnabledState = hasWSL && hasDebian;
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie;
             }
             else if (item.title.Contains("Rust"))
             {
@@ -417,7 +430,6 @@ public class ServerInstallerWindow : EditorWindow
                 // Submit the username only on Enter
                 userName = tempUserNameInput;
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                cmdProcess.SetUserName(userName);
                 foreach (var item in installerItems) item.isEnabled = true;
                 userNamePrompt = false;
                 Debug.Log("Username submitted via Enter: " + userName);
@@ -432,7 +444,6 @@ public class ServerInstallerWindow : EditorWindow
                 // Submit the username only on button click
                 userName = tempUserNameInput;
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                cmdProcess.SetUserName(userName);
                 foreach (var item in installerItems) item.isEnabled = true;
                 userNamePrompt = false;
                 Debug.Log("Username submitted via button: " + userName);
@@ -524,7 +535,6 @@ public class ServerInstallerWindow : EditorWindow
             {
                 userName = newUserName;
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
-                cmdProcess.SetUserName(newUserName);
             }
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(2);
@@ -535,7 +545,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
             prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange
-            EditorGUILayout.LabelField("Requires WSL2 with Debian to be installed first", prereqStyle);
+            EditorGUILayout.LabelField("Requires WSL2 with Debian Trixie to be installed first", prereqStyle);
         }
         
         // Restore original color
@@ -643,24 +653,56 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus("Installing WSL1 with Debian...", Color.green);
             
-            if (EditorUtility.DisplayDialog("Install WSL1 with Debian", "This will install WSL1 with Debian. Do you want to continue?", "Yes", "No"))
+            if (EditorUtility.DisplayDialog("Install WSL1 with Debian", "This will install WSL1 with Debian. You may have to press keys during the install process. Do you want to continue?", "Yes", "No"))
             {
-                await cmdProcess.RunPowerShellInstallCommand("dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart;", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand("wsl --set-default-version 1 && wsl --install -d Debian", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+                string dismCommand = "powershell.exe -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'\"";
+                string wsl1SetupCommand = "cmd.exe /c \"wsl --set-default-version 1 && wsl --install -d Debian\"";
+
+                bool dismSuccess = await cmdProcess.RunPowerShellInstallCommand(dismCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                if (dismSuccess)
+                {
+                    SetStatus("DISM successful. Proceeding with WSL1 setup...", Color.yellow);
+                    installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl1SetupCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                }
+                else
+                {
+                    installedSuccessfully = false;
+                    SetStatus("DISM command failed for WSL1 setup. Please check console output.", Color.red);
+                }
+
                 if (installedSuccessfully)
                 {
-                    await Task.Delay(5000);
+                    await Task.Delay(1000);
                     CheckInstallationStatus();
+                    await Task.Delay(3000);
                     if (hasWSL && hasDebian)
                     {
                         SetStatus("WSL1 with Debian installed successfully.", Color.green);
+
+                        WSL1Installed = true; // To handle WSL1 Debian installs uniquely
+                        EditorPrefs.SetBool(PrefsKeyPrefix + "WSL1Installed", WSL1Installed);
+
+                        UpdateInstallerItemsStatus();
+
+                        // Display dialog informing user about Debian first-time setup
+                        EditorUtility.DisplayDialog(
+                            "Debian First-Time Setup",
+                            "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
+                            "OK"
+                        );
+                        // Launch visible Debian window
+                        cmdProcess.OpenDebianWindow();
                     }
                     else
                     {
-                        SetStatus("WSL1 with Debian installation failed. Please check console output.", Color.red);
+                        SetStatus("WSL1 with Debian installation failed or requires a restart. Please check console output and restart if prompted.", Color.red);
                     }
                 } else {
-                    SetStatus("WSL1 with Debian installation failed. Please check console output.", Color.red);
+                    if(dismSuccess) // Only wsl1SetupCommand failed - common if DISM requires a restart
+                    {
+                        SetStatus("Please restart your PC and try to install WSL1 again.", Color.yellow);
+                        EditorUtility.DisplayDialog("Restart Needed","Please restart your PC and try to install WSL1 again.", "OK");
+                    }
                 }
             } else {
                 SetStatus("WSL1 with Debian installation cancelled.", Color.yellow);
@@ -673,7 +715,8 @@ public class ServerInstallerWindow : EditorWindow
             
             if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
             {
-                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand("wsl --install -d Debian", LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+                string wsl2InstallCommand = "wsl.exe --install -d Debian"; // wsl.exe is more direct
+                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 if (installedSuccessfully)
                 {
                     await Task.Delay(5000);
@@ -681,10 +724,19 @@ public class ServerInstallerWindow : EditorWindow
                     if (hasWSL && hasDebian)
                     {
                         SetStatus("WSL2 with Debian installed successfully.", Color.green);
+
+                        // Display dialog informing user about Debian first-time setup
+                        EditorUtility.DisplayDialog(
+                            "Debian First-Time Setup",
+                            "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
+                            "OK"
+                        );
+                        // Launch visible Debian window
+                        cmdProcess.OpenDebianWindow();
                     }
                     else
                     {
-                        SetStatus("WSL2 with Debian installation failed. Please check console output.", Color.red);
+                        SetStatus("WSL2 with Debian installation failed or requires a restart. Please check console output and restart if prompted.", Color.red);
                     }
                 }
             } else {
@@ -696,18 +748,6 @@ public class ServerInstallerWindow : EditorWindow
         // The actual installation will happen when the user clicks one of the buttons in the dialog,
         // which will invoke either installWSL1 or installWSL2
         await ServerCompabilityReport.CheckWSL2Support(true, installWSL1, installWSL2);
-
-        if (installedSuccessfully)
-        {           
-            // Display dialog informing user about Debian first-time setup
-            EditorUtility.DisplayDialog(
-                "Debian First-Time Setup",
-                "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
-                "OK"
-            );
-            // Launch visible Debian window
-            cmdProcess.OpenDebianWindow();
-        }
     }
 
     private async void InstallDebianTrixie()
@@ -750,8 +790,8 @@ public class ServerInstallerWindow : EditorWindow
         bool coreSuccess = await cmdProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!coreSuccess)
         {
-            SetStatus("Failed to install update-manager-core. Trixie installation aborted.", Color.red);
-            return;
+            // It's common to get a failed install here, but the install process will work anyway
+            SetStatus("Failed to install update-manager-core. Attempting to continue.", Color.green);
         }
         await Task.Delay(2000);
         
@@ -783,7 +823,13 @@ public class ServerInstallerWindow : EditorWindow
         bool fullUpgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!fullUpgradeSuccess)
         {
-            SetStatus("Failed to perform full upgrade to Trixie. Installation aborted.", Color.red);
+            CheckInstallationStatus();
+            await Task.Delay(2000);
+            if (WSL1Installed && hasDebianTrixie)
+            SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
+            else
+            SetStatus("Failed to perform full upgrade to Trixie.", Color.red);
+
             return;
         }
         await Task.Delay(2000);
@@ -851,7 +897,13 @@ public class ServerInstallerWindow : EditorWindow
         );
         if (!installSuccess)
         {
-            SetStatus("Failed to install curl. Installation aborted.", Color.red);
+            CheckInstallationStatus();
+            await Task.Delay(2000);
+            if (WSL1Installed && hasCurl)
+            SetStatus("cURL installed successfully. (WSL1)", Color.green);
+            else
+            SetStatus("Failed to install cURL. Installation aborted.", Color.red);
+            
             return;
         }
         
@@ -861,11 +913,11 @@ public class ServerInstallerWindow : EditorWindow
         
         if (hasCurl)
         {
-            SetStatus("curl installed successfully.", Color.green);
+            SetStatus("cURL installed successfully.", Color.green);
         }
         else
         {
-            SetStatus("curl installation failed. Please check console output.", Color.red);
+            SetStatus("cURL installation failed. Please check console output.", Color.red);
         }
     }
     
@@ -919,7 +971,7 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("SpacetimeDB Server installation started. This may take some time.", Color.green);
 
             // Give some time before checking again
-            await Task.Delay(5000);
+            await Task.Delay(3000);
             CheckInstallationStatus();
             await Task.Delay(1000);
             if (hasSpacetimeDBServer)
@@ -1001,7 +1053,13 @@ public class ServerInstallerWindow : EditorWindow
         bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
+            CheckInstallationStatus();
+            await Task.Delay(2000);
+            if (WSL1Installed && hasRust)
+            SetStatus("Rust installed successfully. (WSL1)", Color.green);
+            else
             SetStatus("Failed to install Rust. Installation aborted.", Color.red);
+
             return;
         }
 

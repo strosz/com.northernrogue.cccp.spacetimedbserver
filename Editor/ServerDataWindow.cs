@@ -12,6 +12,9 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Net;
 
+// A basic database interface for managing the SQL of the server and exporting/importing it ///
+//////////////////////// made by Northern Rogue /// Mathias Toivonen //////////////////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerDataWindow : EditorWindow
@@ -49,7 +52,7 @@ public class ServerDataWindow : EditorWindow
 
     // Parent window reference to get settings
     private ServerWindow parentServerWindow;
-    private const string PrefsKeyPrefix = "ServerWindow_"; // Use the same prefix
+    private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix
 
     // --- HttpClient Instance ---
     // Use a static instance for efficiency (reuse connections)
@@ -2706,7 +2709,6 @@ public class ServerDataWindow : EditorWindow
 }
 
 // Helper for running Editor Coroutines without a MonoBehaviour
-// Source: https://docs.unity3d.com/ScriptReference/EditorApplication.html
 public static class EditorCoroutineUtility
 {
     public static EditorCoroutine StartCoroutineOwnerless(System.Collections.IEnumerator routine)
@@ -2744,5 +2746,5 @@ public class EditorCoroutine
             Stop();
         }
     }
-}
-}
+} // Class
+} // Namespace

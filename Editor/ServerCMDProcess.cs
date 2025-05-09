@@ -4,6 +4,9 @@ using System;
 using System.Threading.Tasks;
 using UnityEditor;
 
+// Runs the main server and installation processes and methods ///
+//////// made by Northern Rogue /// Mathias Toivonen /////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerCMDProcess
@@ -11,7 +14,7 @@ public class ServerCMDProcess
     // Settings
     public static bool debugMode = false;
     private string userName = "";
-    private const string PrefsKeyPrefix = "ServerWindow_";
+    private const string PrefsKeyPrefix = "CCCP_";
     
     // Path constants for WSL
     public const string WslPidPath = "/tmp/spacetime.pid";
@@ -37,37 +40,16 @@ public class ServerCMDProcess
         if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Initialized with username from EditorPrefs: {this.userName}");
     }
     
-    // Add method to set username
-    public void SetUserName(string userName)
-    {
-        if (string.IsNullOrEmpty(userName))
-        {
-            // Only log warning in debug mode
-            if (debugMode) UnityEngine.Debug.LogWarning("[ServerCMDProcess] Empty username provided. Please set a Debian username in the Server Window.");
-        }
-        else
-        {
-            this.userName = userName;
-            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Debian username set to: {this.userName}");
-        }
-        
-        // Save username to EditorPrefs regardless of whether it's empty or not
-        EditorPrefs.SetString(PrefsKeyPrefix + "UserName", this.userName);
-    }
-    
     #region Installation
 
-    public async Task<bool> RunPowerShellInstallCommand(string command, Action<string, int> statusCallback = null, bool visibleProcess = true, bool keepWindowOpenForDebug = false)
+    public async Task<bool> RunPowerShellInstallCommand(string command, Action<string, int> statusCallback = null, bool visibleProcess = true, bool keepWindowOpenForDebug = false, bool requiresElevation = false)
     {
         Process process = null;
         try
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug} | RequiresElevation: {requiresElevation}");
             
             process = new Process();
-            
-            // Build the final command
-            string finalCommand = command;
             
             if (visibleProcess)
             {
@@ -77,82 +59,104 @@ public class ServerCMDProcess
                 process.StartInfo.CreateNoWindow = false;
                 
                 // Use a simple batch technique - write the command to a temp file and execute it
-                // This avoids all the quote escaping issues
                 string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"spacetime_cmd_{DateTime.Now.Ticks}.bat");
                 
+                // Construct the batch file content
+                // The command itself (e.g., dism.exe) should trigger UAC if needed, as cmd.exe is UseShellExecute=true
+                // The batch file should exit with the error code of the command.
                 using (System.IO.StreamWriter sw = new System.IO.StreamWriter(tempBatchFile))
                 {
                     sw.WriteLine("@echo off");
                     sw.WriteLine("echo Running command...");
-                    sw.WriteLine(command);
+                    sw.WriteLine(command); // The raw command
+                    sw.WriteLine($"echo Command finished. Exit code is %ERRORLEVEL%.");
+                    sw.WriteLine("if %ERRORLEVEL% neq 0 (");
+                    sw.WriteLine("    echo ERROR: Command failed with exit code %ERRORLEVEL%");
+                    sw.WriteLine(")");
                     
                     if (keepWindowOpenForDebug)
                     {
-                        sw.WriteLine("echo Command finished. Press any key to close this window...");
+                        sw.WriteLine("echo Press any key to close this window...");
                         sw.WriteLine("pause > nul");
                     }
                     else
                     {
-                        sw.WriteLine("echo Command completed. Window will close in 3 seconds...");
-                        sw.WriteLine("timeout /t 3 > nul");
+                        // Brief pause to see messages, then auto-close.
+                        // SpacetimeDB install script itself might pause, so this timeout is mostly for other commands.
+                        sw.WriteLine("echo Window will close in 5 seconds if not paused by the command...");
+                        sw.WriteLine("timeout /t 5 /nobreak > nul");
                     }
+                    sw.WriteLine("exit /b %ERRORLEVEL%"); // Exit batch with command's error level
                 }
                 
                 process.StartInfo.Arguments = $"/C \"{tempBatchFile}\"";
                 
-                if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Created batch file: {tempBatchFile}");
+                if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Created batch file: {tempBatchFile} with command: {command}");
             }
-            else
+            else // Hidden execution
             {
-                // For hidden execution
                 process.StartInfo.FileName = "powershell.exe";
-                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.UseShellExecute = false; // Required for redirecting output
                 process.StartInfo.CreateNoWindow = true;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
-                process.StartInfo.Arguments = $"-Command \"{finalCommand.Replace("\"", "`\"")}\"";
-                process.StartInfo.Verb = "runas"; // Run as admin for hidden process
+                // process.StartInfo.Verb = "runas"; // This is ineffective with UseShellExecute = false
+
+                string commandToExecute = command;
+                if (requiresElevation)
+                {
+                    // Parse command to get executable and args for Start-Process
+                    var (exe, args) = SplitCommandForProcess(commandToExecute);
+                    
+                    // Escape single quotes for PowerShell string literals
+                    string escapedExe = exe.Replace("'", "''");
+                    string escapedArgs = args.Replace("'", "''");
+
+                    // $ProgressPreference ensures Start-Process doesn't hang on progress bars for some commands
+                    commandToExecute = $"$ProgressPreference = 'SilentlyContinue'; try {{ $process = Start-Process -FilePath '{escapedExe}' -ArgumentList '{escapedArgs}' -Verb RunAs -Wait -PassThru; exit $process.ExitCode; }} catch {{ Write-Error $_; exit 1; }}";
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Elevated command for hidden execution: {commandToExecute}");
+                }
+                
+                // Important: Escape double quotes for the -Command argument string itself
+                string escapedFinalCommand = commandToExecute.Replace("\"", "`\"");
+                process.StartInfo.Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{escapedFinalCommand}\"";
             }
             
             process.Start();
-            statusCallback?.Invoke($"Executing: {command}", 0);
+            statusCallback?.Invoke($"Executing: {command.Split(' ')[0]}...", 0);
             
-            if (visibleProcess)
-            {
-                // For visible process, wait for the CMD process (running the batch) to exit.
-                // This ensures the batch file itself completes.
-                await Task.Run(() => process.WaitForExit()); 
-                int exitCode = process.ExitCode;
+            string outputLog = "";
+            string errorLog = "";
 
-                // Note: ExitCode 0 only means the batch file executed without CMD errors.
-                // It doesn't guarantee the success of commands *inside* the batch (like WSL commands).
-                if (exitCode == 0)
-                {
-                    statusCallback?.Invoke($"Command window closed for '{command.Split(' ')[0]}...'. Check window for success/errors.", 1);
-                    return true; // Assume success if batch ran okay, user checks visible output.
-                }
-                else
-                {
-                    statusCallback?.Invoke($"Command window for '{command.Split(' ')[0]}...' closed with CMD error code {exitCode}.", -1);
-                    return false;
-                }
+            if (!visibleProcess)
+            {
+                // For hidden process, read output/error streams
+                outputLog = await process.StandardOutput.ReadToEndAsync();
+                errorLog = await process.StandardError.ReadToEndAsync();
+            }
+
+            await Task.Run(() => process.WaitForExit()); 
+            int exitCode = process.ExitCode;
+
+            if (debugMode && !visibleProcess) {
+                if (!string.IsNullOrEmpty(outputLog)) UnityEngine.Debug.Log($"[ServerCMDProcess] Output: {outputLog}");
+                if (!string.IsNullOrEmpty(errorLog)) UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Error: {errorLog}");
+            }
+            
+            if (exitCode == 0)
+            {
+                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' completed successfully.", 1);
+                return true;
             }
             else
             {
-                // For hidden process, wait for completion and check exit code
-                await Task.Run(() => process.WaitForExit());
-                int exitCode = process.ExitCode;
-                
-                if (exitCode == 0)
-                {
-                    statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' completed successfully.", 1);
-                    return true;
+                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console/window for details.", -1);
+                if (!visibleProcess && !string.IsNullOrEmpty(errorLog)) {
+                     UnityEngine.Debug.LogError($"[ServerCMDProcess] Hidden command failed. Error stream: {errorLog}");
+                } else if (!visibleProcess && !string.IsNullOrEmpty(outputLog)) {
+                     UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Hidden command failed. Output stream: {outputLog}");
                 }
-                else
-                {
-                    statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}.", -1);
-                    return false;
-                }
+                return false;
             }
         }
         catch (Exception ex)
@@ -176,9 +180,9 @@ public class ServerCMDProcess
     
     #region Process Execution Methods
     
-    // Add a new helper method to check if username is valid
     private bool ValidateUserName()
     {
+        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         if (string.IsNullOrEmpty(userName))
         {
             logCallback("[ServerCMDProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
@@ -711,6 +715,45 @@ public class ServerCMDProcess
     #endregion
     
     #region Helper Methods
+    
+    private (string executable, string arguments) SplitCommandForProcess(string command)
+    {
+        command = command.Trim();
+        string executable;
+        string arguments = string.Empty;
+
+        if (command.StartsWith("\"")) // Quoted executable path
+        {
+            int closingQuoteIndex = command.IndexOf('\"', 1);
+            if (closingQuoteIndex > 0)
+            {
+                executable = command.Substring(0, closingQuoteIndex + 1);
+                if (command.Length > closingQuoteIndex + 1)
+                {
+                    arguments = command.Substring(closingQuoteIndex + 1).TrimStart();
+                }
+            }
+            else // Malformed, treat as single unquoted
+            {
+                executable = command;
+            }
+        }
+        else // Unquoted executable path
+        {
+            int firstSpaceIndex = command.IndexOf(' ');
+            if (firstSpaceIndex > 0)
+            {
+                executable = command.Substring(0, firstSpaceIndex);
+                arguments = command.Substring(firstSpaceIndex + 1).TrimStart();
+            }
+            else
+            {
+                executable = command;
+            }
+        }
+        // Ensure executable is unquoted if it was parsed that way, for Start-Process -FilePath
+        return (executable.Trim('\"'), arguments);
+    }
     
     public string GetWslPath(string windowsPath)
     {

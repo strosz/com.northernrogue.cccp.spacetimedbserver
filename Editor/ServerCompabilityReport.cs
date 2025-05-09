@@ -6,6 +6,9 @@ using UnityEditor;
 using System.Threading.Tasks;
 using System.Threading;
 
+// Provides a compability report for WSL and allows server installer window to continue ///
+///////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerCompabilityReport : EditorWindow
@@ -199,7 +202,9 @@ public class ServerCompabilityReport : EditorWindow
             currentResultDetails += 
             "It's recommended to install WSL1 for your system for better compatibility.\n" +
             "Regardless of chosen WSL, remember to always backup anything important\n" +
-            "on your PC before continuing.\n" +
+            "on your PC before continuing.\n\n" +
+            "WSL1 may require a restart and will probably show errors on the other\n" +
+            "Debian installers like Curl and Rust, but will succesfully install.\n" +
             "Refer to the CCCP documentation if the automatic installation fails.";
         }
 
@@ -300,75 +305,6 @@ public class ServerCompabilityReport : EditorWindow
             return false;
         }
     }
-
-    // Made static and async with timeout
-    /*private static async Task<bool> CheckHyperVAvailableAsync()
-    {
-        try
-        {
-            using (Process process = new Process())
-            {
-                process.StartInfo.FileName = "powershell";
-                process.StartInfo.Arguments = "-Command \"Get-WmiObject -Query 'Select * from Win32_ComputerSystem' | Select-Object -ExpandProperty HypervisorPresent\"";
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.CreateNoWindow = true;
-                
-                // Create a cancellation token for timeout
-                using (var cts = new CancellationTokenSource(PROCESS_TIMEOUT_MS))
-                {
-                    try
-                    {
-                        process.Start();
-                        
-                        // Read output asynchronously with timeout
-                        var readTask = process.StandardOutput.ReadToEndAsync();
-                        
-                        // Wait for completion or timeout
-                        if (await Task.WhenAny(readTask, Task.Delay(PROCESS_TIMEOUT_MS, cts.Token)) != readTask)
-                        {
-                            // Timeout occurred
-                            try { process.Kill(); } catch { }
-                            throw new TimeoutException("Process timed out after " + PROCESS_TIMEOUT_MS + "ms");
-                        }
-                        
-                        string output = (await readTask).Trim();
-                        
-                        // Short timeout for process exit
-                        if (!process.WaitForExit(1000))
-                        {
-                            try { process.Kill(); } catch { }
-                        }
-                        
-                        if (output.Equals("True", StringComparison.OrdinalIgnoreCase))
-                            return true;
-                            
-                        // Try alternative check if first check doesn't return True
-                        return await CheckCPUVirtualizationSupportAsync();
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        // Handle cancellation
-                        try { process.Kill(); } catch { }
-                        throw new TimeoutException("Process timed out after " + PROCESS_TIMEOUT_MS + "ms");
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            UnityEngine.Debug.LogError($"Error checking Hyper-V availability (WMI): {ex.Message}");
-            // Try alternative check on error
-            try
-            {
-                return await CheckCPUVirtualizationSupportAsync();
-            }
-            catch
-            {
-                return false; // Both checks failed
-            }
-        }
-    }*/
 
     // Made static and async with timeout
     private static async Task<bool> CheckCPUVirtualizationSupportAsync()

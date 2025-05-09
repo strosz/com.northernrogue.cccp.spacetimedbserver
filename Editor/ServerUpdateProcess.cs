@@ -5,6 +5,9 @@ using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 
+// Handles new updates for the asset from Unity, Github and SpacetimeDB ///
+//////////////// made by Northern Rogue /// Mathias Toivonen //////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 [InitializeOnLoad]

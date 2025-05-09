@@ -5,7 +5,9 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor.PackageManager;
+
+// The main Comos Cove Control Panel that controls the server and launches all features ///
+////////////////////// made by Northern Rogue /// Mathias Toivonen ////////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -25,6 +27,16 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBPath = false;
     private bool hasRust = false;
     private bool prerequisitesChecked = false;
+    private string userName = "";
+    private string backupDirectory = "";
+    private string serverDirectory = "";
+    private string unityLang = "rust";
+    private string clientDirectory = "";
+    private string serverLang = "rust";
+    private string moduleName = "";
+    private string serverUrl = "";
+    private int spacetimePort = 3000;
+    private string authToken = "";
 
     // Server process
     private bool serverStarted = false;
@@ -53,30 +65,20 @@ public class ServerWindow : EditorWindow
     private bool autoscroll = true;
     
     // Settings
-    private const string PrefsKeyPrefix = "ServerWindow_";
-    private string serverDirectory = "";
-    private string clientDirectory = "";
-    private string serverLang = "rust";
-    private string serverUrl = "";
-    private int spacetimePort = 3000;
-    private string moduleName = "";
-    private string unityLang = "rust";
-    private string authToken = "";
-    private string backupDirectory = "";
-    private string userName = "";
+    public bool debugMode = false;
     private bool hideWarnings = false;
     private bool detectServerChanges = false;
     private bool serverChangesDetected = false;
     private bool autoPublishMode = false;
     private bool publishAndGenerateMode = false;
     private bool silentMode = false;
-    public bool debugMode = false;
     private bool autoCloseWsl = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
     
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
+    private const string PrefsKeyPrefix = "CCCP_";
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
@@ -88,6 +90,7 @@ public class ServerWindow : EditorWindow
     }
 
     #region OnGUI
+
     private void OnGUI()
     {
         EditorGUILayout.BeginVertical();
@@ -204,6 +207,7 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region OnEnable
+
     private void OnEnable()
     {
         // Load Editor Prefs - Pre-Requisites Installed items
@@ -239,7 +243,6 @@ public class ServerWindow : EditorWindow
 
         // Initialize the processors
         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
-        cmdProcessor.SetUserName(userName); // Pass userName to cmdProcessor
         
         // Initialize LogProcessor with callbacks
         logProcessor = new ServerLogProcess(
@@ -342,6 +345,7 @@ public class ServerWindow : EditorWindow
     #endregion
     
     #region Pre-RequisitesUI
+
     private void DrawPrerequisitesSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox); // Start of Pre-Requisites section
@@ -376,7 +380,6 @@ public class ServerWindow : EditorWindow
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
                 
                 // Update processors with new username
-                if(cmdProcessor != null) cmdProcessor.SetUserName(userName);
                 if(logProcessor != null) logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
                 
                 if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
@@ -577,27 +580,36 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region ServerUI
+
     private void DrawServerSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.LabelField("Server", EditorStyles.boldLabel);
         
         bool serverRunning = serverStarted || isStartingUp;
-        
-        EditorGUI.BeginDisabledGroup(!prerequisitesChecked || !hasWSL || !hasDebian);
-        if (!serverRunning)
+
+        if (!prerequisitesChecked || !hasWSL || !hasDebian)
         {
-            if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+            if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
             {
-                StartServer();
-            }
-        } else {
-            if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
-            {
-                StopServer();
+                CheckPrerequisites();
             }
         }
-        EditorGUI.EndDisabledGroup();
+        else // If Prerequisites are checked then show normal server controls
+        {
+            if (!serverRunning)
+            {
+                if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+                {
+                    StartServer();
+                }
+            } else {
+                if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+                {
+                    StopServer();
+                }
+            }
+        }
 
         EditorGUI.BeginDisabledGroup(!serverStarted && !silentMode);
         if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
@@ -653,10 +665,11 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region SettingsUI
+
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings and Debian", true);
+        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings and Debian", false);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", showSettingsWindow);
 
         if (showSettingsWindow)
@@ -935,6 +948,7 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region CommandsUI
+
     private void DrawCommandsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -1388,7 +1402,8 @@ public class ServerWindow : EditorWindow
     #endregion
     
     #region Server Methods
-    private void CheckPrerequisites()
+
+    public void CheckPrerequisites()
     {
         cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
             EditorApplication.delayCall += () => {
@@ -1565,6 +1580,7 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region CheckStatus
+
     private async void CheckServerStatus()
     {
         // Only check periodically
@@ -1706,6 +1722,7 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region DetectChanges
+
     private void DetectServerChanges()
     {
         lastChangeCheckTime = EditorApplication.timeSinceStartup;
@@ -1908,8 +1925,97 @@ public class ServerWindow : EditorWindow
         }
     }
     #endregion
+
+    #region LogMessage
+    
+    public void LogMessage(string message, int style)
+    {
+        // Skip warning messages if hideWarnings is enabled
+        if (hideWarnings && message.Contains("WARNING"))
+        {
+            return;
+        }
+        
+        if (style == 1) // Success
+        {
+            string coloredMessage = $"<color=#00FF00>{message}</color>";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+        } 
+        else if (style == -1) // Error
+        {
+            string coloredMessage = $"<color=#FF0000>{message}</color>";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+        }
+        else if (style == -2) // Warning
+        {
+            string coloredMessage = $"<color=#e0a309>{message}</color>";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
+        }
+        else // Normal (style == 0) Also catches any other style
+        { 
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {message}\n";
+        }
+        
+        // Trim log if it gets too long
+        if (commandOutputLog.Length > 10000)
+        {
+            commandOutputLog = commandOutputLog.Substring(commandOutputLog.Length - 10000);
+        }
+        
+        Repaint();
+    }
+
+    // Opens Output Log window in silent mode or CMD window with Database logs in CMD mode
+    private void ViewServerLogs()
+    {
+        if (silentMode)
+        {
+            if (debugMode) LogMessage("Opening/focusing silent server output window...", 0);
+            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
+        }
+        else if (serverStarted)
+        {
+            // In CMD mode, both remind about server logs and open a new window for database logs
+            LogMessage("Server logs are in the SpacetimeDB server CMD window.", 0);
+            
+            // Open a new Debian window to view database logs
+            LogMessage("Opening a new window for database logs...", 0);
+            
+            try
+            {
+                // Create a process to run "spacetime logs moduleName -f" in a visible window
+                Process dbLogProcess = new Process();
+                dbLogProcess.StartInfo.FileName = "cmd.exe";
+                
+                // Build command to show database logs
+                string wslPath = cmdProcessor.GetWslPath(serverDirectory);
+                string logCommand = $"cd \"{wslPath}\" && spacetime logs {moduleName} -f";
+                
+                // Build full command with appropriate escaping
+                string escapedCommand = logCommand.Replace("\"", "\\\"");
+                dbLogProcess.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l -c \"{escapedCommand}\"";
+                dbLogProcess.StartInfo.UseShellExecute = true;
+                dbLogProcess.StartInfo.WindowStyle = ProcessWindowStyle.Normal;
+                dbLogProcess.StartInfo.CreateNoWindow = false;
+                
+                dbLogProcess.Start();
+                LogMessage("Database logs window opened. Close the window when finished.", 0);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error opening database logs window: {ex.Message}", -1);
+            }
+        }
+        else
+        {
+            // Not silent, not running
+            LogMessage("Server is not running.", -1);
+        }
+    }
+    #endregion
     
     #region Utility Methods
+
     private void OpenDebianWindow()
     {
         cmdProcessor.OpenDebianWindow();
@@ -2016,93 +2122,6 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
-    #region LogMessage
-    
-    public void LogMessage(string message, int style)
-    {
-        // Skip warning messages if hideWarnings is enabled
-        if (hideWarnings && message.Contains("WARNING"))
-        {
-            return;
-        }
-        
-        if (style == 1) // Success
-        {
-            string coloredMessage = $"<color=#00FF00>{message}</color>";
-            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
-        } 
-        else if (style == -1) // Error
-        {
-            string coloredMessage = $"<color=#FF0000>{message}</color>";
-            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
-        }
-        else if (style == -2) // Warning
-        {
-            string coloredMessage = $"<color=#e0a309>{message}</color>";
-            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
-        }
-        else // Normal (style == 0) Also catches any other style
-        { 
-            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {message}\n";
-        }
-        
-        // Trim log if it gets too long
-        if (commandOutputLog.Length > 10000)
-        {
-            commandOutputLog = commandOutputLog.Substring(commandOutputLog.Length - 10000);
-        }
-        
-        Repaint();
-    }
-
-    // Opens Output Log window in silent mode or CMD window with Database logs in CMD mode
-    private void ViewServerLogs()
-    {
-        if (silentMode)
-        {
-            if (debugMode) LogMessage("Opening/focusing silent server output window...", 0);
-            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
-        }
-        else if (serverStarted)
-        {
-            // In CMD mode, both remind about server logs and open a new window for database logs
-            LogMessage("Server logs are in the SpacetimeDB server CMD window.", 0);
-            
-            // Open a new Debian window to view database logs
-            LogMessage("Opening a new window for database logs...", 0);
-            
-            try
-            {
-                // Create a process to run "spacetime logs moduleName -f" in a visible window
-                Process dbLogProcess = new Process();
-                dbLogProcess.StartInfo.FileName = "cmd.exe";
-                
-                // Build command to show database logs
-                string wslPath = cmdProcessor.GetWslPath(serverDirectory);
-                string logCommand = $"cd \"{wslPath}\" && spacetime logs {moduleName} -f";
-                
-                // Build full command with appropriate escaping
-                string escapedCommand = logCommand.Replace("\"", "\\\"");
-                dbLogProcess.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l -c \"{escapedCommand}\"";
-                dbLogProcess.StartInfo.UseShellExecute = true;
-                dbLogProcess.StartInfo.WindowStyle = ProcessWindowStyle.Normal;
-                dbLogProcess.StartInfo.CreateNoWindow = false;
-                
-                dbLogProcess.Start();
-                LogMessage("Database logs window opened. Close the window when finished.", 0);
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error opening database logs window: {ex.Message}", -1);
-            }
-        }
-        else
-        {
-            // Not silent, not running
-            LogMessage("Server is not running.", -1);
-        }
-    }
-
     private void CopyDirectory(string sourceDir, string destDir)
     {
         // Get all files from the source
@@ -2122,7 +2141,6 @@ public class ServerWindow : EditorWindow
             CopyDirectory(directory, destSubDir);
         }
     }
-    #endregion
 
     private void HandlePlayModeStateChange(PlayModeStateChange state)
     {

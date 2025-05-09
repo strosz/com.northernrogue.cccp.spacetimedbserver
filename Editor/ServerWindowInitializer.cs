@@ -1,5 +1,8 @@
 using UnityEditor;
 
+// Detects editor states and manages the processes that are dependent on it ///
+/////////////// made by Northern Rogue /// Mathias Toivonen ///////////////////
+
 namespace NorthernRogue.CCCP.Editor {
 
 [InitializeOnLoad]
@@ -80,22 +83,23 @@ public static class ServerWindowInitializer
         if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] Editor is quitting. Attempting to find ServerWindow to stop tail process.");
         // Check if the server was running silently just before quit
         bool wasRunningSilently = SessionState.GetBool("ServerWindow_WasRunningSilently", false);
-        if (wasRunningSilently) {
-             // Only find existing windows, don't create a new one
-             if (EditorWindow.HasOpenInstances<ServerWindow>())
-             {
-                 ServerWindow[] windows = UnityEngine.Resources.FindObjectsOfTypeAll<ServerWindow>();
-                 if (windows != null && windows.Length > 0)
-                 {
-                     ServerWindow window = windows[0];
-                     if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] Found ServerWindow instance. Calling StopTailProcessExplicitly.");
-                     window.StopTailProcessExplicitly();
-                 }
-             }
-             else
-             {
-                 if (debugMode) UnityEngine.Debug.LogWarning("[ServerWindowInitializer] ServerWindow instance not found during quit.");
-             }
+        if (wasRunningSilently) 
+        {
+            // Only find existing windows, don't create a new one
+            if (EditorWindow.HasOpenInstances<ServerWindow>())
+            {
+                ServerWindow[] windows = UnityEngine.Resources.FindObjectsOfTypeAll<ServerWindow>();
+                if (windows != null && windows.Length > 0)
+                {
+                    ServerWindow window = windows[0];
+                    if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] Found ServerWindow instance. Calling StopTailProcessExplicitly.");
+                    window.StopTailProcessExplicitly();
+                }
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerWindowInitializer] ServerWindow instance not found during quit.");
+            }
         }
     }
 } // Class
