@@ -1408,15 +1408,15 @@ public class ServerWindow : EditorWindow
                 Repaint();
                 
                 bool essentialSoftware = 
-                hasWSL && hasDebian && hasDebianTrixie && hasCurl && 
-                hasSpacetimeDBServer && hasSpacetimeDBPath && hasRust;
+                    hasWSL && hasDebian && hasDebianTrixie && hasCurl && 
+                    hasSpacetimeDBServer && hasSpacetimeDBPath && hasRust;
 
                 bool essentialUserSettings = 
-                !string.IsNullOrEmpty(userName) && 
-                !string.IsNullOrEmpty(serverDirectory) && 
-                !string.IsNullOrEmpty(moduleName) && 
-                !string.IsNullOrEmpty(serverLang) && 
-                !string.IsNullOrEmpty(unityLang);
+                    !string.IsNullOrEmpty(userName) && 
+                    !string.IsNullOrEmpty(serverDirectory) && 
+                    !string.IsNullOrEmpty(moduleName) && 
+                    !string.IsNullOrEmpty(serverLang) && 
+                    !string.IsNullOrEmpty(unityLang);
                 
                 if (!essentialSoftware)
                 {

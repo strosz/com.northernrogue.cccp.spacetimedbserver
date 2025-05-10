@@ -422,31 +422,39 @@ public class ServerCMDProcess
         Process process = new Process();
         process.StartInfo.FileName = "powershell.exe";
         process.StartInfo.Arguments = "-Command \"" +
-            "Write-Host 'Checking WSL...'; " +                                                          //hasWSL
-            "$wsl = (wsl --status 2>&1); " +                                                            //hasWSL
-            "if ($?) { Write-Host 'WSL_INSTALLED=TRUE' } else { Write-Host 'WSL_INSTALLED=FALSE' }; " + //hasWSL
-            "Write-Host 'Checking Debian...'; " +                                                                                  //hasDebian
-            "wsl --list 2>&1 | Select-String -Pattern 'Debian' -Quiet; " +                                                         //hasDebian
-            "if ($?) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " +                    //hasDebian
-            "Write-Host 'Checking Debian Trixie...'; " +                                                                           //hasTrixie
-            "$trixie = (wsl -d Debian -u "+ userName + " -- cat /etc/os-release 2>&1); " +                                         //hasTrixie
-            "if ($trixie -match 'trixie') { Write-Host 'TRIXIE_INSTALLED=TRUE' } else { Write-Host 'TRIXIE_INSTALLED=FALSE' }; " + //hasTrixie
-            "Write-Host 'Checking curl...'; " +                                                                                     //hasCurl
-            "$curl = (wsl -d Debian -u "+ userName + " -- which curl 2>&1); " +                                                     //hasCurl
-            "if ($curl -match '/usr/bin/curl') { Write-Host 'CURL_INSTALLED=TRUE' } else { Write-Host 'CURL_INSTALLED=FALSE' }; " + //hasCurl
-            "Write-Host 'Checking SpacetimeDB...'; " +                                                                                          // hasSpacetimeDB
-            //"Write-Host 'Using username: " + userName + "'; " +                                                                                 // hasSpacetimeDB
-            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"ls -l $HOME/.local/bin\"' 2>&1); " +                                 // hasSpacetimeDB
-            //"Write-Host \"SpacetimeDB type result: $spacetime\"; " +                                                                            // hasSpacetimeDB
-            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDB_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDB_INSTALLED=FALSE' }; " + // hasSpacetimeDB
-            "Write-Host 'Checking SpacetimeDB...'; " +                                                                                                    // hasSpacetimeDBPath
-            //"Write-Host 'Using username: " + userName + "'; " +                                                                                           // hasSpacetimeDBPath
-            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"which spacetime\"' 2>&1); " +                                               // hasSpacetimeDBPath
-            //"Write-Host \"SpacetimeDB which result: $spacetime\"; " +                                                                                     // hasSpacetimeDBPath
-            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDBPATH_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE' }; " + // hasSpacetimeDBPath
-            "Write-Host 'Checking rustc...'; " +                                                                           //hasRust
-            "$rust = (wsl -d Debian -u "+ userName + " -- bash -l -c '\"which rustc\"' 2>&1); " +                          //hasRust
-            "if ($rust -match 'rustc') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }\""; //hasRust
+            // WSL Check
+            "Write-Host 'Checking WSL...'; " +
+            "$wslExePath = Join-Path $env:SystemRoot 'System32\\wsl.exe'; " +
+            "$lxssRegPath = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Lxss'; " +
+            "if ((Test-Path $wslExePath) -and (Test-Path $lxssRegPath)) { " +
+            "  Write-Host 'WSL_INSTALLED=TRUE'; " +
+            "} else { " +
+            "  Write-Host 'WSL_INSTALLED=FALSE'; " +
+            "}; " +
+            // Debian Check
+            "Write-Host 'Checking Debian...'; " +
+            "wsl --list 2>&1 | Select-String -Pattern 'Debian' -Quiet; " +
+            "if ($?) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " +
+            // Debian Trixie Check
+            "Write-Host 'Checking Debian Trixie...'; " +
+            "$trixie = (wsl -d Debian -u "+ userName + " -- cat /etc/os-release 2>&1); " +
+            "if ($trixie -match 'trixie') { Write-Host 'TRIXIE_INSTALLED=TRUE' } else { Write-Host 'TRIXIE_INSTALLED=FALSE' }; " +
+            // cURL Check
+            "Write-Host 'Checking curl...'; " +
+            "$curl = (wsl -d Debian -u "+ userName + " -- which curl 2>&1); " +
+            "if ($curl -match '/usr/bin/curl') { Write-Host 'CURL_INSTALLED=TRUE' } else { Write-Host 'CURL_INSTALLED=FALSE' }; " +
+            // SpacetimeDB Check
+            "Write-Host 'Checking SpacetimeDB...'; " +
+            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"ls -l $HOME/.local/bin\"' 2>&1); " +
+            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDB_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDB_INSTALLED=FALSE' }; " +
+            // SpacetimeDB Path Check
+            "Write-Host 'Checking SpacetimeDB PATH...'; " +
+            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"which spacetime\"' 2>&1); " +
+            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDBPATH_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE' }; " +
+            // Rust Check
+            "Write-Host 'Checking rustup...'; " +
+            "$rust = (wsl -d Debian -u "+ userName + " -- bash -l -c '\"which rustup\"' 2>&1); " +
+            "if ($rust -match 'rustup') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }\"";
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.UseShellExecute = false;
         process.StartInfo.CreateNoWindow = true;
