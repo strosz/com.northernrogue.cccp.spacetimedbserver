@@ -280,9 +280,10 @@ public class ServerCMDProcess
         } else {
             try
             {
-                // Launch Debian directly like it would be from the Start menu
+                // Launch Debian directly using wsl.exe like if it was clicked in the start menu
                 Process process = new Process();
-                process.StartInfo.FileName = "debian.exe";
+                process.StartInfo.FileName = "wsl.exe";
+                process.StartInfo.Arguments = "-d Debian";
                 process.StartInfo.UseShellExecute = true;
                 process.Start();
             }
