@@ -536,8 +536,15 @@ public class ServerWindow : EditorWindow
             string newPort = EditorGUILayout.TextField(spacetimePort.ToString(), GUILayout.Width(130));
             if (newPort != spacetimePort.ToString())
             {
-                spacetimePort = int.Parse(newPort);
-                EditorPrefs.SetInt(PrefsKeyPrefix + "SpacetimePort", spacetimePort);
+                if (int.TryParse(newPort, out int parsedPort) && parsedPort > 0 && parsedPort < 65536)
+                {
+                    spacetimePort = parsedPort;
+                    EditorPrefs.SetInt(PrefsKeyPrefix + "SpacetimePort", spacetimePort);
+                }
+                else
+                {
+                    LogMessage("Invalid port number. Please enter a number between 1 and 65535.", -1);
+                }
             }
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(spacetimePort.ToString())), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
