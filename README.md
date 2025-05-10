@@ -60,9 +60,9 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Supported Platforms
 
-*   **Windows:** Requires WSL (Windows Subsystem for Linux) with Debian.
-    *   Includes setup instructions and an automatic pre-requisite check within Unity.
-    *   Includes an optional automatic installer for all pre-requisites (alpha version).
+*   **Windows®:** Requires WSL (Windows Subsystem for Linux) with Debian.
+    *   Includes setup instructions and an automatic pre-requisite check within Unity®.
+    *   Includes an optional automatic installer for all pre-requisites required to install SpacetimeDB® (alpha version).
 
 ## Getting Started
    - Install the asset using this .git URL in the Package Manager´s + menu.
@@ -91,4 +91,8 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Disclaimer
 
-   **Note:** This is an unofficial SpacetimeDB server manager asset for Unity. SpaceTimeDB® is a registered trademark of Clockwork Labs. This asset is neither endorsed by nor affiliated with Clockwork Labs.
+   **Note:** This is an unofficial SpacetimeDB server manager asset for Unity. This asset is neither endorsed by nor affiliated with Clockwork Labs.
+   
+**SpaceTimeDB®** is a registered trademark of Clockwork Labs. 
+**Unity®** is a registered trademark of Unity Technologies.
+**Windows®** is a registered trademark of Microsoft Corporation.

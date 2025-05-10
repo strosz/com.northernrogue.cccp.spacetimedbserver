@@ -241,6 +241,11 @@ public class ServerWindow : EditorWindow
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
 
+        // Initialize foldout states with default values of false
+        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", true));
+        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", false));
+        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false));
+
         // Initialize the processors
         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
         
@@ -669,7 +674,7 @@ public class ServerWindow : EditorWindow
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings and Debian", false);
+        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings and Debian", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", showSettingsWindow);
 
         if (showSettingsWindow)
@@ -957,7 +962,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.BeginDisabledGroup(!serverStarted);
         
         // Add a foldout for utility commands
-        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", false);
+        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", showUtilityCommands);
         
         if (showUtilityCommands)
@@ -1467,7 +1472,7 @@ public class ServerWindow : EditorWindow
     {
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
         {
-            LogMessage("Missing required installed items. Will attempt to start server.", -1);
+            LogMessage("Missing required installed items. Will attempt to start server.", -2);
         }
         if (string.IsNullOrEmpty(userName))
         {

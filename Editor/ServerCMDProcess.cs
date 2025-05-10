@@ -470,7 +470,7 @@ public class ServerCMDProcess
         //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}", 0);
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDB || !hasSpacetimeDBPath)
         {
-            logCallback("Missing pre-requisites. Install them with the Server Installer Window.", -1);
+            logCallback("Missing pre-requisites or Debian username. Install manually or with the Server Installer Window.", -2);
         } else
         {
             logCallback("Pre-requisites check complete. All required components are installed.", 1);

@@ -162,6 +162,7 @@ public class ServerUpdateProcess : EditorWindow
                 Debug.LogError("Package update failed: " + addRequest.Error.message);
                 if (window != null)
                     window.LogMessage("Package update failed: " + addRequest.Error.message, -1);
+                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false); // To not occupy UI space
             }
                 
             EditorApplication.update -= GithubUpdateProgress;

@@ -397,8 +397,7 @@ public class ServerInstallerWindow : EditorWindow
         //hasCurl = false; hasSpacetimeDBServer = false; hasSpacetimeDBPath = false; hasRust = false;
 
         // Show usernameprompt for clarity before SpacetimeDB install
-        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian && hasDebianTrixie && 
-                                  !hasCurl && !hasSpacetimeDBServer && !hasSpacetimeDBPath && !hasRust;
+        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian && hasDebianTrixie;
         
         if (showUsernamePrompt)
         {
