@@ -65,7 +65,7 @@ Install directly in your Unity Package Manager with this git URL
     *   Includes an optional automatic installer for all pre-requisites required to install SpacetimeDB® (alpha version).
 
 ## Getting Started
-   - Install the asset using this .git URL in the Package Manager´s + menu.
+   - Install the asset using this .git URL in the Package Manager´s + menu.<br>
    ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
    - A Welcome Window displays if successful with a link to the Server Installer Window which will determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the listed free and publicly available software one by one starting from the top. 
    - Now you can run SpacetimeDB directly from Unity!

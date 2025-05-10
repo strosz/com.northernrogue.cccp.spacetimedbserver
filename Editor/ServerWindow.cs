@@ -1406,6 +1406,9 @@ public class ServerWindow : EditorWindow
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
                 
+                // Load state
+                userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+
                 Repaint();
                 
                 bool essentialSoftware = 
