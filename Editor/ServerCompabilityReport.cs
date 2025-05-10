@@ -205,6 +205,7 @@ public class ServerCompabilityReport : EditorWindow
             "on your PC before continuing.\n\n" +
             "WSL1 may require a restart and will probably show errors on the other\n" +
             "Debian installers like Curl and Rust, but will succesfully install.\n" +
+            "It may display installing version 2, but it is actually installing WSL1.\n" +
             "Refer to the CCCP documentation if the automatic installation fails.";
         }
 

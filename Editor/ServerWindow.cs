@@ -5,6 +5,7 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor.XR;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 ////////////////////// made by Northern Rogue /// Mathias Toivonen ////////////////////////
@@ -2097,7 +2098,8 @@ public class ServerWindow : EditorWindow
 
     private void OpenDebianWindow()
     {
-        cmdProcessor.OpenDebianWindow();
+        bool userNameReq = true;
+        cmdProcessor.OpenDebianWindow(userNameReq);
     }
 
     // Any PingServer method will start WSL to check if Server is running

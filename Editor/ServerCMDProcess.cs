@@ -259,22 +259,37 @@ public class ServerCMDProcess
         }
     }
     
-    public void OpenDebianWindow()
+    public void OpenDebianWindow(bool userNameReq)
     {
         // Validate username before proceeding
-        if (!ValidateUserName()) return;
-
-        try
+        if (userNameReq)
         {
-            Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe";
-            process.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l";
-            process.StartInfo.UseShellExecute = true;
-            process.Start();
-        }
-        catch (Exception ex)
-        {
-            logCallback($"Error opening Debian window: {ex.Message}", -1);
+            if (!ValidateUserName()) return;
+            try
+            {
+                Process process = new Process();
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l";
+                process.StartInfo.UseShellExecute = true;
+                process.Start();
+            }
+            catch (Exception ex)
+            {
+                logCallback($"Error opening Debian window with username {userName}: {ex.Message}", -1);
+            }
+        } else {
+            try
+            {
+                Process process = new Process();
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.Arguments = $"/k wsl -d Debian -u root --exec bash -l";
+                process.StartInfo.UseShellExecute = true;
+                process.Start();
+            }
+            catch (Exception ex)
+            {
+                logCallback($"Error opening Debian window: {ex.Message}", -1);
+            }
         }
     }
     #endregion

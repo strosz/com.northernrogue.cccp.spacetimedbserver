@@ -170,7 +170,7 @@ public class ServerInstallerWindow : EditorWindow
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
-                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
+                isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallDebianTrixie
             },
             new InstallerItem
@@ -179,7 +179,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
-                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
+                isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallCurl
             },
             new InstallerItem
@@ -188,7 +188,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "SpacetimeDB Server Installation for Debian\n"+
                 "Note: Only supports installing to the users home directory (SpacetimedDB default)",
                 isInstalled = hasSpacetimeDBServer,
-                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
+                isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBServer
             },
             new InstallerItem
@@ -196,7 +196,7 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasSpacetimeDBPath,
-                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
+                isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBPath
             },
             new InstallerItem
@@ -205,7 +205,7 @@ public class ServerInstallerWindow : EditorWindow
                 description = "Rust is a programming language that runs 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
-                isEnabled = hasWSL && hasDebian, // Only enabled if WSL and Debian are installed
+                isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallRust
             },
             new InstallerItem
@@ -238,27 +238,27 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("Debian Trixie"))
             {
                 newState = hasDebianTrixie;
-                newEnabledState = hasWSL && hasDebian;
+                newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("cURL"))
             {
                 newState = hasCurl;
-                newEnabledState = hasWSL && hasDebian;
+                newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("SpacetimeDB Server"))
             {
                 newState = hasSpacetimeDBServer;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl;
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
                 newState = hasSpacetimeDBPath;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie;
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("Rust"))
             {
                 newState = hasRust;
-                newEnabledState = hasWSL && hasDebian && hasCurl;
+                newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("SpacetimeDB Unity SDK"))
             {
@@ -397,7 +397,7 @@ public class ServerInstallerWindow : EditorWindow
         //hasCurl = false; hasSpacetimeDBServer = false; hasSpacetimeDBPath = false; hasRust = false;
 
         // Show usernameprompt for clarity before SpacetimeDB install
-        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian && hasDebianTrixie;
+        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian;
         
         if (showUsernamePrompt)
         {
@@ -692,8 +692,9 @@ public class ServerInstallerWindow : EditorWindow
                             "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
                             "OK"
                         );
-                        // Launch visible Debian window
-                        cmdProcess.OpenDebianWindow();
+                        // Launch visible Debian window without username required
+                        bool userNameReq = false;
+                        cmdProcess.OpenDebianWindow(userNameReq);
                     }
                     else
                     {
@@ -733,8 +734,9 @@ public class ServerInstallerWindow : EditorWindow
                             "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
                             "OK"
                         );
-                        // Launch visible Debian window
-                        cmdProcess.OpenDebianWindow();
+                        // Launch visible Debian window without username required
+                        bool userNameReq = false;
+                        cmdProcess.OpenDebianWindow(userNameReq);
                     }
                     else
                     {
