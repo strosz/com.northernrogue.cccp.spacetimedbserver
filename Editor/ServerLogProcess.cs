@@ -182,11 +182,8 @@ public class ServerLogProcess
         System.Threading.Thread.Sleep(200);
         
         tailProcess = StartTailingLogFile(logPath, (line) => {
-            // Append to in-memory log, limit size, refresh window
-            silentServerCombinedLog += line + "\n";
-            // More aggressive truncation BEFORE saving to SessionState
-            const int maxLogLength = 75000; // Keep last 75k chars
-            const int trimToLength = 50000; // Trim down to 50k when limit exceeded
+            const int maxLogLength = 75000;
+            const int trimToLength = 50000;
             if (silentServerCombinedLog.Length > maxLogLength)
             {
                 if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
@@ -196,7 +193,6 @@ public class ServerLogProcess
             
             SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
             
-            // Call the callback to update any UI
             if (onModuleLogUpdated != null)
             {
                 onModuleLogUpdated();

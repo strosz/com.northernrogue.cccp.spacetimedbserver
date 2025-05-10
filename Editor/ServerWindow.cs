@@ -27,6 +27,7 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBPath = false;
     private bool hasRust = false;
     private bool prerequisitesChecked = false;
+    private bool initializedFirstModule = false;
     private string userName = "";
     private string backupDirectory = "";
     private string serverDirectory = "";
@@ -220,6 +221,7 @@ public class ServerWindow : EditorWindow
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         // Load Editor Prefs - Pre-Requisites Settings
         prerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "PrerequisitesChecked", false);
+        initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
         serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
         clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
         serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "http://0.0.0.0:3000/");
@@ -594,7 +596,9 @@ public class ServerWindow : EditorWindow
                 {
                     StartServer();
                 }
-            } else {
+            } 
+            else 
+            {
                 if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
                 {
                     StopServer();
@@ -1342,30 +1346,7 @@ public class ServerWindow : EditorWindow
         
         if (GUILayout.Button(buttonText, publishButtonStyle, GUILayout.Height(37)))
         {
-            if (resetDatabase)
-            {
-                // Display confirmation dialog when resetting database
-                if (EditorUtility.DisplayDialog(
-                        "Confirm Database Reset",
-                        "Are you sure you wish to delete the entire database and publish the module?",
-                        "Yes, Reset Database",
-                        "Cancel"))
-                {
-                    RunServerCommand($"spacetime publish --server local {moduleName} --delete-data -y", $"Publishing module '{moduleName}' and resetting database");
-                }
-            }
-            else
-            {
-                RunServerCommand($"spacetime publish --server local {moduleName}", $"Publishing module '{moduleName}'");
-            }
-            
-            // Reset change detection after publishing
-            if (detectServerChanges)
-            {
-                serverChangesDetected = false;
-                originalFileSizes.Clear();
-                currentFileSizes.Clear();
-            }
+            Publish(resetDatabase);
         }
         EditorGUI.EndDisabledGroup();
         
@@ -1392,7 +1373,7 @@ public class ServerWindow : EditorWindow
     }
     #endregion
     
-    #region Server Methods
+    #region Check Pre-reqs
 
     public void CheckPrerequisites()
     {
@@ -1418,12 +1399,87 @@ public class ServerWindow : EditorWindow
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
                 
                 Repaint();
-                if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDBServer || !hasSpacetimeDBPath || !hasRust)
+                
+                bool essentialSoftware = 
+                hasWSL && hasDebian && hasDebianTrixie && hasCurl && 
+                hasSpacetimeDBServer && hasSpacetimeDBPath && hasRust;
+
+                bool essentialUserSettings = 
+                !string.IsNullOrEmpty(userName) && 
+                !string.IsNullOrEmpty(serverDirectory) && 
+                !string.IsNullOrEmpty(moduleName) && 
+                !string.IsNullOrEmpty(serverLang) && 
+                !string.IsNullOrEmpty(unityLang);
+                
+                if (!essentialSoftware)
                 {
+                    LogMessage("Please check that you have everything necessary installed. Launching Server Installer Window.",-2);
                     ServerInstallerWindow.ShowWindow();
+                }
+                else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
+                {
+                    bool result = EditorUtility.DisplayDialog(
+                        "Initialize First Module",
+                        "All requirements met to initialize a server module. Do you wish to do this now?\n" +
+                        "When you publish your successfully initialized module it will automatically create the database for your module and all the necessary files so you can start developing!",
+                        "OK",
+                        "Cancel"
+                    );
+
+                    // Set the flag so the Initialize First Module dialog doesn't show again
+                    initializedFirstModule = true;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", true);
+                    
+                    if (result)
+                    {
+                        InitNewModule();
+                    }
                 }
             };
         });
+    }
+    #endregion
+
+    #region Server Methods
+
+    private void Publish(bool resetDatabase)
+    {
+        if (String.IsNullOrEmpty(clientDirectory) || String.IsNullOrEmpty(serverDirectory))
+        {
+            LogMessage("Please set your client directory and server directory in the pre-requisites first.",-2);
+            return;
+        }
+        if (String.IsNullOrEmpty(moduleName))
+        {
+            LogMessage("Please set the module name in the pre-requisites.",-2);
+            return;
+        }
+        if (resetDatabase)
+        {
+            // Display confirmation dialog when resetting database
+            if (EditorUtility.DisplayDialog(
+                    "Confirm Database Reset",
+                    "Are you sure you wish to delete the entire database and publish the module?",
+                    "Yes, Reset Database",
+                    "Cancel"))
+            {
+                RunServerCommand($"spacetime publish --server local {moduleName} --delete-data -y", $"Publishing module '{moduleName}' and resetting database");
+            }
+        }
+        else
+        {
+            RunServerCommand($"spacetime publish --server local {moduleName}", $"Publishing module '{moduleName}'");
+        }
+        
+        // Reset change detection after publishing
+        if (detectServerChanges)
+        {
+            serverChangesDetected = false;
+            originalFileSizes.Clear();
+            currentFileSizes.Clear();
+        }
+
+        // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
     }
 
     private void InitNewModule()
@@ -1443,7 +1499,8 @@ public class ServerWindow : EditorWindow
         EditorApplication.delayCall += () =>
         {
             bool result = EditorUtility.DisplayDialog("Init a new module", 
-                "Are you sure you want to init a new module?\nDon't do this if you already have a module in the server directory.", 
+                "Are you sure you want to init a new module?\n"+
+                "Don't do this if you already have a module in your set server directory.", 
                 "Yes", "No");
             
             if (result)
@@ -1453,6 +1510,10 @@ public class ServerWindow : EditorWindow
                 string command = $"cd \"{wslPath}\" && spacetime init --lang {serverLang} .";
                 cmdProcessor.RunWslCommandSilent(command);
                 LogMessage("New module initialized", 1);
+                
+                // Set the flag so the initialization dialog doesn't show again
+                initializedFirstModule = true;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", true);
             }
         };
     }

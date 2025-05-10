@@ -248,7 +248,7 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB Server"))
             {
                 newState = hasSpacetimeDBServer;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie;
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl;
             }
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
@@ -258,7 +258,7 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("Rust"))
             {
                 newState = hasRust;
-                newEnabledState = hasWSL && hasDebian;
+                newEnabledState = hasWSL && hasDebian && hasCurl;
             }
             else if (item.title.Contains("SpacetimeDB Unity SDK"))
             {
@@ -544,7 +544,10 @@ public class ServerInstallerWindow : EditorWindow
         {
             GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
             prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange
+            if (!hasDebianTrixie)
             EditorGUILayout.LabelField("Requires WSL2 with Debian Trixie to be installed first", prereqStyle);
+            else if (!hasCurl)
+            EditorGUILayout.LabelField("Requires cURL to be installed first", prereqStyle);
         }
         
         // Restore original color
@@ -960,7 +963,7 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Installing SpacetimeDB Server...", Color.green);
         
         // Command to install SpacetimeDB Server
-        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"yes | curl -sSf https://install.spacetimedb.com | sh\"";
+        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"echo y | curl -sSf https://install.spacetimedb.com | sh\"";
 
         // Use the ServerCMDProcess method to run the PowerShell command
         bool success = await cmdProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
@@ -1033,6 +1036,12 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Rust is already installed.", Color.green);
             return;
         }
+
+        if (!hasCurl)
+        {
+            SetStatus("curl is required to install Rust. Please install curl first.", Color.red);
+            return;
+        }
         
         SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
         
@@ -1046,9 +1055,9 @@ public class ServerInstallerWindow : EditorWindow
         }
         await Task.Delay(2000); // Shorter delay
         
-        // Then install Rust
-        SetStatus("Installing Rust - Step 2: Installing rustc package", Color.yellow);
-        string rustInstallCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y rustc\"";
+        // Then install Rust using rustup
+        SetStatus("Installing Rust - Step 2: Installing rustup", Color.yellow);
+        string rustInstallCommand = $"wsl -d Debian -u {userName} bash -c \"echo 1 | curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\"";
         bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
@@ -1060,6 +1069,15 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Failed to install Rust. Installation aborted.", Color.red);
 
             return;
+        }
+
+        // Source the cargo environment
+        SetStatus("Installing Rust - Step 3: Setting up Rust environment", Color.yellow);
+        string sourceCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\"\"";
+        bool sourceSuccess = await cmdProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!sourceSuccess)
+        {
+            SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
         }
 
         // Check installation status
