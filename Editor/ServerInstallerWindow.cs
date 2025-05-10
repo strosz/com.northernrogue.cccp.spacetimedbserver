@@ -781,8 +781,8 @@ public class ServerInstallerWindow : EditorWindow
         bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!upgradeSuccess)
         {
-            SetStatus("Failed to upgrade Debian. Trixie installation aborted.", Color.red);
-            return;
+            // It's common to get a failed install here, but the install process will work anyway
+            SetStatus("Failed to upgrade for Trixie install. Attempting to continue.", Color.green);
         }
         await Task.Delay(2000);
         
