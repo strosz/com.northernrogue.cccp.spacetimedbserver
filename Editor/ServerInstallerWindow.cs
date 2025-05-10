@@ -831,7 +831,7 @@ public class ServerInstallerWindow : EditorWindow
         if (!fullUpgradeSuccess)
         {
             CheckInstallationStatus();
-            await Task.Delay(2000);
+            await Task.Delay(1000);
             if (WSL1Installed && hasDebianTrixie)
             SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
             else
@@ -852,7 +852,7 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("WSL restarted. Checking installation status...", Color.green);
         await Task.Delay(5000); // Longer wait for startup
         CheckInstallationStatus();
-        await Task.Delay(2000);
+        await Task.Delay(1000);
         if (hasDebianTrixie)
         {
             SetStatus("Debian Trixie Update installed successfully.", Color.green);
@@ -977,8 +977,6 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus("SpacetimeDB Server installation started. This may take some time.", Color.green);
 
-            // Give some time before checking again
-            await Task.Delay(3000);
             CheckInstallationStatus();
             await Task.Delay(1000);
             if (hasSpacetimeDBServer)
@@ -1016,9 +1014,7 @@ public class ServerInstallerWindow : EditorWindow
         if (success)
         {
             SetStatus("SpacetimeDB PATH installation started. This may take some time.", Color.green);
-            
-            // Give some time before checking again
-            await Task.Delay(5000);
+            await Task.Delay(1000);
             CheckInstallationStatus();
             await Task.Delay(1000);
             if (hasSpacetimeDBPath)
@@ -1066,8 +1062,13 @@ public class ServerInstallerWindow : EditorWindow
         bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
-            SetStatus("Failed to install Rust. Installation aborted.", Color.red);
-            return;
+            if (WSL1Installed)
+            {
+                SetStatus("Rust installation continuing. (WSL1)", Color.green);
+            } else {
+                SetStatus("Failed to install Rust. Installation aborted.", Color.red);
+                return;
+            }
         }
 
         // Source the cargo environment
@@ -1075,18 +1076,37 @@ public class ServerInstallerWindow : EditorWindow
         string sourceCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\"\"";
         bool sourceSuccess = await cmdProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!sourceSuccess)
-        {   CheckInstallationStatus();
-            await Task.Delay(2000);
+        {   
+            if (WSL1Installed)
+            {
+                SetStatus("Rust installation continuing. (WSL1)", Color.green);
+            } else {
+                SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
+                return;
+            }
+        }
+
+        // Install build-essential package
+        SetStatus("Installing Rust - Step 4: Installing build-essential", Color.yellow);
+        string buildEssentialCommand = $"wsl -d Debian -u {userName} bash -c \"sudo apt install -y build-essential\"";
+        bool buildEssentialSuccess = await cmdProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!buildEssentialSuccess)
+        {
+            CheckInstallationStatus();
+            await Task.Delay(1000);
             if (WSL1Installed && hasRust)
-            SetStatus("Rust installed successfully. (WSL1)", Color.green);
-            else
-            SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
-            return;
+            {
+                SetStatus("Rust installed successfully. (WSL1)", Color.green);
+                return;
+            } else {
+                SetStatus("Warning: Failed to install build-essential. Some Rust packages may not compile correctly.", Color.yellow);
+                return;
+            }
         }
 
         // Check installation status
         CheckInstallationStatus();
-        await Task.Delay(2000);
+        await Task.Delay(1000);
         
         if (hasRust)
         {
