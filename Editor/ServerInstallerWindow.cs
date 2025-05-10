@@ -253,7 +253,7 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB PATH"))
             {
                 newState = hasSpacetimeDBPath;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && !String.IsNullOrEmpty(userName);
+                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
             }
             else if (item.title.Contains("Rust"))
             {
@@ -721,7 +721,7 @@ public class ServerInstallerWindow : EditorWindow
             
             if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
             {
-                string wsl2InstallCommand = "wsl.exe --install -d Debian"; // wsl.exe is more direct
+                string wsl2InstallCommand = "wsl --set-default-version 2 && wsl --install -d Debian";
                 installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 if (installedSuccessfully)
                 {
@@ -1088,7 +1088,7 @@ public class ServerInstallerWindow : EditorWindow
 
         // Install build-essential package
         SetStatus("Installing Rust - Step 4: Installing build-essential", Color.yellow);
-        string buildEssentialCommand = $"wsl -d Debian -u {userName} bash -c \"sudo apt install -y build-essential\"";
+        string buildEssentialCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y build-essential\"";
         bool buildEssentialSuccess = await cmdProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!buildEssentialSuccess)
         {
