@@ -70,7 +70,7 @@ Install directly in your Unity Package Manager with this git URL
    - A Welcome Window displays if successful with a link to the Server Installer Window which will determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the listed free and publicly available software one by one starting from the top. 
    - Now you can run SpacetimeDB directly from Unity!
 
-   **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. For a manual install process please check the documentation button available in the Welcome Window.
+   **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
 
 ## Upcoming Features
    - Server profiles.
@@ -92,7 +92,9 @@ Install directly in your Unity Package Manager with this git URL
 ## Disclaimer
 
    **Note:** This is an unofficial SpacetimeDB server manager asset for Unity. This asset is neither endorsed by nor affiliated with Clockwork Labs.
-   
+
+   You are required to check that you don't break the license terms of any Software referred to in this document. Clockwork Labs allows you to run one instance of SpacetimeDB on their free tier, which this asset complies with.
+
 **SpaceTimeDB®** is a registered trademark of Clockwork Labs. 
 **Unity®** is a registered trademark of Unity Technologies.
 **Windows®** is a registered trademark of Microsoft Corporation.

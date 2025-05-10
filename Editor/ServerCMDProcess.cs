@@ -59,7 +59,7 @@ public class ServerCMDProcess
                 process.StartInfo.CreateNoWindow = false;
                 
                 // Use a simple batch technique - write the command to a temp file and execute it
-                string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"spacetime_cmd_{DateTime.Now.Ticks}.bat");
+                string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"cosmoscovecontrolpanel_install_{DateTime.Now.Ticks}.bat");
                 
                 // Construct the batch file content
                 // The command itself (e.g., dism.exe) should trigger UAC if needed, as cmd.exe is UseShellExecute=true

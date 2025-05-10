@@ -153,14 +153,14 @@ public class ServerUpdateProcess : EditorWindow
             if (addRequest.Status == StatusCode.Success)
             {
                 Debug.Log("Package updated successfully: " + addRequest.Result.packageId);
-                if (window != null)
+                if (window != null && debugMode)
                     window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
                 EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false);
             }
             else if (addRequest.Status == StatusCode.Failure)
             {
                 Debug.LogError("Package update failed: " + addRequest.Error.message);
-                if (window != null)
+                if (window != null && debugMode)
                     window.LogMessage("Package update failed: " + addRequest.Error.message, -1);
                 EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false); // To not occupy UI space
             }

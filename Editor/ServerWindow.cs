@@ -562,21 +562,7 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
             if (GUILayout.Button("Init a new module", GUILayout.Width(130), GUILayout.Height(20)))
             {
-                if (string.IsNullOrEmpty(serverDirectory))
-                {
-                    LogMessage("Please set the server directory first.", -1);
-                    return;
-                }
-                if (string.IsNullOrEmpty(serverLang))
-                {
-                    LogMessage("Please set the server language first.", -1);
-                    return;
-                }
-                bool result = EditorUtility.DisplayDialog("Init a new module", "Are you sure you want to init a new module?\nDon't do this if you already have a module in the server directory.", "Yes", "No");
-                if (result)
-                {
-                    InitNewModule();
-                }
+                InitNewModule();
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1442,13 +1428,33 @@ public class ServerWindow : EditorWindow
 
     private void InitNewModule()
     {
-        string wslPath = GetWslPath(serverDirectory);
-        
-        // Combine cd and init command
-        string command = $"cd \"{wslPath}\" && spacetime init --lang {serverLang} .";
-        
-        cmdProcessor.RunWslCommandSilent(command);
-        LogMessage("New module initialized", 1);
+        if (string.IsNullOrEmpty(serverDirectory))
+        {
+            LogMessage("Please set the server directory first.", -1);
+            return;
+        }
+        if (string.IsNullOrEmpty(serverLang))
+        {
+            LogMessage("Please set the server language first.", -1);
+            return;
+        }
+
+        // Use EditorApplication.delayCall to ensure we're not in the middle of a GUI layout
+        EditorApplication.delayCall += () =>
+        {
+            bool result = EditorUtility.DisplayDialog("Init a new module", 
+                "Are you sure you want to init a new module?\nDon't do this if you already have a module in the server directory.", 
+                "Yes", "No");
+            
+            if (result)
+            {
+                string wslPath = GetWslPath(serverDirectory);
+                // Combine cd and init command
+                string command = $"cd \"{wslPath}\" && spacetime init --lang {serverLang} .";
+                cmdProcessor.RunWslCommandSilent(command);
+                LogMessage("New module initialized", 1);
+            }
+        };
     }
 
     public void ClearModuleLogFile() // Clears the module tmp log file
