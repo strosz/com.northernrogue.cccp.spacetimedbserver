@@ -2098,7 +2098,7 @@ public class ServerWindow : EditorWindow
 
     private void OpenDebianWindow()
     {
-        bool userNameReq = true;
+        bool userNameReq = false;
         cmdProcessor.OpenDebianWindow(userNameReq);
     }
 
