@@ -435,6 +435,8 @@ public class ServerInstallerWindow : EditorWindow
                 
                 // Use the current event to prevent it from propagating
                 e.Use();
+
+                CheckInstallationStatus();
             }
             
             // Add a submit button for clarity
@@ -446,6 +448,8 @@ public class ServerInstallerWindow : EditorWindow
                 foreach (var item in installerItems) item.isEnabled = true;
                 userNamePrompt = false;
                 Debug.Log("Username submitted via button: " + userName);
+
+                CheckInstallationStatus();
             }
             
             EditorGUILayout.EndHorizontal();
@@ -674,9 +678,8 @@ public class ServerInstallerWindow : EditorWindow
 
                 if (installedSuccessfully)
                 {
-                    await Task.Delay(1000);
                     CheckInstallationStatus();
-                    await Task.Delay(3000);
+                    await Task.Delay(1000);
                     if (hasWSL && hasDebian)
                     {
                         SetStatus("WSL1 with Debian installed successfully.", Color.green);
@@ -1063,13 +1066,7 @@ public class ServerInstallerWindow : EditorWindow
         bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
-            CheckInstallationStatus();
-            await Task.Delay(2000);
-            if (WSL1Installed && hasRust)
-            SetStatus("Rust installed successfully. (WSL1)", Color.green);
-            else
             SetStatus("Failed to install Rust. Installation aborted.", Color.red);
-
             return;
         }
 
@@ -1078,8 +1075,13 @@ public class ServerInstallerWindow : EditorWindow
         string sourceCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\"\"";
         bool sourceSuccess = await cmdProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!sourceSuccess)
-        {
+        {   CheckInstallationStatus();
+            await Task.Delay(2000);
+            if (WSL1Installed && hasRust)
+            SetStatus("Rust installed successfully. (WSL1)", Color.green);
+            else
             SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
+            return;
         }
 
         // Check installation status
