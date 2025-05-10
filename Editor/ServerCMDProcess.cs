@@ -282,7 +282,7 @@ public class ServerCMDProcess
             {
                 Process process = new Process();
                 process.StartInfo.FileName = "cmd.exe";
-                process.StartInfo.Arguments = $"/k wsl -d Debian -u root --exec bash -l";
+                process.StartInfo.Arguments = $"/k wsl -d Debian --exec bash -l";
                 process.StartInfo.UseShellExecute = true;
                 process.Start();
             }
