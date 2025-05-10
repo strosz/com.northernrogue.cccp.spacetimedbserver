@@ -426,35 +426,50 @@ public class ServerCMDProcess
             "Write-Host 'Checking WSL...'; " +
             "$wslExePath = Join-Path $env:SystemRoot 'System32\\wsl.exe'; " +
             "$lxssRegPath = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Lxss'; " +
-            "if ((Test-Path $wslExePath) -and (Test-Path $lxssRegPath)) { " +
-            "  Write-Host 'WSL_INSTALLED=TRUE'; " +
+            "$wslInstalled = ((Test-Path $wslExePath) -and (Test-Path $lxssRegPath)); " +
+            "if ($wslInstalled) { Write-Host 'WSL_INSTALLED=TRUE' } else { Write-Host 'WSL_INSTALLED=FALSE' }; " +
+            
+            // Conditional execution based on WSL
+            "if ($wslInstalled) { " +
+                // All WSL-dependent checks run independently if WSL is installed
+                // Debian Check
+                "Write-Host 'Checking Debian...'; " +
+                "wsl --list 2>&1 | Select-String -Pattern 'Debian' -Quiet; " +
+                "if ($?) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " +
+                
+                // Debian Trixie Check
+                "Write-Host 'Checking Debian Trixie...'; " +
+                "$trixie = (wsl -d Debian -u "+ userName + " -- cat /etc/os-release 2>&1); " +
+                "if ($trixie -match 'trixie') { Write-Host 'TRIXIE_INSTALLED=TRUE' } else { Write-Host 'TRIXIE_INSTALLED=FALSE' }; " +
+                
+                // cURL Check
+                "Write-Host 'Checking curl...'; " +
+                "$curl = (wsl -d Debian -u "+ userName + " -- which curl 2>&1); " +
+                "if ($curl -match '/usr/bin/curl') { Write-Host 'CURL_INSTALLED=TRUE' } else { Write-Host 'CURL_INSTALLED=FALSE' }; " +
+                
+                // SpacetimeDB Check
+                "Write-Host 'Checking SpacetimeDB...'; " +
+                "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"ls -l $HOME/.local/bin\"' 2>&1); " +
+                "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDB_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDB_INSTALLED=FALSE' }; " +
+                
+                // SpacetimeDB Path Check
+                "Write-Host 'Checking SpacetimeDB PATH...'; " +
+                "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"which spacetime\"' 2>&1); " +
+                "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDBPATH_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE' }; " +
+                
+                // Rust Check
+                "Write-Host 'Checking rustup...'; " +
+                "$rust = (wsl -d Debian -u "+ userName + " -- bash -l -c '\"which rustup\"' 2>&1); " +
+                "if ($rust -match 'rustup') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }" +
             "} else { " +
-            "  Write-Host 'WSL_INSTALLED=FALSE'; " +
-            "}; " +
-            // Debian Check
-            "Write-Host 'Checking Debian...'; " +
-            "wsl --list 2>&1 | Select-String -Pattern 'Debian' -Quiet; " +
-            "if ($?) { Write-Host 'DEBIAN_INSTALLED=TRUE' } else { Write-Host 'DEBIAN_INSTALLED=FALSE' }; " +
-            // Debian Trixie Check
-            "Write-Host 'Checking Debian Trixie...'; " +
-            "$trixie = (wsl -d Debian -u "+ userName + " -- cat /etc/os-release 2>&1); " +
-            "if ($trixie -match 'trixie') { Write-Host 'TRIXIE_INSTALLED=TRUE' } else { Write-Host 'TRIXIE_INSTALLED=FALSE' }; " +
-            // cURL Check
-            "Write-Host 'Checking curl...'; " +
-            "$curl = (wsl -d Debian -u "+ userName + " -- which curl 2>&1); " +
-            "if ($curl -match '/usr/bin/curl') { Write-Host 'CURL_INSTALLED=TRUE' } else { Write-Host 'CURL_INSTALLED=FALSE' }; " +
-            // SpacetimeDB Check
-            "Write-Host 'Checking SpacetimeDB...'; " +
-            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"ls -l $HOME/.local/bin\"' 2>&1); " +
-            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDB_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDB_INSTALLED=FALSE' }; " +
-            // SpacetimeDB Path Check
-            "Write-Host 'Checking SpacetimeDB PATH...'; " +
-            "$spacetime = (wsl -d Debian -u " + userName + " -- bash -l -c '\"which spacetime\"' 2>&1); " +
-            "if ($spacetime -match 'spacetime') { Write-Host 'SPACETIMEDBPATH_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE' }; " +
-            // Rust Check
-            "Write-Host 'Checking rustup...'; " +
-            "$rust = (wsl -d Debian -u "+ userName + " -- bash -l -c '\"which rustup\"' 2>&1); " +
-            "if ($rust -match 'rustup') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }\"";
+                // Set all dependent checks to FALSE if WSL is not installed
+                "Write-Host 'DEBIAN_INSTALLED=FALSE'; " +
+                "Write-Host 'TRIXIE_INSTALLED=FALSE'; " +
+                "Write-Host 'CURL_INSTALLED=FALSE'; " +
+                "Write-Host 'SPACETIMEDB_INSTALLED=FALSE'; " +
+                "Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE'; " +
+                "Write-Host 'RUST_INSTALLED=FALSE'" +
+            "}\"";
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.UseShellExecute = false;
         process.StartInfo.CreateNoWindow = true;
