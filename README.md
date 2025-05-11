@@ -4,6 +4,7 @@
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
 <a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/buy%20me%20a%20ko-fi-8A2BE2"></a>
 </p>
+<img src="https://northernrogue.se/cosmos_cover_new.png" alt="Alt text" width="900">
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
@@ -78,9 +79,8 @@ Install directly in your Unity Package Manager with this git URL
    - Notification and updater to a new SpacetimeDB server version.
 
 ## Community Made
-   - Created by an MMO developer who wanted to see SpacetimeDB directly in Unity.
-   - If you like this asset and would buy me a coffee or beer if we met,
-   please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
+   - Created by a solo MMO developer.
+   - If you like this asset, please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
 
 ## License
 > You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell **products and services** that incorporate or are built with this Unity editor asset.  
