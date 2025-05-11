@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using UnityEditor;
 
 // Runs the main server and installation processes and methods ///
-//////// made by Northern Rogue /// Mathias Toivonen /////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -870,3 +869,5 @@ public class ServerCMDProcess
     #endregion
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

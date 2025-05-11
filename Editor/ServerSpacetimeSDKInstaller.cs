@@ -5,7 +5,6 @@ using UnityEditor.PackageManager.Requests;
 using System;
 
 // Checking and installation of the official Spacetime SDK for Unity ///
-//////////// made by Northern Rogue /// Mathias Toivonen ///////////////
 
 namespace NorthernRogue.CCCP.Editor {
     
@@ -184,3 +183,5 @@ public static class ServerSpacetimeSDKInstaller
     }
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

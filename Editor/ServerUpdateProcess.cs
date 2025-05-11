@@ -6,7 +6,6 @@ using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 
 // Handles new updates for the asset from Unity, Github and SpacetimeDB ///
-//////////////// made by Northern Rogue /// Mathias Toivonen //////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -34,8 +33,6 @@ public class ServerUpdateProcess : EditorWindow
 
     /////////////////////////////// SpacetimeDB Update Installer ///////////////////////////////
     // To be created
-
-
 
     static ServerUpdateProcess()
     {
@@ -214,3 +211,5 @@ public class ServerUpdateProcess : EditorWindow
 
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
-////////////////////// made by Northern Rogue /// Mathias Toivonen ////////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -16,6 +15,7 @@ public class ServerWindow : EditorWindow
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
+    private ServerVersionProcess versionProcessor;
     private Process serverProcess;
 
     // Pre-requisites
@@ -291,6 +291,18 @@ public class ServerWindow : EditorWindow
             () => ServerOutputWindow.RefreshOpenWindow(), // Database log update callback
             cmdProcessor,
             debugMode
+        );
+        
+        // Initialize VersionProcessor
+        versionProcessor = new ServerVersionProcess(cmdProcessor, LogMessage, debugMode);
+        
+        // Configure the server control delegates
+        versionProcessor.ConfigureServerControlDelegates(
+            () => serverStarted, // IsServerRunning
+            () => autoCloseWsl,  // GetAutoCloseWsl
+            (value) => { autoCloseWsl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", value); }, // SetAutoCloseWsl
+            () => StartServer(),  // StartServer
+            () => StopServer()    // StopServer
         );
         
         // Configure the log processor
@@ -713,6 +725,14 @@ public class ServerWindow : EditorWindow
             {
                 OpenDebianWindow();
             }
+
+            Color recommendedColor = Color.green;
+            Color warningColor;
+            ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
+            Color hiddenColor;
+            ColorUtility.TryParseHtmlString("#808080", out hiddenColor); // Grey
+            Color debugColor;
+            ColorUtility.TryParseHtmlString("#30C099", out debugColor); // Cyan
         
             // Server Mode toggle
             EditorGUILayout.Space(5);
@@ -724,9 +744,6 @@ public class ServerWindow : EditorWindow
             GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
             if (silentMode)
             {
-                // Use a specific color for hidden mode, e.g., gray or a custom color
-                Color hiddenColor;
-                ColorUtility.TryParseHtmlString("#808080", out hiddenColor);
                 silentToggleStyle.normal.textColor = hiddenColor;
                 silentToggleStyle.hover.textColor = hiddenColor;
             }
@@ -734,7 +751,6 @@ public class ServerWindow : EditorWindow
             {
                 silentMode = !silentMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "SilentMode", silentMode);
-                LogMessage(silentMode ? "Server will now start hidden (Silent Mode)." : "Server will now start with a visible CMD window.", 0);
             }
             EditorGUILayout.EndHorizontal();
             
@@ -749,8 +765,8 @@ public class ServerWindow : EditorWindow
             if (detectServerChanges)
             {
                 // Use green for active detection
-                changeToggleStyle.normal.textColor = Color.green;
-                changeToggleStyle.hover.textColor = Color.green;
+                changeToggleStyle.normal.textColor = recommendedColor;
+                changeToggleStyle.hover.textColor = recommendedColor;
             }
             if (GUILayout.Button(detectServerChanges ? "Detecting Changes" : "Not Detecting Changes", changeToggleStyle))
             {
@@ -765,12 +781,10 @@ public class ServerWindow : EditorWindow
                     serverChangesDetected = false;
                     // Check immediately
                     DetectServerChanges();
-                    LogMessage("Server change detection enabled", 0);
                 }
                 else
                 {
                     serverChangesDetected = false;
-                    LogMessage("Server change detection disabled", 0);
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -786,31 +800,21 @@ public class ServerWindow : EditorWindow
             if (autoPublishMode)
             {
                 // Use green for active auto-publish
-                autoPublishStyle.normal.textColor = Color.green;
-                autoPublishStyle.hover.textColor = Color.green;
+                autoPublishStyle.normal.textColor = recommendedColor;
+                autoPublishStyle.hover.textColor = recommendedColor;
             }
             if (GUILayout.Button(autoPublishMode ? "Automatic Publishing" : "Manual Publish", autoPublishStyle))
             {
                 autoPublishMode = !autoPublishMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "AutoPublishMode", autoPublishMode);
                 
-                if (autoPublishMode)
+                if (autoPublishMode && !detectServerChanges)
                 {
-                    if (!detectServerChanges)
-                    {
-                        // Auto-enable change detection if it's not already on
-                        detectServerChanges = true;
-                        EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", true);
-                        originalFileSizes.Clear();
-                        currentFileSizes.Clear();
-                        DetectServerChanges();
-                        LogMessage("Server change detection required and was automatically enabled", 0);
-                    }
-                    LogMessage("Automatic publishing enabled - modules will publish when changes are detected while the server is running", 0);
-                }
-                else
-                {
-                    LogMessage("Automatic publishing disabled - manual publishing required", 0);
+                    detectServerChanges = true;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", true);
+                    originalFileSizes.Clear();
+                    currentFileSizes.Clear();
+                    DetectServerChanges();
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -827,22 +831,13 @@ public class ServerWindow : EditorWindow
             if (publishAndGenerateMode)
             {
                 // Use green for active auto-generate
-                publishGenerateStyle.normal.textColor = Color.green;
-                publishGenerateStyle.hover.textColor = Color.green;
+                publishGenerateStyle.normal.textColor = recommendedColor;
+                publishGenerateStyle.hover.textColor = recommendedColor;
             }
             if (GUILayout.Button(publishAndGenerateMode ? "Publish will Generate" : "Separate Generate", publishGenerateStyle))
             {
                 publishAndGenerateMode = !publishAndGenerateMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "PublishAndGenerateMode", publishAndGenerateMode);
-                
-                if (publishAndGenerateMode)
-                {
-                    LogMessage("Publish will now automatically trigger Generate Unity Files upon success.", 0);
-                }
-                else
-                {
-                    LogMessage("Publish and Generate are now separate steps.", 0);
-                }
             }
             EditorGUILayout.EndHorizontal();
 
@@ -858,9 +853,6 @@ public class ServerWindow : EditorWindow
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
             if (autoCloseWsl)
             {
-                // Use a warning color (e.g., orange/red) to indicate WSL will shut down
-                Color warningColor;
-                ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
                 wslCloseStyle.normal.textColor = warningColor;
                 wslCloseStyle.hover.textColor = warningColor;
             }
@@ -868,7 +860,6 @@ public class ServerWindow : EditorWindow
             {
                 autoCloseWsl = !autoCloseWsl;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", autoCloseWsl);
-                LogMessage(autoCloseWsl ? "WSL will be shut down when the server is stopped or Unity is closed." : "WSL will keep running after the server stops or Unity is closed.", 0);
             }
             EditorGUILayout.EndHorizontal();
 
@@ -883,9 +874,6 @@ public class ServerWindow : EditorWindow
             GUIStyle warningToggleStyle = new GUIStyle(GUI.skin.button);
             if (hideWarnings)
             {
-                // Convert hex color to Unity Color
-                Color warningColor;
-                ColorUtility.TryParseHtmlString("#FFA500", out warningColor);
                 warningToggleStyle.normal.textColor = warningColor;
                 warningToggleStyle.hover.textColor = warningColor;
             }
@@ -893,7 +881,6 @@ public class ServerWindow : EditorWindow
             {
                 hideWarnings = !hideWarnings;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HideWarnings", hideWarnings);
-                LogMessage(hideWarnings ? "Now hiding SpacetimeDB WARNING messages" : "Now showing all messages", hideWarnings ? 0 : 1);
             }
             EditorGUILayout.EndHorizontal();
 
@@ -909,9 +896,6 @@ public class ServerWindow : EditorWindow
                 GUIStyle moduleLogToggleStyle = new GUIStyle(GUI.skin.button);
                 if (clearModuleLogAtStart)
                 {
-                    // Convert hex color to Unity Color
-                    Color warningColor;
-                    ColorUtility.TryParseHtmlString("#FFA500", out warningColor);
                     moduleLogToggleStyle.normal.textColor = warningColor;
                     moduleLogToggleStyle.hover.textColor = warningColor;
                 }
@@ -919,7 +903,6 @@ public class ServerWindow : EditorWindow
                 {
                     clearModuleLogAtStart = !clearModuleLogAtStart;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", clearModuleLogAtStart);
-                    LogMessage(clearModuleLogAtStart ? "Now clearing Module Log At Silent Server Start" : "Now keeping Module Log between server restarts", clearModuleLogAtStart ? 0 : 1);
                 }
                 EditorGUILayout.EndHorizontal();
                 
@@ -934,9 +917,6 @@ public class ServerWindow : EditorWindow
                 GUIStyle databaseLogToggleStyle = new GUIStyle(GUI.skin.button);
                 if (clearDatabaseLogAtStart)
                 {
-                    // Convert hex color to Unity Color
-                    Color warningColor;
-                    ColorUtility.TryParseHtmlString("#FFA500", out warningColor);
                     databaseLogToggleStyle.normal.textColor = warningColor;
                     databaseLogToggleStyle.hover.textColor = warningColor;
                 }
@@ -944,7 +924,6 @@ public class ServerWindow : EditorWindow
                 {
                     clearDatabaseLogAtStart = !clearDatabaseLogAtStart;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", clearDatabaseLogAtStart);
-                    LogMessage(clearDatabaseLogAtStart ? "Now clearing Database Log At Silent Server Start" : "Now keeping Database Log between server restarts", clearDatabaseLogAtStart ? 0 : 1);
                 }
                 EditorGUILayout.EndHorizontal();
             }
@@ -954,14 +933,11 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.BeginHorizontal();
             string debugTooltip = 
             "Debug Mode: Will show all server management debug messages. \n\n"+
-            "Debug Disabled: Will not show most debug messages. Errors are still shown.";
+            "Debug Disabled: Will not show most debug messages. Important errors are still shown.";
             EditorGUILayout.LabelField(new GUIContent("Debug:", debugTooltip), GUILayout.Width(120));
             GUIStyle debugToggleStyle = new GUIStyle(GUI.skin.button);
             if (debugMode)
             {
-                // Use a specific color for debug mode, e.g., magenta or cyan
-                Color debugColor;
-                ColorUtility.TryParseHtmlString("#00FFFF", out debugColor); // Cyan
                 debugToggleStyle.normal.textColor = debugColor;
                 debugToggleStyle.hover.textColor = debugColor;
             }
@@ -969,7 +945,6 @@ public class ServerWindow : EditorWindow
             {
                 debugMode = !debugMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "DebugMode", debugMode);
-                if (debugMode) LogMessage("Debug Mode Enabled - Verbose logs will be shown for all scripts.", 0);
                 ServerOutputWindow.debugMode = debugMode; // Update ServerOutputWindow's debug mode
                 ServerWindowInitializer.debugMode = debugMode; // Update ServerWindowInitializer's debug mode
                 ServerUpdateProcess.debugMode = debugMode; // Update ServerUpdateProcess's debug mode
@@ -997,6 +972,9 @@ public class ServerWindow : EditorWindow
         
         if (showUtilityCommands)
         {
+            EditorGUILayout.LabelField(
+            "SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+
             if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
             {
                 RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
@@ -1021,321 +999,23 @@ public class ServerWindow : EditorWindow
             {
                 RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
             }
+
+            EditorGUILayout.LabelField(
+            "WSL Server Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             
-            // Backup Server Data button
+            string backupTooltip = "Creates a tar archive of your DATA folder in your SpacetimeDB server.";
             EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
-            if (GUILayout.Button("Backup Server Data", GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
             {  
-                string wslBackupPath = GetWslPath(backupDirectory);
-                string spacetimePath = $"/home/{userName}/.local/share/spacetime/data";
-                // Ensure the converted path is valid and not just the home directory
-                if (string.IsNullOrEmpty(backupDirectory) || wslBackupPath == "~")
-                {
-                    LogMessage("Error: Backup directory is not set or invalid.", -1);
-                }
-                else
-                {
-                    // --- Restore backup command, using cd && tar approach ---
-                    // string debugCommand = $"ls -la /home/{userName}/.local/share/spacetime/data"; 
-                    // Construct the backup command using cd to parent dir and relative source
-                    string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}"; 
-                    RunServerCommand(backupCommand, "Backing up SpacetimeDB data");
-                    //LogMessage("Backup Command: " + backupCommand, 0);
-                }
+                versionProcessor.BackupServerData(backupDirectory, userName);
             }
             EditorGUI.EndDisabledGroup();
-            
-            // Restore Server Data button
-            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
-            if (GUILayout.Button("Restore Server Data", GUILayout.Height(20)))
-            {
-                string wslBackupPath = GetWslPath(backupDirectory);
-                
-                // Ensure the backup directory is valid
-                if (!string.IsNullOrEmpty(backupDirectory) && wslBackupPath != "~")
-                {
-                    // Show file selection dialog
-                    string backupFilePath = EditorUtility.OpenFilePanel("Select Backup File", backupDirectory, "gz");
-                    if (!string.IsNullOrEmpty(backupFilePath))
-                    {
-                        // Convert Windows path to WSL path for the selected backup file
-                        string wslBackupFilePath = GetWslPath(backupFilePath);
-                        
-                        // Display confirmation dialog due to overwrite risk
-                        if (EditorUtility.DisplayDialog(
-                            "Confirm Restore",
-                            "This will extract your backup and restore the data, replacing all current data.\n\nAre you sure you want to continue?",
-                            "Yes, Continue",
-                            "Cancel"))
-                        {
-                            // Ask if the user wants to create a backup first
-                            bool createBackup = EditorUtility.DisplayDialog(
-                                "Create Backup",
-                                "Do you want to create a backup of your current data before restoring?\n\n" +
-                                "This will create a .tar.gz backup file in your backup directory.",
-                                "Yes, Create Backup",
-                                "No, Skip Backup");
-                                
-                            if (createBackup)
-                            {
-                                // Create backup using the same logic as the Backup Server Data button
-                                LogMessage("Creating backup of current data before restoring...", 0);
-                                
-                                // Construct the backup command using the same logic as in Backup Server Data
-                                string wslBackupPathForSaving = GetWslPath(backupDirectory);
-                                string spacetimeDataPath = $"/home/{userName}/.local/share/spacetime/data";
-                                
-                                // Ensure the converted path is valid and not just the home directory
-                                if (!string.IsNullOrEmpty(backupDirectory) && wslBackupPathForSaving != "~")
-                                {
-                                    // Construct backup command with timestamp
-                                    string backupCommand = $"tar czf \"{wslBackupPathForSaving}/spacetimedb_pre_restore_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimeDataPath}";
-                                    
-                                    // Execute the backup command
-                                    RunServerCommand(backupCommand, "Creating pre-restore backup");
-                                    LogMessage("Pre-restore backup created successfully in your backup directory.", 1);
-                                }
-                                else
-                                {
-                                    LogMessage("Warning: Could not create backup. Backup directory is not set or invalid.", -2);
-                                    
-                                    // Ask if the user wants to continue without backup
-                                    if (!EditorUtility.DisplayDialog(
-                                        "Continue Without Backup?",
-                                        "Could not create a backup because the backup directory is not set or invalid.\n\n" +
-                                        "Do you want to continue with the restore without creating a backup?",
-                                        "Yes, Continue Anyway",
-                                        "No, Cancel Restore"))
-                                    {
-                                        LogMessage("Restore canceled by user.", 0);
-                                        return;
-                                    }
-                                }
-                            }
-                            
-                            // Stop server if running to prevent database corruption
-                            bool wasRunning = serverStarted;
-                            if (wasRunning)
-                            {
-                                LogMessage("Stopping server before restore...", 0);
-                                bool autoCloseWslWasTrue = autoCloseWsl;
-                                autoCloseWsl = false; // Disable auto close WSL to prevent it from closing during restore
-                                StopServer();
-                                // Small delay to ensure server has time to stop
-                                System.Threading.Thread.Sleep(2000);
-                                if (autoCloseWslWasTrue)
-                                {
-                                    autoCloseWsl = true; // Enable auto close WSL after restore
-                                }
-                            }
-                            
-                            try
-                            {
-                                LogMessage("Starting automated file restore...", 0);
-                                
-                                // Create Windows temp directory for extraction
-                                string windowsTempPath = Path.Combine(Path.GetTempPath(), "SpacetimeDBRestore_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
-                                Directory.CreateDirectory(windowsTempPath);
-                                LogMessage($"Created temporary directory: {windowsTempPath}", 0);
-                                
-                                // Use a more straightforward approach with tar (which is now available on Windows 10)
-                                LogMessage("Extracting backup archive... (this may take a moment)", 0);
-                                
-                                // First, write a batch file to execute the extraction
-                                string batchFilePath = Path.Combine(Path.GetTempPath(), "extract_backup.bat");
-                                string batchContent = $@"@echo off
-                                echo Extracting {backupFilePath} to {windowsTempPath}...
-                                mkdir ""{windowsTempPath}"" 2>nul
-                                tar -xf ""{backupFilePath}"" -C ""{windowsTempPath}""
-                                echo Extraction complete
-                                ";
-                                
-                                File.WriteAllText(batchFilePath, batchContent);
-                                LogMessage($"Created extraction batch file: {batchFilePath}", 0);
-                                
-                                // Run the batch file
-                                Process extractProcess = new Process();
-                                extractProcess.StartInfo.FileName = "cmd.exe";
-                                extractProcess.StartInfo.Arguments = $"/c \"{batchFilePath}\"";
-                                extractProcess.StartInfo.UseShellExecute = false;
-                                extractProcess.StartInfo.CreateNoWindow = true;
-                                extractProcess.StartInfo.RedirectStandardOutput = true;
-                                extractProcess.StartInfo.RedirectStandardError = true;
-                                
-                                string extractOutput = "";
-                                string extractError = "";
-                                
-                                extractProcess.OutputDataReceived += (sender, e) => {
-                                    if (!string.IsNullOrEmpty(e.Data)) extractOutput += e.Data + "\n";
-                                };
-                                extractProcess.ErrorDataReceived += (sender, e) => {
-                                    if (!string.IsNullOrEmpty(e.Data)) extractError += e.Data + "\n";
-                                };
-                                
-                                extractProcess.Start();
-                                extractProcess.BeginOutputReadLine();
-                                extractProcess.BeginErrorReadLine();
-                                extractProcess.WaitForExit();
-                                
-                                // Clean up the batch file
-                                try {
-                                    File.Delete(batchFilePath);
-                                } catch {
-                                    // Ignore errors when deleting the batch file
-                                }
-                                
-                                if (!string.IsNullOrEmpty(extractOutput))
-                                    LogMessage("Extraction output: " + extractOutput, 0);
-                                if (!string.IsNullOrEmpty(extractError))
-                                    LogMessage("Extraction errors: " + extractError, -1);
-                                
-                                LogMessage("Extraction completed.", 1);
-                                
-                                // Find the spacetime directory within the extracted files
-                                string expectedSpacetimePath = Path.Combine(windowsTempPath, "home", userName, ".local", "share", "spacetime");
-                                string extractedFolderToOpen = windowsTempPath;
-                                
-                                // Check if the expected path structure exists
-                                if (Directory.Exists(expectedSpacetimePath))
-                                {
-                                    extractedFolderToOpen = expectedSpacetimePath;
-                                    LogMessage($"Found spacetime directory in extracted backup at: {expectedSpacetimePath}", 1);
-                                }
-                                else
-                                {
-                                    // Try to search for the spacetime directory
-                                    LogMessage("Searching for spacetime directory in extracted files...", 0);
-                                    string[] foundDirs = Directory.GetDirectories(windowsTempPath, "spacetime", SearchOption.AllDirectories);
-                                    
-                                    if (foundDirs.Length > 0)
-                                    {
-                                        // Use the first found spacetime directory
-                                        extractedFolderToOpen = foundDirs[0];
-                                        LogMessage($"Found spacetime directory at: {extractedFolderToOpen}", 1);
-                                    }
-                                    else
-                                    {
-                                        LogMessage("Could not find spacetime directory in extracted files. Falling back to root extraction folder.", 0);
-                                    }
-                                }
-                                
-                                // Define source and destination paths
-                                string sourceDataDir = Path.Combine(extractedFolderToOpen, "data");
-                                string wslPath = $@"\\wsl.localhost\Debian\home\{userName}\.local\share\spacetime";
-                                string destDataDir = Path.Combine(wslPath, "data");
-                                
-                                // Verify data directory exists in extracted backup
-                                if (!Directory.Exists(sourceDataDir))
-                                {
-                                    LogMessage($"Error: Data directory not found in extracted backup at {sourceDataDir}", -1);
-                                    LogMessage("Falling back to manual restore method...", 0);
-                                    
-                                    // Open both explorer windows as fallback
-                                    Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
-                                    Process.Start("explorer.exe", $"\"{wslPath}\"");
-                                    
-                                    EditorUtility.DisplayDialog(
-                                        "Manual Restore Required",
-                                        "The data directory could not be found automatically in the extracted backup.\n\n" +
-                                        "Two Explorer windows have been opened:\n" +
-                                        "1. The extracted backup files\n" +
-                                        "2. The WSL SpacetimeDB directory\n\n" +
-                                        "Please manually find the 'data' folder in the backup and copy it to replace the one in the WSL window.",
-                                        "OK"
-                                    );
-                                    return;
-                                }
-                                
-                                // Perform the automated restore
-                                try
-                                {
-                                    LogMessage("Starting automated file restore...", 0);
-                                    
-                                    // Delete existing data directory if it exists
-                                    if (Directory.Exists(destDataDir))
-                                    {
-                                        LogMessage($"Removing existing data directory at {destDataDir}", 0);
-                                        Directory.Delete(destDataDir, true);
-                                    }
-                                    
-                                    // Copy the extracted data directory to the WSL path
-                                    LogMessage($"Copying data directory from {sourceDataDir} to {destDataDir}", 0);
-                                    
-                                    // Create the destination directory
-                                    Directory.CreateDirectory(destDataDir);
-                                    
-                                    // Copy files and subdirectories
-                                    CopyDirectory(sourceDataDir, destDataDir);
-                                    
-                                    LogMessage("Restore completed successfully!", 1);
-                                    
-                                    // Clean up temporary extraction folder
-                                    try
-                                    {
-                                        LogMessage("Cleaning up temporary extraction directory...", 0);
-                                        Directory.Delete(windowsTempPath, true);
-                                        LogMessage("Cleanup completed.", 0);
-                                    }
-                                    catch (Exception cleanupEx)
-                                    {
-                                        LogMessage($"Warning: Could not clean up temporary extraction directory: {cleanupEx.Message}", -2);
-                                        LogMessage($"You may manually delete the directory later: {windowsTempPath}", 0);
-                                    }
-                                    
-                                    EditorUtility.DisplayDialog(
-                                        "Restore Completed",
-                                        "SpacetimeDB data has been successfully restored from backup.",
-                                        "OK"
-                                    );
-                                    
-                                    // Restart server if it was running before
-                                    if (wasRunning)
-                                    {
-                                        StartServer();
-                                    }
 
-                                    LogMessage("Restore completed successfully!", 1);
-                                }
-                                catch (Exception ex)
-                                {
-                                    LogMessage($"Error during automated restore: {ex.Message}", -1);
-                                    
-                                    // Fall back to manual restore
-                                    LogMessage("Falling back to manual restore method...", 0);
-                                    Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
-                                    Process.Start("explorer.exe", $"\"{wslPath}\"");
-                                    
-                                    EditorUtility.DisplayDialog(
-                                        "Automated Restore Failed",
-                                        $"Error: {ex.Message}\n\n" +
-                                        "Two Explorer windows have been opened for manual restore:\n" +
-                                        "1. The extracted backup files\n" +
-                                        "2. The WSL SpacetimeDB directory\n\n" +
-                                        "Please manually copy the 'data' folder to complete the restore.",
-                                        "OK"
-                                    );
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                LogMessage($"Error during restore preparation: {ex.Message}", -1);
-                                LogMessage($"Stack trace: {ex.StackTrace}", -2);
-                            }
-                        }
-                        else
-                        {
-                            LogMessage("Restore canceled by user.", 0);
-                        }
-                    }
-                    else
-                    {
-                        LogMessage("Restore canceled: No backup file selected.", 0);
-                    }
-                }
-                else
-                {
-                    LogMessage("Error: Backup directory is not set or invalid.", -1);
-                }
+            string restoreTooltip = "Unpacks and copies over the selected backup archive. DELETES the current DATA folder of your SpacetimeDB server. You will asked to backup before if you have not done so.";
+            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
+            if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
+            {
+                versionProcessor.RestoreServerData(backupDirectory, userName);
             }
             EditorGUI.EndDisabledGroup();
         }
@@ -2345,3 +2025,5 @@ public class ServerWindow : EditorWindow
 
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

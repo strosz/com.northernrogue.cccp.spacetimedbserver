@@ -13,7 +13,6 @@ using System.Threading.Tasks;
 using System.Net;
 
 // A basic database interface for managing the SQL of the server and exporting/importing it ///
-//////////////////////// made by Northern Rogue /// Mathias Toivonen //////////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -2748,3 +2747,5 @@ public class EditorCoroutine
     }
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

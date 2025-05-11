@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 
 // Check and install everything necessary to run SpacetimeDB in WSL with this window ///
-////////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -1227,3 +1226,5 @@ public class ServerInstallerWindow : EditorWindow
     #endregion
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

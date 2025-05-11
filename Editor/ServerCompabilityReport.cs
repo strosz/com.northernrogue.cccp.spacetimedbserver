@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using System.Threading;
 
 // Provides a compability report for WSL and allows server installer window to continue ///
-///////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -511,3 +510,5 @@ public class ServerCompabilityReport : EditorWindow
     #endregion
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

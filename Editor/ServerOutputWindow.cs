@@ -6,7 +6,6 @@ using System;
 using System.Text.RegularExpressions;
 
 // Handles and displays the logs from both the SpacetimeDB module and the database ///
-//////////////////// made by Northern Rogue /// Mathias Toivonen /////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -833,3 +832,5 @@ public class ServerOutputWindow : EditorWindow
     #endregion
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

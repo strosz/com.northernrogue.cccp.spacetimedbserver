@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // Processes the logs when the server is running in silent mode ///
-///////// made by Northern Rogue /// Mathias Toivonen /////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -855,3 +854,5 @@ public class ServerLogProcess
     #endregion
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

@@ -1,7 +1,6 @@
 using UnityEditor;
 
 // Detects editor states and manages the processes that are dependent on it ///
-/////////////// made by Northern Rogue /// Mathias Toivonen ///////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -104,3 +103,5 @@ public static class ServerWindowInitializer
     }
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

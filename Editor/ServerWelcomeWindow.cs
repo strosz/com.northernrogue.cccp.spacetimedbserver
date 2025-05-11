@@ -4,7 +4,6 @@ using System;
 using System.Reflection;
 
 // Displays the welcome window with information about the asset and how to get started ///
-////////////////////// made by Northern Rogue /// Mathias Toivonen ///////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
     
@@ -134,3 +133,5 @@ public class ServerWelcomeWindow : EditorWindow
     }
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games

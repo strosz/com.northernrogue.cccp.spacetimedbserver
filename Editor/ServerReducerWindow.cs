@@ -9,7 +9,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 // Loads the available reducers from the server schema and can call them with custom params ///
-//////////////////// made by Northern Rogue /// Mathias Toivonen //////////////////////////////
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -764,3 +763,5 @@ public class ServerReducerWindow : EditorWindow
     }
 } // Class
 } // Namespace
+
+// made by Mathias Toivonen at Northern Rogue Games
