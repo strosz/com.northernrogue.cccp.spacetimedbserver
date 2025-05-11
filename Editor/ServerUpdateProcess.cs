@@ -16,9 +16,11 @@ public class ServerUpdateProcess : EditorWindow
     /////////////////////////////// Cosmos Github Update Checker ///////////////////////////////
     private const string CosmosGithubUpdateAvailablePrefKey = "CCCP_GithubUpdateAvailable";
     private const string owner = "strosz";
-    private const string repo = "com.northernrogue.cccp.spacetimedbserver";
+    private const string packageName = "com.northernrogue.cccp.spacetimedbserver";
     private const string branch = "main";
 
+    private static ListRequest listRequest;
+    private static string currentVersion = "";
     private static string latestCommitSha = "";
     private static AddRequest addRequest;
     private static ServerWindow window;
@@ -32,6 +34,8 @@ public class ServerUpdateProcess : EditorWindow
 
     /////////////////////////////// SpacetimeDB Update Installer ///////////////////////////////
     // To be created
+
+
 
     static ServerUpdateProcess()
     {
@@ -56,7 +60,7 @@ public class ServerUpdateProcess : EditorWindow
 
     private void FetchLatestCommitAsync()
     {
-        string url = $"https://api.github.com/repos/{owner}/{repo}/commits/{branch}";
+        string url = $"https://api.github.com/packageNames/{owner}/{packageName}/commits/{branch}";
 
         UnityWebRequest request = UnityWebRequest.Get(url);
         request.SetRequestHeader("User-Agent", "UnityGitHubChecker");  // GitHub requires this
@@ -134,7 +138,7 @@ public class ServerUpdateProcess : EditorWindow
     public static void UpdateGithubPackage()
     {
         // Use the full GitHub URL format for package updates
-        string gitUrl = $"https://github.com/{owner}/{repo}.git";
+        string gitUrl = $"https://github.com/{owner}/{packageName}.git";
         
         if (debugMode) Debug.Log($"Updating package from: {gitUrl}");
         
@@ -176,6 +180,37 @@ public class ServerUpdateProcess : EditorWindow
         public string sha;
     }
     #endregion
+
+    public static string GetCurrentPackageVersion()
+    {
+        if (string.IsNullOrEmpty(currentVersion))
+        {
+            // Start a request to list all packages
+            listRequest = Client.List();
+            
+            // Wait for the request to complete
+            while (!listRequest.IsCompleted) { }
+
+            if (listRequest.Status == StatusCode.Success)
+            {
+                foreach (var package in listRequest.Result)
+                {
+                    if (package.name == packageName)
+                    {
+                        currentVersion = package.version;
+                        break;
+                    }
+                }
+            }
+            else if (listRequest.Status == StatusCode.Failure)
+            {
+                if (debugMode) Debug.LogError($"Failed to get package version: {listRequest.Error.message}");
+                return "unknown";
+            }
+        }
+        
+        return currentVersion;
+    }
 
 } // Class
 } // Namespace

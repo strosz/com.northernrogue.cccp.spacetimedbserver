@@ -5,7 +5,6 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEditor.XR;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 ////////////////////// made by Northern Rogue /// Mathias Toivonen ////////////////////////
@@ -65,6 +64,8 @@ public class ServerWindow : EditorWindow
     private Vector2 scrollPosition;
     private string commandOutputLog = "";
     private bool autoscroll = true;
+    private bool colorLogo = true;
+    private Texture2D logoTexture;
     
     // Settings
     public bool debugMode = false;
@@ -98,7 +99,11 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginVertical();
                
         // Load and display the logo image
-        Texture2D logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo.png");
+        if (colorLogo)
+        logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo_azure.png");
+        else
+        logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo.png");
+
         if (logoTexture != null)
         {
             float maxHeight = 70f;
@@ -106,15 +111,42 @@ public class ServerWindow : EditorWindow
             float width = maxHeight * aspectRatio;
             float height = maxHeight;
             
-            // Center the image
+            // Centered Logo
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             GUILayout.Label(logoTexture, GUILayout.Width(width), GUILayout.Height(height));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             EditorGUILayout.Space(-10);
-            // Add the subtitle
-            GUILayout.Label("Control your SpacetimeDB server and run commands.\n If starting fresh check the pre-requisites first.", EditorStyles.centeredGreyMiniLabel);
+
+            EditorGUILayout.Space(-5);
+            
+            GUILayout.BeginHorizontal();
+            // Subtitle
+            GUIStyle subTitleStyle = new GUIStyle(EditorStyles.label);
+            subTitleStyle.fontSize = 10;
+            subTitleStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+            subTitleStyle.hover.textColor = new Color(0.43f, 0.43f, 0.43f);
+            subTitleStyle.alignment = TextAnchor.MiddleCenter;
+            GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
+            GUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(-15);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            // Logo version and color control
+            GUIStyle titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
+            titleControlStyle.fontSize = 10;
+            titleControlStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+            GUILayout.Label("v" + ServerUpdateProcess.GetCurrentPackageVersion(), titleControlStyle, GUILayout.Width(33));
+            if (GUILayout.Button("color", titleControlStyle, GUILayout.Width(30)))
+            {
+                colorLogo = !colorLogo;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "ColorLogo", colorLogo);
+            }
+            GUILayout.EndHorizontal();
         }
         else
         {
@@ -139,13 +171,11 @@ public class ServerWindow : EditorWindow
         DrawCommandsSection();
         EditorGUILayout.Space(5);
         
-        // Output log header with Clear button
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.Width(120));
 
         GUILayout.FlexibleSpace();
 
-        // Autoscroll button - now more subtle
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
         GUIStyle autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
@@ -248,6 +278,8 @@ public class ServerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", true));
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", false));
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false));
+        // Other editor states
+        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix+"ColorLogo", false);
 
         // Initialize the processors
         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
