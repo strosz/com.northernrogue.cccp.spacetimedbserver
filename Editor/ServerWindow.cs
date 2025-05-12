@@ -36,7 +36,7 @@ public class ServerWindow : EditorWindow
     private string serverLang = "rust";
     private string moduleName = "";
     private string serverUrl = "";
-    private int spacetimePort = 3000;
+    private int serverPort = 3000;
     private string authToken = "";
 
     // Server process
@@ -60,14 +60,16 @@ public class ServerWindow : EditorWindow
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
 
-    // UI
-    private Vector2 scrollPosition;
-    private string commandOutputLog = "";
-    private bool autoscroll = true;
-    private bool colorLogo = true;
-    private Texture2D logoTexture;
+    // Server mode
+    private ServerMode serverMode = ServerMode.WslServer;
+
+    // Custom server mode
+    //private string customServerUrl = "";
+    //private int customServerPort = 0;
+
+    // Maincloud server mode
     
-    // Settings
+    // Server Settings
     public bool debugMode = false;
     private bool hideWarnings = false;
     private bool detectServerChanges = false;
@@ -78,6 +80,13 @@ public class ServerWindow : EditorWindow
     private bool autoCloseWsl = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
+
+    // UI
+    private Vector2 scrollPosition;
+    private string commandOutputLog = "";
+    private bool autoscroll = true;
+    private bool colorLogo = true;
+    private Texture2D logoTexture;
     
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
@@ -90,6 +99,13 @@ public class ServerWindow : EditorWindow
     {
         ServerWindow window = GetWindow<ServerWindow>("Server");
         window.minSize = new Vector2(270f, 600f);
+    }
+
+    public enum ServerMode
+    {
+        WslServer,
+        CustomServer,
+        MaincloudServer,
     }
 
     #region OnGUI
@@ -256,7 +272,7 @@ public class ServerWindow : EditorWindow
         serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
         clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
         serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "http://0.0.0.0:3000/");
-        spacetimePort = EditorPrefs.GetInt(PrefsKeyPrefix + "SpacetimePort", 3000);
+        serverPort = EditorPrefs.GetInt(PrefsKeyPrefix + "ServerPort", 3000);
         serverLang = EditorPrefs.GetString(PrefsKeyPrefix + "ServerLang", "rust");
         moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
         unityLang = EditorPrefs.GetString(PrefsKeyPrefix + "UnityLang", "csharp");
@@ -273,6 +289,9 @@ public class ServerWindow : EditorWindow
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
+        
+        // Load server mode
+        LoadServerModeFromPrefs();
 
         // Initialize foldout states with default values of false
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", true));
@@ -413,214 +432,257 @@ public class ServerWindow : EditorWindow
                 ServerInstallerWindow.ShowWindow();
             }
 
-            // Check Pre-Requisites button
-            if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
+            EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+
+            // Active Server Mode
+            GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
+            activeToolbarButton.normal.textColor = Color.green;
+
+            // Inactive Server Mode
+            GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
+            inactiveToolbarButton.normal.textColor = Color.gray5;
+
+            EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+            if (GUILayout.Button("WSL Local", serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                CheckPrerequisites();
+                serverMode = ServerMode.WslServer;
+                UpdateServerModeState();
             }
-                       
-            // Debian Username setting
-            EditorGUILayout.BeginHorizontal();
-            string userNameTooltip = 
-            "The Debian username to use for Debian commands.\n\n"+
-            "Note: Needed for most server commands and utilities.";
-            EditorGUILayout.LabelField(new GUIContent("Debian Username:", userNameTooltip), GUILayout.Width(110));
-            string newUserName = EditorGUILayout.DelayedTextField(userName, GUILayout.Width(130));
-            if (newUserName != userName)
+            if (GUILayout.Button("Custom", serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                userName = newUserName;
-                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                
-                // Update processors with new username
-                if(logProcessor != null) logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
-                
-                if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
+                serverMode = ServerMode.CustomServer;
+                UpdateServerModeState();
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(userName)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-            
-            // Backup Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string backupDirectoryTooltip = 
-            "Directory where SpacetimeDB server backups will be saved.\n\n"+
-            "Note: Create a new empty folder if the server backups have not been created yet.\n"+
-            "Backups for the server use little space, so you can commit this folder to your repository.";
-            EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Backup Directory", GUILayout.Width(130), GUILayout.Height(20)))
+            if (GUILayout.Button("Maincloud", serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    backupDirectory = path;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "BackupDirectory", backupDirectory);
-                    LogMessage($"Backup directory set to: {backupDirectory}", 1);
-                }
+                serverMode = ServerMode.MaincloudServer;
+                UpdateServerModeState();
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
 
-            // Server Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string serverDirectoryTooltip = 
-            "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
-            "Note: Create a new empty folder if the module has not been created yet.";
-            EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Server Directory", GUILayout.Width(130), GUILayout.Height(20)))
+            GUILayout.Space(-5);
+            
+            GUILayout.BeginVertical(GUI.skin.box);
+            #endregion
+
+            #region WSL Mode
+            if (serverMode == ServerMode.WslServer)
             {
-                string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
+                // Debian Username setting
+                EditorGUILayout.BeginHorizontal();
+                string userNameTooltip = 
+                "The Debian username to use for Debian commands.\n\n"+
+                "Note: Needed for most server commands and utilities.";
+                EditorGUILayout.LabelField(new GUIContent("Debian Username:", userNameTooltip), GUILayout.Width(110));
+                string newUserName = EditorGUILayout.DelayedTextField(userName, GUILayout.Width(150));
+                if (newUserName != userName)
                 {
-                    serverDirectory = path;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
-                    LogMessage($"Server directory set to: {serverDirectory}", 1);
+                    userName = newUserName;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
                     
-                    // Reset file tracking when directory changes
-                    originalFileSizes.Clear();
-                    currentFileSizes.Clear();
-                    serverChangesDetected = false;
+                    // Update processors with new username
+                    if(logProcessor != null) logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
+                    
+                    if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
                 }
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(userName)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                
+                // Backup Directory setting
+                EditorGUILayout.BeginHorizontal();
+                string backupDirectoryTooltip = 
+                "Directory where SpacetimeDB server backups will be saved.\n\n"+
+                "Note: Create a new empty folder if the server backups have not been created yet.\n"+
+                "Backups for the server use little space, so you can commit this folder to your repository.";
+                EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
+                {
+                    string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        backupDirectory = path;
+                        EditorPrefs.SetString(PrefsKeyPrefix + "BackupDirectory", backupDirectory);
+                        LogMessage($"Backup directory set to: {backupDirectory}", 1);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // Server Directory setting
+                EditorGUILayout.BeginHorizontal();
+                string serverDirectoryTooltip = 
+                "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
+                "Note: Create a new empty folder if the module has not been created yet.";
+                EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Set Server Directory", GUILayout.Width(150), GUILayout.Height(20)))
+                {
+                    string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        serverDirectory = path;
+                        EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
+                        LogMessage($"Server directory set to: {serverDirectory}", 1);
                         
-            // Server Language dropdown
-            EditorGUILayout.BeginHorizontal();
-            string serverLangTooltip = 
-            "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
-            "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
-            "Recommended: Rust which is 2x faster than C#.";
-            EditorGUILayout.LabelField(new GUIContent("Server Language:", serverLangTooltip), GUILayout.Width(110));
-            string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
-            string[] serverLangValues = new string[] { "rust", "csharp" };
-            int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
-            if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
-            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(130));
-            if (newServerLangSelectedIndex != serverLangSelectedIndex)
-            {
-                serverLang = serverLangValues[newServerLangSelectedIndex];
-                EditorPrefs.SetString(PrefsKeyPrefix + "ServerLang", serverLang);
-                LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-            
-            // Module Name setting
-            EditorGUILayout.BeginHorizontal();
-            string moduleNameTooltip = 
-            "The name of your SpacetimeDB module you used when you created the module.";
-            EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
-            string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(130));
-            if (newModuleName != moduleName)
-            {
-                moduleName = newModuleName;
-                EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", moduleName);
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-
-            // Unity Autogenerated files Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string clientDirectoryTooltip = 
-            "Directory where Unity client scripts will be generated.\n\n"+
-            "Note: This should be placed in the Assets folder of your Unity project.";
-            EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Client Directory", GUILayout.Width(130), GUILayout.Height(20)))
-            {
-                string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
+                        // Reset file tracking when directory changes
+                        originalFileSizes.Clear();
+                        currentFileSizes.Clear();
+                        serverChangesDetected = false;
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                            
+                // Server Language dropdown
+                EditorGUILayout.BeginHorizontal();
+                string serverLangTooltip = 
+                "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
+                "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
+                "Recommended: Rust which is 2x faster than C#.";
+                EditorGUILayout.LabelField(new GUIContent("Server Language:", serverLangTooltip), GUILayout.Width(110));
+                string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
+                string[] serverLangValues = new string[] { "rust", "csharp" };
+                int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
+                if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
+                int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
+                if (newServerLangSelectedIndex != serverLangSelectedIndex)
                 {
-                    clientDirectory = path;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ClientDirectory", clientDirectory);
-                    LogMessage($"Client directory set to: {clientDirectory}", 1);
+                    serverLang = serverLangValues[newServerLangSelectedIndex];
+                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerLang", serverLang);
+                    LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                
+                // Module Name setting
+                EditorGUILayout.BeginHorizontal();
+                string moduleNameTooltip = 
+                "The name of your SpacetimeDB module you used when you created the module.";
+                EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
+                string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(150));
+                if (newModuleName != moduleName)
+                {
+                    moduleName = newModuleName;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", moduleName);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // Unity Autogenerated files Directory setting
+                EditorGUILayout.BeginHorizontal();
+                string clientDirectoryTooltip = 
+                "Directory where Unity client scripts will be generated.\n\n"+
+                "Note: This should be placed in the Assets folder of your Unity project.";
+                EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Set Client Directory", GUILayout.Width(150), GUILayout.Height(20)))
+                {
+                    string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        clientDirectory = path;
+                        EditorPrefs.SetString(PrefsKeyPrefix + "ClientDirectory", clientDirectory);
+                        LogMessage($"Client directory set to: {clientDirectory}", 1);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // Unity Autogenerated files Language dropdown
+                EditorGUILayout.BeginHorizontal();
+                string unityLangTooltip = 
+                "C-Sharp: The default programming language for auto-generated Unity client scripts. \n\n"+
+                "Rust: Programming language for auto-generated Unity client scripts. \n\n"+
+                "Typescript: Programming language for auto-generated Unity client scripts. \n\n"+
+                "Recommended: C-Sharp which is natively supported by Unity.";
+                EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), GUILayout.Width(110));
+                string[] unityLangOptions = new string[] { "Rust", "C-Sharp", "Typescript"};
+                string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
+                int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
+                if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
+                int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(150));
+                if (newunityLangSelectedIndex != unityLangSelectedIndex)
+                {
+                    unityLang = unityLangValues[newunityLangSelectedIndex];
+                    EditorPrefs.SetString(PrefsKeyPrefix + "unityLang", unityLang);
+                    LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // URL setting
+                EditorGUILayout.BeginHorizontal();
+                string urlTooltip = 
+                "Required for the Server Database Window. The full URL of your SpacetimeDB server including port number.\n" +
+                "Default: http://127.0.0.1:3000/\n" +
+                "Note: The port number is required.";
+                EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
+                string newUrl = EditorGUILayout.TextField(serverUrl, GUILayout.Width(150));
+                if (newUrl != serverUrl)
+                {
+                    serverUrl = newUrl;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
+                    
+                    // Extract port from URL
+                    int extractedPort = ExtractPortFromUrl(serverUrl);
+                    if (extractedPort > 0)
+                    {
+                        serverPort = extractedPort;
+                        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", serverPort);
+                        if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
+                    }
+                    else
+                    {
+                        LogMessage("No valid port found in URL. Please include port in format 'http://127.0.0.1:3000/'", -2);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverUrl)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // Auth Token setting
+                EditorGUILayout.BeginHorizontal();
+                string tokenTooltip = 
+                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
+                string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
+                if (newAuthToken != authToken)
+                {
+                    authToken = newAuthToken;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "AuthToken", authToken);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+    
+                // Init a new module
+                EditorGUILayout.BeginHorizontal();
+                string initModuleTooltip = 
+                "Init a new module: Initializes a new SpacetimeDB module in the server directory.";
+                EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Init a new module", GUILayout.Width(150), GUILayout.Height(20)))
+                {
+                    InitNewModule();
+                }
+                EditorGUILayout.EndHorizontal();
+    
+                // Check Pre-Requisites button
+                if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
+                {
+                    CheckPrerequisites();
                 }
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
 
-            // Unity Autogenerated files Language dropdown
-            EditorGUILayout.BeginHorizontal();
-            string unityLangTooltip = 
-            "C-Sharp: The default programming language for auto-generated Unity client scripts. \n\n"+
-            "Rust: Programming language for auto-generated Unity client scripts. \n\n"+
-            "Typescript: Programming language for auto-generated Unity client scripts. \n\n"+
-            "Recommended: C-Sharp which is natively supported by Unity.";
-            EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), GUILayout.Width(110));
-            string[] unityLangOptions = new string[] { "Rust", "C-Sharp", "Typescript"};
-            string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
-            int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
-            if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
-            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(130));
-            if (newunityLangSelectedIndex != unityLangSelectedIndex)
+            if (serverMode == ServerMode.CustomServer)
             {
-                unityLang = unityLangValues[newunityLangSelectedIndex];
-                EditorPrefs.SetString(PrefsKeyPrefix + "unityLang", unityLang);
-                LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
 
-            // URL setting
-            EditorGUILayout.BeginHorizontal();
-            string urlTooltip = 
-            "Required for the Server Database Window. The full URL of your SpacetimeDB server including port number.\nDefault: http://127.0.0.1:3000/";
-            EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-            string newUrl = EditorGUILayout.TextField(serverUrl, GUILayout.Width(130));
-            if (newUrl != serverUrl)
-            {
-                serverUrl = newUrl;
-                EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverUrl)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
 
-            // Port setting
-            EditorGUILayout.BeginHorizontal();
-            string portTooltip = 
-            "Required for the Server Database Window. The port of the SpacetimeDB server\nDefault: 3000";
-            EditorGUILayout.LabelField(new GUIContent("Port:", portTooltip), GUILayout.Width(110));
-            string newPort = EditorGUILayout.TextField(spacetimePort.ToString(), GUILayout.Width(130));
-            if (newPort != spacetimePort.ToString())
+            if (serverMode == ServerMode.MaincloudServer)
             {
-                if (int.TryParse(newPort, out int parsedPort) && parsedPort > 0 && parsedPort < 65536)
-                {
-                    spacetimePort = parsedPort;
-                    EditorPrefs.SetInt(PrefsKeyPrefix + "SpacetimePort", spacetimePort);
-                }
-                else
-                {
-                    LogMessage("Invalid port number. Please enter a number between 1 and 65535.", -1);
-                }
+                
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(spacetimePort.ToString())), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
 
-            // Auth Token setting
-            EditorGUILayout.BeginHorizontal();
-            string tokenTooltip = 
-            "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
-            "Important: Keep this token secret and do not share it with anyone outside of your team.";
-            EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-            string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(130));
-            if (newAuthToken != authToken)
-            {
-                authToken = newAuthToken;
-                EditorPrefs.SetString(PrefsKeyPrefix + "AuthToken", authToken);
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-
-            // Init a new module
-            EditorGUILayout.BeginHorizontal();
-            string initModuleTooltip = 
-            "Init a new module: Initializes a new SpacetimeDB module in the server directory.";
-            EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Init a new module", GUILayout.Width(130), GUILayout.Height(20)))
-            {
-                InitNewModule();
-            }
-            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical(); // GUI Background
         }
-        EditorGUILayout.EndVertical(); // End of Pre-Requisites section
+        EditorGUILayout.EndVertical(); // End of Entire Pre-Requisites section
     }
     #endregion
 
@@ -716,16 +778,11 @@ public class ServerWindow : EditorWindow
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings and Debian", true);
+        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", showSettingsWindow);
 
         if (showSettingsWindow)
         {   
-            if (GUILayout.Button("Open Debian Window", GUILayout.Height(30)))
-            {
-                OpenDebianWindow();
-            }
-
             Color recommendedColor = Color.green;
             Color warningColor;
             ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
@@ -740,7 +797,7 @@ public class ServerWindow : EditorWindow
             string serverModeTooltip = 
             "Show CMD: Displays the standard CMD process window of the server. \n\n"+
             "Silent Mode: The server runs silently in the background without any window.";
-            EditorGUILayout.LabelField(new GUIContent("Server Mode:", serverModeTooltip), GUILayout.Width(120));
+            EditorGUILayout.LabelField(new GUIContent("Server Visiblity:", serverModeTooltip), GUILayout.Width(120));
             GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
             if (silentMode)
             {
@@ -899,7 +956,7 @@ public class ServerWindow : EditorWindow
                     moduleLogToggleStyle.normal.textColor = warningColor;
                     moduleLogToggleStyle.hover.textColor = warningColor;
                 }
-                if (GUILayout.Button(clearModuleLogAtStart ? "Clear Module Log at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
+                if (GUILayout.Button(clearModuleLogAtStart ? "Clear at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
                 {
                     clearModuleLogAtStart = !clearModuleLogAtStart;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", clearModuleLogAtStart);
@@ -920,7 +977,7 @@ public class ServerWindow : EditorWindow
                     databaseLogToggleStyle.normal.textColor = warningColor;
                     databaseLogToggleStyle.hover.textColor = warningColor;
                 }
-                if (GUILayout.Button(clearDatabaseLogAtStart ? "Clear Database Log at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
+                if (GUILayout.Button(clearDatabaseLogAtStart ? "Clear at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
                 {
                     clearDatabaseLogAtStart = !clearDatabaseLogAtStart;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", clearDatabaseLogAtStart);
@@ -1002,6 +1059,11 @@ public class ServerWindow : EditorWindow
 
             EditorGUILayout.LabelField(
             "WSL Server Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+
+            if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+            {
+                OpenDebianWindow();
+            }
             
             string backupTooltip = "Creates a tar archive of your DATA folder in your SpacetimeDB server.";
             EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
@@ -1260,6 +1322,32 @@ public class ServerWindow : EditorWindow
     
     private void StartServer()
     {
+        if (!prerequisitesChecked)
+        {
+            LogMessage("Prerequisites need to be checked before starting the server.", -2);
+            CheckPrerequisites();
+            return;
+        }
+
+        switch (serverMode)
+        {
+            case ServerMode.WslServer:
+                StartWslServer();
+                break;
+            case ServerMode.CustomServer:
+                StartCustomServer();
+                break;
+            case ServerMode.MaincloudServer:
+                StartMaincloudServer();
+                break;
+            default:
+                LogMessage("Unknown server mode. Cannot start server.", -1);
+                break;
+        }
+    }
+
+    private void StartWslServer()
+    {
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
         {
             LogMessage("Missing required installed items. Will attempt to start server.", -2);
@@ -1270,7 +1358,7 @@ public class ServerWindow : EditorWindow
             return;
         }
         
-        LogMessage("Start sequence initiated. Waiting for confirmation...", 0);
+        LogMessage("Start sequence initiated for WSL server. Waiting for confirmation...", 0);
         
         try
         {
@@ -1321,8 +1409,20 @@ public class ServerWindow : EditorWindow
         }
         finally
         {
-            Repaint(); 
+            Repaint();
         }
+    }
+
+    private void StartCustomServer()
+    {
+        // TODO: Implement custom server startup logic
+        LogMessage("Custom server start not yet implemented", -1);
+    }
+
+    private void StartMaincloudServer()
+    {
+        // TODO: Implement maincloud server startup logic
+        LogMessage("Maincloud server start not yet implemented", -1);
     }
     #endregion
 
@@ -1383,7 +1483,7 @@ public class ServerWindow : EditorWindow
         lastCheckTime = EditorApplication.timeSinceStartup;
 
         // Check if port is in use
-        bool isPortOpen = await cmdProcessor.CheckPortAsync(spacetimePort);
+        bool isPortOpen = await cmdProcessor.CheckPortAsync(serverPort);
         
         // --- Reset justStopped flag after 5 seconds if grace period expired ---
         const double stopGracePeriod = 5.0;
@@ -1401,7 +1501,7 @@ public class ServerWindow : EditorWindow
             // If port is open during startup phase, confirm immediately
             if (isPortOpen)
             {
-                if (debugMode) LogMessage($"Startup confirmed: Port {spacetimePort} is now open.", 1);
+                if (debugMode) LogMessage($"Startup confirmed: Port {serverPort} is now open.", 1);
                 isStartingUp = false;
                 serverStarted = true; // Explicitly confirm started state
                 serverConfirmedRunning = true;
@@ -1427,7 +1527,7 @@ public class ServerWindow : EditorWindow
             // If grace period expires and port *still* isn't open, assume failure
             else if (elapsedTime >= serverStartupGracePeriod)
             {
-                LogMessage($"Server failed to start within grace period (Port {spacetimePort} did not open).", -1);
+                LogMessage($"Server failed to start within grace period (Port {serverPort} did not open).", -1);
                 isStartingUp = false;
                 serverStarted = false;
                 serverConfirmedRunning = false;
@@ -1461,8 +1561,8 @@ public class ServerWindow : EditorWindow
             {
                 serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                 string msg = isActuallyRunning
-                    ? $"Server running confirmed (Port {spacetimePort}: open)"
-                    : $"Server appears to have stopped (Port {spacetimePort}: closed)";
+                    ? $"Server running confirmed (Port {serverPort}: open)"
+                    : $"Server appears to have stopped (Port {serverPort}: closed)";
                 LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                 // If state changed to NOT running, update the main serverStarted flag
@@ -1492,14 +1592,14 @@ public class ServerWindow : EditorWindow
             // If the 'justStopped' flag is set, ignore this check during the grace period
             if (justStopped)
             {
-                if (debugMode) LogMessage($"Port {spacetimePort} detected, but in post-stop grace period. Ignoring.", 0);
+                if (debugMode) LogMessage($"Port {serverPort} detected, but in post-stop grace period. Ignoring.", 0);
             }
             else
             {
                 if (PingServerStatus()) // Also ping the server to check if the port information is correct
                 {
                     // Port detected, not recently stopped -> likely external start/recovery
-                    LogMessage($"Detected server running on port {spacetimePort}.", 1);
+                    LogMessage($"Detected server running on port {serverPort}.", 1);
                     serverStarted = true;
                     serverConfirmedRunning = true;
                     isStartingUp = false; 
@@ -1961,7 +2061,7 @@ public class ServerWindow : EditorWindow
         if (debugMode) UnityEngine.Debug.Log($"[ServerWindow] Attempting tail restart in ServerWindow.");
         
         // Delegate to the logProcessor for tail restart
-        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(spacetimePort))
+        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(serverPort))
         {
             logProcessor.AttemptTailRestartAfterReload();
         }
@@ -1989,7 +2089,7 @@ public class ServerWindow : EditorWindow
         if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Checking database log process");
         
         // Delegate to the logProcessor
-        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(spacetimePort))
+        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(serverPort))
         {
             logProcessor.AttemptDatabaseLogRestartAfterReload();
         }
@@ -2017,6 +2117,63 @@ public class ServerWindow : EditorWindow
         };
     }
 
+    private int ExtractPortFromUrl(string url)
+    {
+        try
+        {
+            // Look for the port pattern ":number/" or ":number" at the end
+            int colonIndex = url.LastIndexOf(':');
+            if (colonIndex != -1 && colonIndex < url.Length - 1)
+            {
+                // Find the end of the port number (either / or end of string)
+                int endIndex = url.IndexOf('/', colonIndex);
+                if (endIndex == -1) endIndex = url.Length;
+                
+                // Extract the port substring
+                string portStr = url.Substring(colonIndex + 1, endIndex - colonIndex - 1);
+                
+                // Try to parse the port
+                if (int.TryParse(portStr, out int port) && port > 0 && port < 65536)
+                {
+                    return port;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) LogMessage($"Error extracting port from URL: {ex.Message}", -1);
+        }
+        
+        return -1; // Invalid or no port found
+    }
+
+    private void UpdateServerModeState()
+    {       
+        // Set the appropriate flag based on the current serverMode
+        switch (serverMode)
+        {
+            case ServerMode.WslServer:
+                if (debugMode) LogMessage("Server mode set to: WSL Local", 0);
+                break;
+            case ServerMode.CustomServer:
+                if (debugMode) LogMessage("Server mode set to: Custom", 0);
+                break;
+            case ServerMode.MaincloudServer:
+                if (debugMode) LogMessage("Server mode set to: Maincloud", 0);
+                break;
+        }
+
+        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerMode", (int)serverMode);
+        Repaint();
+    }
+
+    private void LoadServerModeFromPrefs()
+    {
+        // Load server mode from preferences
+        serverMode = (ServerMode)EditorPrefs.GetInt(PrefsKeyPrefix + "ServerMode", (int)ServerMode.WslServer);
+        UpdateServerModeState();
+    }
+    
     // Display Cosmos Cove Control Panel title text in the menu bar
     [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", priority = -11000)]
     private static void CosmosCoveControlPanel(){}
