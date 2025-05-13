@@ -3,7 +3,6 @@ using UnityEditor;
 using System.Diagnostics;
 using System.IO;
 using System;
-using System.Threading.Tasks;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -11,6 +10,9 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerWindow : EditorWindow
 {
+    // Server Manager
+    private ServerManager serverManager;
+    
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
@@ -51,20 +53,11 @@ public class ServerWindow : EditorWindow
     private string sshPrivateKeyPath = ""; // Added SSH private key path variable
 
     // Pre-requisites Maincloud Server
-
-    // Server process
-    private bool serverStarted = false;
-    private bool isStartingUp = false;
-    private float startupTime = 0f;
-    private const float serverStartupGracePeriod = 30f; // Give server 30 seconds to start
+    private string maincloudUrl = "maincloud.spacetimedb.com";
    
     // Server status
     private double lastCheckTime = 0;
     private const double checkInterval = 5.0;
-    private bool serverConfirmedRunning = false;
-    private bool justStopped = false;
-    private bool pingShowsOnline = true;
-    private double stopInitiatedTime = 0;
 
     // Server Settings
     public bool debugMode = false;
@@ -259,95 +252,14 @@ public class ServerWindow : EditorWindow
 
     private void OnEnable()
     {
-        // Load Editor Prefs - Pre-Requisites Installed items
-        hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
-        hasDebian = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebian", false);
-        hasDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebianTrixie", false);
-        hasCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCurl", false);
-        hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
-        hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
-        hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
+        // Initialize ServerManager with logging callback
+        serverManager = new ServerManager(LogMessage, Repaint);
         
-        // Load Editor Prefs - UX
-        initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
-        
-        // Load Editor Prefs  - Pre-Requisites Settings
-        wslPrerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
-        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "http://0.0.0.0:3000/");
-        serverPort = EditorPrefs.GetInt(PrefsKeyPrefix + "ServerPort", 3000);
-        authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
-
-        // Load Editor Prefs  - Local Settings
-        backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
-        serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
-        serverLang = EditorPrefs.GetString(PrefsKeyPrefix + "ServerLang", "rust");
-        clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
-        unityLang = EditorPrefs.GetString(PrefsKeyPrefix + "UnityLang", "csharp");
-        moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
-
-        // Load Editor Prefs  - Custom Server settings
-        sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
-        sshPrivateKeyPath = EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "");
-        customServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
-        customServerPort = EditorPrefs.GetInt(PrefsKeyPrefix + "CustomServerPort", 0);
-        customServerAuthToken = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerAuthToken", "");
-
-        // Load Editor Prefs - Global Settings
-        hideWarnings = EditorPrefs.GetBool(PrefsKeyPrefix + "HideWarnings", true);
-        detectServerChanges = EditorPrefs.GetBool(PrefsKeyPrefix + "DetectServerChanges", true);
-        autoPublishMode = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoPublishMode", false);
-        publishAndGenerateMode = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishAndGenerateMode", true);
-        silentMode = EditorPrefs.GetBool(PrefsKeyPrefix + "SilentMode", true);
-        debugMode = EditorPrefs.GetBool(PrefsKeyPrefix + "DebugMode", false);
-        clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
-        clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
-        autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true); // Only WSL Mode
-        
-        // Load server mode
+        // Load server mode from EditorPrefs
         LoadServerModeFromPrefs();
-
-        // Initialize foldout states with default values of false
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", true));
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", false));
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false));
-        // Other editor states
-        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix+"ColorLogo", false);
-
-        // Initialize the processors
-        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
         
-        // Initialize LogProcessor with callbacks
-        logProcessor = new ServerLogProcess(
-            LogMessage,
-            () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
-            () => ServerOutputWindow.RefreshOpenWindow(), // Database log update callback
-            cmdProcessor,
-            debugMode
-        );
-        
-        // Initialize VersionProcessor
-        versionProcessor = new ServerVersionProcess(cmdProcessor, LogMessage, debugMode);
-        
-        // Configure the server control delegates
-        versionProcessor.ConfigureServerControlDelegates(
-            () => serverStarted, // IsServerRunning
-            () => autoCloseWsl,  // GetAutoCloseWsl
-            (value) => { autoCloseWsl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", value); }, // SetAutoCloseWsl
-            () => StartServer(),  // StartServer
-            () => StopServer()    // StopServer
-        );
-
-        serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
-        
-        // Configure the log processor
-        logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName); // Pass userName to logProcessor
-        logProcessor.SetServerRunningState(serverStarted);
-        
-        // Initialize the detection processor
-        detectionProcess = new ServerDetectionProcess(debugMode);
-        detectionProcess.Configure(serverDirectory, detectServerChanges);
-        detectionProcess.OnServerChangesDetected += OnServerChangesDetected;
+        // Sync local fields from ServerManager's values (for UI display only)
+        SyncFieldsFromServerManager();
         
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;
@@ -357,43 +269,100 @@ public class ServerWindow : EditorWindow
 
         // Check if we were previously running silently and restore state if needed
         bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
-        if (wasRunningSilently && serverStarted && silentMode)
+        if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
         {
-            if (debugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
-            logProcessor.AttemptTailRestartAfterReload();
-        } else if (!serverStarted || !silentMode) {
+            if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
+            AttemptTailRestartAfterReload();
+        } else if (!serverManager.IsServerStarted || !serverManager.SilentMode) {
             // Clear the flag if not running silently on enable
              SessionState.SetBool(SessionKeyWasRunningSilently, false);
         }
 
         // Ensure the flag is correctly set based on current state when enabled
-        SessionState.SetBool(SessionKeyWasRunningSilently, serverStarted && silentMode);
+        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
 
         EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
         
         // Check if we need to restart the database log process
         bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
-        if (serverStarted && silentMode && databaseLogWasRunning)
+        if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
         {
-            if (debugMode) LogMessage("Restarting database logs after editor reload...", 0);
-            logProcessor.AttemptDatabaseLogRestartAfterReload();
+            if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
+            AttemptDatabaseLogRestartAfterReload();
         }
-        
-        // Get initial change state from detection process
-        serverChangesDetected = detectionProcess.AreChangesDetected();
     }
     
-    private void OnServerChangesDetected(bool changesDetected)
+    private void SyncFieldsFromServerManager()
     {
-        // Update UI when changes are detected
-        serverChangesDetected = changesDetected;
-        Repaint();
+        // Copy values from ServerManager to local fields for UI display
+        hasWSL = serverManager.HasWSL;
+        hasDebian = serverManager.HasDebian;
+        hasDebianTrixie = serverManager.HasDebianTrixie;
+        hasCurl = serverManager.HasCurl;
+        hasSpacetimeDBServer = serverManager.HasSpacetimeDBServer;
+        hasSpacetimeDBPath = serverManager.HasSpacetimeDBPath;
+        hasRust = serverManager.HasRust;
         
-        // Trigger auto-publish if changes are detected and auto-publish is enabled
-        if (serverChangesDetected && autoPublishMode && serverStarted && !string.IsNullOrEmpty(moduleName))
+        initializedFirstModule = serverManager.InitializedFirstModule;
+        
+        wslPrerequisitesChecked = serverManager.WslPrerequisitesChecked;
+        userName = serverManager.UserName;
+        serverUrl = serverManager.ServerUrl;
+        serverPort = serverManager.ServerPort;
+        authToken = serverManager.AuthToken;
+
+        backupDirectory = serverManager.BackupDirectory;
+        serverDirectory = serverManager.ServerDirectory;
+        serverLang = serverManager.ServerLang;
+        clientDirectory = serverManager.ClientDirectory;
+        unityLang = serverManager.UnityLang;
+        moduleName = serverManager.ModuleName;
+
+        sshUserName = serverManager.SSHUserName;
+        sshPrivateKeyPath = serverManager.SSHPrivateKeyPath;
+        customServerUrl = serverManager.CustomServerUrl;
+        customServerPort = serverManager.CustomServerPort;
+        customServerAuthToken = serverManager.CustomServerAuthToken;
+
+        hideWarnings = serverManager.HideWarnings;
+        detectServerChanges = serverManager.DetectServerChanges;
+        autoPublishMode = serverManager.AutoPublishMode;
+        publishAndGenerateMode = serverManager.PublishAndGenerateMode;
+        silentMode = serverManager.SilentMode;
+        debugMode = serverManager.DebugMode;
+        clearModuleLogAtStart = serverManager.ClearModuleLogAtStart;
+        clearDatabaseLogAtStart = serverManager.ClearDatabaseLogAtStart;
+        autoCloseWsl = serverManager.AutoCloseWsl;
+        
+        serverMode = (ServerMode)serverManager.CurrentServerMode;
+        serverChangesDetected = serverManager.ServerChangesDetected;
+    }
+   
+    private async void EditorUpdateHandler()
+    {
+        if (serverManager == null) return;
+        
+        // Throttle how often we check things to not overload the main thread
+        double currentTime = EditorApplication.timeSinceStartup;
+        
+        // Check server status periodically
+        if (currentTime - lastCheckTime > checkInterval)
         {
-            LogMessage("Auto-publishing module due to changes detected...", 0);
-            RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
+            lastCheckTime = currentTime;
+            await serverManager.CheckServerStatus();
+            
+            // Update local state for UI display
+            serverChangesDetected = serverManager.ServerChangesDetected;
+        }
+        
+        // For Custom Server mode, ensure UI is refreshed periodically to update connection status
+        if (serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer && windowFocused)
+        {
+            // Check connection status less frequently (3x interval)
+            if (currentTime - lastCheckTime > changeCheckInterval * 3)
+            {
+                Repaint();
+            }
         }
     }
     
@@ -403,74 +372,21 @@ public class ServerWindow : EditorWindow
 
         // Save state before disabling (might be domain reload)
         // Ensure SessionState reflects the state *just before* disable/reload
-        SessionState.SetBool(SessionKeyWasRunningSilently, serverStarted && silentMode);
+        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
 
         EditorApplication.update -= EditorUpdateHandler;
-        
-        // Update the log processor about server state
-        if (logProcessor != null)
-        {
-            logProcessor.SetServerRunningState(serverStarted && silentMode);
-        }
-        
-        // Unsubscribe from detection events
-        if (detectionProcess != null)
-        {
-            detectionProcess.OnServerChangesDetected -= OnServerChangesDetected;
-        }
     }
     
     private void OnFocusChanged(bool focused)
     {
         windowFocused = focused;
-        
-        // Check for changes immediately when window gets focus
-        if (focused && detectionProcess != null && detectionProcess.IsDetectingChanges())
-        {
-            // Trigger immediate check
-            detectionProcess.CheckForChanges();
-        }
     }
     
-    private void EditorUpdateHandler()
+    private void OnServerChangesDetected(bool changesDetected)
     {
-        // Throttle how often we check things to not overload the main thread
-        double currentTime = EditorApplication.timeSinceStartup;
-        
-        // Check server status periodically but not on every frame
-        if (currentTime - lastCheckTime > checkInterval)
-        {
-            lastCheckTime = currentTime;
-            // Directly call but less frequently
-            CheckServerStatus();
-        }
-
-        // Check for file changes periodically when window is focused
-        if (windowFocused && detectionProcess != null && detectionProcess.IsDetectingChanges())
-        {
-            detectionProcess.CheckForChanges();
-        }
-
-        // Have the log processor check its processes for health
-        if (silentMode && serverStarted)
-        {
-            logProcessor.CheckLogProcesses(currentTime);
-        }
-        
-        // For Custom Server mode, ensure UI is refreshed periodically to update connection status
-        // But don't check status on every frame
-        if (serverMode == ServerMode.CustomServer && windowFocused)
-        {
-            // Check connection status less frequently (3x interval)
-            if (currentTime - lastCheckTime > changeCheckInterval * 3)
-            {
-                if (serverCustomProcess != null)
-                {
-                    serverCustomProcess.UpdateSessionStatusIfNeeded();
-                }
-                Repaint();
-            }
-        }
+        // Update local state for UI
+        serverChangesDetected = changesDetected;
+        Repaint();
     }
     #endregion
     
@@ -508,15 +424,15 @@ public class ServerWindow : EditorWindow
                 serverMode = ServerMode.WslServer;
                 UpdateServerModeState();
             }
-            string customModeTooltip = "Connect to your custom server and run spacetime commands";
-            if (GUILayout.Button(new GUIContent("Custom", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
+            if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverStarted)
+                if (serverManager.serverStarted)
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Server and change the server mode to Custom server?","OK","Cancel");
                     if (modeChange)
                     {
-                        StopServer();
+                        serverManager.StopServer();
                         serverMode = ServerMode.CustomServer;
                         UpdateServerModeState();
                     }
@@ -542,12 +458,153 @@ public class ServerWindow : EditorWindow
             customWindowStyle.alignment = TextAnchor.UpperLeft;
             customWindowStyle.stretchHeight = false; // Prevent automatic stretching
 
-            GUILayout.BeginVertical(customWindowStyle); // Window of Pre-Requisites
+            GUILayout.BeginVertical(customWindowStyle); // Window Texture of Pre-Requisites
+            #endregion
+
+            #region Shared Settings
+            // Shared settings
+            GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
+
+            // Backup Directory setting
+            EditorGUILayout.BeginHorizontal();
+            string backupDirectoryTooltip = 
+            "Directory where SpacetimeDB server backups will be saved.\n\n"+
+            "Note: Create a new empty folder if the server backups have not been created yet.\n"+
+            "Backups for the server use little space, so you can commit this folder to your repository.";
+            EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
+            if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
+            {
+                string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    backupDirectory = path;
+                    serverManager.SetBackupDirectory(backupDirectory);
+                    LogMessage($"Backup directory set to: {backupDirectory}", 1);
+                }
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Server Directory setting
+            EditorGUILayout.BeginHorizontal();
+            string serverDirectoryTooltip = 
+            "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
+            "Note: Create a new empty folder if the module has not been created yet.";
+            EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
+            if (GUILayout.Button("Set Server Directory", GUILayout.Width(150), GUILayout.Height(20)))
+            {
+                string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    serverDirectory = path;
+                    serverManager.SetServerDirectory(serverDirectory);
+                    LogMessage($"Server directory set to: {serverDirectory}", 1);
+                    
+                    // Update the detection process with the new directory
+                    if (detectionProcess != null)
+                    {
+                        detectionProcess.Configure(serverDirectory, detectServerChanges);
+                    }
+                }
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+                        
+            // Server Language dropdown
+            EditorGUILayout.BeginHorizontal();
+            string serverLangTooltip = 
+            "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
+            "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
+            "Recommended: Rust which is 2x faster than C#.";
+            EditorGUILayout.LabelField(new GUIContent("Server Language:", serverLangTooltip), GUILayout.Width(110));
+            string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
+            string[] serverLangValues = new string[] { "rust", "csharp" };
+            int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
+            if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
+            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
+            if (newServerLangSelectedIndex != serverLangSelectedIndex)
+            {
+                serverLang = serverLangValues[newServerLangSelectedIndex];
+                serverManager.SetServerLang(serverLang);
+                LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Unity Autogenerated files Directory setting
+            EditorGUILayout.BeginHorizontal();
+            string clientDirectoryTooltip = 
+            "Directory where Unity client scripts will be generated.\n\n"+
+            "Note: This should be placed in the Assets folder of your Unity project.";
+            EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
+            if (GUILayout.Button("Set Client Directory", GUILayout.Width(150), GUILayout.Height(20)))
+            {
+                string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    clientDirectory = path;
+                    serverManager.SetClientDirectory(clientDirectory);
+                    LogMessage($"Client directory set to: {clientDirectory}", 1);
+                }
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Unity Autogenerated files Language dropdown
+            EditorGUILayout.BeginHorizontal();
+            string unityLangTooltip = 
+            "C-Sharp: The default programming language for auto-generated Unity client scripts. \n\n"+
+            "Rust: Programming language for auto-generated Unity client scripts. \n\n"+
+            "Typescript: Programming language for auto-generated Unity client scripts. \n\n"+
+            "Recommended: C-Sharp which is natively supported by Unity.";
+            EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), GUILayout.Width(110));
+            string[] unityLangOptions = new string[] { "Rust", "C-Sharp", "Typescript"};
+            string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
+            int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
+            if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
+            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(150));
+            if (newunityLangSelectedIndex != unityLangSelectedIndex)
+            {
+                unityLang = unityLangValues[newunityLangSelectedIndex];
+                serverManager.SetUnityLang(unityLang);
+                LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Module Name setting
+            EditorGUILayout.BeginHorizontal();
+            string moduleNameTooltip = 
+            "The name of your existing SpacetimeDB module you used when you created the module.\n"+
+            "OR the name you want your SpacetimeDB module to have when initializing a new one";
+            EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
+            string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(150));
+            if (newModuleName != moduleName)
+            {
+                moduleName = newModuleName;
+                serverManager.SetModuleName(moduleName);
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Init a new module
+            EditorGUILayout.BeginHorizontal();
+            string initModuleTooltip = 
+            "Init a new module: Initializes a new SpacetimeDB module in the server directory.";
+            EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
+            if (GUILayout.Button("Init a new module", GUILayout.Width(150), GUILayout.Height(20)))
+            {
+                InitNewModule();
+            }
+            EditorGUILayout.EndHorizontal();
             #endregion
 
             #region WSL Mode
             if (serverMode == ServerMode.WslServer)
             {
+                // WSL Settings
+                GUILayout.Label("WSL Server Settings", EditorStyles.centeredGreyMiniLabel);
+
                 // Debian Username setting
                 EditorGUILayout.BeginHorizontal();
                 string userNameTooltip = 
@@ -558,136 +615,12 @@ public class ServerWindow : EditorWindow
                 if (newUserName != userName)
                 {
                     userName = newUserName;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                    // Update processors with new username
-                    if(logProcessor != null) logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
+                    serverManager.SetUserName(userName);
                     if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(userName)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
-                
-                // Backup Directory setting
-                EditorGUILayout.BeginHorizontal();
-                string backupDirectoryTooltip = 
-                "Directory where SpacetimeDB server backups will be saved.\n\n"+
-                "Note: Create a new empty folder if the server backups have not been created yet.\n"+
-                "Backups for the server use little space, so you can commit this folder to your repository.";
-                EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
-                {
-                    string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        backupDirectory = path;
-                        EditorPrefs.SetString(PrefsKeyPrefix + "BackupDirectory", backupDirectory);
-                        LogMessage($"Backup directory set to: {backupDirectory}", 1);
-                    }
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
-                // Server Directory setting
-                EditorGUILayout.BeginHorizontal();
-                string serverDirectoryTooltip = 
-                "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
-                "Note: Create a new empty folder if the module has not been created yet.";
-                EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Set Server Directory", GUILayout.Width(150), GUILayout.Height(20)))
-                {
-                    string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        serverDirectory = path;
-                        EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
-                        LogMessage($"Server directory set to: {serverDirectory}", 1);
-                        
-                        // Update the detection process with the new directory
-                        if (detectionProcess != null)
-                        {
-                            detectionProcess.Configure(serverDirectory, detectServerChanges);
-                        }
-                    }
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-                            
-                // Server Language dropdown
-                EditorGUILayout.BeginHorizontal();
-                string serverLangTooltip = 
-                "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
-                "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
-                "Recommended: Rust which is 2x faster than C#.";
-                EditorGUILayout.LabelField(new GUIContent("Server Language:", serverLangTooltip), GUILayout.Width(110));
-                string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
-                string[] serverLangValues = new string[] { "rust", "csharp" };
-                int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
-                if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
-                int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
-                if (newServerLangSelectedIndex != serverLangSelectedIndex)
-                {
-                    serverLang = serverLangValues[newServerLangSelectedIndex];
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerLang", serverLang);
-                    LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-                
-                // Module Name setting
-                EditorGUILayout.BeginHorizontal();
-                string moduleNameTooltip = 
-                "The name of your existing SpacetimeDB module you used when you created the module.\n"+
-                "OR the name you want your SpacetimeDB module to have when initializing a new one";
-                EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
-                string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(150));
-                if (newModuleName != moduleName)
-                {
-                    moduleName = newModuleName;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", moduleName);
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
-                // Unity Autogenerated files Directory setting
-                EditorGUILayout.BeginHorizontal();
-                string clientDirectoryTooltip = 
-                "Directory where Unity client scripts will be generated.\n\n"+
-                "Note: This should be placed in the Assets folder of your Unity project.";
-                EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Set Client Directory", GUILayout.Width(150), GUILayout.Height(20)))
-                {
-                    string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        clientDirectory = path;
-                        EditorPrefs.SetString(PrefsKeyPrefix + "ClientDirectory", clientDirectory);
-                        LogMessage($"Client directory set to: {clientDirectory}", 1);
-                    }
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
-                // Unity Autogenerated files Language dropdown
-                EditorGUILayout.BeginHorizontal();
-                string unityLangTooltip = 
-                "C-Sharp: The default programming language for auto-generated Unity client scripts. \n\n"+
-                "Rust: Programming language for auto-generated Unity client scripts. \n\n"+
-                "Typescript: Programming language for auto-generated Unity client scripts. \n\n"+
-                "Recommended: C-Sharp which is natively supported by Unity.";
-                EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), GUILayout.Width(110));
-                string[] unityLangOptions = new string[] { "Rust", "C-Sharp", "Typescript"};
-                string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
-                int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
-                if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
-                int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(150));
-                if (newunityLangSelectedIndex != unityLangSelectedIndex)
-                {
-                    unityLang = unityLangValues[newunityLangSelectedIndex];
-                    EditorPrefs.SetString(PrefsKeyPrefix + "unityLang", unityLang);
-                    LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
+                   
                 // URL setting
                 EditorGUILayout.BeginHorizontal();
                 string urlTooltip = 
@@ -699,13 +632,13 @@ public class ServerWindow : EditorWindow
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
+                    serverManager.SetServerUrl(serverUrl);
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(serverUrl);
-                    if (extractedPort > 0)
+                    if (extractedPort > 0 && extractedPort != serverPort)
                     {
                         serverPort = extractedPort;
-                        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", serverPort);
+                        serverManager.SetServerPort(serverPort);
                         if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
                     }
                     else
@@ -726,20 +659,9 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != authToken)
                 {
                     authToken = newAuthToken;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "AuthToken", authToken);
+                    serverManager.SetAuthToken(authToken);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
-                // Init a new module
-                EditorGUILayout.BeginHorizontal();
-                string initModuleTooltip = 
-                "Init a new module: Initializes a new SpacetimeDB module in the server directory.";
-                EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Init a new module", GUILayout.Width(150), GUILayout.Height(20)))
-                {
-                    InitNewModule();
-                }
                 EditorGUILayout.EndHorizontal();
 
                 // WSL Check Pre-Requisites button
@@ -753,6 +675,48 @@ public class ServerWindow : EditorWindow
             #region Custom Mode
             if (serverMode == ServerMode.CustomServer)
             {
+                // Remote Settings
+                GUILayout.Label("Custom Server Settings", EditorStyles.centeredGreyMiniLabel);
+                
+                // SSH Keygen button
+                EditorGUILayout.BeginHorizontal();
+                string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
+                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
+                {
+                    if (cmdProcessor == null)
+                    {
+                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                    }
+                    cmdProcessor.RunPowerShellCommand("ssh-keygen -t ed25519", LogMessage);
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                // SSH Private Key Path (button only)
+                EditorGUILayout.BeginHorizontal();
+                string keyPathTooltip = "The full path to your SSH private key file (e.g., C:\\Users\\YourUser\\.ssh\\id_ed25519).";
+                if (!string.IsNullOrEmpty(sshPrivateKeyPath))
+                {
+                    keyPathTooltip += $"\n\nCurrent path: {sshPrivateKeyPath}";
+                }
+                EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
+                if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip), GUILayout.Width(150)))
+                {
+                    string path = EditorUtility.OpenFilePanel("Select SSH Private Key", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/.ssh", "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        sshPrivateKeyPath = path;
+                        serverManager.SetSSHPrivateKeyPath(sshPrivateKeyPath);
+                        if (serverCustomProcess != null) // Update ServerCustomProcess if it exists
+                        {
+                            serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
+                        }
+                        if (debugMode) LogMessage($"SSH Private Key Path set to: {sshPrivateKeyPath}", 0);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshPrivateKeyPath) && System.IO.File.Exists(sshPrivateKeyPath)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
                 // SSH Username
                 EditorGUILayout.BeginHorizontal();
                 string userNameTooltip = 
@@ -762,37 +726,11 @@ public class ServerWindow : EditorWindow
                 if (newUserName != sshUserName)
                 {
                     sshUserName = newUserName;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+                    serverManager.SetSSHUserName(sshUserName);
                                        
                     if (debugMode) LogMessage($"SSH username set to: {sshUserName}", 0);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshUserName)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-                
-                // SSH Private Key Path
-                EditorGUILayout.BeginHorizontal();
-                string keyPathTooltip = "The full path to your SSH private key file (e.g., C:\\Users\\YourUser\\.ssh\\id_ed25519).";
-                EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
-                string newKeyPath = EditorGUILayout.TextField(sshPrivateKeyPath, GUILayout.Width(90));
-                if (GUILayout.Button("Browse", GUILayout.Width(57)))
-                {
-                    string path = EditorUtility.OpenFilePanel("Select SSH Private Key", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/.ssh", "");
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        newKeyPath = path;
-                    }
-                }
-                if (newKeyPath != sshPrivateKeyPath)
-                {
-                    sshPrivateKeyPath = newKeyPath;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHPrivateKeyPath", sshPrivateKeyPath);
-                    if (serverCustomProcess != null) // Update ServerCustomProcess if it exists
-                    {
-                        serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
-                    }
-                    if (debugMode) LogMessage($"SSH Private Key Path set to: {sshPrivateKeyPath}", 0);
-                }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshPrivateKeyPath) && System.IO.File.Exists(sshPrivateKeyPath)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
                 // URL Custom Server setting
@@ -805,22 +743,22 @@ public class ServerWindow : EditorWindow
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerURL", customServerUrl);
+                    serverManager.SetCustomServerUrl(customServerUrl);
                     
                     // Also set the main serverUrl for consistency
                     serverUrl = customServerUrl;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
+                    serverManager.SetServerUrl(serverUrl);
                     
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(customServerUrl);
-                    if (extractedPort > 0)
+                    if (extractedPort > 0 && extractedPort != customServerPort)
                     {
                         customServerPort = extractedPort;
-                        EditorPrefs.SetInt(PrefsKeyPrefix + "CustomServerPort", customServerPort);
+                        serverManager.SetCustomServerPort(customServerPort);
                         
                         // Also set the main serverPort for consistency
                         serverPort = customServerPort;
-                        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", serverPort);
+                        serverManager.SetServerPort(serverPort);
                         
                         if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
                     }
@@ -842,7 +780,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != customServerAuthToken)
                 {
                     customServerAuthToken = newAuthToken;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerAuthToken", customServerAuthToken);
+                    serverManager.SetCustomServerAuthToken(customServerAuthToken);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -873,6 +811,23 @@ public class ServerWindow : EditorWindow
             #region Maincloud Mode
             if (serverMode == ServerMode.MaincloudServer)
             {
+                // Remote Settings
+                GUILayout.Label("Maincloud Settings", EditorStyles.centeredGreyMiniLabel);
+
+                // Maincloud Login
+                EditorGUILayout.BeginHorizontal();
+                string loginTooltip = "Login to the official SpacetimeDB Maincloud using your Github account";
+                EditorGUILayout.LabelField(new GUIContent("Login:",loginTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Login to Maincloud", GUILayout.Width(150)))
+                {
+                    if (cmdProcessor == null)
+                    {
+                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                    }
+                    cmdProcessor.RunPowerShellCommand("login", LogMessage);
+                }
+                EditorGUILayout.EndHorizontal();
+
                 // Maincloud Check Pre-Requisites
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                 {
@@ -883,93 +838,6 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.EndVertical(); // GUI Background
         }
         EditorGUILayout.EndVertical(); // End of Entire Pre-Requisites section
-    }
-    #endregion
-
-    #region ServerUI
-
-    private void DrawServerSection()
-    {
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        EditorGUILayout.LabelField("Server", EditorStyles.boldLabel);
-        
-        bool serverRunning = serverStarted || isStartingUp;
-
-        if (!wslPrerequisitesChecked || !hasWSL || !hasDebian)
-        {
-            if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
-            {
-                CheckPrerequisites();
-            }
-        }
-        else // If Prerequisites are checked then show normal server controls
-        {
-            if (!serverRunning)
-            {
-                if (GUILayout.Button("Start Server", GUILayout.Height(30)))
-                {
-                    StartServer();
-                }
-            } 
-            else 
-            {
-                if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
-                {
-                    StopServer();
-                }
-            }
-        }
-
-        EditorGUI.BeginDisabledGroup(!serverStarted && !silentMode);
-        if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
-        {
-            ViewServerLogs();
-        }
-        EditorGUI.EndDisabledGroup();
-
-        EditorGUI.BeginDisabledGroup(!serverStarted);
-        if (GUILayout.Button("View Server Database", GUILayout.Height(20)))
-        {
-            ServerDataWindow.ShowWindow();
-        }
-        EditorGUI.EndDisabledGroup();
-        
-        EditorGUI.BeginDisabledGroup(!serverStarted);
-        if (GUILayout.Button("Run Server Reducer", GUILayout.Height(20)))
-        {
-            ServerReducerWindow.ShowWindow();
-        }
-        EditorGUI.EndDisabledGroup();
-
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Server Status:", GUILayout.Width(110));
-        
-        // Use green for running/starting, gray for stopped
-        GUIStyle statusStyle = new GUIStyle(EditorStyles.label);
-        string statusText;
-        
-        if (isStartingUp)
-        {
-            statusStyle.normal.textColor = Color.green;
-            float elapsed = (float)(EditorApplication.timeSinceStartup - startupTime);
-            int seconds = Mathf.FloorToInt(elapsed);
-            statusText = $"Starting ({seconds}s)...";
-        }
-        else if (serverStarted)
-        {
-            statusStyle.normal.textColor = Color.green;
-            statusText = "Running";
-        }
-        else
-        {
-            statusStyle.normal.textColor = Color.gray;
-            statusText = "Stopped";
-        }
-        
-        EditorGUILayout.LabelField(statusText, statusStyle);
-        EditorGUILayout.EndHorizontal();
-        
-        EditorGUILayout.EndVertical();
     }
     #endregion
 
@@ -999,15 +867,16 @@ public class ServerWindow : EditorWindow
             "Silent Mode: The server runs silently in the background without any window.";
             EditorGUILayout.LabelField(new GUIContent("Server Visiblity:", serverModeTooltip), GUILayout.Width(120));
             GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
-            if (silentMode)
+            if (serverManager.SilentMode)
             {
                 silentToggleStyle.normal.textColor = hiddenColor;
                 silentToggleStyle.hover.textColor = hiddenColor;
             }
-            if (GUILayout.Button(silentMode ? "Silent Mode" : "Show CMD", silentToggleStyle))
+            if (GUILayout.Button(serverManager.SilentMode ? "Silent Mode" : "Show CMD", silentToggleStyle))
             {
-                silentMode = !silentMode;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "SilentMode", silentMode);
+                bool newSilentMode = !serverManager.SilentMode;
+                serverManager.SetSilentMode(newSilentMode);
+                silentMode = newSilentMode; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
             
@@ -1019,21 +888,27 @@ public class ServerWindow : EditorWindow
             "Not Detecting Changes: Will not detect changes to the server module and will not notify you.";
             EditorGUILayout.LabelField(new GUIContent("Server Changes:", changeDetectionTooltip), GUILayout.Width(120));
             GUIStyle changeToggleStyle = new GUIStyle(GUI.skin.button);
-            if (detectServerChanges)
+            if (serverManager.DetectServerChanges)
             {
                 // Use green for active detection
                 changeToggleStyle.normal.textColor = recommendedColor;
                 changeToggleStyle.hover.textColor = recommendedColor;
             }
-            if (GUILayout.Button(detectServerChanges ? "Detecting Changes" : "Not Detecting Changes", changeToggleStyle))
+            if (GUILayout.Button(serverManager.DetectServerChanges ? "Detecting Changes" : "Not Detecting Changes", changeToggleStyle))
             {
-                detectServerChanges = !detectServerChanges;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", detectServerChanges);
+                bool newDetectChanges = !serverManager.DetectServerChanges;
+                serverManager.SetDetectServerChanges(newDetectChanges);
+                detectServerChanges = newDetectChanges; // Keep local field in sync
                 
-                // Update the detection process
-                if (detectionProcess != null)
+                if (newDetectChanges)
                 {
-                    detectionProcess.SetDetectChanges(detectServerChanges);
+                    serverChangesDetected = false; // Reset local flag
+                    serverManager.ServerChangesDetected = false; // Reset server manager flag
+                }
+                else
+                {
+                    serverChangesDetected = false;
+                    serverManager.ServerChangesDetected = false;
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -1046,27 +921,24 @@ public class ServerWindow : EditorWindow
             "Manual Publish: The server will not automatically publish the module and will require manual publishing.";
             EditorGUILayout.LabelField(new GUIContent("Auto Publish Mode:", autoPublishTooltip), GUILayout.Width(120));
             GUIStyle autoPublishStyle = new GUIStyle(GUI.skin.button);
-            if (autoPublishMode)
+            if (serverManager.AutoPublishMode)
             {
                 // Use green for active auto-publish
                 autoPublishStyle.normal.textColor = recommendedColor;
                 autoPublishStyle.hover.textColor = recommendedColor;
             }
-            if (GUILayout.Button(autoPublishMode ? "Automatic Publishing" : "Manual Publish", autoPublishStyle))
+            if (GUILayout.Button(serverManager.AutoPublishMode ? "Automatic Publishing" : "Manual Publish", autoPublishStyle))
             {
-                autoPublishMode = !autoPublishMode;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "AutoPublishMode", autoPublishMode);
+                bool newAutoPublish = !serverManager.AutoPublishMode;
+                serverManager.SetAutoPublishMode(newAutoPublish);
+                autoPublishMode = newAutoPublish; // Keep local field in sync
                 
-                if (autoPublishMode && !detectServerChanges)
+                if (newAutoPublish && !serverManager.DetectServerChanges)
                 {
-                    detectServerChanges = true;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", true);
-                    
-                    // Update the detection process
-                    if (detectionProcess != null)
-                    {
-                        detectionProcess.SetDetectChanges(true);
-                    }
+                    serverManager.SetDetectServerChanges(true);
+                    detectServerChanges = true; // Keep local field in sync
+                    serverChangesDetected = false;
+                    serverManager.ServerChangesDetected = false;
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -1080,16 +952,17 @@ public class ServerWindow : EditorWindow
             "Recommended: Publish will Generate.";
             EditorGUILayout.LabelField(new GUIContent("Publish and Generate:", publishGenerateTooltip), GUILayout.Width(120));
             GUIStyle publishGenerateStyle = new GUIStyle(GUI.skin.button);
-            if (publishAndGenerateMode)
+            if (serverManager.PublishAndGenerateMode)
             {
                 // Use green for active auto-generate
                 publishGenerateStyle.normal.textColor = recommendedColor;
                 publishGenerateStyle.hover.textColor = recommendedColor;
             }
-            if (GUILayout.Button(publishAndGenerateMode ? "Publish will Generate" : "Separate Generate", publishGenerateStyle))
+            if (GUILayout.Button(serverManager.PublishAndGenerateMode ? "Publish will Generate" : "Separate Generate", publishGenerateStyle))
             {
-                publishAndGenerateMode = !publishAndGenerateMode;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "PublishAndGenerateMode", publishAndGenerateMode);
+                bool newPublishGenerate = !serverManager.PublishAndGenerateMode;
+                serverManager.SetPublishAndGenerateMode(newPublishGenerate);
+                publishAndGenerateMode = newPublishGenerate; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
 
@@ -1103,15 +976,16 @@ public class ServerWindow : EditorWindow
             "Recommended: Close WSL at Server Stop";
             EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
-            if (autoCloseWsl)
+            if (serverManager.AutoCloseWsl)
             {
                 wslCloseStyle.normal.textColor = warningColor;
                 wslCloseStyle.hover.textColor = warningColor;
             }
-            if (GUILayout.Button(autoCloseWsl ? "Close WSL at Server Stop" : "Keep Running", wslCloseStyle))
+            if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Server Stop" : "Keep Running", wslCloseStyle))
             {
-                autoCloseWsl = !autoCloseWsl;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", autoCloseWsl);
+                bool newAutoClose = !serverManager.AutoCloseWsl;
+                serverManager.SetAutoCloseWsl(newAutoClose);
+                autoCloseWsl = newAutoClose; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
 
@@ -1124,19 +998,20 @@ public class ServerWindow : EditorWindow
             "Recommended: Hide Extra Warnings.";
             EditorGUILayout.LabelField(new GUIContent("Command Output:", commandOutputTooltip), GUILayout.Width(120));
             GUIStyle warningToggleStyle = new GUIStyle(GUI.skin.button);
-            if (hideWarnings)
+            if (serverManager.HideWarnings)
             {
                 warningToggleStyle.normal.textColor = warningColor;
                 warningToggleStyle.hover.textColor = warningColor;
             }
-            if (GUILayout.Button(hideWarnings ? "Hiding Extra Warnings" : "Show All Messages", warningToggleStyle))
+            if (GUILayout.Button(serverManager.HideWarnings ? "Hiding Extra Warnings" : "Show All Messages", warningToggleStyle))
             {
-                hideWarnings = !hideWarnings;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HideWarnings", hideWarnings);
+                bool newHideWarnings = !serverManager.HideWarnings;
+                serverManager.SetHideWarnings(newHideWarnings);
+                hideWarnings = newHideWarnings; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
 
-            if (silentMode)
+            if (serverManager.SilentMode)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);
@@ -1146,15 +1021,16 @@ public class ServerWindow : EditorWindow
                 "Keep Module Log: The server will keep the module log between server restarts.";
                 EditorGUILayout.LabelField(new GUIContent("Module Log:", moduleLogTooltip), GUILayout.Width(120));
                 GUIStyle moduleLogToggleStyle = new GUIStyle(GUI.skin.button);
-                if (clearModuleLogAtStart)
+                if (serverManager.ClearModuleLogAtStart)
                 {
                     moduleLogToggleStyle.normal.textColor = warningColor;
                     moduleLogToggleStyle.hover.textColor = warningColor;
                 }
-                if (GUILayout.Button(clearModuleLogAtStart ? "Clear at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
+                if (GUILayout.Button(serverManager.ClearModuleLogAtStart ? "Clear at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
                 {
-                    clearModuleLogAtStart = !clearModuleLogAtStart;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", clearModuleLogAtStart);
+                    bool newClearModule = !serverManager.ClearModuleLogAtStart;
+                    serverManager.SetClearModuleLogAtStart(newClearModule);
+                    clearModuleLogAtStart = newClearModule; // Keep local field in sync
                 }
                 EditorGUILayout.EndHorizontal();
                 
@@ -1167,15 +1043,16 @@ public class ServerWindow : EditorWindow
                 "Note: The database log is only kept in memory for performance, so it will be lost when the server is stopped if WSL Auto Close is enabled.";
                 EditorGUILayout.LabelField(new GUIContent("Database Log:", databaseLogTooltip), GUILayout.Width(120));
                 GUIStyle databaseLogToggleStyle = new GUIStyle(GUI.skin.button);
-                if (clearDatabaseLogAtStart)
+                if (serverManager.ClearDatabaseLogAtStart)
                 {
                     databaseLogToggleStyle.normal.textColor = warningColor;
                     databaseLogToggleStyle.hover.textColor = warningColor;
                 }
-                if (GUILayout.Button(clearDatabaseLogAtStart ? "Clear at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
+                if (GUILayout.Button(serverManager.ClearDatabaseLogAtStart ? "Clear at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
                 {
-                    clearDatabaseLogAtStart = !clearDatabaseLogAtStart;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", clearDatabaseLogAtStart);
+                    bool newClearDatabase = !serverManager.ClearDatabaseLogAtStart;
+                    serverManager.SetClearDatabaseLogAtStart(newClearDatabase);
+                    clearDatabaseLogAtStart = newClearDatabase; // Keep local field in sync
                 }
                 EditorGUILayout.EndHorizontal();
             }
@@ -1188,21 +1065,23 @@ public class ServerWindow : EditorWindow
             "Debug Disabled: Will not show most debug messages. Important errors are still shown.";
             EditorGUILayout.LabelField(new GUIContent("Debug:", debugTooltip), GUILayout.Width(120));
             GUIStyle debugToggleStyle = new GUIStyle(GUI.skin.button);
-            if (debugMode)
+            if (serverManager.DebugMode)
             {
                 debugToggleStyle.normal.textColor = debugColor;
                 debugToggleStyle.hover.textColor = debugColor;
             }
-            if (GUILayout.Button(debugMode ? "Debug Mode" : "Debug Disabled", debugToggleStyle))
+            if (GUILayout.Button(serverManager.DebugMode ? "Debug Mode" : "Debug Disabled", debugToggleStyle))
             {
-                debugMode = !debugMode;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "DebugMode", debugMode);
-                ServerOutputWindow.debugMode = debugMode;
-                ServerWindowInitializer.debugMode = debugMode;
-                ServerUpdateProcess.debugMode = debugMode;
-                ServerLogProcess.debugMode = debugMode;
-                ServerCMDProcess.debugMode = debugMode;
-                ServerCustomProcess.debugMode = debugMode;
+                bool newDebugMode = !serverManager.DebugMode;
+                serverManager.SetDebugMode(newDebugMode);
+                debugMode = newDebugMode; // Keep local field in sync
+                
+                // Update other components that need to know about debug mode
+                ServerOutputWindow.debugMode = newDebugMode;
+                ServerWindowInitializer.debugMode = newDebugMode;
+                ServerUpdateProcess.debugMode = newDebugMode;
+                ServerLogProcess.debugMode = newDebugMode;
+                ServerCMDProcess.debugMode = newDebugMode;
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1210,47 +1089,133 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
-    #region CommandsUI
+    #region ServerUI
+
+    private void DrawServerSection()
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        
+        bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
+
+        if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
+        {
+            if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
+            {
+                CheckPrerequisites();
+            }
+        }
+        else // If Prerequisites are checked then show normal server controls
+        {
+            if (!serverRunning)
+            {
+                if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+                {
+                    serverManager.StartServer();
+                }
+            } 
+            else 
+            {
+                if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+                {
+                    serverManager.StopServer();
+                }
+            }
+        }
+
+        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.SilentMode);
+        if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
+        {
+            serverManager.ViewServerLogs();
+        }
+        EditorGUI.EndDisabledGroup();
+
+        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted);
+        if (GUILayout.Button("View Server Database", GUILayout.Height(20)))
+        {
+            ServerDataWindow.ShowWindow();
+        }
+        EditorGUI.EndDisabledGroup();
+        
+        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted);
+        if (GUILayout.Button("Run Server Reducer", GUILayout.Height(20)))
+        {
+            ServerReducerWindow.ShowWindow();
+        }
+        EditorGUI.EndDisabledGroup();
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("Server Status:", GUILayout.Width(110));
+        
+        // Use green for running/starting, gray for stopped
+        GUIStyle statusStyle = new GUIStyle(EditorStyles.label);
+        string statusText;
+        
+        if (serverManager.IsStartingUp)
+        {
+            statusStyle.normal.textColor = Color.green;
+            statusText = "Starting...";
+        }
+        else if (serverManager.IsServerStarted)
+        {
+            statusStyle.normal.textColor = Color.green;
+            statusText = "Running";
+        }
+        else
+        {
+            statusStyle.normal.textColor = Color.gray;
+            statusText = "Stopped";
+        }
+        
+        EditorGUILayout.LabelField(statusText, statusStyle);
+        EditorGUILayout.EndHorizontal();
+        
+        EditorGUILayout.EndVertical();
+    }
+    #endregion
+
+    #region UtilityUI
 
     private void DrawCommandsSection()
     {
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        EditorGUILayout.LabelField("Commands", EditorStyles.boldLabel);
-        
-        //EditorGUI.BeginDisabledGroup(!serverStarted);
-        
-        // Add a foldout for utility commands
-        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", true);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);       
+
+        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Commands", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", showUtilityCommands);
         
         if (showUtilityCommands)
         {
-            EditorGUILayout.LabelField(
-            "SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.Space(-10);
+
+            if (serverMode == ServerMode.WslServer)
+            EditorGUILayout.LabelField("WSL SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.CustomServer)
+            EditorGUILayout.LabelField("Remote SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.MaincloudServer)
+            EditorGUILayout.LabelField("Maincloud SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
             {
-                RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
+                serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
-                RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
+                serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
             }
 
             if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
             {
-                RunServerCommand("spacetime list", "Showing active modules");
+                serverManager.RunServerCommand("spacetime list", "Showing active modules");
             }
             
             if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
             {
-                PingServer(true);
+                serverManager.PingServer(true);
             }
             
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
             {
-                RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
             }
 
             EditorGUILayout.LabelField(
@@ -1258,28 +1223,28 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
             {
-                OpenDebianWindow();
+                serverManager.OpenDebianWindow();
             }
             
-            string backupTooltip = "Creates a tar archive of your DATA folder in your SpacetimeDB server.";
-            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
+            string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
+            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
             if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
             {  
-                versionProcessor.BackupServerData(backupDirectory, userName);
+                serverManager.BackupServerData();
             }
             EditorGUI.EndDisabledGroup();
 
             string restoreTooltip = "Unpacks and copies over the selected backup archive. DELETES the current DATA folder of your SpacetimeDB server. You will asked to backup before if you have not done so.";
-            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(backupDirectory));
+            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
             if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
             {
-                versionProcessor.RestoreServerData(backupDirectory, userName);
+                serverManager.RestoreServerData();
             }
-            //EditorGUI.EndDisabledGroup();
+            EditorGUI.EndDisabledGroup();
         }
         
         // Display server changes notification if detected
-        if (serverChangesDetected)
+        if (serverManager.ServerChangesDetected)
         {
             GUIStyle updateStyle = new GUIStyle(EditorStyles.boldLabel);
             updateStyle.normal.textColor = Color.green;
@@ -1289,7 +1254,7 @@ public class ServerWindow : EditorWindow
             updateStyle.fontStyle = FontStyle.Bold;
             
             // Add clickable visual indicator
-            string displayText = !autoPublishMode ? "New Server Update! (Click to dismiss)" : "New Server Update! (Auto Publish Mode) (Click to dismiss)";
+            string displayText = !serverManager.AutoPublishMode ? "New Server Update! (Click to dismiss)" : "New Server Update! (Auto Publish Mode) (Click to dismiss)";
             string tooltip = "Server Changes have been detected and are ready to be published as a new version of your module. Click to dismiss this notification until new changes are detected.";
             
             // Create a button-like appearance
@@ -1299,16 +1264,8 @@ public class ServerWindow : EditorWindow
             // Use a button that looks like a label for better click response
             if (GUILayout.Button(new GUIContent(displayText, tooltip), updateStyle))
             {
-                // Reset tracking in the detection process
-                if (detectionProcess != null)
-                {
-                    detectionProcess.ResetTrackingAfterPublish();
-                }
-                
-                // Also update the local state variable
-                serverChangesDetected = false;
-                
-                if (debugMode) LogMessage("Server changes dismissed and tracking state reset.", 1);
+                // Call serverManager to reset change detection
+                // TODO: Add method to ServerManager to reset detection state
                 Repaint();
             }
             
@@ -1316,7 +1273,7 @@ public class ServerWindow : EditorWindow
             GUILayout.EndHorizontal();
         }
         
-        if (publishAndGenerateMode) {
+        if (serverManager.PublishAndGenerateMode) {
         EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.\n" + 
                                     "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
         } else {
@@ -1325,7 +1282,7 @@ public class ServerWindow : EditorWindow
         }
         
         // Add Publish Module button
-        EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(moduleName));
+        EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.ModuleName));
         
         // Check if control key is held
         bool resetDatabase = Event.current.control && Event.current.alt;
@@ -1341,45 +1298,59 @@ public class ServerWindow : EditorWindow
             publishButtonStyle.hover.textColor = warningColor;
             Repaint();
         }
-        
-        // Dynamic button text based on control key state
-        string buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
+
+        string buttonText;
+        if (serverMode == ServerMode.MaincloudServer)
+        buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module to Maincloud";
+        else
+        buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
         
         if (GUILayout.Button(buttonText, publishButtonStyle, GUILayout.Height(37)))
         {
-            Publish(resetDatabase);
+            // Use reset database if control+alt key is held
+            if (resetDatabase)
+            {
+                // Display confirmation dialog when resetting database
+                if (EditorUtility.DisplayDialog(
+                        "Confirm Database Reset",
+                        "Are you sure you wish to delete the entire database and publish the module?",
+                        "Yes, Reset Database",
+                        "Cancel"))
+                {
+                    serverManager.Publish(true);
+                }
+            }
+            else
+            {
+                serverManager.Publish(false);
+            }
         }
         EditorGUI.EndDisabledGroup();
         
         // Add Generate Unity Files button
-        if (!publishAndGenerateMode)
+        if (!serverManager.PublishAndGenerateMode)
         {
             if (GUILayout.Button("Generate Unity Files", GUILayout.Height(37)))
             {
-                string outDir = GetRelativeClientPath();
-                RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files");
+                string outDir = serverManager.GetRelativeClientPath();
+                serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang}", "Generating Unity files");
                 LogMessage($"Generated Unity files to: {outDir}", 1);
             }
         }
         
         EditorGUI.EndDisabledGroup();
-
-        // To debug server online state
-        /*if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
-        {
-            LogMessage("Online: "+PingServerStatus(),0);
-        }*/
         
         EditorGUILayout.EndVertical();
     }
     #endregion
-    
+
     #region Check Pre-reqs
 
     public void CheckPrerequisites()
     {
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
+        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
             EditorApplication.delayCall += () => {
+                // Update local state for UI
                 hasWSL = wsl;
                 hasDebian = debian;
                 hasDebianTrixie = trixie;
@@ -1389,31 +1360,22 @@ public class ServerWindow : EditorWindow
                 hasRust = rust;
                 wslPrerequisitesChecked = true;
                 
-                // Save state
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", hasDebian);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", hasDebianTrixie);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", wslPrerequisitesChecked);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", hasCurl);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", hasSpacetimeDBServer);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
+                // No need to directly update ServerManager properties as this is now handled in the ServerManager
                 
-                // Load state
-                userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-
+                // Load userName value 
+                userName = serverManager.UserName;
+                
                 Repaint();
                 
                 bool essentialSoftware = 
-                    hasWSL && hasDebian && hasDebianTrixie && hasCurl && 
-                    hasSpacetimeDBServer && hasSpacetimeDBPath && hasRust;
+                    wsl && debian && trixie && curl && 
+                    spacetime && spacetimePath && rust;
 
                 bool essentialUserSettings = 
                     !string.IsNullOrEmpty(userName) && 
                     !string.IsNullOrEmpty(serverDirectory) && 
                     !string.IsNullOrEmpty(moduleName) && 
-                    !string.IsNullOrEmpty(serverLang) && 
-                    !string.IsNullOrEmpty(unityLang);
+                    !string.IsNullOrEmpty(serverLang);
                 
                 if (!essentialSoftware)
                 {
@@ -1432,7 +1394,7 @@ public class ServerWindow : EditorWindow
 
                     // Set the flag so the Initialize First Module dialog doesn't show again
                     initializedFirstModule = true;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", true);
+                    serverManager.SetInitializedFirstModule(true);
                     
                     if (result)
                     {
@@ -1505,85 +1467,14 @@ public class ServerWindow : EditorWindow
 
     private void Publish(bool resetDatabase)
     {
-        if (String.IsNullOrEmpty(clientDirectory) || String.IsNullOrEmpty(serverDirectory))
-        {
-            LogMessage("Please set your client directory and server directory in the pre-requisites first.",-2);
-            return;
-        }
-        if (String.IsNullOrEmpty(moduleName))
-        {
-            LogMessage("Please set the module name in the pre-requisites.",-2);
-            return;
-        }
-        if (resetDatabase)
-        {
-            // Display confirmation dialog when resetting database
-            if (EditorUtility.DisplayDialog(
-                    "Confirm Database Reset",
-                    "Are you sure you wish to delete the entire database and publish the module?",
-                    "Yes, Reset Database",
-                    "Cancel"))
-            {
-                RunServerCommand($"spacetime publish --server local {moduleName} --delete-data -y", $"Publishing module '{moduleName}' and resetting database");
-            }
-        }
-        else
-        {
-            RunServerCommand($"spacetime publish --server local {moduleName}", $"Publishing module '{moduleName}'");
-        }
-        
-        // Reset change detection after publishing
-        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-        {
-            detectionProcess.ResetTrackingAfterPublish();
-            // Update local UI state
-            serverChangesDetected = false;
-        }
-
-        // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
+        serverManager.Publish(resetDatabase);
     }
 
     private void InitNewModule()
     {
-        if (string.IsNullOrEmpty(serverDirectory))
-        {
-            LogMessage("Please set the server directory first.", -1);
-            return;
-        }
-        if (string.IsNullOrEmpty(serverLang))
-        {
-            LogMessage("Please set the server language first.", -1);
-            return;
-        }
-
-        // Use EditorApplication.delayCall to ensure we're not in the middle of a GUI layout
-        EditorApplication.delayCall += () =>
-        {
-            bool result = EditorUtility.DisplayDialog("Init a new module", 
-                "Are you sure you want to init a new module?\n"+
-                "Don't do this if you already have a module in your set server directory.", 
-                "Yes", "No");
-            
-            if (result)
-            {
-                string wslPath = GetWslPath(serverDirectory);
-                // Combine cd and init command
-                string command = $"cd \"{wslPath}\" && spacetime init --lang {serverLang} .";
-                cmdProcessor.RunWslCommandSilent(command);
-                LogMessage("New module initialized", 1);
-                
-                // Reset the detection process tracking
-                if (detectionProcess != null)
-                {
-                    detectionProcess.ResetTracking();
-                    serverChangesDetected = false;
-                }
-                
-                // Set the flag so the initialization dialog doesn't show again
-                initializedFirstModule = true;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", true);
-            }
-        };
+        serverManager.InitNewModule();
+        initializedFirstModule = true;
+        serverManager.SetInitializedFirstModule(true);
     }
 
     public void ClearModuleLogFile() // Clears the module tmp log file
@@ -1601,568 +1492,17 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
-    #region Start
-    
-    private void StartServer()
+    private void RunServerCommand(string command, string description)
     {
-        if (!wslPrerequisitesChecked)
-        {
-            LogMessage("Prerequisites need to be checked before starting the server.", -2);
-            CheckPrerequisites();
-            return;
-        }
-
-        switch (serverMode)
-        {
-            case ServerMode.WslServer:
-                StartWslServer();
-                break;
-            case ServerMode.CustomServer:
-                // Handle async method without changing method signature
-                EditorApplication.delayCall += async () => {
-                    await StartCustomServer();
-                };
-                break;
-            case ServerMode.MaincloudServer:
-                StartMaincloudServer();
-                break;
-            default:
-                LogMessage("Unknown server mode. Cannot start server.", -1);
-                break;
-        }
+        serverManager.RunServerCommand(command, description);
     }
-
-    private void StartWslServer()
-    {
-        if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasSpacetimeDBServer)
-        {
-            LogMessage("Missing required installed items. Will attempt to start server.", -2);
-        }
-        if (string.IsNullOrEmpty(userName))
-        {
-            LogMessage("Cannot start server. Debian username is not set.", -1);
-            return;
-        }
-        
-        LogMessage("Start sequence initiated for WSL server. Waiting for confirmation...", 0);
-        
-        try
-        {
-            // Configure log processor with current settings
-            logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
-            
-            if (silentMode)
-            {
-                if (debugMode) LogMessage($"Starting Spacetime Server (Silent Mode, File Logging to {ServerLogProcess.WslCombinedLogPath})...", 0);
-                
-                // Start the silent server process
-                serverProcess = cmdProcessor.StartSilentServerProcess(ServerLogProcess.WslCombinedLogPath);
-                if (serverProcess == null) throw new Exception("Failed to start silent server process");
-                
-                // Start log monitoring
-                logProcessor.StartLogging();
-            }
-            else
-            {
-                // Start visible CMD server process
-                LogMessage("Starting Spacetime Server (Visible CMD)...", 0);
-                serverProcess = cmdProcessor.StartVisibleServerProcess(serverDirectory);
-                if (serverProcess == null) throw new Exception("Failed to start visible server process");
-            }
-
-            LogMessage("Server Succesfully Started!",1);
-        
-            // Mark server as starting up
-            isStartingUp = true;
-            startupTime = (float)EditorApplication.timeSinceStartup;
-            serverStarted = true; // Assume starting, CheckServerStatus will verify
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(true);
-        }
-        catch (Exception ex)
-        {
-            LogMessage($"Error during server start sequence: {ex.Message}", -1);
-            serverStarted = false;
-            isStartingUp = false;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-            logProcessor.StopLogging();
-            serverProcess = null; 
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(false);
-        }
-        finally
-        {
-            Repaint();
-        }
-    }
-
-    private async Task StartCustomServer()
-    {
-        if (string.IsNullOrEmpty(customServerUrl))
-        {
-            LogMessage("Please enter a custom server URL first.", -2);
-            return;
-        }
-        if (customServerPort <= 0)
-        {
-            LogMessage("Could not detect a valid port in the custom server URL. Please ensure the URL includes a port number (e.g., http://example.com:3000/).", -2);
-            return;
-        }
-        
-        LogMessage($"Connecting to custom server at {customServerUrl}", 1);
-
-        bool success = await serverCustomProcess.StartCustomServer();
-
-        if (!success)
-        {
-            LogMessage("Custom server process failed to start.", -1);
-            return;
-        }
-
-        if (success)
-        {
-            bool confirmed = PingServerStatus();
-            if (!confirmed)
-            {
-                LogMessage("Custom server process started but not confirmed running. Please check the server status.", -1);
-                return;
-            }
-            else
-            {
-                LogMessage("Custom server process started and confirmed running.", 1);
-                // Mark as connected to the custom server
-                serverStarted = true;
-                serverConfirmedRunning = true;
-                isStartingUp = false;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-            }
-        }
-    }
-
-    private void StartMaincloudServer()
-    {
-        // TODO: Implement maincloud server startup logic
-        LogMessage("Maincloud server start not yet implemented", -1);
-    }
-    #endregion
-
-    #region Stop
-
-    private void StopServer()
-    {
-        if (debugMode) LogMessage("Stop Server process has been called.", 0);
-        isStartingUp = false; // Ensure startup flag is cleared
-        serverConfirmedRunning = false; // Reset confirmed state
-
-        if (serverMode == ServerMode.CustomServer)
-        {
-            EditorApplication.delayCall += async () => {
-                await StopCustomServer();
-            };
-            Repaint();
-            return;
-        }
-        if (serverMode == ServerMode.WslServer)
-        {
-            StopWslServer();
-            Repaint();
-            return;
-        }
-    }
-
-    private void StopWslServer()
-    {
-        try
-        {
-            // Use the cmdProcessor to stop the server
-            cmdProcessor.StopServer();
-            
-            // Stop the log processors
-            logProcessor.StopLogging();
-            
-        }
-        catch (Exception ex)
-        {
-            LogMessage($"Error during server stop sequence: {ex.Message}", -1);
-        }
-        finally
-        {
-            // Force state update
-            serverStarted = false;
-            isStartingUp = false;
-            serverConfirmedRunning = false;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-            serverProcess = null; 
-            justStopped = true; // Set flag indicating stop was just initiated
-            stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
-
-            LogMessage("Server Successfully Stopped.", 1);
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(false);
-            
-            // WSL Shutdown Logic
-            if (autoCloseWsl)
-            {
-                cmdProcessor.ShutdownWsl();
-            }
-
-            Repaint();
-        }
-    }
-
-    private async Task StopCustomServer()
-    {
-        try
-        {
-            await serverCustomProcess.StopCustomServer();
-        }
-        catch (Exception ex)
-        {
-            LogMessage($"Error during custom server stop sequence: {ex.Message}", -1);
-        }
-        finally
-        {
-            // Force state update
-            serverStarted = false;
-            isStartingUp = false;
-            serverConfirmedRunning = false;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-            serverProcess = null; 
-            justStopped = true; // Set flag indicating stop was just initiated
-            stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
-
-            LogMessage("Custom Server Successfully Stopped.", 1);
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(false);
-            
-            Repaint();
-        }
-    }
-
-    #endregion
-
-    #region CheckStatus
-
-private async void CheckServerStatus()
-{
-    // --- Reset justStopped flag after 5 seconds if grace period expired ---
-    const double stopGracePeriod = 5.0;
-    if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
-    {
-        if (debugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
-        justStopped = false;
-    }
-
-    // --- Startup Phase Check ---
-    if (isStartingUp)
-    {
-        float elapsedTime = (float)(EditorApplication.timeSinceStartup - startupTime);
-        bool isActuallyRunning = false;
-        
-        try {
-            if (serverMode == ServerMode.CustomServer)
-            {
-                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
-            }
-            else // WSL and other modes
-            {
-                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
-            }
-
-            // If running during startup phase, confirm immediately
-            if (isActuallyRunning)
-            {
-                if (debugMode) LogMessage($"Startup confirmed: Server is now running.", 1);
-                isStartingUp = false;
-                serverStarted = true; // Explicitly confirm started state
-                serverConfirmedRunning = true;
-                justStopped = false; // Reset flag on successful start confirmation
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-
-                // Update logProcessor state
-                logProcessor.SetServerRunningState(true);
-
-                Repaint();
-
-                // Auto-publish check if applicable
-                if (autoPublishMode && serverChangesDetected && !string.IsNullOrEmpty(moduleName))
-                {
-                    LogMessage("Server running with pending changes - auto-publishing...", 0);
-                    RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
-                    serverChangesDetected = false;
-                    if (detectionProcess != null)
-                    {
-                        detectionProcess.ResetTrackingAfterPublish();
-                    }
-                    return; // Confirmed, skip further checks this cycle
-                }
-            }
-            // If grace period expires and still not running, assume failure
-            else if (elapsedTime >= serverStartupGracePeriod)
-            {
-                LogMessage($"Server failed to start within grace period.", -1);
-                isStartingUp = false;
-                serverStarted = false;
-                serverConfirmedRunning = false;
-                justStopped = false; // Reset flag on failed start
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-
-                // Update logProcessor state
-                logProcessor.SetServerRunningState(false);
-
-                if (serverProcess != null && !serverProcess.HasExited) { try { serverProcess.Kill(); } catch {} }
-                serverProcess = null;
-                
-                Repaint();
-                return; // Failed, skip further checks
-            }
-            else
-            {
-                // Still starting up, update UI and wait
-                Repaint();
-                return;
-            }
-        }
-        catch (Exception ex) {
-            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
-            Repaint();
-            return;
-        }
-    }
-
-    // --- Standard Running Check (Only if not starting up) ---
-    if (serverStarted)
-    {
-        bool isActuallyRunning = false;
-        try {
-            if (serverMode == ServerMode.CustomServer)
-            {
-                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
-            }
-            else // WSL and other modes
-            {
-                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
-            }
-
-            // State Change Detection:
-            if (serverConfirmedRunning != isActuallyRunning)
-            {
-                serverConfirmedRunning = isActuallyRunning; // Update confirmed state
-                string msg = isActuallyRunning
-                    ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}: open")})"
-                    : $"Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}: closed")})";
-                LogMessage(msg, isActuallyRunning ? 1 : -2);
-
-                // If state changed to NOT running, update the main serverStarted flag
-                if (!isActuallyRunning)
-                {
-                    serverStarted = false;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-
-                    // Update logProcessor state
-                    logProcessor.SetServerRunningState(false);
-
-                    if (debugMode) LogMessage("Server state updated to stopped.", -1);
-                }
-                else
-                {
-                    // If we confirmed it IS running again, clear the stop flag
-                    justStopped = false;
-
-                    // Update logProcessor state
-                    logProcessor.SetServerRunningState(true);
-                }
-                Repaint();
-            }
-        }
-        catch (Exception ex) {
-            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
-        }
-    }
-    // --- Check for External Start/Recovery ---
-    // Only check if not already started, not starting up, and server is running
-    else if (!serverStarted && !isStartingUp)
-    {
-        bool isActuallyRunning = false;
-        try {
-            if (serverMode == ServerMode.CustomServer)
-            {
-                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
-            }
-            else // WSL and other modes
-            {
-                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
-            }
-
-            if (isActuallyRunning)
-            {
-                // If the 'justStopped' flag is set, ignore this check during the grace period
-                if (justStopped)
-                {
-                    if (debugMode) LogMessage($"Server detected running, but in post-stop grace period. Ignoring.", 0);
-                }
-                else
-                {
-                    bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : PingServerStatus();
-                    
-                    if (confirmed)
-                    {
-                        // Detected server running, not recently stopped -> likely external start/recovery
-                        LogMessage($"Detected server running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}" )}).", 1);
-                        serverStarted = true;
-                        serverConfirmedRunning = true;
-                        isStartingUp = false;
-                        justStopped = false; // Ensure flag is clear if we recover state
-                        EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-
-                        // Update logProcessor state
-                        logProcessor.SetServerRunningState(true);
-                    }
-
-                    Repaint();
-                }
-            }
-        }
-        catch (Exception ex) {
-            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
-        }
-    }
-}
-    #endregion
-
-    #region RunCommands
-    private async void RunServerCommand(string command, string description)
-    {
-        try
-        {
-            // Run the command silently and capture the output
-            LogMessage($"{description}...", 0);
-            
-            // Choose the right processor based on server mode
-            if (serverMode == ServerMode.CustomServer)
-            {
-                // Use the custom server processor for SSH commands
-                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command);
-                
-                // Display the results in the output log
-                if (!string.IsNullOrEmpty(result.output))
-                {
-                    LogMessage(result.output, 0);
-                }
-                
-                if (!string.IsNullOrEmpty(result.error))
-                {
-                    LogMessage(result.error, -2);
-                }
-                
-                if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
-                {
-                    LogMessage("Command completed with no output.", 0);
-                }
-                
-                // Handle special cases for publish and generate
-                bool isPublishCommand = command.Contains("spacetime publish");
-                bool isGenerateCommand = command.Contains("spacetime generate");
-                
-                if (result.success)
-                {
-                    // Reset change detection state after successful publish
-                    if (isPublishCommand)
-                    {
-                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-                        {
-                            detectionProcess.ResetTrackingAfterPublish();
-                            serverChangesDetected = false;
-                            if(debugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-                        }
-
-                        // Auto-generate if publish was successful and mode is enabled
-                        if (publishAndGenerateMode) 
-                        {
-                            LogMessage("Publish successful, automatically generating Unity files...", 0);
-                            string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files (auto)");
-                        }
-                    }
-                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
-                    {
-                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
-                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
-                    }
-                }
-            }
-            else
-            {
-                // Use the standard command processor for WSL mode
-                // Execute the command through the command processor
-                var result = await cmdProcessor.RunServerCommandAsync(command, serverDirectory);
-                
-                // Display the results in the output log
-                if (!string.IsNullOrEmpty(result.output))
-                {
-                    LogMessage(result.output, 0);
-                }
-                
-                if (!string.IsNullOrEmpty(result.error))
-                {
-                    LogMessage(result.error, -2);
-                }
-                
-                if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
-                {
-                    LogMessage("Command completed with no output.", 0);
-                }
-                
-                // Handle special cases for publish and generate
-                bool isPublishCommand = command.Contains("spacetime publish");
-                bool isGenerateCommand = command.Contains("spacetime generate");
-                
-                if (result.success)
-                {
-                    // Reset change detection state after successful publish
-                    if (isPublishCommand)
-                    {
-                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-                        {
-                            detectionProcess.ResetTrackingAfterPublish();
-                            serverChangesDetected = false;
-                            if(debugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-                        }
-
-                        // Auto-generate if publish was successful and mode is enabled
-                        if (publishAndGenerateMode) 
-                        {
-                            LogMessage("Publish successful, automatically generating Unity files...", 0);
-                            string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files (auto)");
-                        }
-                    }
-                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
-                    {
-                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
-                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            LogMessage($"Error running command: {ex.Message}", -1);
-        }
-    }
-    #endregion
 
     #region LogMessage
     
     public void LogMessage(string message, int style)
     {
         // Skip warning messages if hideWarnings is enabled
-        if (hideWarnings && message.Contains("WARNING"))
+        if (serverManager.HideWarnings && message.Contains("WARNING"))
         {
             return;
         }
@@ -2199,101 +1539,26 @@ private async void CheckServerStatus()
     // Opens Output Log window in silent mode or CMD window with Database logs in CMD mode
     private void ViewServerLogs()
     {
-        if (silentMode)
-        {
-            if (debugMode) LogMessage("Opening/focusing silent server output window...", 0);
-            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
-        }
-        else if (serverStarted)
-        {
-            // In CMD mode, both remind about server logs and open a new window for database logs
-            LogMessage("Server logs are in the SpacetimeDB server CMD window.", 0);
-            
-            // Open a new Debian window to view database logs
-            LogMessage("Opening a new window for database logs...", 0);
-            
-            try
-            {
-                // Create a process to run "spacetime logs moduleName -f" in a visible window
-                Process dbLogProcess = new Process();
-                dbLogProcess.StartInfo.FileName = "cmd.exe";
-                
-                // Build command to show database logs
-                string wslPath = cmdProcessor.GetWslPath(serverDirectory);
-                string logCommand = $"cd \"{wslPath}\" && spacetime logs {moduleName} -f";
-                
-                // Build full command with appropriate escaping
-                string escapedCommand = logCommand.Replace("\"", "\\\"");
-                dbLogProcess.StartInfo.Arguments = $"/k wsl -d Debian -u {userName} --exec bash -l -c \"{escapedCommand}\"";
-                dbLogProcess.StartInfo.UseShellExecute = true;
-                dbLogProcess.StartInfo.WindowStyle = ProcessWindowStyle.Normal;
-                dbLogProcess.StartInfo.CreateNoWindow = false;
-                
-                dbLogProcess.Start();
-                LogMessage("Database logs window opened. Close the window when finished.", 0);
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"Error opening database logs window: {ex.Message}", -1);
-            }
-        }
-        else
-        {
-            // Not silent, not running
-            LogMessage("Server is not running.", -1);
-        }
+        serverManager.ViewServerLogs();
+    }
+
+    private void OpenDebianWindow()
+    {
+        serverManager.OpenDebianWindow();
+    }
+
+    private bool PingServerStatus()
+    {
+        return serverManager.PingServerStatus();
+    }
+
+    private void PingServer(bool showLog)
+    {
+        serverManager.PingServer(showLog);
     }
     #endregion
     
     #region Utility Methods
-
-    private void OpenDebianWindow()
-    {
-        bool userNameReq = false;
-        cmdProcessor.OpenDebianWindow(userNameReq);
-    }
-
-    // Any PingServer method will start WSL to check if Server is running
-    public bool PingServerStatus()
-    {
-        PingServer(false);
-        return pingShowsOnline;
-    }
-    private void PingServer(bool showLog)
-    {
-        string url;
-        if (serverMode == ServerMode.CustomServer)
-        {
-            url = !string.IsNullOrEmpty(customServerUrl) ? customServerUrl : "http://127.0.0.1:3000";
-        }
-        else
-        {
-            url = !string.IsNullOrEmpty(serverUrl) ? serverUrl : "http://127.0.0.1:3000";
-        }
-
-        if (url.EndsWith("/"))
-        {
-            url = url.TrimEnd('/');
-        }
-        if (debugMode) LogMessage($"Pinging server at {url}...", 0);
-        
-        cmdProcessor.PingServer(url, (isOnline, message) => {
-            EditorApplication.delayCall += () => {
-                if (isOnline)
-                {
-                    if (showLog) LogMessage($"Server is online: {url}", 1);
-                    pingShowsOnline = true;
-                }
-                else
-                {
-                    if (showLog) LogMessage($"Server is offline: {message}", -1);
-                    pingShowsOnline = false;
-                }
-                
-                Repaint();
-            };
-        });
-    }
 
     private string GetWslPath(string windowsPath)
     {
@@ -2391,53 +1656,25 @@ private async void CheckServerStatus()
         if (state == PlayModeStateChange.EnteredPlayMode || state == PlayModeStateChange.EnteredEditMode)
         {
             // Store silent server state
-            SessionState.SetBool(SessionKeyWasRunningSilently, serverStarted && silentMode);
-            
-            // Update log processor state
-            if (logProcessor != null)
-            {
-                logProcessor.SetServerRunningState(serverStarted && silentMode);
-            }
+            SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
         }
     }
 
     public void AttemptTailRestartAfterReload()
     {
         if (debugMode) UnityEngine.Debug.Log($"[ServerWindow] Attempting tail restart in ServerWindow.");
-        
-        // Delegate to the logProcessor for tail restart
-        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(serverPort))
-        {
-            logProcessor.AttemptTailRestartAfterReload();
-        }
-        else
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning("[ServerWindow] Cannot restart tail process - server not running or not in silent mode");
-            // Server likely stopped during play mode or reload, update state
-            serverStarted = false;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-            SessionState.SetBool(SessionKeyWasRunningSilently, false); // Update persisted state
-            Repaint();
-        }
+        serverManager.AttemptTailRestartAfterReload();
     }
 
     public void StopTailProcessExplicitly()
     {
-        if (logProcessor != null)
-        {
-            logProcessor.StopTailProcessExplicitly();
-        }
+        serverManager.StopTailProcessExplicitly();
     }
 
     public void AttemptDatabaseLogRestartAfterReload()
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Checking database log process");
-        
-        // Delegate to the logProcessor
-        if (serverStarted && silentMode && cmdProcessor.IsPortInUse(serverPort))
-        {
-            logProcessor.AttemptDatabaseLogRestartAfterReload();
-        }
+        serverManager.AttemptDatabaseLogRestartAfterReload();
     }
 
     // Separate Exited handler for the background process (Silent Mode)
@@ -2508,14 +1745,30 @@ private async void CheckServerStatus()
                 break;
         }
 
-        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerMode", (int)serverMode);
+        // Update ServerManager with the new mode
+        serverManager.SetServerMode((ServerManager.ServerMode)serverMode);
+
+        // Use string representation for consistency with ServerManager
+        EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
         Repaint();
     }
 
     private void LoadServerModeFromPrefs()
     {
-        // Load server mode from preferences
-        serverMode = (ServerMode)EditorPrefs.GetInt(PrefsKeyPrefix + "ServerMode", (int)ServerMode.WslServer);
+        // Load server mode from preferences using string representation for compatibility with ServerManager
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        if (Enum.TryParse(modeName, out ServerMode mode))
+        {
+            serverMode = mode;
+        }
+        else
+        {
+            // Fallback to reading the old INT version for backwards compatibility
+            serverMode = (ServerMode)EditorPrefs.GetInt(PrefsKeyPrefix + "ServerMode", (int)ServerMode.WslServer);
+            // Update to new string format
+            EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
+        }
+        
         UpdateServerModeState();
     }
     

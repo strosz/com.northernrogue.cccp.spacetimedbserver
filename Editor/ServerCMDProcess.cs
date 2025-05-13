@@ -867,6 +867,57 @@ public class ServerCMDProcess
     }
     
     #endregion
+    
+    #region PowerShellCommand
+    
+    public void RunPowerShellCommand(string command, Action<string, int> logCallback)
+    {
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "powershell.exe";
+            process.StartInfo.Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{command}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            
+            logCallback($"Running PowerShell command: {command}", 0);
+            process.Start();
+            
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            
+            // Log the output
+            if (!string.IsNullOrEmpty(output))
+            {
+                logCallback(output, 1);
+            }
+            
+            // Log any errors
+            if (!string.IsNullOrEmpty(error))
+            {
+                logCallback(error, -1);
+            }
+            
+            // Log completion status
+            if (process.ExitCode == 0)
+            {
+                logCallback($"Command completed successfully with exit code: {process.ExitCode}", 1);
+            }
+            else
+            {
+                logCallback($"Command failed with exit code: {process.ExitCode}", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error executing PowerShell command: {ex.Message}", -1);
+        }
+    }
+    
+    #endregion
 } // Class
 } // Namespace
 
