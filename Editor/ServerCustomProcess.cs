@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace NorthernRogue.CCCP.Editor
 {
@@ -28,14 +29,25 @@ namespace NorthernRogue.CCCP.Editor
         private bool settingsLoaded = false;
         
         // Session management
-        private Process persistentSshProcess;
         private bool isConnected = false;
-        private bool useSessionMode = true;
         
         // Session status tracking
         private bool sessionActive = false;
         private double lastSessionCheckTime = 0;
-        private const double sessionCheckInterval = 5.0; // Check session every 5 seconds
+        private const double sessionCheckInterval = 10.0; // Reduced frequency - check every 10 seconds
+        
+        // Status cache to avoid repeated SSH calls
+        private double lastStatusCacheTime = 0;
+        private const double statusCacheTimeout = 20.0; // Status valid for 20 seconds
+        private bool cachedServerRunningStatus = false;
+        
+        // Command result cache to reduce load
+        private Dictionary<string, (double timestamp, bool success, string output, string error)> commandCache = 
+            new Dictionary<string, (double timestamp, bool success, string output, string error)>();
+        private const double commandCacheTimeout = 10.0; // Cache command results for 10 seconds
+
+        // Background connection check
+        private Process backgroundCheckProcess = null;
         
         // Constructor
         public ServerCustomProcess(Action<string, int> logCallback, bool debugMode = false)
@@ -103,7 +115,7 @@ namespace NorthernRogue.CCCP.Editor
         {
             EnsureSettingsLoaded();
             
-            if (isConnected && persistentSshProcess != null && !persistentSshProcess.HasExited)
+            if (isConnected)
             {
                 Log("SSH session already active", 0);
                 return true;
@@ -132,6 +144,10 @@ namespace NorthernRogue.CCCP.Editor
                 isConnected = true;
                 sessionActive = true;
                 lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
+                
+                // Clear command cache
+                commandCache.Clear();
+                
                 return true;
             }
             else
@@ -148,7 +164,31 @@ namespace NorthernRogue.CCCP.Editor
         {
             isConnected = false;
             sessionActive = false;
+            
+            // Clear any background processes
+            CancelBackgroundChecks();
+            
+            // Clear caches
+            commandCache.Clear();
+            
             Log("SSH session terminated", 0);
+        }
+        
+        // Cancel any background processes
+        private void CancelBackgroundChecks()
+        {
+            try
+            {
+                if (backgroundCheckProcess != null && !backgroundCheckProcess.HasExited)
+                {
+                    try { backgroundCheckProcess.Kill(); } catch { }
+                }
+                backgroundCheckProcess = null;
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) Log($"Error canceling background check: {ex.Message}", -1);
+            }
         }
         
         // Verify if the SSH connection is working
@@ -156,9 +196,9 @@ namespace NorthernRogue.CCCP.Editor
         {
             try
             {
-                // Use a very basic test command
+                // Use a very basic test command with short timeout
                 Log("Testing SSH connection with simple test command...", 0);
-                var result = RunSimpleCommand("echo CONNECTION_TEST_OK");
+                var result = RunSimpleCommand("echo CONNECTION_TEST_OK", 3000);
                 
                 if (result.success && result.output.Contains("CONNECTION_TEST_OK"))
                 {
@@ -186,8 +226,8 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
         
-        // Run a simpler command process using SSH key
-        private (bool success, string output, string error) RunSimpleCommand(string command)
+        // Run a command process using SSH key
+        private (bool success, string output, string error) RunSimpleCommand(string command, int timeoutMs = 5000)
         {
             try 
             {
@@ -202,12 +242,29 @@ namespace NorthernRogue.CCCP.Editor
                     Log($"SSH Private Key file not found at: {sshPrivateKeyPath}", -1);
                     return (false, "", "SSH Private Key file not found");
                 }
+                
+                // Check cache first to avoid repeated calls
+                string cacheKey = $"{command}";
+                if (commandCache.TryGetValue(cacheKey, out var cachedResult))
+                {
+                    double currentTime = EditorApplication.timeSinceStartup;
+                    if (currentTime - cachedResult.timestamp < commandCacheTimeout)
+                    {
+                        if (debugMode) Log($"Using cached command result for: {command}", 0);
+                        return (cachedResult.success, cachedResult.output, cachedResult.error);
+                    }
+                    else
+                    {
+                        // Remove expired cache entry
+                        commandCache.Remove(cacheKey);
+                    }
+                }
 
                 if (debugMode) Log($"Running SSH command: {command} using key {sshPrivateKeyPath}", 0);
                 
                 Process process = new Process();
                 process.StartInfo.FileName = "ssh";
-                process.StartInfo.Arguments = $"-o StrictHostKeyChecking=no -o BatchMode=yes -p {customServerPort} -i \"{sshPrivateKeyPath}\" {sshUserName}@{customServerUrl} \"{command}\"";
+                process.StartInfo.Arguments = $"-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=3 -p {customServerPort} -i \"{sshPrivateKeyPath}\" {sshUserName}@{customServerUrl} \"{command}\"";
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
@@ -244,7 +301,7 @@ namespace NorthernRogue.CCCP.Editor
                 
                 // Wait for the process to complete with a timeout
                 if (debugMode) Log("Waiting for SSH command to complete...", 0);
-                bool finished = process.WaitForExit(15000);  // 15 seconds timeout
+                bool finished = process.WaitForExit(timeoutMs);
                 
                 if (!finished)
                 {
@@ -282,6 +339,9 @@ namespace NorthernRogue.CCCP.Editor
                     if (debugMode) Log($"SSH command failed with exit code: {process.ExitCode}. Error: {error}", -1);
                 }
                 
+                // Cache the result
+                commandCache[cacheKey] = (EditorApplication.timeSinceStartup, success, output, error);
+                
                 return (success, output, error);
             }
             catch (Exception ex)
@@ -291,26 +351,7 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
         
-        // Run a single command (new SSH process each time)
-        private (bool success, string output, string error) RunSingleCommand(string command, int timeoutMs)
-        {
-            if (debugMode) Log($"Executing command: {command}", 0);
-            var result = RunSimpleCommand(command);
-            if (debugMode)
-            {
-                if (result.success)
-                {
-                    Log($"Command succeeded with output: {result.output}", 0);
-                }
-                else
-                {
-                    Log($"Command failed with error: {result.error}", -1);
-                }
-            }
-            return result;
-        }
-        
-        // Check if the server is reachable via ping
+        // Check if the server is reachable via ping - now optimized to be more lightweight
         public async Task<bool> CheckServerReachable()
         {
             EnsureSettingsLoaded();
@@ -323,12 +364,10 @@ namespace NorthernRogue.CCCP.Editor
             
             try
             {
-                Log($"Checking if server {customServerUrl} is reachable...", 0);
-                
-                // Create a simple ping test process
+                // Only use a short timeout
                 var process = new Process();
                 process.StartInfo.FileName = "ping";
-                process.StartInfo.Arguments = $"{customServerUrl} -n 1 -w 2000"; // 2 second timeout
+                process.StartInfo.Arguments = $"{customServerUrl} -n 1 -w 1000"; // 1 second timeout
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.CreateNoWindow = true;
@@ -336,151 +375,97 @@ namespace NorthernRogue.CCCP.Editor
                 process.Start();
                 string output = await process.StandardOutput.ReadToEndAsync();
                 
-                // Wait up to 3 seconds for ping to complete
-                bool exited = process.WaitForExit(3000);
+                // Wait a short time
+                bool exited = process.WaitForExit(1500);
                 if (!exited)
                 {
                     try { process.Kill(); } catch { }
-                    Log($"Ping test timed out for {customServerUrl}", -1);
                     return false;
                 }
                 
-                // Check for success indicators in the output
-                bool isReachable = process.ExitCode == 0 || output.Contains("Reply from") || output.Contains("bytes=");
-                
-                Log($"Server ping test: {(isReachable ? "Reachable" : "Unreachable")}", isReachable ? 1 : -1);
-                
-                if (!isReachable && debugMode)
-                {
-                    Log($"Ping output: {output}", 0);
-                }
-                
-                return isReachable;
+                return process.ExitCode == 0 || output.Contains("Reply from") || output.Contains("bytes=");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Log($"Error checking server reachability: {ex.Message}", -1);
                 return false;
             }
         }
         #endregion
         
         #region Commands
+
+        // Helper function to run a SpacetimeDB command
+        public async Task<(bool success, string output, string error)> RunSpacetimeDBCommandAsync(string command, int timeoutMs = 5000)
+        {
+            // Use the full path to spacetime executable
+            string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
+            
+            // Check if command already starts with "spacetime" and remove it
+            string trimmedCommand = command.Trim();
+            if (trimmedCommand.StartsWith("spacetime ", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmedCommand = trimmedCommand.Substring("spacetime ".Length);
+            }
+            
+            string spacetimeCmd = $"{spacetimePath} {trimmedCommand}";
+            return await RunCustomCommandAsync(spacetimeCmd, timeoutMs);
+        }
         
         // Execute a command on the custom server
-        public async Task<(bool success, string output, string error)> RunCustomCommandAsync(string command, int timeoutMs = 30000)
+        public async Task<(bool success, string output, string error)> RunCustomCommandAsync(string command, int timeoutMs = 5000)
         {
             EnsureSettingsLoaded();
             
-            // Always use RunSimpleCommand for reliability with key-based auth for now.
-            // The persistent session logic might need review if we re-enable it.
-            if (debugMode) Log($"Executing remote command using RunSimpleCommand: {command}", 0);
-            
-            // Note: RunSimpleCommand currently uses a fixed timeout internally (15000ms).
-            // We pass timeoutMs here, but it's not directly used by the simplified RunSimpleCommand.
-            // Consider adding timeout parameter to RunSimpleCommand if needed later.
-            var result = RunSimpleCommand(command);
-            
-            // Wrap the synchronous result in a completed task to match the async signature.
-            return await Task.FromResult(result);
-        }
-        
-        // Run command in the persistent session
-        private async Task<(bool success, string output, string error)> RunCommandInSessionAsync(string command, int timeoutMs)
-        {
-            if (persistentSshProcess == null || persistentSshProcess.HasExited)
+            // Cache check for heavily used commands
+            string cacheKey = $"{command}";
+            if (commandCache.TryGetValue(cacheKey, out var cachedResult))
             {
-                return (false, "", "No active SSH session");
-            }
-            
-            try
-            {
-                // Create a unique marker to identify the end of command output
-                string marker = $"CMD_COMPLETE_{Guid.NewGuid().ToString().Replace("-", "")}_EOC";
-                
-                // Setup capture for this command
-                StringBuilder outputBuilder = new StringBuilder();
-                StringBuilder errorBuilder = new StringBuilder();
-                bool outputComplete = false;
-                
-                // Add event handlers for this specific command
-                DataReceivedEventHandler outputHandler = null;
-                outputHandler = new DataReceivedEventHandler((sender, e) => {
-                    if (e.Data == null) return;
-                    
-                    if (e.Data.Contains(marker))
-                    {
-                        outputComplete = true;
-                        return;
-                    }
-                    
-                    outputBuilder.AppendLine(e.Data);
-                    if (debugMode) Log($"CMD: {e.Data}", 0);
-                });
-                
-                persistentSshProcess.OutputDataReceived += outputHandler;
-                
-                // Send the command followed by the marker
-                persistentSshProcess.StandardInput.WriteLine(command);
-                persistentSshProcess.StandardInput.WriteLine($"echo \"{marker}\"");
-                persistentSshProcess.StandardInput.Flush();
-                
-                // Wait for command completion or timeout
-                DateTime startTime = DateTime.Now;
-                while (!outputComplete)
+                double currentTime = EditorApplication.timeSinceStartup;
+                if (currentTime - cachedResult.timestamp < commandCacheTimeout)
                 {
-                    if ((DateTime.Now - startTime).TotalMilliseconds > timeoutMs)
-                    {
-                        persistentSshProcess.OutputDataReceived -= outputHandler;
-                        return (false, outputBuilder.ToString(), "Command timed out");
-                    }
-                    
-                    await Task.Delay(100);
+                    return (cachedResult.success, cachedResult.output, cachedResult.error);
                 }
-                
-                // Clean up event handler
-                persistentSshProcess.OutputDataReceived -= outputHandler;
-                
-                return (true, outputBuilder.ToString(), errorBuilder.ToString());
             }
-            catch (Exception ex)
-            {
-                Log($"Error running command in SSH session: {ex.Message}", -1);
-                return (false, "", ex.Message);
-            }
-        }
-        
-        // Helper function to run a SpacetimeDB command
-        public async Task<(bool success, string output, string error)> RunSpacetimeDBCommandAsync(string command, int timeoutMs = 30000)
-        {
-            string spacetimeCmd = $"spacetime {command}";
-            return await RunCustomCommandAsync(spacetimeCmd, timeoutMs);
+            
+            // Run the command with a shorter timeout
+            var result = RunSimpleCommand(command, timeoutMs);
+            
+            // Wrap the synchronous result in a completed task to match the async signature
+            return await Task.FromResult(result);
         }
         
         // Check if SpacetimeDB is installed on the remote server
         public async Task<bool> CheckSpacetimeDBInstalled()
         {
-            // Construct the expected path - adjust if username changes dynamically
+            // Use cached result if available
+            if (commandCache.TryGetValue("check_spacetimedb_installed", out var cachedResult))
+            {
+                double currentTime = EditorApplication.timeSinceStartup;
+                if (currentTime - cachedResult.timestamp < 60.0) // Cache spacetime install check longer (60s)
+                {
+                    return cachedResult.success && cachedResult.output.Contains("FOUND");
+                }
+            }
+            
+            // Construct the expected path
             string expectedPath = $"/home/{sshUserName}/.local/bin/spacetime";
             string command = $"test -f {expectedPath} && echo FOUND || echo NOT_FOUND";
             
-            if (debugMode) Log($"Checking for SpacetimeDB at: {expectedPath}", 0);
+            var result = await RunCustomCommandAsync(command, 3000);
             
-            var result = await RunCustomCommandAsync(command, 5000);
+            // Cache the result with longer timeout
+            commandCache["check_spacetimedb_installed"] = (EditorApplication.timeSinceStartup, result.success, result.output, result.error);
             
             // Check if the output contains the success marker
             bool installed = result.success && result.output.Contains("FOUND");
-            
-            if (debugMode) UnityEngine.Debug.Log($"Check SpacetimeDB Result: Success={result.success}, Output='{result.output.Trim()}', Error='{result.error.Trim()}', Detected={installed}");
             
             if (installed)
             {
                 Log("SpacetimeDB executable found on the remote server.", 1);
             }
-            else
+            else if (!result.success) // Only log error if first-time check
             {
                 Log($"SpacetimeDB executable NOT found at {expectedPath}. Make sure it's installed correctly and accessible.", -2);
-                // Log error output if any
                 if (!string.IsNullOrEmpty(result.error))
                 {
                     Log($"SSH Error during check: {result.error}", -1);
@@ -490,16 +475,24 @@ namespace NorthernRogue.CCCP.Editor
             return installed;
         }
         
-        // Check if the SpacetimeDB server is running
+        // Check if the SpacetimeDB server is running - optimized with caching
         public async Task<bool> CheckServerRunning()
         {
-            var result = await RunCustomCommandAsync("ps aux | grep spacetime | grep -v grep", 5000);
+            double currentTime = EditorApplication.timeSinceStartup;
+            
+            // Use cached result if recent enough
+            if (currentTime - lastStatusCacheTime < statusCacheTimeout)
+            {
+                return cachedServerRunningStatus;
+            }
+            
+            // Run actual check if cache expired
+            var result = await RunCustomCommandAsync("ps aux | grep spacetime | grep -v grep", 3000);
             bool running = result.success && result.output.Contains("spacetime");
             
-            if (debugMode)
-            {
-                Log($"SpacetimeDB server status check: {(running ? "Running" : "Not running")}", running ? 1 : 0);
-            }
+            // Update cache
+            cachedServerRunningStatus = running;
+            lastStatusCacheTime = currentTime;
             
             return running;
         }
@@ -507,31 +500,41 @@ namespace NorthernRogue.CCCP.Editor
         // Get SpacetimeDB version
         public async Task<string> GetSpacetimeDBVersion()
         {
-            // Use the full path to spacetime instead of relying on PATH
+            // Check cache first
+            if (commandCache.TryGetValue("spacetime_version", out var cachedResult))
+            {
+                double currentTime = EditorApplication.timeSinceStartup;
+                if (currentTime - cachedResult.timestamp < 60.0) // Longer cache for version (60s)
+                {
+                    return cachedResult.output.Trim();
+                }
+            }
+            
+            // Use the full path to spacetime
             string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
             
-            var result = await RunCustomCommandAsync($"{spacetimePath} --version", 5000);
-            
-            if (debugMode) Log($"Version command result: Output='{result.output.Trim()}', Error='{result.error.Trim()}', Success={result.success}", 0);
+            var result = await RunCustomCommandAsync($"{spacetimePath} --version", 3000);
             
             if (result.success && !string.IsNullOrEmpty(result.output))
             {
                 string version = result.output.Trim();
+                
+                // Cache the result
+                commandCache["spacetime_version"] = (EditorApplication.timeSinceStartup, true, version, "");
+                
                 Log($"SpacetimeDB version: {version}", 1);
                 return version;
             }
             else
             {
-                string errorMsg = string.IsNullOrEmpty(result.error) ? "Empty output returned" : result.error;
-                Log($"Failed to get SpacetimeDB version: {errorMsg}", -1);
                 return "Unknown";
             }
         }
         
         // Start SpacetimeDB server on the remote machine
-        public async Task<bool> StartRemoteServer()
+        public async Task<bool> StartCustomServer()
         {
-            // Check if server is already running
+            // Check if server is already running - using cached status if available
             if (await CheckServerRunning())
             {
                 Log("SpacetimeDB server is already running", 1);
@@ -543,10 +546,14 @@ namespace NorthernRogue.CCCP.Editor
             
             // Start the server
             Log("Starting SpacetimeDB server on remote machine...", 0);
-            var result = await RunCustomCommandAsync($"{spacetimePath} server start", 10000);
+            var result = await RunCustomCommandAsync($"{spacetimePath} start", 5000);
             
             if (result.success)
             {
+                // Force status cache update
+                cachedServerRunningStatus = true;
+                lastStatusCacheTime = EditorApplication.timeSinceStartup;
+                
                 Log("SpacetimeDB server started successfully on remote machine", 1);
                 return true;
             }
@@ -558,9 +565,9 @@ namespace NorthernRogue.CCCP.Editor
         }
         
         // Stop SpacetimeDB server on the remote machine
-        public async Task<bool> StopRemoteServer()
+        public async Task<bool> StopCustomServer()
         {
-            // Check if server is running
+            // Check if server is running - using cached status if available
             if (!await CheckServerRunning())
             {
                 Log("SpacetimeDB server is not running", 0);
@@ -572,10 +579,17 @@ namespace NorthernRogue.CCCP.Editor
             
             // Stop the server
             Log("Stopping SpacetimeDB server on remote machine...", 0);
-            var result = await RunCustomCommandAsync($"{spacetimePath} server stop", 10000);
+            var result = await RunCustomCommandAsync($"{spacetimePath} server stop", 5000);
             
             if (result.success)
             {
+                // Force status cache update
+                cachedServerRunningStatus = false;
+                lastStatusCacheTime = EditorApplication.timeSinceStartup;
+                
+                // Clear command cache as commands will likely return different results now
+                commandCache.Clear();
+                
                 Log("SpacetimeDB server stopped successfully on remote machine", 1);
                 return true;
             }
@@ -586,52 +600,44 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
         #endregion
-        
-        // Set session mode (persistent or single command)
-        public void SetSessionMode(bool useSession)
-        {
-            if (useSessionMode != useSession)
-            {
-                if (useSessionMode && isConnected)
-                {
-                    // We're switching from session mode to single command mode, so close session
-                    StopSession();
-                }
-                
-                useSessionMode = useSession;
-                Log($"SSH session mode set to: {(useSessionMode ? "Persistent" : "Single Command")}", 0);
-            }
-        }
 
         // Set SSH Private Key Path
         public void SetPrivateKeyPath(string path)
         {
             sshPrivateKeyPath = path;
             EditorPrefs.SetString(PrefsKeyPrefix + "SSHPrivateKeyPath", path);
+            
+            // Clear caches when changing key
+            commandCache.Clear();
+            
             if (debugMode) Log($"SSH Private Key Path updated to: {sshPrivateKeyPath}", 0);
         }
 
-        // Check if the SSH session is currently active
-
-        // Only return the cached sessionActive value. Do NOT check status synchronously from UI.
+        // Check if the SSH session is currently active - just return cached value
         public bool IsSessionActive()
         {
             return sessionActive;
         }
 
-        // Call this from a background update, not from UI drawing code.
+        // Only update session status occasionally to avoid lag
         public void UpdateSessionStatusIfNeeded()
         {
             double currentTime = UnityEditor.EditorApplication.timeSinceStartup;
             if (currentTime - lastSessionCheckTime >= sessionCheckInterval)
             {
-                CheckSessionStatus();
                 lastSessionCheckTime = currentTime;
+                
+                // Don't run the status check directly - start it in the background
+                EditorApplication.delayCall += StartBackgroundSessionCheck;
             }
         }
-
-        private void CheckSessionStatus()
+        
+        // Start the session status check in the background
+        private void StartBackgroundSessionCheck()
         {
+            // Cancel any existing background check
+            CancelBackgroundChecks();
+            
             try
             {
                 // If we don't have connection parameters set, assume not connected
@@ -641,34 +647,50 @@ namespace NorthernRogue.CCCP.Editor
                     return;
                 }
 
-                // Simple ping command to check if session is still active
+                // Run a very lightweight echo command with minimal timeout
                 Process pingProcess = new Process();
                 pingProcess.StartInfo.FileName = "ssh";
-                pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
+                pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=1 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
                 pingProcess.StartInfo.UseShellExecute = false;
                 pingProcess.StartInfo.RedirectStandardOutput = true;
                 pingProcess.StartInfo.RedirectStandardError = true;
                 pingProcess.StartInfo.CreateNoWindow = true;
                 
+                // Store reference to background process
+                backgroundCheckProcess = pingProcess;
+                
                 pingProcess.Start();
-                bool exited = pingProcess.WaitForExit(5000); // Wait up to 5 seconds
+                
+                // Handle exit and output separately to avoid blocking
+                string output = "";
+                
+                pingProcess.OutputDataReceived += (sender, args) => {
+                    if (!string.IsNullOrEmpty(args.Data))
+                    {
+                        output = args.Data.Trim();
+                    }
+                };
+                
+                pingProcess.BeginOutputReadLine();
+                
+                // Use shorter timeout
+                bool exited = pingProcess.WaitForExit(2000); // 2 second timeout
                 
                 if (exited && pingProcess.ExitCode == 0)
                 {
-                    string output = pingProcess.StandardOutput.ReadToEnd().Trim();
                     sessionActive = output == "ping";
-                    if (debugMode && sessionActive) Log("SSH session is active", 0);
                 }
                 else
                 {
                     sessionActive = false;
-                    if (debugMode) Log("SSH session check failed", -1);
                 }
+                
+                backgroundCheckProcess = null;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 sessionActive = false;
-                if (debugMode) Log($"SSH session check error: {ex.Message}", -1);
+                backgroundCheckProcess = null;
             }
         }
     }

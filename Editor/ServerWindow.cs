@@ -3,8 +3,7 @@ using UnityEditor;
 using System.Diagnostics;
 using System.IO;
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Threading.Tasks;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -17,6 +16,7 @@ public class ServerWindow : EditorWindow
     private ServerLogProcess logProcessor;
     private ServerVersionProcess versionProcessor;
     private ServerCustomProcess serverCustomProcess;
+    private ServerDetectionProcess detectionProcess;
     private Process serverProcess;
     
     // Server mode
@@ -51,21 +51,13 @@ public class ServerWindow : EditorWindow
     private string sshPrivateKeyPath = ""; // Added SSH private key path variable
 
     // Pre-requisites Maincloud Server
-    
 
     // Server process
     private bool serverStarted = false;
     private bool isStartingUp = false;
     private float startupTime = 0f;
     private const float serverStartupGracePeriod = 30f; // Give server 30 seconds to start
-
-    // Server detection of changes
-    private double lastChangeCheckTime = 0;
-    private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
-    private Dictionary<string, long> originalFileSizes = new Dictionary<string, long>(); // Stores sizes at start/publish
-    private Dictionary<string, long> currentFileSizes = new Dictionary<string, long>(); // Stores sizes from the latest scan
-    private bool windowFocused = false;
-    
+   
     // Server status
     private double lastCheckTime = 0;
     private const double checkInterval = 5.0;
@@ -92,6 +84,10 @@ public class ServerWindow : EditorWindow
     private bool autoscroll = true;
     private bool colorLogo = true;
     private Texture2D logoTexture;
+
+    // UI optimization
+    private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
+    private bool windowFocused = false;
     
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
@@ -348,6 +344,11 @@ public class ServerWindow : EditorWindow
         logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName); // Pass userName to logProcessor
         logProcessor.SetServerRunningState(serverStarted);
         
+        // Initialize the detection processor
+        detectionProcess = new ServerDetectionProcess(debugMode);
+        detectionProcess.Configure(serverDirectory, detectServerChanges);
+        detectionProcess.OnServerChangesDetected += OnServerChangesDetected;
+        
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;
                 
@@ -377,6 +378,23 @@ public class ServerWindow : EditorWindow
             if (debugMode) LogMessage("Restarting database logs after editor reload...", 0);
             logProcessor.AttemptDatabaseLogRestartAfterReload();
         }
+        
+        // Get initial change state from detection process
+        serverChangesDetected = detectionProcess.AreChangesDetected();
+    }
+    
+    private void OnServerChangesDetected(bool changesDetected)
+    {
+        // Update UI when changes are detected
+        serverChangesDetected = changesDetected;
+        Repaint();
+        
+        // Trigger auto-publish if changes are detected and auto-publish is enabled
+        if (serverChangesDetected && autoPublishMode && serverStarted && !string.IsNullOrEmpty(moduleName))
+        {
+            LogMessage("Auto-publishing module due to changes detected...", 0);
+            RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
+        }
     }
     
     private void OnDisable()
@@ -394,6 +412,12 @@ public class ServerWindow : EditorWindow
         {
             logProcessor.SetServerRunningState(serverStarted && silentMode);
         }
+        
+        // Unsubscribe from detection events
+        if (detectionProcess != null)
+        {
+            detectionProcess.OnServerChangesDetected -= OnServerChangesDetected;
+        }
     }
     
     private void OnFocusChanged(bool focused)
@@ -401,39 +425,51 @@ public class ServerWindow : EditorWindow
         windowFocused = focused;
         
         // Check for changes immediately when window gets focus
-        if (focused && detectServerChanges)
+        if (focused && detectionProcess != null && detectionProcess.IsDetectingChanges())
         {
-            // Reset the timer and check right away
-            lastChangeCheckTime = 0;
-            DetectServerChanges();
+            // Trigger immediate check
+            detectionProcess.CheckForChanges();
         }
     }
     
     private void EditorUpdateHandler()
     {
-        // Check server status periodically
-        if (EditorApplication.timeSinceStartup - lastCheckTime > checkInterval)
+        // Throttle how often we check things to not overload the main thread
+        double currentTime = EditorApplication.timeSinceStartup;
+        
+        // Check server status periodically but not on every frame
+        if (currentTime - lastCheckTime > checkInterval)
         {
+            lastCheckTime = currentTime;
+            // Directly call but less frequently
             CheckServerStatus();
         }
 
-        // Check for file changes periodically only if window is focused, detection is enabled, and no changes are pending
-        if (windowFocused && detectServerChanges && !serverChangesDetected &&
-            EditorApplication.timeSinceStartup - lastChangeCheckTime > changeCheckInterval)
+        // Check for file changes periodically when window is focused
+        if (windowFocused && detectionProcess != null && detectionProcess.IsDetectingChanges())
         {
-            DetectServerChanges();
+            detectionProcess.CheckForChanges();
         }
 
         // Have the log processor check its processes for health
         if (silentMode && serverStarted)
         {
-            logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            logProcessor.CheckLogProcesses(currentTime);
         }
         
         // For Custom Server mode, ensure UI is refreshed periodically to update connection status
+        // But don't check status on every frame
         if (serverMode == ServerMode.CustomServer && windowFocused)
         {
-            Repaint();
+            // Check connection status less frequently (3x interval)
+            if (currentTime - lastCheckTime > changeCheckInterval * 3)
+            {
+                if (serverCustomProcess != null)
+                {
+                    serverCustomProcess.UpdateSessionStatusIfNeeded();
+                }
+                Repaint();
+            }
         }
     }
     #endregion
@@ -564,10 +600,12 @@ public class ServerWindow : EditorWindow
                         serverDirectory = path;
                         EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
                         LogMessage($"Server directory set to: {serverDirectory}", 1);
-                        // Reset file tracking when directory changes
-                        originalFileSizes.Clear();
-                        currentFileSizes.Clear();
-                        serverChangesDetected = false;
+                        
+                        // Update the detection process with the new directory
+                        if (detectionProcess != null)
+                        {
+                            detectionProcess.Configure(serverDirectory, detectServerChanges);
+                        }
                     }
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
@@ -992,18 +1030,10 @@ public class ServerWindow : EditorWindow
                 detectServerChanges = !detectServerChanges;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", detectServerChanges);
                 
-                if (detectServerChanges)
+                // Update the detection process
+                if (detectionProcess != null)
                 {
-                    // Clear previous state and start fresh
-                    originalFileSizes.Clear();
-                    currentFileSizes.Clear();
-                    serverChangesDetected = false;
-                    // Check immediately
-                    DetectServerChanges();
-                }
-                else
-                {
-                    serverChangesDetected = false;
+                    detectionProcess.SetDetectChanges(detectServerChanges);
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -1031,9 +1061,12 @@ public class ServerWindow : EditorWindow
                 {
                     detectServerChanges = true;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", true);
-                    originalFileSizes.Clear();
-                    currentFileSizes.Clear();
-                    DetectServerChanges();
+                    
+                    // Update the detection process
+                    if (detectionProcess != null)
+                    {
+                        detectionProcess.SetDetectChanges(true);
+                    }
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -1184,7 +1217,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.LabelField("Commands", EditorStyles.boldLabel);
         
-        EditorGUI.BeginDisabledGroup(!serverStarted);
+        //EditorGUI.BeginDisabledGroup(!serverStarted);
         
         // Add a foldout for utility commands
         bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Utility Commands", true);
@@ -1242,7 +1275,7 @@ public class ServerWindow : EditorWindow
             {
                 versionProcessor.RestoreServerData(backupDirectory, userName);
             }
-            EditorGUI.EndDisabledGroup();
+            //EditorGUI.EndDisabledGroup();
         }
         
         // Display server changes notification if detected
@@ -1250,14 +1283,37 @@ public class ServerWindow : EditorWindow
         {
             GUIStyle updateStyle = new GUIStyle(EditorStyles.boldLabel);
             updateStyle.normal.textColor = Color.green;
-            if (!autoPublishMode)
+            
+            // Make it more visibly clickable by adding hover effects and underline
+            updateStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
+            updateStyle.fontStyle = FontStyle.Bold;
+            
+            // Add clickable visual indicator
+            string displayText = !autoPublishMode ? "New Server Update! (Click to dismiss)" : "New Server Update! (Auto Publish Mode) (Click to dismiss)";
+            string tooltip = "Server Changes have been detected and are ready to be published as a new version of your module. Click to dismiss this notification until new changes are detected.";
+            
+            // Create a button-like appearance
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            
+            // Use a button that looks like a label for better click response
+            if (GUILayout.Button(new GUIContent(displayText, tooltip), updateStyle))
             {
-                EditorGUILayout.LabelField("New Server Update!", updateStyle);
+                // Reset tracking in the detection process
+                if (detectionProcess != null)
+                {
+                    detectionProcess.ResetTrackingAfterPublish();
+                }
+                
+                // Also update the local state variable
+                serverChangesDetected = false;
+                
+                if (debugMode) LogMessage("Server changes dismissed and tracking state reset.", 1);
+                Repaint();
             }
-            else
-            {
-                EditorGUILayout.LabelField("New Server Update! (Auto Publish Mode)", updateStyle);
-            }
+            
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
         }
         
         if (publishAndGenerateMode) {
@@ -1477,11 +1533,11 @@ public class ServerWindow : EditorWindow
         }
         
         // Reset change detection after publishing
-        if (detectServerChanges)
+        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
         {
+            detectionProcess.ResetTrackingAfterPublish();
+            // Update local UI state
             serverChangesDetected = false;
-            originalFileSizes.Clear();
-            currentFileSizes.Clear();
         }
 
         // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
@@ -1515,6 +1571,13 @@ public class ServerWindow : EditorWindow
                 string command = $"cd \"{wslPath}\" && spacetime init --lang {serverLang} .";
                 cmdProcessor.RunWslCommandSilent(command);
                 LogMessage("New module initialized", 1);
+                
+                // Reset the detection process tracking
+                if (detectionProcess != null)
+                {
+                    detectionProcess.ResetTracking();
+                    serverChangesDetected = false;
+                }
                 
                 // Set the flag so the initialization dialog doesn't show again
                 initializedFirstModule = true;
@@ -1555,7 +1618,10 @@ public class ServerWindow : EditorWindow
                 StartWslServer();
                 break;
             case ServerMode.CustomServer:
-                StartCustomServer();
+                // Handle async method without changing method signature
+                EditorApplication.delayCall += async () => {
+                    await StartCustomServer();
+                };
                 break;
             case ServerMode.MaincloudServer:
                 StartMaincloudServer();
@@ -1633,14 +1699,13 @@ public class ServerWindow : EditorWindow
         }
     }
 
-    private void StartCustomServer()
+    private async Task StartCustomServer()
     {
         if (string.IsNullOrEmpty(customServerUrl))
         {
             LogMessage("Please enter a custom server URL first.", -2);
             return;
         }
-        
         if (customServerPort <= 0)
         {
             LogMessage("Could not detect a valid port in the custom server URL. Please ensure the URL includes a port number (e.g., http://example.com:3000/).", -2);
@@ -1648,15 +1713,33 @@ public class ServerWindow : EditorWindow
         }
         
         LogMessage($"Connecting to custom server at {customServerUrl}", 1);
-        
-        // Mark as connected to the custom server
-        serverStarted = true;
-        serverConfirmedRunning = true;
-        isStartingUp = false;
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-        
-        // Ping the server to verify it's reachable
-        PingServer(true);
+
+        bool success = await serverCustomProcess.StartCustomServer();
+
+        if (!success)
+        {
+            LogMessage("Custom server process failed to start.", -1);
+            return;
+        }
+
+        if (success)
+        {
+            bool confirmed = PingServerStatus();
+            if (!confirmed)
+            {
+                LogMessage("Custom server process started but not confirmed running. Please check the server status.", -1);
+                return;
+            }
+            else
+            {
+                LogMessage("Custom server process started and confirmed running.", 1);
+                // Mark as connected to the custom server
+                serverStarted = true;
+                serverConfirmedRunning = true;
+                isStartingUp = false;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
+            }
+        }
     }
 
     private void StartMaincloudServer()
@@ -1674,6 +1757,24 @@ public class ServerWindow : EditorWindow
         isStartingUp = false; // Ensure startup flag is cleared
         serverConfirmedRunning = false; // Reset confirmed state
 
+        if (serverMode == ServerMode.CustomServer)
+        {
+            EditorApplication.delayCall += async () => {
+                await StopCustomServer();
+            };
+            Repaint();
+            return;
+        }
+        if (serverMode == ServerMode.WslServer)
+        {
+            StopWslServer();
+            Repaint();
+            return;
+        }
+    }
+
+    private void StopWslServer()
+    {
         try
         {
             // Use the cmdProcessor to stop the server
@@ -1712,73 +1813,111 @@ public class ServerWindow : EditorWindow
             Repaint();
         }
     }
+
+    private async Task StopCustomServer()
+    {
+        try
+        {
+            await serverCustomProcess.StopCustomServer();
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Error during custom server stop sequence: {ex.Message}", -1);
+        }
+        finally
+        {
+            // Force state update
+            serverStarted = false;
+            isStartingUp = false;
+            serverConfirmedRunning = false;
+            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
+            serverProcess = null; 
+            justStopped = true; // Set flag indicating stop was just initiated
+            stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
+
+            LogMessage("Custom Server Successfully Stopped.", 1);
+            
+            // Update log processor state
+            logProcessor.SetServerRunningState(false);
+            
+            Repaint();
+        }
+    }
+
     #endregion
 
     #region CheckStatus
 
-    private async void CheckServerStatus()
+private async void CheckServerStatus()
+{
+    // --- Reset justStopped flag after 5 seconds if grace period expired ---
+    const double stopGracePeriod = 5.0;
+    if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
     {
-        // Only check periodically
-        if (EditorApplication.timeSinceStartup - lastCheckTime < checkInterval) return;
-        lastCheckTime = EditorApplication.timeSinceStartup;
+        if (debugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
+        justStopped = false;
+    }
 
-        // Check if port is in use
-        bool isPortOpen = await cmdProcessor.CheckPortAsync(serverPort);
+    // --- Startup Phase Check ---
+    if (isStartingUp)
+    {
+        float elapsedTime = (float)(EditorApplication.timeSinceStartup - startupTime);
+        bool isActuallyRunning = false;
         
-        // --- Reset justStopped flag after 5 seconds if grace period expired ---
-        const double stopGracePeriod = 5.0;
-        if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
-        {
-            if (debugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
-            justStopped = false;
-        }
-        
-        // --- Startup Phase Check ---
-        if (isStartingUp)
-        {
-            float elapsedTime = (float)(EditorApplication.timeSinceStartup - startupTime);
-            
-            // If port is open during startup phase, confirm immediately
-            if (isPortOpen)
+        try {
+            if (serverMode == ServerMode.CustomServer)
             {
-                if (debugMode) LogMessage($"Startup confirmed: Port {serverPort} is now open.", 1);
+                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
+            }
+            else // WSL and other modes
+            {
+                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
+            }
+
+            // If running during startup phase, confirm immediately
+            if (isActuallyRunning)
+            {
+                if (debugMode) LogMessage($"Startup confirmed: Server is now running.", 1);
                 isStartingUp = false;
                 serverStarted = true; // Explicitly confirm started state
                 serverConfirmedRunning = true;
                 justStopped = false; // Reset flag on successful start confirmation
                 EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-                
+
                 // Update logProcessor state
                 logProcessor.SetServerRunningState(true);
-                
+
                 Repaint();
-                
+
                 // Auto-publish check if applicable
                 if (autoPublishMode && serverChangesDetected && !string.IsNullOrEmpty(moduleName))
                 {
                     LogMessage("Server running with pending changes - auto-publishing...", 0);
                     RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
                     serverChangesDetected = false;
-                    originalFileSizes.Clear();
-                    currentFileSizes.Clear();
+                    if (detectionProcess != null)
+                    {
+                        detectionProcess.ResetTrackingAfterPublish();
+                    }
+                    return; // Confirmed, skip further checks this cycle
                 }
-                return; // Confirmed, skip further checks this cycle
             }
-            // If grace period expires and port *still* isn't open, assume failure
+            // If grace period expires and still not running, assume failure
             else if (elapsedTime >= serverStartupGracePeriod)
             {
-                LogMessage($"Server failed to start within grace period (Port {serverPort} did not open).", -1);
+                LogMessage($"Server failed to start within grace period.", -1);
                 isStartingUp = false;
                 serverStarted = false;
                 serverConfirmedRunning = false;
                 justStopped = false; // Reset flag on failed start
                 EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-                
+
                 // Update logProcessor state
                 logProcessor.SetServerRunningState(false);
-                
+
                 if (serverProcess != null && !serverProcess.HasExited) { try { serverProcess.Kill(); } catch {} }
                 serverProcess = null;
+                
                 Repaint();
                 return; // Failed, skip further checks
             }
@@ -1789,20 +1928,34 @@ public class ServerWindow : EditorWindow
                 return;
             }
         }
-        
-        // --- Standard Running Check (Only if not starting up) ---
-        if (serverStarted) // Check if we *think* it should be running
-        {
-            // Determine current actual running state based only on port
-            bool isActuallyRunning = isPortOpen;
+        catch (Exception ex) {
+            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
+            Repaint();
+            return;
+        }
+    }
+
+    // --- Standard Running Check (Only if not starting up) ---
+    if (serverStarted)
+    {
+        bool isActuallyRunning = false;
+        try {
+            if (serverMode == ServerMode.CustomServer)
+            {
+                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
+            }
+            else // WSL and other modes
+            {
+                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
+            }
 
             // State Change Detection:
             if (serverConfirmedRunning != isActuallyRunning)
             {
                 serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                 string msg = isActuallyRunning
-                    ? $"Server running confirmed (Port {serverPort}: open)"
-                    : $"Server appears to have stopped (Port {serverPort}: closed)";
+                    ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}: open")})"
+                    : $"Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}: closed")})";
                 LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                 // If state changed to NOT running, update the main serverStarted flag
@@ -1810,236 +1963,190 @@ public class ServerWindow : EditorWindow
                 {
                     serverStarted = false;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", false);
-                    
+
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(false);
-                    
-                    if (debugMode) LogMessage("Server state updated to stopped due to port closed.", -1);
-                } else {
+
+                    if (debugMode) LogMessage("Server state updated to stopped.", -1);
+                }
+                else
+                {
                     // If we confirmed it IS running again, clear the stop flag
                     justStopped = false;
-                    
+
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(true);
                 }
                 Repaint();
             }
         }
-        // --- Check for External Start/Recovery ---
-        // Only check if not already started, not starting up, and port is in use
-        else if (!serverStarted && !isStartingUp && isPortOpen)
-        {
-            // If the 'justStopped' flag is set, ignore this check during the grace period
-            if (justStopped)
-            {
-                if (debugMode) LogMessage($"Port {serverPort} detected, but in post-stop grace period. Ignoring.", 0);
-            }
-            else
-            {
-                if (PingServerStatus()) // Also ping the server to check if the port information is correct
-                {
-                    // Port detected, not recently stopped -> likely external start/recovery
-                    LogMessage($"Detected server running on port {serverPort}.", 1);
-                    serverStarted = true;
-                    serverConfirmedRunning = true;
-                    isStartingUp = false; 
-                    justStopped = false; // Ensure flag is clear if we recover state
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
-                    
-                    // Update logProcessor state
-                    logProcessor.SetServerRunningState(true);
-                }
-                
-                Repaint();
-            }
+        catch (Exception ex) {
+            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
         }
     }
-    #endregion
-
-    #region DetectChanges
-
-    private void DetectServerChanges()
+    // --- Check for External Start/Recovery ---
+    // Only check if not already started, not starting up, and server is running
+    else if (!serverStarted && !isStartingUp)
     {
-        lastChangeCheckTime = EditorApplication.timeSinceStartup;
-
-        if (!detectServerChanges || string.IsNullOrEmpty(serverDirectory))
-            return;
-
-        try
-        {
-            string srcDirectory = Path.Combine(serverDirectory, "src");
-            string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
-            
-            // Initialize dictionaries if empty
-            var newSizes = new Dictionary<string, long>();
-            
-            // Check for Cargo.toml existence and add it to tracking
-            if (File.Exists(cargoTomlPath))
+        bool isActuallyRunning = false;
+        try {
+            if (serverMode == ServerMode.CustomServer)
             {
-                try 
-                {
-                    newSizes[cargoTomlPath] = new FileInfo(cargoTomlPath).Length;
-                }
-                catch (IOException ex)
-                {
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerWindow] Could not get size for Cargo.toml: {ex.Message}");
-                }
+                isActuallyRunning = await serverCustomProcess.CheckServerRunning();
             }
-            
-            // No src directory means we're only tracking Cargo.toml
-            if (!Directory.Exists(srcDirectory))
+            else // WSL and other modes
             {
-                if (originalFileSizes.Count > 0 || currentFileSizes.Count > 0 || newSizes.Count > 0) {
-                    // If src dir disappeared but we were tracking files or have Cargo.toml, that's a change
-                    originalFileSizes.Clear();
-                    currentFileSizes.Clear();
-                    if (newSizes.Count > 0) {
-                        originalFileSizes = new Dictionary<string, long>(newSizes);
-                        currentFileSizes = new Dictionary<string, long>(newSizes);
+                isActuallyRunning = await cmdProcessor.CheckPortAsync(serverPort);
+            }
+
+            if (isActuallyRunning)
+            {
+                // If the 'justStopped' flag is set, ignore this check during the grace period
+                if (justStopped)
+                {
+                    if (debugMode) LogMessage($"Server detected running, but in post-stop grace period. Ignoring.", 0);
+                }
+                else
+                {
+                    bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : PingServerStatus();
+                    
+                    if (confirmed)
+                    {
+                        // Detected server running, not recently stopped -> likely external start/recovery
+                        LogMessage($"Detected server running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {serverPort}" )}).", 1);
+                        serverStarted = true;
+                        serverConfirmedRunning = true;
+                        isStartingUp = false;
+                        justStopped = false; // Ensure flag is clear if we recover state
+                        EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
+
+                        // Update logProcessor state
+                        logProcessor.SetServerRunningState(true);
                     }
-                    serverChangesDetected = newSizes.Count == 0; // Only mark as changed if we lost everything
+
                     Repaint();
                 }
-                return;
-            }
-
-            // Add src directory files to tracking
-            string[] currentFiles = Directory.GetFiles(srcDirectory, "*.*", SearchOption.AllDirectories);
-            foreach (string file in currentFiles)
-            {
-                try
-                {
-                    newSizes[file] = new FileInfo(file).Length;
-                }
-                catch (IOException ex) {
-                    // Handle potential file access issues gracefully
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerWindow] Could not get size for file {file}: {ex.Message}");
-                }
-            }
-
-            // 2. Handle first run or post-publish state
-            // Check for changed/new files
-            foreach (var kvp in newSizes)
-            {
-                if (!currentFileSizes.TryGetValue(kvp.Key, out long currentSize) || currentSize != kvp.Value)
-                {
-                    currentFileSizes[kvp.Key] = kvp.Value;
-                }
-            }
-            // Check for deleted files
-            var filesToRemove = currentFileSizes.Keys.Except(newSizes.Keys).ToList();
-            foreach (var fileToRemove in filesToRemove)
-            {
-                currentFileSizes.Remove(fileToRemove);
-            }
-
-            // 4. Compare current state (currentFileSizes) with original state (originalFileSizes)
-            bool differenceFromOriginal = false;
-            if (currentFileSizes.Count != originalFileSizes.Count)
-            {
-                differenceFromOriginal = true;
-            }
-            else
-            {
-                foreach (var kvp in currentFileSizes)
-                {
-                    if (!originalFileSizes.TryGetValue(kvp.Key, out long originalSize) || originalSize != kvp.Value)
-                    {
-                        differenceFromOriginal = true;
-                        break;
-                    }
-                }
-            }
-
-            // 5. Update serverChangesDetected state and UI
-            if (serverChangesDetected != differenceFromOriginal)
-            {
-                serverChangesDetected = differenceFromOriginal;
-                if(debugMode) LogMessage($"Server changes detected state set to: {serverChangesDetected}", 0);
-                Repaint(); // Update UI only if state actually changes
-
-                 // Trigger auto-publish if changes are now detected and mode is on
-                 if (serverChangesDetected && autoPublishMode && serverStarted && !string.IsNullOrEmpty(moduleName))
-                 {
-                    LogMessage("Auto-publishing module due to changes detected...", 0);
-                    RunServerCommand($"spacetime publish --server local {moduleName}", $"Auto-publishing module '{moduleName}'");
-                    // NOTE: RunServerCommand should clear original/current sizes upon SUCCESSFUL publish
-                 }
             }
         }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Error checking server changes: {ex.Message}\n{ex.StackTrace}");
-            // Optionally reset state on error?
-            // originalFileSizes.Clear();
-            // currentFileSizes.Clear();
-            // serverChangesDetected = false;
+        catch (Exception ex) {
+            if (debugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
         }
     }
+}
     #endregion
 
     #region RunCommands
     private async void RunServerCommand(string command, string description)
     {
-        if (!serverStarted)
-        {
-            LogMessage("Server is not running. Please start the server first.", -1);
-            return;
-        }
-        
         try
         {
             // Run the command silently and capture the output
             LogMessage($"{description}...", 0);
             
-            // Execute the command through the command processor
-            var result = await cmdProcessor.RunServerCommandAsync(command, serverDirectory);
-            
-            // Display the results in the output log
-            if (!string.IsNullOrEmpty(result.output))
+            // Choose the right processor based on server mode
+            if (serverMode == ServerMode.CustomServer)
             {
-                LogMessage(result.output, 0);
-            }
-            
-            if (!string.IsNullOrEmpty(result.error))
-            {
-                LogMessage(result.error, -2);
-            }
-            
-            if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
-            {
-                LogMessage("Command completed with no output.", 0);
-            }
-            
-            // Handle special cases for publish and generate
-            bool isPublishCommand = command.Contains("spacetime publish");
-            bool isGenerateCommand = command.Contains("spacetime generate");
-            
-            if (result.success)
-            {
-                // Reset change detection state after successful publish
-                if (isPublishCommand)
+                // Use the custom server processor for SSH commands
+                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command);
+                
+                // Display the results in the output log
+                if (!string.IsNullOrEmpty(result.output))
                 {
-                    if (detectServerChanges)
+                    LogMessage(result.output, 0);
+                }
+                
+                if (!string.IsNullOrEmpty(result.error))
+                {
+                    LogMessage(result.error, -2);
+                }
+                
+                if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
+                {
+                    LogMessage("Command completed with no output.", 0);
+                }
+                
+                // Handle special cases for publish and generate
+                bool isPublishCommand = command.Contains("spacetime publish");
+                bool isGenerateCommand = command.Contains("spacetime generate");
+                
+                if (result.success)
+                {
+                    // Reset change detection state after successful publish
+                    if (isPublishCommand)
                     {
-                        serverChangesDetected = false;
-                        originalFileSizes.Clear();
-                        currentFileSizes.Clear();
-                        if(debugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-                    }
+                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
+                        {
+                            detectionProcess.ResetTrackingAfterPublish();
+                            serverChangesDetected = false;
+                            if(debugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
+                        }
 
-                    // Auto-generate if publish was successful and mode is enabled
-                    if (publishAndGenerateMode) 
+                        // Auto-generate if publish was successful and mode is enabled
+                        if (publishAndGenerateMode) 
+                        {
+                            LogMessage("Publish successful, automatically generating Unity files...", 0);
+                            string outDir = GetRelativeClientPath();
+                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files (auto)");
+                        }
+                    }
+                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
                     {
-                        LogMessage("Publish successful, automatically generating Unity files...", 0);
-                        string outDir = GetRelativeClientPath();
-                        RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files (auto)");
+                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
+                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
                     }
                 }
-                else if (isGenerateCommand && description == "Generating Unity files (auto)")
+            }
+            else
+            {
+                // Use the standard command processor for WSL mode
+                // Execute the command through the command processor
+                var result = await cmdProcessor.RunServerCommandAsync(command, serverDirectory);
+                
+                // Display the results in the output log
+                if (!string.IsNullOrEmpty(result.output))
                 {
-                    LogMessage("Publish and generate successful, requesting script compilation...", 1);
-                    UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                    LogMessage(result.output, 0);
+                }
+                
+                if (!string.IsNullOrEmpty(result.error))
+                {
+                    LogMessage(result.error, -2);
+                }
+                
+                if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
+                {
+                    LogMessage("Command completed with no output.", 0);
+                }
+                
+                // Handle special cases for publish and generate
+                bool isPublishCommand = command.Contains("spacetime publish");
+                bool isGenerateCommand = command.Contains("spacetime generate");
+                
+                if (result.success)
+                {
+                    // Reset change detection state after successful publish
+                    if (isPublishCommand)
+                    {
+                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
+                        {
+                            detectionProcess.ResetTrackingAfterPublish();
+                            serverChangesDetected = false;
+                            if(debugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
+                        }
+
+                        // Auto-generate if publish was successful and mode is enabled
+                        if (publishAndGenerateMode) 
+                        {
+                            LogMessage("Publish successful, automatically generating Unity files...", 0);
+                            string outDir = GetRelativeClientPath();
+                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {unityLang}", "Generating Unity files (auto)");
+                        }
+                    }
+                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
+                    {
+                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
+                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                    }
                 }
             }
         }
@@ -2154,7 +2261,16 @@ public class ServerWindow : EditorWindow
     }
     private void PingServer(bool showLog)
     {
-        string url = !string.IsNullOrEmpty(serverUrl) ? serverUrl : "http://127.0.0.1:3000";
+        string url;
+        if (serverMode == ServerMode.CustomServer)
+        {
+            url = !string.IsNullOrEmpty(customServerUrl) ? customServerUrl : "http://127.0.0.1:3000";
+        }
+        else
+        {
+            url = !string.IsNullOrEmpty(serverUrl) ? serverUrl : "http://127.0.0.1:3000";
+        }
+
         if (url.EndsWith("/"))
         {
             url = url.TrimEnd('/');
