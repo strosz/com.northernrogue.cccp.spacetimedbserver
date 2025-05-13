@@ -16,9 +16,13 @@ public class ServerWindow : EditorWindow
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
     private ServerVersionProcess versionProcessor;
+    private ServerCustomProcess serverCustomProcess;
     private Process serverProcess;
+    
+    // Server mode
+    private ServerMode serverMode = ServerMode.WslServer;
 
-    // Pre-requisites
+    // Pre-requisites WSL
     private bool hasWSL = false;
     private bool hasDebian = false;
     private bool hasDebianTrixie = false;
@@ -26,7 +30,7 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBServer = false;
     private bool hasSpacetimeDBPath = false;
     private bool hasRust = false;
-    private bool prerequisitesChecked = false;
+    private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
     private string userName = "";
     private string backupDirectory = "";
@@ -38,6 +42,16 @@ public class ServerWindow : EditorWindow
     private string serverUrl = "";
     private int serverPort = 3000;
     private string authToken = "";
+
+    // Pre-requisites Custom Server
+    private string sshUserName = "";
+    private string customServerUrl = "";
+    private int customServerPort = 0;
+    private string customServerAuthToken = "";
+    private string sshPrivateKeyPath = ""; // Added SSH private key path variable
+
+    // Pre-requisites Maincloud Server
+    
 
     // Server process
     private bool serverStarted = false;
@@ -60,15 +74,6 @@ public class ServerWindow : EditorWindow
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
 
-    // Server mode
-    private ServerMode serverMode = ServerMode.WslServer;
-
-    // Custom server mode
-    //private string customServerUrl = "";
-    //private int customServerPort = 0;
-
-    // Maincloud server mode
-    
     // Server Settings
     public bool debugMode = false;
     private bool hideWarnings = false;
@@ -266,29 +271,42 @@ public class ServerWindow : EditorWindow
         hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
-        // Load Editor Prefs - Pre-Requisites Settings
-        prerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "PrerequisitesChecked", false);
+        
+        // Load Editor Prefs - UX
         initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
-        serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
-        clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
+        
+        // Load Editor Prefs  - Pre-Requisites Settings
+        wslPrerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
+        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "http://0.0.0.0:3000/");
         serverPort = EditorPrefs.GetInt(PrefsKeyPrefix + "ServerPort", 3000);
-        serverLang = EditorPrefs.GetString(PrefsKeyPrefix + "ServerLang", "rust");
-        moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
-        unityLang = EditorPrefs.GetString(PrefsKeyPrefix + "UnityLang", "csharp");
         authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
+
+        // Load Editor Prefs  - Local Settings
         backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
-        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        // Load Editor Prefs - Settings
+        serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
+        serverLang = EditorPrefs.GetString(PrefsKeyPrefix + "ServerLang", "rust");
+        clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
+        unityLang = EditorPrefs.GetString(PrefsKeyPrefix + "UnityLang", "csharp");
+        moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+
+        // Load Editor Prefs  - Custom Server settings
+        sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
+        sshPrivateKeyPath = EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "");
+        customServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+        customServerPort = EditorPrefs.GetInt(PrefsKeyPrefix + "CustomServerPort", 0);
+        customServerAuthToken = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerAuthToken", "");
+
+        // Load Editor Prefs - Global Settings
         hideWarnings = EditorPrefs.GetBool(PrefsKeyPrefix + "HideWarnings", true);
         detectServerChanges = EditorPrefs.GetBool(PrefsKeyPrefix + "DetectServerChanges", true);
         autoPublishMode = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoPublishMode", false);
         publishAndGenerateMode = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishAndGenerateMode", true);
         silentMode = EditorPrefs.GetBool(PrefsKeyPrefix + "SilentMode", true);
         debugMode = EditorPrefs.GetBool(PrefsKeyPrefix + "DebugMode", false);
-        autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
+        autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true); // Only WSL Mode
         
         // Load server mode
         LoadServerModeFromPrefs();
@@ -323,6 +341,8 @@ public class ServerWindow : EditorWindow
             () => StartServer(),  // StartServer
             () => StopServer()    // StopServer
         );
+
+        serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
         
         // Configure the log processor
         logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName); // Pass userName to logProcessor
@@ -330,10 +350,7 @@ public class ServerWindow : EditorWindow
         
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;
-        
-        // Ensure ServerOutputWindow debug mode matches on enable
-        ServerOutputWindow.debugMode = debugMode;
-        
+                
         // Start checking server status
         EditorApplication.update += EditorUpdateHandler;
 
@@ -412,6 +429,12 @@ public class ServerWindow : EditorWindow
         {
             logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
         }
+        
+        // For Custom Server mode, ensure UI is refreshed periodically to update connection status
+        if (serverMode == ServerMode.CustomServer && windowFocused)
+        {
+            Repaint();
+        }
     }
     #endregion
     
@@ -443,26 +466,47 @@ public class ServerWindow : EditorWindow
             inactiveToolbarButton.normal.textColor = Color.gray5;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            if (GUILayout.Button("WSL Local", serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
+            if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 serverMode = ServerMode.WslServer;
                 UpdateServerModeState();
             }
-            if (GUILayout.Button("Custom", serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            string customModeTooltip = "Connect to your custom server and run spacetime commands";
+            if (GUILayout.Button(new GUIContent("Custom", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                serverMode = ServerMode.CustomServer;
-                UpdateServerModeState();
+                if (serverStarted)
+                {
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Server and change the server mode to Custom server?","OK","Cancel");
+                    if (modeChange)
+                    {
+                        StopServer();
+                        serverMode = ServerMode.CustomServer;
+                        UpdateServerModeState();
+                    }
+                } 
+                else 
+                {
+                    serverMode = ServerMode.CustomServer;
+                    UpdateServerModeState();
+                }
             }
-            if (GUILayout.Button("Maincloud", serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
+            if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 serverMode = ServerMode.MaincloudServer;
                 UpdateServerModeState();
             }
             EditorGUILayout.EndHorizontal();
-
-            GUILayout.Space(-5);
             
-            GUILayout.BeginVertical(GUI.skin.box);
+            // Create a custom window style without padding and top aligned
+            GUIStyle customWindowStyle = new GUIStyle(GUI.skin.window);
+            customWindowStyle.padding = new RectOffset(5, 5, 5, 5); // Add bottom padding
+            customWindowStyle.contentOffset = Vector2.zero;
+            customWindowStyle.alignment = TextAnchor.UpperLeft;
+            customWindowStyle.stretchHeight = false; // Prevent automatic stretching
+
+            GUILayout.BeginVertical(customWindowStyle); // Window of Pre-Requisites
             #endregion
 
             #region WSL Mode
@@ -479,10 +523,8 @@ public class ServerWindow : EditorWindow
                 {
                     userName = newUserName;
                     EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                    
                     // Update processors with new username
                     if(logProcessor != null) logProcessor.Configure(moduleName, serverDirectory, clearModuleLogAtStart, clearDatabaseLogAtStart, userName);
-                    
                     if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(userName)), GUILayout.Width(20));
@@ -522,7 +564,6 @@ public class ServerWindow : EditorWindow
                         serverDirectory = path;
                         EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
                         LogMessage($"Server directory set to: {serverDirectory}", 1);
-                        
                         // Reset file tracking when directory changes
                         originalFileSizes.Clear();
                         currentFileSizes.Clear();
@@ -556,7 +597,8 @@ public class ServerWindow : EditorWindow
                 // Module Name setting
                 EditorGUILayout.BeginHorizontal();
                 string moduleNameTooltip = 
-                "The name of your SpacetimeDB module you used when you created the module.";
+                "The name of your existing SpacetimeDB module you used when you created the module.\n"+
+                "OR the name you want your SpacetimeDB module to have when initializing a new one";
                 EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
                 string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(150));
                 if (newModuleName != moduleName)
@@ -620,7 +662,6 @@ public class ServerWindow : EditorWindow
                 {
                     serverUrl = newUrl;
                     EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
-                    
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(serverUrl);
                     if (extractedPort > 0)
@@ -662,22 +703,143 @@ public class ServerWindow : EditorWindow
                     InitNewModule();
                 }
                 EditorGUILayout.EndHorizontal();
-    
-                // Check Pre-Requisites button
+
+                // WSL Check Pre-Requisites button
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                 {
                     CheckPrerequisites();
                 }
             }
+            #endregion
 
+            #region Custom Mode
             if (serverMode == ServerMode.CustomServer)
             {
+                // SSH Username
+                EditorGUILayout.BeginHorizontal();
+                string userNameTooltip = 
+                "The SSH username to use to login to your distro.";
+                EditorGUILayout.LabelField(new GUIContent("Distro Username:", userNameTooltip), GUILayout.Width(110));
+                string newUserName = EditorGUILayout.DelayedTextField(sshUserName, GUILayout.Width(150));
+                if (newUserName != sshUserName)
+                {
+                    sshUserName = newUserName;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+                                       
+                    if (debugMode) LogMessage($"SSH username set to: {sshUserName}", 0);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshUserName)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                
+                // SSH Private Key Path
+                EditorGUILayout.BeginHorizontal();
+                string keyPathTooltip = "The full path to your SSH private key file (e.g., C:\\Users\\YourUser\\.ssh\\id_ed25519).";
+                EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
+                string newKeyPath = EditorGUILayout.TextField(sshPrivateKeyPath, GUILayout.Width(90));
+                if (GUILayout.Button("Browse", GUILayout.Width(57)))
+                {
+                    string path = EditorUtility.OpenFilePanel("Select SSH Private Key", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/.ssh", "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        newKeyPath = path;
+                    }
+                }
+                if (newKeyPath != sshPrivateKeyPath)
+                {
+                    sshPrivateKeyPath = newKeyPath;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHPrivateKeyPath", sshPrivateKeyPath);
+                    if (serverCustomProcess != null) // Update ServerCustomProcess if it exists
+                    {
+                        serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
+                    }
+                    if (debugMode) LogMessage($"SSH Private Key Path set to: {sshPrivateKeyPath}", 0);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshPrivateKeyPath) && System.IO.File.Exists(sshPrivateKeyPath)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
 
+                // URL Custom Server setting
+                EditorGUILayout.BeginHorizontal();
+                string urlTooltip = 
+                "The full URL of your SpacetimeDB server including port number.\n" +
+                "Note: The port number is required.";
+                EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
+                string newUrl = EditorGUILayout.TextField(customServerUrl, GUILayout.Width(150));
+                if (newUrl != customServerUrl)
+                {
+                    customServerUrl = newUrl;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerURL", customServerUrl);
+                    
+                    // Also set the main serverUrl for consistency
+                    serverUrl = customServerUrl;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", serverUrl);
+                    
+                    // Extract port from URL
+                    int extractedPort = ExtractPortFromUrl(customServerUrl);
+                    if (extractedPort > 0)
+                    {
+                        customServerPort = extractedPort;
+                        EditorPrefs.SetInt(PrefsKeyPrefix + "CustomServerPort", customServerPort);
+                        
+                        // Also set the main serverPort for consistency
+                        serverPort = customServerPort;
+                        EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", serverPort);
+                        
+                        if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
+                    }
+                    else
+                    {
+                        LogMessage("No valid port found in URL. Please include port in format 'http://127.0.0.1:3000/'", -2);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerUrl)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
+                // Custom Serer Auth Token
+                EditorGUILayout.BeginHorizontal();
+                string tokenTooltip = 
+                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
+                string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken, GUILayout.Width(150));
+                if (newAuthToken != customServerAuthToken)
+                {
+                    customServerAuthToken = newAuthToken;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerAuthToken", customServerAuthToken);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
+                // Connection status display
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Connection Status:", GUILayout.Width(110));
+                // Only use cached value, update in background
+                if (serverCustomProcess != null)
+                {
+                    serverCustomProcess.UpdateSessionStatusIfNeeded();
+                }
+                GUIStyle connectionStatusStyle = new GUIStyle(EditorStyles.label);
+                bool isConnected = serverCustomProcess != null && serverCustomProcess.IsSessionActive();
+                connectionStatusStyle.normal.textColor = isConnected ? Color.green : Color.gray;
+                string connectionStatusText = isConnected ? "Connected SSH" : "Disconnected";
+                EditorGUILayout.LabelField(connectionStatusText, connectionStatusStyle);
+                EditorGUILayout.EndHorizontal();
+
+                // Custom Server Check Pre-Requisites
+                if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
+                {
+                    CheckPrerequisitesCustom();
+                }
             }
-
+            #endregion
+            
+            #region Maincloud Mode
             if (serverMode == ServerMode.MaincloudServer)
             {
-                
+                // Maincloud Check Pre-Requisites
+                if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
+                {
+                    //CheckPrerequisitesMaincloud();
+                }
             }
 
             EditorGUILayout.EndVertical(); // GUI Background
@@ -695,7 +857,7 @@ public class ServerWindow : EditorWindow
         
         bool serverRunning = serverStarted || isStartingUp;
 
-        if (!prerequisitesChecked || !hasWSL || !hasDebian)
+        if (!wslPrerequisitesChecked || !hasWSL || !hasDebian)
         {
             if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
             {
@@ -1002,11 +1164,12 @@ public class ServerWindow : EditorWindow
             {
                 debugMode = !debugMode;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "DebugMode", debugMode);
-                ServerOutputWindow.debugMode = debugMode; // Update ServerOutputWindow's debug mode
-                ServerWindowInitializer.debugMode = debugMode; // Update ServerWindowInitializer's debug mode
-                ServerUpdateProcess.debugMode = debugMode; // Update ServerUpdateProcess's debug mode
-                ServerLogProcess.debugMode = debugMode; // Update ServerLogProcess's debug mode
-                ServerCMDProcess.debugMode = debugMode; // Update ServerCMDProcess's debug mode
+                ServerOutputWindow.debugMode = debugMode;
+                ServerWindowInitializer.debugMode = debugMode;
+                ServerUpdateProcess.debugMode = debugMode;
+                ServerLogProcess.debugMode = debugMode;
+                ServerCMDProcess.debugMode = debugMode;
+                ServerCustomProcess.debugMode = debugMode;
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1168,13 +1331,13 @@ public class ServerWindow : EditorWindow
                 hasSpacetimeDBServer = spacetime;
                 hasSpacetimeDBPath = spacetimePath;
                 hasRust = rust;
-                prerequisitesChecked = true;
+                wslPrerequisitesChecked = true;
                 
                 // Save state
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", hasDebian);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", hasDebianTrixie);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "PrerequisitesChecked", prerequisitesChecked);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", wslPrerequisitesChecked);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", hasCurl);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", hasSpacetimeDBServer);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
@@ -1222,6 +1385,63 @@ public class ServerWindow : EditorWindow
                 }
             };
         });
+    }
+
+    public async void CheckPrerequisitesCustom()
+    {
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            LogMessage("Please set your SSH username first", -1);
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(sshPrivateKeyPath))
+        {
+            LogMessage("Please set your SSH Private Key Path first", -1);
+            return;
+        }
+        if (!System.IO.File.Exists(sshPrivateKeyPath))
+        {
+            LogMessage($"SSH Private Key file not found at: {sshPrivateKeyPath}. Please ensure the path is correct.", -1);
+            return;
+        }
+
+        if (serverCustomProcess != null)
+        {
+            serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
+        }
+        
+        if (string.IsNullOrEmpty(customServerUrl))
+        {
+            LogMessage("Please set your custom server URL first", -1);
+            return;
+        }
+        
+        bool isReachable = await serverCustomProcess.CheckServerReachable();
+        
+        if (!isReachable)
+        {
+            LogMessage("Server is not reachable. Please check if the server is online and your network connection.", -1);
+            return;
+        }
+        
+        // Make sure key path is set in ServerCustomProcess
+        if (serverCustomProcess != null)
+        {
+            serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
+        }
+        
+        bool connectionSuccessful = serverCustomProcess.StartSession();
+        
+        if (connectionSuccessful)
+        {           
+            await serverCustomProcess.CheckSpacetimeDBInstalled();
+            await serverCustomProcess.GetSpacetimeDBVersion();
+        }
+        else
+        {
+            LogMessage("Failed to establish SSH connection.", -1);
+        }
     }
     #endregion
 
@@ -1322,7 +1542,7 @@ public class ServerWindow : EditorWindow
     
     private void StartServer()
     {
-        if (!prerequisitesChecked)
+        if (!wslPrerequisitesChecked)
         {
             LogMessage("Prerequisites need to be checked before starting the server.", -2);
             CheckPrerequisites();
@@ -1415,8 +1635,28 @@ public class ServerWindow : EditorWindow
 
     private void StartCustomServer()
     {
-        // TODO: Implement custom server startup logic
-        LogMessage("Custom server start not yet implemented", -1);
+        if (string.IsNullOrEmpty(customServerUrl))
+        {
+            LogMessage("Please enter a custom server URL first.", -2);
+            return;
+        }
+        
+        if (customServerPort <= 0)
+        {
+            LogMessage("Could not detect a valid port in the custom server URL. Please ensure the URL includes a port number (e.g., http://example.com:3000/).", -2);
+            return;
+        }
+        
+        LogMessage($"Connecting to custom server at {customServerUrl}", 1);
+        
+        // Mark as connected to the custom server
+        serverStarted = true;
+        serverConfirmedRunning = true;
+        isStartingUp = false;
+        EditorPrefs.SetBool(PrefsKeyPrefix + "ServerStarted", true);
+        
+        // Ping the server to verify it's reachable
+        PingServer(true);
     }
 
     private void StartMaincloudServer()
@@ -1678,17 +1918,6 @@ public class ServerWindow : EditorWindow
             }
 
             // 2. Handle first run or post-publish state
-            if (originalFileSizes.Count == 0 && currentFileSizes.Count == 0 && newSizes.Count > 0)
-            {
-                if(debugMode) LogMessage("Establishing initial baseline for server file sizes.", 0);
-                originalFileSizes = new Dictionary<string, long>(newSizes);
-                currentFileSizes = new Dictionary<string, long>(newSizes);
-                serverChangesDetected = false;
-                Repaint();
-                return;
-            }
-
-            // 3. Update currentFileSizes based on newSizes 
             // Check for changed/new files
             foreach (var kvp in newSizes)
             {
