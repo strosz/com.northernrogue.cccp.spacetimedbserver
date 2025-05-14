@@ -849,10 +849,35 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
 
+                // Auth Token setting
+                EditorGUILayout.BeginHorizontal();
+                string tokenTooltip = 
+                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
+                string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
+                if (newAuthToken != authToken)
+                {
+                    authToken = newAuthToken;
+                    serverManager.SetAuthToken(authToken);
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
                 if (GUILayout.Button("Launch Official Webpanel"))
                     Application.OpenURL("https://spacetimedb.com/login");
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesMaincloud();
+
+                // Connection status display
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
+                GUIStyle maincloudConnectionStyle = new GUIStyle(EditorStyles.label);
+                bool isMaincloudConnected = serverManager.IsMaincloudConnected;
+                maincloudConnectionStyle.normal.textColor = isMaincloudConnected ? Color.green : Color.gray;
+                string maincloudStatusText = isMaincloudConnected ? "Connected" : "Disconnected";
+                EditorGUILayout.LabelField(maincloudStatusText, maincloudConnectionStyle);
+                EditorGUILayout.EndHorizontal();
             }
 
             EditorGUILayout.EndVertical(); // GUI Background
@@ -1125,29 +1150,31 @@ public class ServerWindow : EditorWindow
         else if (serverMode == ServerMode.MaincloudServer)
         EditorGUILayout.LabelField("Maincloud Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
         
-        bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
-
-        if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
+        if (serverMode != ServerMode.MaincloudServer)
         {
-            if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
+            bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
+            if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
             {
-                CheckPrerequisites();
-            }
-        }
-        else // If Prerequisites are checked then show normal server controls
-        {
-            if (!serverRunning)
-            {
-                if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+                if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
                 {
-                    serverManager.StartServer();
+                    CheckPrerequisites();
                 }
-            } 
-            else 
+            }
+            else // If Prerequisites are checked then show normal server controls
             {
-                if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+                if (!serverRunning)
                 {
-                    serverManager.StopServer();
+                    if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+                    {
+                        serverManager.StartServer();
+                    }
+                } 
+                else 
+                {
+                    if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+                    {
+                        serverManager.StopServer();
+                    }
                 }
             }
         }
@@ -1155,7 +1182,7 @@ public class ServerWindow : EditorWindow
         bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
         bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
         bool customServerActive = isConnected && serverMode == ServerMode.CustomServer;
-        bool maincloudActive = serverMode == ServerMode.MaincloudServer;
+        bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
 
         EditorGUI.BeginDisabledGroup(!wslServerActiveSilent);
         if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
@@ -1185,7 +1212,12 @@ public class ServerWindow : EditorWindow
         GUIStyle statusStyle = new GUIStyle(EditorStyles.label);
         string statusText;
         
-        if (serverManager.IsStartingUp)
+        if (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected)
+        {
+            statusStyle.normal.textColor = Color.green;
+            statusText = "Maincloud";
+        }
+        else if (serverManager.IsStartingUp)
         {
             statusStyle.normal.textColor = Color.green;
             statusText = "Starting...";
@@ -1253,8 +1285,7 @@ public class ServerWindow : EditorWindow
                 serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
             }
 
-            EditorGUILayout.LabelField(
-            "WSL Server Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField("WSL Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
             {
@@ -1309,10 +1340,17 @@ public class ServerWindow : EditorWindow
         }
         
         if (serverManager.PublishAndGenerateMode) {
-        EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.\n" + 
-                                    "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+
+                if (!serverManager.AutoPublishMode)
+                {
+                    EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.\n" + 
+                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+                } else {
+                    EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically on detected changes.\n" + 
+                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+                }
         } else {
-        EditorGUILayout.LabelField("First Publish then Generate Unity Files.\n" + 
+            EditorGUILayout.LabelField("First Publish then Generate Unity Files.\n" + 
                         "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
         }
         
@@ -1360,7 +1398,6 @@ public class ServerWindow : EditorWindow
                 serverManager.Publish(false);
             }
         }
-        EditorGUI.EndDisabledGroup();
         
         // Add Generate Unity Files button
         if (!serverManager.PublishAndGenerateMode)
@@ -1494,9 +1531,42 @@ public class ServerWindow : EditorWindow
             LogMessage("Failed to establish SSH connection.", -1);
         }
     }
-    private void CheckPrerequisitesMaincloud()
-    {
 
+    private async void CheckPrerequisitesMaincloud()
+    {
+        // Check if module name is set
+        if (string.IsNullOrEmpty(moduleName))
+        {
+            LogMessage("Error: Module Name is not set. Please set it in the Pre-requisites section.", -1);
+            return;
+        }
+        
+        // Check maincloud connectivity
+        LogMessage("Checking Maincloud connectivity...", 0);
+        
+        // Run the connectivity check
+        await serverManager.CheckMaincloudConnectivity();
+        
+        // The result is automatically updated in the UI via the RepaintCallback
+        if (serverManager.IsMaincloudConnected)
+        {
+            LogMessage("Connected to Maincloud successfully!", 1);
+            
+            // After connection check, also verify auth token if available
+            if (!string.IsNullOrEmpty(serverManager.AuthToken))
+            {
+                LogMessage("Auth token found, verifying authentication...", 0);
+                RunServerCommand("spacetime login show --token", "Verifying Maincloud authentication");
+            }
+            else
+            {
+                LogMessage("Warning: No auth token set. Please login to Maincloud using the 'Login to Maincloud' button.", -2);
+            }
+        }
+        else
+        {
+            LogMessage("Failed to connect to Maincloud. Please check your internet connection and make sure your module name is correct.", -1);
+        }
     }
     #endregion
 

@@ -136,6 +136,14 @@ public class ServerManager
     // Add property for external access
     public bool IsWslRunning => isWslRunning;
 
+    // Add these properties near the other connection status properties
+    private bool isMaincloudConnected = false;
+    private double lastMaincloudCheckTime = 0;
+    private const double maincloudCheckInterval = 10.0; // Check less frequently to reduce resource usage
+
+    // Add this property for external access
+    public bool IsMaincloudConnected => isMaincloudConnected;
+
     public enum ServerMode
     {
         WslServer,
@@ -1284,10 +1292,102 @@ public class ServerManager
     {
         await CheckServerStatus();
         
-        // Only check WSL status if in WSL mode
+        // Check appropriate status based on server mode
         if (serverMode == ServerMode.WslServer)
         {
             await CheckWslStatus();
+        }
+        else if (serverMode == ServerMode.MaincloudServer)
+        {
+            await CheckMaincloudConnectivity();
+        }
+    }
+
+    // Add this method in the #region Utility Methods section
+    public async Task CheckMaincloudConnectivity()
+    {
+        // Only check periodically to avoid excessive resource usage
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (currentTime - lastMaincloudCheckTime < maincloudCheckInterval)
+            return;
+        
+        lastMaincloudCheckTime = currentTime;
+        
+        try
+        {
+            // Use a lightweight endpoint that requires authentication - similar to how ServerDataWindow does it
+            if (string.IsNullOrEmpty(moduleName))
+            {
+                if (DebugMode) LogMessage("No module name set, can't check Maincloud connectivity", 0);
+                isMaincloudConnected = false;
+                RepaintCallback?.Invoke();
+                return;
+            }
+
+            string url = maincloudUrl;
+            if (!url.EndsWith("/")) url += "/";
+            url += $"v1/database/{moduleName}/schema?version=9";
+            
+            if (DebugMode) LogMessage($"Checking Maincloud connectivity at {url}...", 0);
+            
+            // Create a HttpClient instance with timeout
+            using (var httpClient = new System.Net.Http.HttpClient())
+            {
+                httpClient.Timeout = TimeSpan.FromSeconds(5);
+                
+                // Add authorization header if token exists
+                if (!string.IsNullOrEmpty(authToken))
+                {
+                    httpClient.DefaultRequestHeaders.Authorization = 
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken);
+                }
+                
+                // Make the request
+                var response = await httpClient.GetAsync(url);
+                
+                // Consider both successful responses and auth errors (401/403) as "connected"
+                bool connected = response.IsSuccessStatusCode || 
+                                 (int)response.StatusCode == 401 || 
+                                 (int)response.StatusCode == 403;
+                
+                bool authError = (int)response.StatusCode == 401 || (int)response.StatusCode == 403;
+                
+                // Get response content for debugging if needed
+                string responseContent = await response.Content.ReadAsStringAsync();
+                
+                if (DebugMode)
+                {
+                    LogMessage($"Maincloud response: Status={response.StatusCode}, Connected={connected}, AuthError={authError}", 0);
+                    if (!connected)
+                    {
+                        LogMessage($"Response content: {responseContent}", 0);
+                    }
+                }
+                
+                // Update status
+                if (isMaincloudConnected != connected)
+                {
+                    isMaincloudConnected = connected;
+                    if (DebugMode)
+                    {
+                        string status = connected ? "Connected" : "Disconnected";
+                        if (connected && authError)
+                        {
+                            status += " (Auth error, but server is reachable)";
+                        }
+                        LogMessage($"Maincloud status updated to: {status}", 0);
+                    }
+                    
+                    // Trigger UI update
+                    RepaintCallback?.Invoke();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (DebugMode) LogMessage($"Exception in CheckMaincloudConnectivity: {ex.Message}", -1);
+            isMaincloudConnected = false;
+            RepaintCallback?.Invoke();
         }
     }
 
