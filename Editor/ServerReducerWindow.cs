@@ -18,7 +18,14 @@ public class ServerReducerWindow : EditorWindow
     private string serverURL = "http://127.0.0.1:3000/v1"; // Default, should be overridden
     private string moduleName = "magical"; // Default, should be overridden
     private string authToken = ""; // Should be overridden if needed
-    
+
+    private string customServerUrl = "";
+    private string maincloudUrl = "";
+    private string serverMode = "";
+
+    private string schemaUrl = "";
+    private string reducerUrl = "";
+
     // List of reducers from schema
     private List<ReducerInfo> reducers = new List<ReducerInfo>();
     private bool isRefreshing = false;
@@ -394,7 +401,7 @@ public class ServerReducerWindow : EditorWindow
     }
     #endregion
     
-    #region Data Management
+    #region Load Settings
     private void LoadSettings()
     {
         // Load settings from EditorPrefs (shared with ServerWindow)
@@ -421,16 +428,61 @@ public class ServerReducerWindow : EditorWindow
                 }
             }
         }
+        maincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
+        
+        if (!string.IsNullOrEmpty(maincloudUrl))
+        {
+            Uri uri;
+            if (Uri.TryCreate(maincloudUrl, UriKind.Absolute, out uri))
+            {
+                if (uri.Segments.Length == 1)
+                {
+                    // Add v1 path if missing
+                    maincloudUrl = maincloudUrl.TrimEnd('/') + "/v1";
+                }
+            }
+        }
+        customServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+        if (!string.IsNullOrEmpty(customServerUrl))
+        {
+            Uri uri;
+            if (Uri.TryCreate(customServerUrl, UriKind.Absolute, out uri))
+            {
+                if (uri.Segments.Length == 1)
+                {
+                    // Add v1 path if missing
+                    customServerUrl = customServerUrl.TrimEnd('/') + "/v1";
+                }
+            }
+        }
     }
     
     private void RefreshReducers()
     {
         if (isRefreshing) return;
-        
-        if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
+
+        if (serverMode == "WslServer")
         {
-            SetStatus("Server URL and Module Name are required.", Color.red);
-            return;
+            if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("WSL Server URL and Module Name are required.", Color.red);
+                return;
+            }
+        } else if (serverMode == "CustomServer")
+        {
+            if (string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("Custom Server URL and Module Name are required.", Color.red);
+                return;
+            }
+        } else if (serverMode == "MaincloudServer")
+        {
+            if (string.IsNullOrEmpty(maincloudUrl) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("Maincloud URL and Module Name are required.", Color.red);
+                return;
+            }
         }
         
         isRefreshing = true;
@@ -454,7 +506,15 @@ public class ServerReducerWindow : EditorWindow
     {
         // Move try-catch outside of the iterator
         // Add version parameter to match ServerDataWindow's schema request
-        string schemaUrl = $"{serverURL}/database/{moduleName}/schema?version=9";
+
+        if (serverMode == "WslServer"){
+            schemaUrl = $"{serverURL}/database/{moduleName}/schema?version=9";
+        } else if (serverMode == "CustomServer") {
+            schemaUrl = $"{customServerUrl}/database/{moduleName}/schema?version=9";
+        } else if (serverMode == "MaincloudServer") {
+            schemaUrl = $"{maincloudUrl}/database/{moduleName}/schema?version=9";
+        }
+
         var request = new HttpRequestMessage(HttpMethod.Get, schemaUrl);
         
         // Add authorization if token is available
@@ -552,10 +612,27 @@ public class ServerReducerWindow : EditorWindow
     
     private void RunReducer(ReducerInfo reducer)
     {
-        if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
+        if (serverMode == "WslServer")
         {
-            SetStatus("Server URL and Module Name are required.", Color.red);
-            return;
+            if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("WSL Server URL and Module Name are required.", Color.red);
+                return;
+            }
+        } else if (serverMode == "CustomServer")
+        {
+            if (string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("Custom Server URL and Module Name are required.", Color.red);
+                return;
+            }
+        } else if (serverMode == "MaincloudServer")
+        {
+            if (string.IsNullOrEmpty(maincloudUrl) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("Maincloud URL and Module Name are required.", Color.red);
+                return;
+            }
         }
         
         if (string.IsNullOrEmpty(authToken))
@@ -645,8 +722,14 @@ public class ServerReducerWindow : EditorWindow
     
     private IEnumerator RunReducerCoroutine(string reducerName, List<object> parameters, Action<bool, string> callback)
     {
+        if (serverMode == "WslServer"){
+            reducerUrl = $"{serverURL}/database/{moduleName}/call/{reducerName}";
+        } else if (serverMode == "CustomServer") {
+            reducerUrl = $"{customServerUrl}/database/{moduleName}/call/{reducerName}";
+        } else if (serverMode == "MaincloudServer") {
+            reducerUrl = $"{maincloudUrl}/database/{moduleName}/call/{reducerName}";
+        }
         // Prepare request
-        string reducerUrl = $"{serverURL}/database/{moduleName}/call/{reducerName}";
         var request = new HttpRequestMessage(HttpMethod.Post, reducerUrl);
         
         // Add authorization header

@@ -23,6 +23,9 @@ public class ServerDataWindow : EditorWindow
     private string moduleName = "";
     private string authToken = "";
     private string backupDirectory = "";
+    private string customServerUrl = "";
+    private string maincloudUrl = "";
+    private string serverMode = "";
 
     // Data Storage
     // Stores raw JSON string received from the SQL API for each table
@@ -90,6 +93,9 @@ public class ServerDataWindow : EditorWindow
     private const float MinColumnWidth = 30f;
     private float startDragX;
     private int draggingColumnIndex = -1;
+
+    string urlBase;
+    string schemaUrl;
 
     // --- Window Setup ---
     [MenuItem("SpacetimeDB/Server Database")]
@@ -195,6 +201,14 @@ public class ServerDataWindow : EditorWindow
         moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", ""); // Assuming ModuleName is DB Name
         authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", ""); // Assuming ServerWindow stores a token
         backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
+
+        string rawMaincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
+
+        string rawCustomServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+        customServerUrl = GetApiBaseUrl(customServerUrl);
+        
+        serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
 
         if (string.IsNullOrEmpty(moduleName))
         {
@@ -969,10 +983,8 @@ public class ServerDataWindow : EditorWindow
         }));
     }
 
-     private IEnumerator RefreshDataCoroutine(Action<bool, string> callback)
+    private IEnumerator RefreshDataCoroutine(Action<bool, string> callback)
     {
-        // --- Removed Basic Network Test (Step 0) ---
-
         // --- 1. Set Authentication Header ---
         // If you need dynamic authentication (e.g., username/password -> token)
         // Add a step here to call POST /v1/identity
@@ -987,12 +999,20 @@ public class ServerDataWindow : EditorWindow
         string tokenSnippet = string.IsNullOrEmpty(authToken) ? "None" : authToken.Substring(0, Math.Min(authToken.Length, 5)) + "...";
         // UnityEngine.Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
 
-        // Use GetApiBaseUrl to ensure URL has /v1
-        string urlBase = GetApiBaseUrl(serverURL);
-        // UnityEngine.Debug.Log($"[ServerDataWindow] Using URL base for request: {urlBase}");
-        // --- End localhost test ---
+        if (serverMode == "WslServer")
+        {
+            urlBase = GetApiBaseUrl(serverURL);
+            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+        } else if (serverMode == "CustomServer")
+        {
+            urlBase = GetApiBaseUrl(customServerUrl);
+            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+        } else if (serverMode == "MaincloudServer")
+        {
+            urlBase = GetApiBaseUrl(maincloudUrl);
+            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+        }
 
-        string schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
         string schemaResponseJson = null;
         bool schemaFetchOk = false;
         string schemaFetchError = "(unknown)";
@@ -2382,9 +2402,19 @@ public class ServerDataWindow : EditorWindow
         
         try
         {
-            // Get the schema from the server
-            string urlBase = GetApiBaseUrl(serverURL);
-            string schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+            if (serverMode == "WslServer")
+            {
+                urlBase = GetApiBaseUrl(serverURL);
+                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+            } else if (serverMode == "CustomServer")
+            {
+                urlBase = GetApiBaseUrl(customServerUrl);
+                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+            } else if (serverMode == "MaincloudServer")
+            {
+                urlBase = GetApiBaseUrl(maincloudUrl);
+                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+            }
             
             // Make a synchronous request since this is called from a synchronous context
             var response = httpClient.GetAsync(schemaUrl).GetAwaiter().GetResult();

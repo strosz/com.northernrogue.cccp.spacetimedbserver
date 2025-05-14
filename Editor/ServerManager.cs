@@ -45,6 +45,8 @@ public class ServerManager
     private string serverUrl;
     private int serverPort;
     private string authToken;
+
+    private string maincloudUrl;
     
     // Custom server properties
     private string sshUserName;
@@ -192,6 +194,8 @@ public class ServerManager
         serverPort = EditorPrefs.GetInt(PrefsKeyPrefix + "ServerPort", 3000);
         authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
 
+        maincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+
         // Load local settings
         backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
         serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
@@ -219,7 +223,7 @@ public class ServerManager
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
         
         // Load server mode
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer"); // CustomServer // MaincloudServer
         if (Enum.TryParse(modeName, out ServerMode mode))
         {
             serverMode = mode;
@@ -237,7 +241,30 @@ public class ServerManager
     public void SetServerPort(int value) { serverPort = value; EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", value); }
     public void SetServerUrl(string value) { serverUrl = value; EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", value); }
     public void SetAuthToken(string value) { authToken = value; EditorPrefs.SetString(PrefsKeyPrefix + "AuthToken", value); }
-    
+
+    public void SetMaincloudUrl(string value)
+    {
+        // Always ensure Maincloud URL uses HTTPS
+        string cleanedUrl = value.Trim();
+        
+        // Remove any existing protocol
+        if (cleanedUrl.StartsWith("http://"))
+        {
+            cleanedUrl = cleanedUrl.Substring(7);
+        }
+        else if (cleanedUrl.StartsWith("https://"))
+        {
+            cleanedUrl = cleanedUrl.Substring(8);
+        }
+        
+        // Add HTTPS protocol
+        maincloudUrl = "https://" + cleanedUrl;
+        
+        // Save to EditorPrefs
+        EditorPrefs.SetString(PrefsKeyPrefix + "MaincloudURL", maincloudUrl);
+        
+        if (debugMode) LogMessage($"Maincloud URL set to: {maincloudUrl}", 0);
+    }   
     public void SetSSHUserName(string value) { sshUserName = value; EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", value); }
     public void SetCustomServerUrl(string value) { customServerUrl = value; EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerURL", value); }
     public void SetCustomServerPort(int value) { customServerPort = value; EditorPrefs.SetInt(PrefsKeyPrefix + "CustomServerPort", value); }
@@ -1013,7 +1040,11 @@ public class ServerManager
         string url;
         if (serverMode == ServerMode.CustomServer)
         {
-            url = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl : "http://127.0.0.1:3000";
+            url = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl : "";
+        }
+        else if (serverMode == ServerMode.MaincloudServer)
+        {
+            url = !string.IsNullOrEmpty(maincloudUrl) ? maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
         else
         {

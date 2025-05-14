@@ -51,9 +51,10 @@ public class ServerWindow : EditorWindow
     private int customServerPort = 0;
     private string customServerAuthToken = "";
     private string sshPrivateKeyPath = ""; // Added SSH private key path variable
+    private bool isConnected;
 
     // Pre-requisites Maincloud Server
-    private string maincloudUrl = "maincloud.spacetimedb.com";
+    //private string maincloudUrl = "maincloud.spacetimedb.com";
    
     // Server status
     private double lastCheckTime = 0;
@@ -745,10 +746,6 @@ public class ServerWindow : EditorWindow
                     customServerUrl = newUrl;
                     serverManager.SetCustomServerUrl(customServerUrl);
                     
-                    // Also set the main serverUrl for consistency
-                    serverUrl = customServerUrl;
-                    serverManager.SetServerUrl(serverUrl);
-                    
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(customServerUrl);
                     if (extractedPort > 0 && extractedPort != customServerPort)
@@ -785,6 +782,12 @@ public class ServerWindow : EditorWindow
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
+                // Custom Server Check Pre-Requisites
+                if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
+                {
+                    CheckPrerequisitesCustom();
+                }
+
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection Status:", GUILayout.Width(110));
@@ -794,17 +797,11 @@ public class ServerWindow : EditorWindow
                     serverCustomProcess.UpdateSessionStatusIfNeeded();
                 }
                 GUIStyle connectionStatusStyle = new GUIStyle(EditorStyles.label);
-                bool isConnected = serverCustomProcess != null && serverCustomProcess.IsSessionActive();
+                isConnected = serverCustomProcess != null && serverCustomProcess.IsSessionActive();
                 connectionStatusStyle.normal.textColor = isConnected ? Color.green : Color.gray;
                 string connectionStatusText = isConnected ? "Connected SSH" : "Disconnected";
                 EditorGUILayout.LabelField(connectionStatusText, connectionStatusStyle);
                 EditorGUILayout.EndHorizontal();
-
-                // Custom Server Check Pre-Requisites
-                if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
-                {
-                    CheckPrerequisitesCustom();
-                }
             }
             #endregion
             
@@ -824,7 +821,7 @@ public class ServerWindow : EditorWindow
                     {
                         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
                     }
-                    cmdProcessor.RunPowerShellCommand("login", LogMessage);
+                    serverManager.RunServerCommand("spacetime login", "Logging in");
                 }
                 EditorGUILayout.EndHorizontal();
 
@@ -1121,22 +1118,27 @@ public class ServerWindow : EditorWindow
                 }
             }
         }
+        // Activation of Server Windows
+        bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
+        bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
+        bool customServerActive = isConnected && serverMode == ServerMode.CustomServer;
+        bool maincloudActive = serverMode == ServerMode.MaincloudServer;
 
-        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.SilentMode);
+        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent);
         if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
         {
             serverManager.ViewServerLogs();
         }
         EditorGUI.EndDisabledGroup();
 
-        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted);
+        EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
         if (GUILayout.Button("View Server Database", GUILayout.Height(20)))
         {
             ServerDataWindow.ShowWindow();
         }
         EditorGUI.EndDisabledGroup();
         
-        EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted);
+        EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
         if (GUILayout.Button("Run Server Reducer", GUILayout.Height(20)))
         {
             ServerReducerWindow.ShowWindow();
@@ -1424,10 +1426,14 @@ public class ServerWindow : EditorWindow
             return;
         }
 
-        if (serverCustomProcess != null)
+        // Initialize serverCustomProcess if it's null
+        if (serverCustomProcess == null)
         {
-            serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
+            serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
+            serverCustomProcess.LoadSettings();
         }
+
+        serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
         
         if (string.IsNullOrEmpty(customServerUrl))
         {
@@ -1441,12 +1447,6 @@ public class ServerWindow : EditorWindow
         {
             LogMessage("Server is not reachable. Please check if the server is online and your network connection.", -1);
             return;
-        }
-        
-        // Make sure key path is set in ServerCustomProcess
-        if (serverCustomProcess != null)
-        {
-            serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
         }
         
         bool connectionSuccessful = serverCustomProcess.StartSession();
@@ -1739,6 +1739,12 @@ public class ServerWindow : EditorWindow
                 break;
             case ServerMode.CustomServer:
                 if (debugMode) LogMessage("Server mode set to: Custom", 0);
+                // Initialize serverCustomProcess when switching to Custom Server mode
+                if (serverCustomProcess == null)
+                {
+                    serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
+                    serverCustomProcess.LoadSettings();
+                }
                 break;
             case ServerMode.MaincloudServer:
                 if (debugMode) LogMessage("Server mode set to: Maincloud", 0);
