@@ -16,7 +16,6 @@ public class ServerWindow : EditorWindow
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
-    private ServerVersionProcess versionProcessor;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
     private Process serverProcess;
@@ -86,6 +85,9 @@ public class ServerWindow : EditorWindow
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
     private const string PrefsKeyPrefix = "CCCP_";
+
+    // Add a field to track WSL status
+    private bool isWslRunning = false;
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
@@ -291,6 +293,21 @@ public class ServerWindow : EditorWindow
             if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
             AttemptDatabaseLogRestartAfterReload();
         }
+
+        // Add this section near the end of OnEnable
+        // Perform an immediate WSL status check if in WSL mode
+        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+        {
+            EditorApplication.delayCall += async () => {
+                try {
+                    await serverManager.CheckWslStatus();
+                    isWslRunning = serverManager.IsWslRunning;
+                    Repaint();
+                } catch (Exception ex) {
+                    if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
+                }
+            };
+        }
     }
     
     private void SyncFieldsFromServerManager()
@@ -337,6 +354,9 @@ public class ServerWindow : EditorWindow
         
         serverMode = (ServerMode)serverManager.CurrentServerMode;
         serverChangesDetected = serverManager.ServerChangesDetected;
+
+        // Add this line to initialize WSL status
+        isWslRunning = serverManager.IsWslRunning;
     }
    
     private async void EditorUpdateHandler()
@@ -350,17 +370,17 @@ public class ServerWindow : EditorWindow
         if (currentTime - lastCheckTime > checkInterval)
         {
             lastCheckTime = currentTime;
-            await serverManager.CheckServerStatus();
+            await serverManager.CheckAllStatus();
             
             // Update local state for UI display
             serverChangesDetected = serverManager.ServerChangesDetected;
+            isWslRunning = serverManager.IsWslRunning;
         }
         
         // For Custom Server mode, ensure UI is refreshed periodically to update connection status
         if (serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer && windowFocused)
         {
-            // Check connection status less frequently (3x interval)
-            if (currentTime - lastCheckTime > changeCheckInterval * 3)
+            if (currentTime - lastCheckTime > changeCheckInterval)
             {
                 Repaint();
             }
@@ -402,11 +422,7 @@ public class ServerWindow : EditorWindow
 
         if (showPrerequisites)
         {
-            // Launch Server Installer Window
-            if (GUILayout.Button("Launch Server Installer", GUILayout.Height(20)))
-            {
-                ServerInstallerWindow.ShowWindow();
-            }
+            EditorGUILayout.Space(-10);
 
             EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
@@ -665,11 +681,20 @@ public class ServerWindow : EditorWindow
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
-                // WSL Check Pre-Requisites button
+                if (GUILayout.Button("Launch WSL Server Installer"))
+                    ServerInstallerWindow.ShowWindow();
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
-                {
                     CheckPrerequisites();
-                }
+
+                // WSL Status display - add after the Check Pre-requisites button
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("WSL:", GUILayout.Width(110));
+                GUIStyle wslStatusStyle = new GUIStyle(EditorStyles.label);
+                wslStatusStyle.normal.textColor = isWslRunning ? Color.green : Color.gray;
+                string wslStatusText = isWslRunning ? "Running" : "Stopped";
+                EditorGUILayout.LabelField(wslStatusText, wslStatusStyle);
+                EditorGUILayout.EndHorizontal();
+
             }
             #endregion
 
@@ -782,15 +807,14 @@ public class ServerWindow : EditorWindow
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
-                // Custom Server Check Pre-Requisites
+                if (GUILayout.Button("Show Documentation"))
+                    Application.OpenURL(ServerWindow.Documentation);
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
-                {
                     CheckPrerequisitesCustom();
-                }
 
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("Connection Status:", GUILayout.Width(110));
+                EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
                 // Only use cached value, update in background
                 if (serverCustomProcess != null)
                 {
@@ -825,11 +849,10 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
 
-                // Maincloud Check Pre-Requisites
-                if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
-                {
-                    //CheckPrerequisitesMaincloud();
-                }
+                if (GUILayout.Button("Launch Official Webpanel"))
+                    Application.OpenURL("https://spacetimedb.com/login");
+                if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
+                    CheckPrerequisitesMaincloud();
             }
 
             EditorGUILayout.EndVertical(); // GUI Background
@@ -862,7 +885,7 @@ public class ServerWindow : EditorWindow
             string serverModeTooltip = 
             "Show CMD: Displays the standard CMD process window of the server. \n\n"+
             "Silent Mode: The server runs silently in the background without any window.";
-            EditorGUILayout.LabelField(new GUIContent("Server Visiblity:", serverModeTooltip), GUILayout.Width(120));
+            EditorGUILayout.LabelField(new GUIContent("CMD Visiblity:", serverModeTooltip), GUILayout.Width(120));
             GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.SilentMode)
             {
@@ -963,28 +986,31 @@ public class ServerWindow : EditorWindow
             }
             EditorGUILayout.EndHorizontal();
 
-            // WSL Auto Close toggle
-            EditorGUILayout.Space(5);
-            EditorGUILayout.BeginHorizontal();
-            string wslCloseTooltip = 
-            "Close WSL at Server Stop: The server will close the WSL process when it is stopped or Unity is closed. \n"+
-            "Saves resources when server is not in use. WSL may otherwise leave several processes running.\n\n"+
-            "Keep Running: The server will keep the WSL process running after it is stopped or Unity is closed.\n\n"+
-            "Recommended: Close WSL at Server Stop";
-            EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
-            GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
-            if (serverManager.AutoCloseWsl)
+            if (serverMode == ServerMode.WslServer)
             {
-                wslCloseStyle.normal.textColor = warningColor;
-                wslCloseStyle.hover.textColor = warningColor;
+                // WSL Auto Close toggle
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginHorizontal();
+                string wslCloseTooltip = 
+                "Close WSL at Server Stop: The server will close the WSL process when it is stopped or Unity is closed. \n"+
+                "Saves resources when server is not in use. WSL may otherwise leave several processes running.\n\n"+
+                "Keep Running: The server will keep the WSL process running after it is stopped or Unity is closed.\n\n"+
+                "Recommended: Close WSL at Server Stop";
+                EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
+                GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
+                if (serverManager.AutoCloseWsl)
+                {
+                    wslCloseStyle.normal.textColor = warningColor;
+                    wslCloseStyle.hover.textColor = warningColor;
+                }
+                if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Server Stop" : "Keep Running", wslCloseStyle))
+                {
+                    bool newAutoClose = !serverManager.AutoCloseWsl;
+                    serverManager.SetAutoCloseWsl(newAutoClose);
+                    autoCloseWsl = newAutoClose; // Keep local field in sync
+                }
+                EditorGUILayout.EndHorizontal();
             }
-            if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Server Stop" : "Keep Running", wslCloseStyle))
-            {
-                bool newAutoClose = !serverManager.AutoCloseWsl;
-                serverManager.SetAutoCloseWsl(newAutoClose);
-                autoCloseWsl = newAutoClose; // Keep local field in sync
-            }
-            EditorGUILayout.EndHorizontal();
 
             // Command Output toggle button
             EditorGUILayout.Space(5);
@@ -1008,7 +1034,7 @@ public class ServerWindow : EditorWindow
             }
             EditorGUILayout.EndHorizontal();
 
-            if (serverManager.SilentMode)
+            if (serverManager.SilentMode && serverMode == ServerMode.WslServer)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);
@@ -1091,6 +1117,13 @@ public class ServerWindow : EditorWindow
     private void DrawServerSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        if (serverMode == ServerMode.WslServer)
+        EditorGUILayout.LabelField("WSL Local Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
+        else if (serverMode == ServerMode.CustomServer)
+        EditorGUILayout.LabelField("Custom Remote Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
+        else if (serverMode == ServerMode.MaincloudServer)
+        EditorGUILayout.LabelField("Maincloud Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
         
         bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
 
@@ -1460,6 +1493,10 @@ public class ServerWindow : EditorWindow
         {
             LogMessage("Failed to establish SSH connection.", -1);
         }
+    }
+    private void CheckPrerequisitesMaincloud()
+    {
+
     }
     #endregion
 

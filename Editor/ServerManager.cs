@@ -128,6 +128,14 @@ public class ServerManager
     public Action<string, int> LogCallback { get; set; }
     public Action RepaintCallback { get; set; }
 
+    // Near the top of the class, add a new private field for WSL status
+    private bool isWslRunning = false;
+    private double lastWslCheckTime = 0;
+    private const double wslCheckInterval = 5.0;
+
+    // Add property for external access
+    public bool IsWslRunning => isWslRunning;
+
     public enum ServerMode
     {
         WslServer,
@@ -1192,6 +1200,94 @@ public class ServerManager
         if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
         {
             logProcessor.AttemptDatabaseLogRestartAfterReload();
+        }
+    }
+
+    // Simplify the CheckWslStatus method to focus on WSL processes
+    public async Task CheckWslStatus()
+    {
+        // Only check periodically to avoid excessive checks
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (currentTime - lastWslCheckTime < wslCheckInterval)
+            return;
+        
+        lastWslCheckTime = currentTime;
+        
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "powershell.exe";
+            
+            // Simplify to just check for running WSL processes and Debian installation
+            process.StartInfo.Arguments = "-Command \"" +
+                // Look for any WSL-related processes
+                "$wslProcesses = Get-Process | Where-Object { $_.Name -match 'vmmem' } | Select-Object Name, Id; " +
+                "if ($wslProcesses) { " +
+                    "Write-Host 'WSL_PROCESSES=Running'; " +
+                    "foreach ($p in $wslProcesses) { " +
+                        "Write-Host \"Process: $($p.Name) (PID: $($p.Id))\"; " +
+                    "} " +
+                "} else { " +
+                    "Write-Host 'WSL_PROCESSES=None'; " +
+                "}; " +
+                
+                // Check for Debian specifically in the registry (keep this for hasDebian)
+                "$debianDistro = Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss\\* -ErrorAction SilentlyContinue | " +
+                    "Where-Object { $_.DistributionName -match 'Debian' }; " +
+                "if ($debianDistro) { " +
+                    "Write-Host 'DEBIAN_FOUND=TRUE'; " +
+                "} else { " +
+                    "Write-Host 'DEBIAN_FOUND=FALSE'; " +
+                "}; " +
+                "\"";
+            
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            
+            process.Start();
+            
+            // Use await with Task.Run to make the process output reading asynchronous
+            string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+            await Task.Run(() => process.WaitForExit());
+            
+            // Log the output
+            if (debugMode) LogMessage($"WSL status check output: {output}", 0);
+            
+            // Parse status - now simply using the WSL_PROCESSES indicator
+            bool wslRunning = output.Contains("WSL_PROCESSES=Running");
+            bool debianFound = output.Contains("DEBIAN_FOUND=TRUE");
+            
+            // Update running status
+            if (isWslRunning != wslRunning)
+            {
+                isWslRunning = wslRunning;
+                if (debugMode) LogMessage($"WSL status updated to: {(isWslRunning ? "Running" : "Stopped")}", 0);
+            }
+            
+            // Update Debian installed status
+            if (hasDebian != debianFound)
+            {
+                hasDebian = debianFound;
+                if (debugMode) LogMessage($"Debian installed status updated to: {(hasDebian ? "Installed" : "Not installed")}", 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) LogMessage($"Exception in CheckWslStatus: {ex.Message}", -1);
+            isWslRunning = false;
+        }
+    }
+
+    // Add WSL status check to the existing EditorUpdateHandler/CheckServerStatus cycle
+    public async Task CheckAllStatus()
+    {
+        await CheckServerStatus();
+        
+        // Only check WSL status if in WSL mode
+        if (serverMode == ServerMode.WslServer)
+        {
+            await CheckWslStatus();
         }
     }
 
