@@ -752,9 +752,11 @@ public class ServerWindow : EditorWindow
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.Space(3);
 
                 if (GUILayout.Button("Launch WSL Server Installer"))
-                    ServerInstallerWindow.ShowWindow();
+                        ServerInstallerWindow.ShowWindow();
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
@@ -879,9 +881,11 @@ public class ServerWindow : EditorWindow
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.Space(3);
 
                 if (GUILayout.Button("Show Documentation"))
-                    Application.OpenURL(ServerWindow.Documentation);
+                        Application.OpenURL(ServerWindow.Documentation);
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesCustom();
 
@@ -939,8 +943,10 @@ public class ServerWindow : EditorWindow
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
+                EditorGUILayout.Space(3);
+
                 if (GUILayout.Button("Launch Official Webpanel"))
-                    Application.OpenURL("https://spacetimedb.com/login");
+                        Application.OpenURL("https://spacetimedb.com/login");
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesMaincloud();
 
@@ -1277,7 +1283,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent);
+        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1289,9 +1295,9 @@ public class ServerWindow : EditorWindow
         GUILayout.EndHorizontal();
         
         if (GUILayout.Button(logContent, buttonStyle, GUILayout.ExpandHeight(true)))
-            {
-                serverManager.ViewServerLogs();
-            }
+        {
+            serverManager.ViewServerLogs();
+        }
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
                
@@ -1427,22 +1433,25 @@ public class ServerWindow : EditorWindow
             {
                 serverManager.OpenDebianWindow();
             }
-            
-            string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
-            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
-            if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
-            {  
-                serverManager.BackupServerData();
-            }
-            EditorGUI.EndDisabledGroup();
 
-            string restoreTooltip = "Unpacks and copies over the selected backup archive. DELETES the current DATA folder of your SpacetimeDB server. You will asked to backup before if you have not done so.";
-            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
-            if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
+            if (serverMode != ServerMode.MaincloudServer)
             {
-                serverManager.RestoreServerData();
+                string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
+                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
+                if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
+                {
+                    serverManager.BackupServerData();
+                }
+                EditorGUI.EndDisabledGroup();
+
+                string restoreTooltip = "Unpacks and copies over the selected backup archive. DELETES the current DATA folder of your SpacetimeDB server. You will asked to backup before if you have not done so.";
+                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
+                if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
+                {
+                    serverManager.RestoreServerData();
+                }
+                EditorGUI.EndDisabledGroup();
             }
-            EditorGUI.EndDisabledGroup();
         }
         
         // Display server changes notification if detected
@@ -1689,15 +1698,13 @@ public class ServerWindow : EditorWindow
             LogMessage("Connected to Maincloud successfully!", 1);
             
             // After connection check, also verify auth token if available
-            if (!string.IsNullOrEmpty(serverManager.AuthToken))
+            if (string.IsNullOrEmpty(serverManager.AuthToken))
             {
-                LogMessage("Auth token found, verifying authentication...", 0);
-                RunServerCommand("spacetime login show --token", "Verifying Maincloud authentication");
+                LogMessage("No auth token set. Please click Show Login Info in Commands and paste the token to your pre-requisites field.", -2);
             }
-            else
-            {
-                LogMessage("Warning: No auth token set. Please login to Maincloud using the 'Login to Maincloud' button.", -2);
-            }
+            
+            // Start the server to enable log viewing regardless of auth token status
+            serverManager.StartServer();
         }
         else
         {
@@ -1979,10 +1986,11 @@ public class ServerWindow : EditorWindow
         {
             case ServerMode.WslServer:
                 if (debugMode) LogMessage("Server mode set to: WSL Local", 0);
+                EditorUpdateHandler();
                 break;
             case ServerMode.CustomServer:
                 if (debugMode) LogMessage("Server mode set to: Custom", 0);
-                // Initialize serverCustomProcess when switching to Custom Server mode
+                EditorUpdateHandler();
                 if (serverCustomProcess == null)
                 {
                     serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
@@ -1991,6 +1999,7 @@ public class ServerWindow : EditorWindow
                 break;
             case ServerMode.MaincloudServer:
                 if (debugMode) LogMessage("Server mode set to: Maincloud", 0);
+                EditorUpdateHandler();
                 break;
         }
 

@@ -25,7 +25,7 @@ public class ServerUpdateProcess : EditorWindow
     private static ServerWindow window;
     public static bool debugMode = false;
 
-    /////////////////////////////// Cosmos Unity Update Checker ///////////////////////////////
+    /////////////////////// Cosmos Unity Version Update Checker ///////////////////////////
     //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";
 
     /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////

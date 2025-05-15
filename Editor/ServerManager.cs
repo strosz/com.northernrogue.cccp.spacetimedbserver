@@ -484,8 +484,50 @@ public class ServerManager
 
     private void StartMaincloudServer()
     {
-        // TODO: Implement maincloud server startup logic
-        LogMessage("Maincloud server start not yet implemented", -1);
+        // Check if module name is set
+        if (string.IsNullOrEmpty(ModuleName))
+        {
+            LogMessage("Error: Module Name is not set. Cannot start log processors.", -1);
+            return;
+        }
+
+        if (!IsMaincloudConnected)
+        {
+            LogMessage("Error: Not connected to Maincloud. Please check prerequisites first.", -1);
+            return;
+        }
+
+        // Only start the log processes since Maincloud server is already running remotely
+        if (debugMode) LogMessage("Starting log processors for Maincloud server...", 0);
+
+        // Set server as running
+        serverStarted = true;
+        isStartingUp = false;
+        serverConfirmedRunning = true;
+        
+        // Initialize the log processor if it's null
+        if (logProcessor == null)
+        {
+            logProcessor = new ServerLogProcess(
+                LogMessage,
+                () => { RepaintCallback?.Invoke(); },
+                () => { RepaintCallback?.Invoke(); },
+                cmdProcessor,
+                debugMode
+            );
+            logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, UserName);
+        }
+        
+        // Start log process if using silent mode
+        if (silentMode && logProcessor != null)
+        {
+            logProcessor.SetServerRunningState(true);
+            logProcessor.StartLogging();
+            if (debugMode) LogMessage("Maincloud log processors started successfully.", 1);
+        }
+        
+        // Call the repaint callback to update the UI
+        RepaintCallback?.Invoke();
     }
 
     #endregion
@@ -692,7 +734,7 @@ public class ServerManager
                     serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                     string msg = isActuallyRunning
                         ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: open")})"
-                        : $"Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: closed")})";
+                        : $"WSL Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: closed")})";
                     LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                     // If state changed to NOT running, update the main serverStarted flag
@@ -749,7 +791,7 @@ public class ServerManager
                         if (confirmed)
                         {
                             // Detected server running, not recently stopped -> likely external start/recovery
-                            LogMessage($"Detected server running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
+                            LogMessage($"Detected WSL server running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
                             isStartingUp = false;
@@ -1005,7 +1047,14 @@ public class ServerManager
         if (SilentMode)
         {
             if (DebugMode) LogMessage("Opening/focusing silent server output window...", 0);
-            ServerOutputWindow.ShowWindow(); // This finds existing or creates new
+            if (serverMode == ServerMode.MaincloudServer)
+            {
+                ServerOutputWindow.ShowWindow(2); // Database All Tab
+            }
+            else
+            {
+                ServerOutputWindow.ShowWindow();
+            }
         }
         else if (serverStarted)
         {
@@ -1298,12 +1347,15 @@ public class ServerManager
     // Add WSL status check to the existing EditorUpdateHandler/CheckServerStatus cycle
     public async Task CheckAllStatus()
     {
-        await CheckServerStatus();
-        
         // Check appropriate status based on server mode
         if (serverMode == ServerMode.WslServer)
         {
             await CheckWslStatus();
+            await CheckServerStatus();
+        }
+        else if (serverMode == ServerMode.CustomServer)
+        {
+            await CheckServerStatus();
         }
         else if (serverMode == ServerMode.MaincloudServer)
         {

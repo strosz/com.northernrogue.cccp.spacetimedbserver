@@ -11,12 +11,11 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerOutputWindow : EditorWindow
 {
-    public static bool debugMode = false; // Controlled by ServerWindow
-
-    // Add EditorPrefs keys
+    public static bool debugMode = false; // Controlled by ServerWindow    // Add EditorPrefs keys
     private const string PrefsKeyPrefix = "CCCP_";
     private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
     private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
+    private const string PrefsKeyShowLocalTime = PrefsKeyPrefix + "ShowLocalTime";
 
     // Logs
     private string outputLogFull = ""; // Module logs
@@ -36,6 +35,7 @@ public class ServerOutputWindow : EditorWindow
     // Echo Logs to Console
     public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
     private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
+    private bool showLocalTime = false; // Toggle for showing timestamps in local time zone
 
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
@@ -83,6 +83,28 @@ public class ServerOutputWindow : EditorWindow
         window.ReloadLogs(); 
     }
 
+    /// <summary>
+    /// Opens the Server Logs window with a specific tab selected.
+    /// Tab indices: 0=Module All, 1=Module Errors, 2=Database All, 3=Database Errors
+    /// </summary>
+    /// <param name="tab">The tab index to select (0-3)</param>
+    public static void ShowWindow(int tab)
+    {
+        ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs (Silent)");
+        window.minSize = new Vector2(400, 300);
+        window.selectedTab = Mathf.Clamp(tab, 0, 3); // Ensure tab index is valid
+        window.Focus();
+        window.ReloadLogs();
+        
+        // If auto-scroll is enabled, scroll to the bottom when opening with a specific tab
+        if (window.autoScroll)
+        {
+            window.scrollToBottom = true;
+            // Use delayCall to ensure UI is updated properly
+            EditorApplication.delayCall += window.Repaint;
+        }
+    }
+
     #region OnEnable
     private void OnEnable()
     {
@@ -94,10 +116,17 @@ public class ServerOutputWindow : EditorWindow
         
         // Subscribe to update
         EditorApplication.update += CheckForLogUpdates;
-        
-        // Load settings from EditorPrefs
+          // Load settings from EditorPrefs
         autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
         echoToConsoleModule = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
+        showLocalTime = EditorPrefs.GetBool(PrefsKeyShowLocalTime, false);
+        
+        // Debug timezone info on startup if debug mode is on
+        if (debugMode)
+        {
+            TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
+            Debug.Log($"[ServerOutputWindow] OnEnable - Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");
+        }
         
         // Load the log data
         ReloadLogs();
@@ -113,6 +142,17 @@ public class ServerOutputWindow : EditorWindow
         
         // Initialize styles
         InitializeStyles();
+
+        // If a non-default tab was selected when opening the window, ensure we properly handle scrolling
+        if (selectedTab > 0)
+        {
+            // If auto-scroll is enabled, scroll to the bottom when a specific tab is selected
+            if (autoScroll)
+            {
+                scrollToBottom = true;
+            }
+            EditorApplication.delayCall += Repaint;
+        }
     }
 
     private void OnDisable()
@@ -346,8 +386,7 @@ public class ServerOutputWindow : EditorWindow
                 needsRepaint = true;
             }
         }
-        
-        // Echo to Console toggle
+          // Echo to Console toggle
         bool newEchoToConsole = GUILayout.Toggle(echoToConsoleModule, "Echo to Console", GUILayout.Width(120));
         if (newEchoToConsole != echoToConsoleModule)
         {
@@ -357,6 +396,25 @@ public class ServerOutputWindow : EditorWindow
             if (echoToConsoleModule)
             {
                 loggedToConsoleModule.Clear();
+            }
+        }
+          // Local Time toggle
+        bool newShowLocalTime = GUILayout.Toggle(showLocalTime, "Show Local Time", GUILayout.Width(120));
+        if (newShowLocalTime != showLocalTime)
+        {
+            showLocalTime = newShowLocalTime;
+            EditorPrefs.SetBool(PrefsKeyShowLocalTime, showLocalTime);
+            
+            // Clear the format cache to refresh timestamps
+            formattedLogCache.Clear();
+            currentLogHash = 0; // Reset hash to force reformatting
+            needsRepaint = true;
+            
+            // Add debug info to verify timezone
+            if (debugMode)
+            {
+                TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
+                Debug.Log($"[ServerOutputWindow] Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");
             }
         }
         EditorGUILayout.EndHorizontal();
@@ -573,27 +631,27 @@ public class ServerOutputWindow : EditorWindow
         }
         
         return logToShow;
-    }
-
-    // Efficiently format log content with caching
+    }    // Efficiently format log content with caching
     private string GetFormattedLogForDisplay()
     {
         // Get raw log text for current tab
         string rawLog = GetLogForCurrentTab();
         int logHash = rawLog.GetHashCode();
         
-        // If we already formatted this exact log content, use cached version
-        if (formattedLogCache.TryGetValue(selectedTab, out string cachedLog) && currentLogHash == logHash)
+        // Generate a compound hash that includes the showLocalTime setting
+        int combinedHash = logHash ^ (showLocalTime ? 1 : 0);
+        
+        // If we already formatted this exact log content with the same settings, use cached version
+        if (formattedLogCache.TryGetValue(selectedTab, out string cachedLog) && currentLogHash == combinedHash)
         {
             return cachedLog;
         }
         
         // Otherwise, format the log and cache it
         string formattedLog = FormatLogContent(rawLog);
-        
-        // Update cache and current state
+          // Update cache and current state
         formattedLogCache[selectedTab] = formattedLog;
-        currentLogHash = logHash;
+        currentLogHash = logHash ^ (showLocalTime ? 1 : 0); // Store combined hash
         currentFormattedLog = formattedLog; // Keep reference to current formatted log
         
         return formattedLog;
@@ -604,16 +662,21 @@ public class ServerOutputWindow : EditorWindow
     {
         if (string.IsNullOrEmpty(logContent))
             return logContent;
-            
-        // Strip ANSI Escape Codes
+              // Strip ANSI Escape Codes
         string strippedLog = Regex.Replace(logContent, @"\x1B\[[0-?]*[ -/]*[@-~]", "");
-        
-        // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS])
+          // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
         strippedLog = Regex.Replace(strippedLog, 
             @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
             match => {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset dt)) {
-                    return $"[{dt.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+                    if (showLocalTime) {
+                        // Convert to local time using DateTimeOffset for proper timezone handling
+                        DateTimeOffset localTime = dt.ToLocalTime();
+                        return $"[{localTime.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+                    } else {
+                        // Keep UTC time (original behavior)
+                        return $"[{dt.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+                    }
                 }
                 return match.Value;
             });
@@ -629,6 +692,35 @@ public class ServerOutputWindow : EditorWindow
         strippedLog = strippedLog.Replace("WARN", "<color=#FFCC66>WARN</color>");
         strippedLog = strippedLog.Replace("warning:", "<color=#FFCC66>warning:</color>");
         strippedLog = strippedLog.Replace("INFO", "<color=#66CCFF>INFO</color>");
+          // Also convert any existing formatted timestamps if showing local time
+        if (showLocalTime) {
+            strippedLog = Regex.Replace(strippedLog, 
+                @"\[(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\]", 
+                match => {
+                    try {
+                        // Parse the timestamp
+                        int year = int.Parse(match.Groups[1].Value);
+                        int month = int.Parse(match.Groups[2].Value);
+                        int day = int.Parse(match.Groups[3].Value);
+                        int hour = int.Parse(match.Groups[4].Value);
+                        int minute = int.Parse(match.Groups[5].Value);
+                        int second = int.Parse(match.Groups[6].Value);
+                        
+                        // Create a DateTimeOffset assuming UTC
+                        var utcTime = new DateTimeOffset(year, month, day, hour, minute, second, TimeSpan.Zero);
+                        
+                        // Convert to local time
+                        var localTime = utcTime.ToLocalTime();
+                        
+                        // Return the formatted timestamp
+                        return $"[{localTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                    }
+                    catch {
+                        // If any parsing fails, return the original timestamp
+                        return match.Value;
+                    }
+                });
+        }
         
         // Format timestamps with special color
         strippedLog = Regex.Replace(strippedLog, 
