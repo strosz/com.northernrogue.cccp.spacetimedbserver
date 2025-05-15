@@ -916,9 +916,17 @@ public class ServerManager
         }
         else
         {
-            RunServerCommand($"spacetime publish --server local {ModuleName}", $"Publishing module '{ModuleName}'");
+            if (serverMode == ServerMode.MaincloudServer)
+            {
+                RunServerCommand($"spacetime publish --server maincloud {ModuleName}", $"Publishing module '{ModuleName}' to Maincloud");
+            }
+            else
+            {
+                // Default to local server for WSL and CustomServer modes
+                RunServerCommand($"spacetime publish --server local {ModuleName}", $"Publishing module '{ModuleName}' to Local");
+            }
         }
-        
+
         // Reset change detection after publishing
         if (detectionProcess != null && detectionProcess.IsDetectingChanges())
         {

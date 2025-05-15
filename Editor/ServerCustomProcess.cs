@@ -622,6 +622,13 @@ namespace NorthernRogue.CCCP.Editor
         // Only update session status occasionally to avoid lag
         public void UpdateSessionStatusIfNeeded()
         {
+            // Quick validation to avoid unnecessary processing
+            if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
+            {
+                sessionActive = false;
+                return;
+            }
+            
             double currentTime = UnityEditor.EditorApplication.timeSinceStartup;
             if (currentTime - lastSessionCheckTime >= sessionCheckInterval)
             {
@@ -635,63 +642,65 @@ namespace NorthernRogue.CCCP.Editor
         // Start the session status check in the background
         private void StartBackgroundSessionCheck()
         {
-            // Cancel any existing background check
-            CancelBackgroundChecks();
-            
-            try
-            {
-                // If we don't have connection parameters set, assume not connected
-                if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
+            // Run the session check asynchronously to avoid freezing the UI
+            Task.Run(async () => {
+                try
                 {
-                    sessionActive = false;
-                    return;
-                }
-
-                // Run a very lightweight echo command with minimal timeout
-                Process pingProcess = new Process();
-                pingProcess.StartInfo.FileName = "ssh";
-                pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=1 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
-                pingProcess.StartInfo.UseShellExecute = false;
-                pingProcess.StartInfo.RedirectStandardOutput = true;
-                pingProcess.StartInfo.RedirectStandardError = true;
-                pingProcess.StartInfo.CreateNoWindow = true;
-                
-                // Store reference to background process
-                backgroundCheckProcess = pingProcess;
-                
-                pingProcess.Start();
-                
-                // Handle exit and output separately to avoid blocking
-                string output = "";
-                
-                pingProcess.OutputDataReceived += (sender, args) => {
-                    if (!string.IsNullOrEmpty(args.Data))
+                    // Cancel any existing background check
+                    CancelBackgroundChecks();
+                    
+                    // If we don't have connection parameters set, assume not connected
+                    if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
                     {
-                        output = args.Data.Trim();
+                        sessionActive = false;
+                        return;
                     }
-                };
-                
-                pingProcess.BeginOutputReadLine();
-                
-                // Use shorter timeout
-                bool exited = pingProcess.WaitForExit(2000); // 2 second timeout
-                
-                if (exited && pingProcess.ExitCode == 0)
-                {
-                    sessionActive = output == "ping";
+
+                    // Run a very lightweight echo command with minimal timeout
+                    Process pingProcess = new Process();
+                    pingProcess.StartInfo.FileName = "ssh";
+                    pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=1 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
+                    pingProcess.StartInfo.UseShellExecute = false;
+                    pingProcess.StartInfo.RedirectStandardOutput = true;
+                    pingProcess.StartInfo.RedirectStandardError = true;
+                    pingProcess.StartInfo.CreateNoWindow = true;
+                    
+                    // Store reference to background process
+                    backgroundCheckProcess = pingProcess;
+                    
+                    pingProcess.Start();
+                    
+                    // Handle output without blocking
+                    string output = "";
+                    pingProcess.OutputDataReceived += (sender, args) => {
+                        if (!string.IsNullOrEmpty(args.Data))
+                        {
+                            output = args.Data.Trim();
+                        }
+                    };
+                    
+                    pingProcess.BeginOutputReadLine();
+                    
+                    // Use async waiting instead of blocking
+                    bool exited = await Task.Run(() => pingProcess.WaitForExit(1500)); // Reduced timeout to 1.5 seconds
+                    
+                    if (exited && pingProcess.ExitCode == 0)
+                    {
+                        sessionActive = output == "ping";
+                    }
+                    else
+                    {
+                        sessionActive = false;
+                    }
+                    
+                    backgroundCheckProcess = null;
                 }
-                else
+                catch (Exception)
                 {
                     sessionActive = false;
+                    backgroundCheckProcess = null;
                 }
-                
-                backgroundCheckProcess = null;
-            }
-            catch (Exception)
-            {
-                sessionActive = false;
-                backgroundCheckProcess = null;
-            }
+            });
         }
     }
 } 

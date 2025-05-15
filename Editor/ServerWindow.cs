@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Diagnostics;
 using System.IO;
 using System;
+using System.Threading.Tasks;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -77,6 +78,9 @@ public class ServerWindow : EditorWindow
     private bool autoscroll = true;
     private bool colorLogo = true;
     private Texture2D logoTexture;
+    private GUIStyle connectedStyle;
+    private GUIStyle buttonStyle;
+    private bool stylesInitialized = false;
 
     // UI optimization
     private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
@@ -88,6 +92,10 @@ public class ServerWindow : EditorWindow
 
     // Add a field to track WSL status
     private bool isWslRunning = false;
+
+    // Add these fields at class level near other private fields
+    private bool isStatusCheckRunning = false;
+    private System.Threading.CancellationTokenSource statusCheckCTS;
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
@@ -109,6 +117,8 @@ public class ServerWindow : EditorWindow
 
     private void OnGUI()
     {
+        if (!stylesInitialized) InitializeStyles();
+
         EditorGUILayout.BeginVertical();
                
         // Load and display the logo image
@@ -249,66 +259,93 @@ public class ServerWindow : EditorWindow
         // Start checking server status and file changes
         EditorApplication.update += EditorUpdateHandler;
     }
+    
+    private void InitializeStyles()
+    {
+        // For all connection status labels
+        connectedStyle = new GUIStyle(EditorStyles.label);
+        connectedStyle.fontSize = 11;
+        connectedStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
+        connectedStyle.fontStyle = FontStyle.Bold;
+        
+        // Create custom button style with white text
+        buttonStyle = new GUIStyle(GUI.skin.button);
+        buttonStyle.normal.textColor = Color.white;
+        buttonStyle.hover.textColor = Color.white;
+        buttonStyle.active.textColor = Color.white;
+        buttonStyle.focused.textColor = Color.white;
+        buttonStyle.fontSize = 12;
+        buttonStyle.fontStyle = FontStyle.Normal;
+        buttonStyle.alignment = TextAnchor.MiddleCenter;
+        
+        stylesInitialized = true;
+    }
     #endregion
 
-    #region OnEnable
+        #region OnEnable
 
-    private void OnEnable()
-    {
-        // Initialize ServerManager with logging callback
-        serverManager = new ServerManager(LogMessage, Repaint);
-        
-        // Load server mode from EditorPrefs
-        LoadServerModeFromPrefs();
-        
-        // Sync local fields from ServerManager's values (for UI display only)
-        SyncFieldsFromServerManager();
-        
-        // Register for focus events
-        EditorApplication.focusChanged += OnFocusChanged;
-                
-        // Start checking server status
-        EditorApplication.update += EditorUpdateHandler;
-
-        // Check if we were previously running silently and restore state if needed
-        bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
-        if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
+        private void OnEnable()
         {
-            if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
-            AttemptTailRestartAfterReload();
-        } else if (!serverManager.IsServerStarted || !serverManager.SilentMode) {
-            // Clear the flag if not running silently on enable
-             SessionState.SetBool(SessionKeyWasRunningSilently, false);
-        }
+            // Initialize ServerManager with logging callback
+            serverManager = new ServerManager(LogMessage, Repaint);
 
-        // Ensure the flag is correctly set based on current state when enabled
-        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+            // Load server mode from EditorPrefs
+            LoadServerModeFromPrefs();
 
-        EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
-        
-        // Check if we need to restart the database log process
-        bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
-        if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
-        {
-            if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
-            AttemptDatabaseLogRestartAfterReload();
-        }
+            // Sync local fields from ServerManager's values (for UI display only)
+            SyncFieldsFromServerManager();
 
-        // Add this section near the end of OnEnable
-        // Perform an immediate WSL status check if in WSL mode
-        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
-        {
-            EditorApplication.delayCall += async () => {
-                try {
-                    await serverManager.CheckWslStatus();
-                    isWslRunning = serverManager.IsWslRunning;
-                    Repaint();
-                } catch (Exception ex) {
-                    if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
-                }
-            };
+            // Register for focus events
+            EditorApplication.focusChanged += OnFocusChanged;
+
+            // Start checking server status
+            EditorApplication.update += EditorUpdateHandler;
+
+            // Check if we were previously running silently and restore state if needed
+            bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
+            if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
+            {
+                if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
+                AttemptTailRestartAfterReload();
+            }
+            else if (!serverManager.IsServerStarted || !serverManager.SilentMode)
+            {
+                // Clear the flag if not running silently on enable
+                SessionState.SetBool(SessionKeyWasRunningSilently, false);
+            }
+
+            // Ensure the flag is correctly set based on current state when enabled
+            SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+
+            EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
+
+            // Check if we need to restart the database log process
+            bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
+            if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
+            {
+                if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
+                AttemptDatabaseLogRestartAfterReload();
+            }
+
+            // Add this section near the end of OnEnable
+            // Perform an immediate WSL status check if in WSL mode
+            if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+            {
+                EditorApplication.delayCall += async () =>
+                {
+                    try
+                    {
+                        await serverManager.CheckWslStatus();
+                        isWslRunning = serverManager.IsWslRunning;
+                        Repaint();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
+                    }
+                };
+            }
         }
-    }
     
     private void SyncFieldsFromServerManager()
     {
@@ -366,15 +403,23 @@ public class ServerWindow : EditorWindow
         // Throttle how often we check things to not overload the main thread
         double currentTime = EditorApplication.timeSinceStartup;
         
-        // Check server status periodically
-        if (currentTime - lastCheckTime > checkInterval)
+        // Only start a new check if we're not already checking and enough time has passed
+        if (!isStatusCheckRunning && currentTime - lastCheckTime > checkInterval)
         {
             lastCheckTime = currentTime;
-            await serverManager.CheckAllStatus();
             
-            // Update local state for UI display
-            serverChangesDetected = serverManager.ServerChangesDetected;
-            isWslRunning = serverManager.IsWslRunning;
+            // Cancel any previous check that might still be running
+            if (statusCheckCTS != null)
+            {
+                statusCheckCTS.Cancel();
+                statusCheckCTS.Dispose();
+            }
+            
+            statusCheckCTS = new System.Threading.CancellationTokenSource();
+            
+            // Start the check in a non-blocking way
+            isStatusCheckRunning = true;
+            await CheckStatusAsync(statusCheckCTS.Token);
         }
         
         // For Custom Server mode, ensure UI is refreshed periodically to update connection status
@@ -384,6 +429,33 @@ public class ServerWindow : EditorWindow
             {
                 Repaint();
             }
+        }
+    }
+    
+    private async Task CheckStatusAsync(System.Threading.CancellationToken token)
+    {
+        try
+        {
+            await serverManager.CheckAllStatus();
+            
+            // Only update UI if the operation wasn't cancelled
+            if (!token.IsCancellationRequested)
+            {
+                // Update local state for UI display
+                serverChangesDetected = serverManager.ServerChangesDetected;
+                isWslRunning = serverManager.IsWslRunning;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!token.IsCancellationRequested && debugMode)
+            {
+                UnityEngine.Debug.LogError($"Error in status check: {ex.Message}");
+            }
+        }
+        finally
+        {
+            isStatusCheckRunning = false;
         }
     }
     
@@ -417,7 +489,7 @@ public class ServerWindow : EditorWindow
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox); // Start of Pre-Requisites section
 
-        bool showPrerequisites = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", true), "Pre-Requisites", true);
+        bool showPrerequisites = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false), "Pre-Requisites", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", showPrerequisites);
 
         if (showPrerequisites)
@@ -689,12 +761,13 @@ public class ServerWindow : EditorWindow
                 // WSL Status display - add after the Check Pre-requisites button
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("WSL:", GUILayout.Width(110));
-                GUIStyle wslStatusStyle = new GUIStyle(EditorStyles.label);
-                wslStatusStyle.normal.textColor = isWslRunning ? Color.green : Color.gray;
-                string wslStatusText = isWslRunning ? "Running" : "Stopped";
-                EditorGUILayout.LabelField(wslStatusText, wslStatusStyle);
+                Color originalWslColor = connectedStyle.normal.textColor;
+                connectedStyle.normal.textColor = isWslRunning ? originalWslColor : Color.gray;
+                string wslStatusText = isWslRunning ? "RUNNING" : "STOPPED";
+                EditorGUILayout.LabelField(wslStatusText, connectedStyle);
+                // Restore the original color after using it
+                connectedStyle.normal.textColor = originalWslColor;
                 EditorGUILayout.EndHorizontal();
-
             }
             #endregion
 
@@ -815,16 +888,18 @@ public class ServerWindow : EditorWindow
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
-                // Only use cached value, update in background
-                if (serverCustomProcess != null)
+                // Only use cached value, update in background when in Custom Server mode
+                if (serverCustomProcess != null && serverMode == ServerMode.CustomServer)
                 {
                     serverCustomProcess.UpdateSessionStatusIfNeeded();
                 }
-                GUIStyle connectionStatusStyle = new GUIStyle(EditorStyles.label);
                 isConnected = serverCustomProcess != null && serverCustomProcess.IsSessionActive();
-                connectionStatusStyle.normal.textColor = isConnected ? Color.green : Color.gray;
-                string connectionStatusText = isConnected ? "Connected SSH" : "Disconnected";
-                EditorGUILayout.LabelField(connectionStatusText, connectionStatusStyle);
+                Color originalColor = connectedStyle.normal.textColor;
+                connectedStyle.normal.textColor = isConnected ? originalColor : Color.gray;
+                string connectionStatusText = isConnected ? "CONNECTED SSH" : "DISCONNECTED";
+                EditorGUILayout.LabelField(connectionStatusText, connectedStyle);
+                // Restore the original color after using it
+                connectedStyle.normal.textColor = originalColor;
                 EditorGUILayout.EndHorizontal();
             }
             #endregion
@@ -872,11 +947,13 @@ public class ServerWindow : EditorWindow
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
-                GUIStyle maincloudConnectionStyle = new GUIStyle(EditorStyles.label);
                 bool isMaincloudConnected = serverManager.IsMaincloudConnected;
-                maincloudConnectionStyle.normal.textColor = isMaincloudConnected ? Color.green : Color.gray;
-                string maincloudStatusText = isMaincloudConnected ? "Connected" : "Disconnected";
-                EditorGUILayout.LabelField(maincloudStatusText, maincloudConnectionStyle);
+                Color originalColor = connectedStyle.normal.textColor;
+                connectedStyle.normal.textColor = isMaincloudConnected ? originalColor : Color.gray;
+                string maincloudStatusText = isMaincloudConnected ? "CONNECTED" : "DISCONNECTED";
+                EditorGUILayout.LabelField(maincloudStatusText, connectedStyle);
+                // Restore the original color after using it
+                connectedStyle.normal.textColor = originalColor;
                 EditorGUILayout.EndHorizontal();
             }
 
@@ -891,7 +968,7 @@ public class ServerWindow : EditorWindow
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", true), "Settings", true);
+        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", false), "Settings", true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", showSettingsWindow);
 
         if (showSettingsWindow)
@@ -1142,38 +1219,50 @@ public class ServerWindow : EditorWindow
     private void DrawServerSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
-        if (serverMode == ServerMode.WslServer)
-        EditorGUILayout.LabelField("WSL Local Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
-        else if (serverMode == ServerMode.CustomServer)
-        EditorGUILayout.LabelField("Custom Remote Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
-        else if (serverMode == ServerMode.MaincloudServer)
-        EditorGUILayout.LabelField("Maincloud Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(13));
         
         if (serverMode != ServerMode.MaincloudServer)
         {
             bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
             if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
             {
-                if (GUILayout.Button("Check Prerequisites to Start Server", GUILayout.Height(30)))
+                if (GUILayout.Button("Check Prerequisites to Start SpacetimeDB", GUILayout.Height(30)))
                 {
                     CheckPrerequisites();
                 }
             }
             else // If Prerequisites are checked then show normal server controls
             {
-                if (!serverRunning)
+                if (serverMode == ServerMode.WslServer)
                 {
-                    if (GUILayout.Button("Start Server", GUILayout.Height(30)))
+                    if (!serverRunning)
                     {
-                        serverManager.StartServer();
+                        if (GUILayout.Button("Start SpacetimeDB WSL", GUILayout.Height(30)))
+                        {
+                            serverManager.StartServer();
+                        }
                     }
-                } 
-                else 
-                {
-                    if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
+                    else
                     {
-                        serverManager.StopServer();
+                        if (GUILayout.Button("Stop SpacetimeDB WSL", GUILayout.Height(30)))
+                        {
+                            serverManager.StopServer();
+                        }
+                    }
+                } else if (serverMode == ServerMode.CustomServer)
+                {
+                    if (!serverRunning)
+                    {
+                        if (GUILayout.Button("Start SpacetimeDB Remote", GUILayout.Height(30)))
+                        {
+                            serverManager.StartServer();
+                        }
+                    }
+                    else
+                    {
+                        if (GUILayout.Button("Stop SpacetimeDB Remote", GUILayout.Height(30)))
+                        {
+                            serverManager.StopServer();
+                        }
                     }
                 }
             }
@@ -1184,56 +1273,103 @@ public class ServerWindow : EditorWindow
         bool customServerActive = isConnected && serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
 
+        // Begin horizontal layout for the three buttons
+        EditorGUILayout.BeginHorizontal();
+               
+        // View Logs
         EditorGUI.BeginDisabledGroup(!wslServerActiveSilent);
-        if (GUILayout.Button("View Server Logs", GUILayout.Height(20)))
-        {
-            serverManager.ViewServerLogs();
-        }
+        var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
+        GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
+        EditorGUILayout.BeginVertical(GUILayout.Height(40));
+        // Icon centered at the top
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(logIcon, GUILayout.Width(20), GUILayout.Height(20));
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+        
+        if (GUILayout.Button(logContent, buttonStyle, GUILayout.ExpandHeight(true)))
+            {
+                serverManager.ViewServerLogs();
+            }
+        EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
-
+               
+        // Browse Database
         EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
-        if (GUILayout.Button("View Server Database", GUILayout.Height(20)))
+        var dbIcon = EditorGUIUtility.IconContent("d_VerticalLayoutGroup Icon").image;
+        GUIContent dbContent = new GUIContent("Browse DB", "Browse and query the SpacetimeDB database");
+        EditorGUILayout.BeginVertical(GUILayout.Height(40));
+        // Icon centered at the top
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(dbIcon, GUILayout.Width(20), GUILayout.Height(20));
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+        
+        if (GUILayout.Button(dbContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
             ServerDataWindow.ShowWindow();
         }
+        EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
-        
+                
+        // Run Reducer
         EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
-        if (GUILayout.Button("Run Server Reducer", GUILayout.Height(20)))
-        {
-            ServerReducerWindow.ShowWindow();
-        }
+        var playIcon = EditorGUIUtility.IconContent("d_PlayButton").image;
+        GUIContent reducerContent = new GUIContent("Run Reducer", "Run database reducers");
+        EditorGUILayout.BeginVertical(GUILayout.Height(40));
+        // Icon centered at the top
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        GUILayout.Label(playIcon, GUILayout.Width(20), GUILayout.Height(20));
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+        
+        if (GUILayout.Button(reducerContent, buttonStyle, GUILayout.ExpandHeight(true)))
+            {
+                ServerReducerWindow.ShowWindow();
+            }
+        EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
-
+               
+        EditorGUILayout.EndHorizontal();
+        // End horizontal layout for the three buttons
+        
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Server Status:", GUILayout.Width(110));
+        EditorGUILayout.LabelField("SpacetimeDB:", GUILayout.Width(110));
         
         // Use green for running/starting, gray for stopped
-        GUIStyle statusStyle = new GUIStyle(EditorStyles.label);
         string statusText;
+        Color originalStatusColor = connectedStyle.normal.textColor;
+        bool isActive = (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected) || 
+                        serverManager.IsStartingUp || 
+                        serverManager.IsServerStarted;
         
         if (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected)
         {
-            statusStyle.normal.textColor = Color.green;
-            statusText = "Maincloud";
+            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            statusText = "MAINCLOUD";
         }
         else if (serverManager.IsStartingUp)
         {
-            statusStyle.normal.textColor = Color.green;
-            statusText = "Starting...";
+            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            statusText = "STARTING...";
         }
         else if (serverManager.IsServerStarted)
         {
-            statusStyle.normal.textColor = Color.green;
-            statusText = "Running";
+            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            statusText = "RUNNING";
         }
         else
         {
-            statusStyle.normal.textColor = Color.gray;
-            statusText = "Stopped";
+            connectedStyle.normal.textColor = Color.gray;
+            statusText = "STOPPED";
         }
         
-        EditorGUILayout.LabelField(statusText, statusStyle);
+        EditorGUILayout.LabelField(statusText, connectedStyle);
+        // Restore the original color after using it
+        connectedStyle.normal.textColor = originalStatusColor;
         EditorGUILayout.EndHorizontal();
         
         EditorGUILayout.EndVertical();
