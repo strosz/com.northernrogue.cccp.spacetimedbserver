@@ -26,7 +26,6 @@ namespace NorthernRogue.CCCP.Editor
         private int customServerPort;
         private string customServerAuthToken;
         private string sshPrivateKeyPath = ""; // Path to the SSH private key file
-        private bool settingsLoaded = false;
         
         // Session management
         private bool isConnected = false;
@@ -90,7 +89,6 @@ namespace NorthernRogue.CCCP.Editor
             customServerAuthToken = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerAuthToken", "");
             
             if (debugMode) Log($"SSH settings loaded: User={sshUserName}, Host={customServerUrl}:{customServerPort}, KeyPath={sshPrivateKeyPath} (SpacetimeDB on port {spacetimeDbPort})", 0);
-            settingsLoaded = true;
         }
         
         // Log wrapper method
@@ -99,21 +97,12 @@ namespace NorthernRogue.CCCP.Editor
             logCallback?.Invoke(message, level);
         }
 
-        #region SSH Connection
-        
-        // Ensure settings are loaded before performing operations
-        private void EnsureSettingsLoaded()
-        {
-            if (!settingsLoaded)
-            {
-                LoadSettings();
-            }
-        }
-        
+        #region SSH Start
+                
         // Start a persistent SSH session
         public bool StartSession()
         {
-            EnsureSettingsLoaded();
+            LoadSettings();
             
             if (isConnected)
             {
@@ -140,7 +129,7 @@ namespace NorthernRogue.CCCP.Editor
             
             if (connectionVerified)
             {
-                Log("SSH connection established successfully", 1);
+                Log("SSH connected successfully!", 1);
                 isConnected = true;
                 sessionActive = true;
                 lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
@@ -197,31 +186,23 @@ namespace NorthernRogue.CCCP.Editor
             try
             {
                 // Use a very basic test command with short timeout
-                Log("Testing SSH connection with simple test command...", 0);
+                Log("Testing SSH connection to " + customServerUrl + " with simple test command...", 0);
                 var result = RunSimpleCommand("echo CONNECTION_TEST_OK", 3000);
                 
                 if (result.success && result.output.Contains("CONNECTION_TEST_OK"))
                 {
-                    Log("SSH connection verified successfully!", 1);
+                    if (debugMode) Log("SSH connection verified successfully!", 1);
                     return true;
                 }
                 else
                 {
-                    Log($"SSH verification failed: {result.error}", -1);
-                    
-                    // Provide helpful troubleshooting advice
-                    Log("Try these troubleshooting steps:", 0);
-                    Log("1. Verify your SSH username and private key are correct", 0);
-                    Log("2. Confirm SSH server is running: sudo systemctl status ssh", 0);
-                    Log("3. Test manual SSH: ssh -i private_key username@host", 0);
-                    Log("4. Ensure private key permissions are correct", 0);
-                    
+                    if (debugMode) Log($"SSH verification failed: {result.error}", -1);
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                Log($"SSH verification exception: {ex.Message}", -1);
+                if (debugMode) Log($"SSH verification exception: {ex.Message}", -1);
                 return false;
             }
         }
@@ -354,7 +335,7 @@ namespace NorthernRogue.CCCP.Editor
         // Check if the server is reachable via ping - now optimized to be more lightweight
         public async Task<bool> CheckServerReachable()
         {
-            EnsureSettingsLoaded();
+            LoadSettings();
             
             if (string.IsNullOrEmpty(customServerUrl))
             {
@@ -414,7 +395,7 @@ namespace NorthernRogue.CCCP.Editor
         // Execute a command on the custom server
         public async Task<(bool success, string output, string error)> RunCustomCommandAsync(string command, int timeoutMs = 5000)
         {
-            EnsureSettingsLoaded();
+            LoadSettings();
             
             // Cache check for heavily used commands
             string cacheKey = $"{command}";
@@ -433,8 +414,7 @@ namespace NorthernRogue.CCCP.Editor
             // Wrap the synchronous result in a completed task to match the async signature
             return await Task.FromResult(result);
         }
-        
-        // Check if SpacetimeDB is installed on the remote server
+          // Check if SpacetimeDB is installed on the remote server
         public async Task<bool> CheckSpacetimeDBInstalled()
         {
             // Use cached result if available
@@ -443,36 +423,56 @@ namespace NorthernRogue.CCCP.Editor
                 double currentTime = EditorApplication.timeSinceStartup;
                 if (currentTime - cachedResult.timestamp < 60.0) // Cache spacetime install check longer (60s)
                 {
-                    return cachedResult.success && cachedResult.output.Contains("FOUND");
+                    return cachedResult.success;
                 }
             }
             
             // Construct the expected path
             string expectedPath = $"/home/{sshUserName}/.local/bin/spacetime";
-            string command = $"test -f {expectedPath} && echo FOUND || echo NOT_FOUND";
             
-            var result = await RunCustomCommandAsync(command, 3000);
+            // Step 1: Check if the file exists AND is executable (not just if it exists)
+            string checkFileCommand = $"test -x {expectedPath} && echo EXISTS_AND_EXECUTABLE || echo NOT_FOUND";
+            var fileCheckResult = await RunCustomCommandAsync(checkFileCommand, 3000);
+            
+            if (!fileCheckResult.success || !fileCheckResult.output.Contains("EXISTS_AND_EXECUTABLE"))
+            {
+                if (debugMode) Log($"SpacetimeDB executable not found or not executable at {expectedPath}", 0);
+                
+                // Cache the negative result
+                commandCache["check_spacetimedb_installed"] = (EditorApplication.timeSinceStartup, false, "", "SpacetimeDB not found");
+                
+                Log($"SpacetimeDB executable NOT found at {expectedPath}. Make sure it's installed correctly and accessible.", -2);
+                return false;
+            }
+            
+            // Step 2: Try to run the executable with --version to verify it's actually SpacetimeDB
+            var versionResult = await RunCustomCommandAsync($"{expectedPath} --version", 3000);
+            
+            // Step 3: Additional validation - check the output format matches expected SpacetimeDB version output
+            bool isValidSpacetimeDB = versionResult.success && 
+                                     !string.IsNullOrEmpty(versionResult.output) &&
+                                     (versionResult.output.Contains("SpacetimeDB") || 
+                                      versionResult.output.Contains("spacetime") || 
+                                      versionResult.output.Trim().StartsWith("v") ||
+                                      System.Text.RegularExpressions.Regex.IsMatch(versionResult.output, @"\d+\.\d+\.\d+"));
             
             // Cache the result with longer timeout
-            commandCache["check_spacetimedb_installed"] = (EditorApplication.timeSinceStartup, result.success, result.output, result.error);
+            commandCache["check_spacetimedb_installed"] = (EditorApplication.timeSinceStartup, isValidSpacetimeDB, versionResult.output, versionResult.error);
             
-            // Check if the output contains the success marker
-            bool installed = result.success && result.output.Contains("FOUND");
-            
-            if (installed)
+            if (isValidSpacetimeDB)
             {
-                Log("SpacetimeDB executable found on the remote server.", 1);
+                Log($"Valid SpacetimeDB executable found on the remote server (version: {versionResult.output.Trim()}).", 1);
             }
-            else if (!result.success) // Only log error if first-time check
+            else
             {
-                Log($"SpacetimeDB executable NOT found at {expectedPath}. Make sure it's installed correctly and accessible.", -2);
-                if (!string.IsNullOrEmpty(result.error))
+                Log($"File exists at {expectedPath} but does not appear to be a valid SpacetimeDB executable.", -1);
+                if (!string.IsNullOrEmpty(versionResult.error))
                 {
-                    Log($"SSH Error during check: {result.error}", -1);
+                    Log($"Error when checking version: {versionResult.error}", -1);
                 }
             }
             
-            return installed;
+            return isValidSpacetimeDB;
         }
         
         // Check if the SpacetimeDB server is running - optimized with caching

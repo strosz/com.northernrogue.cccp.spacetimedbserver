@@ -497,9 +497,14 @@ public class ServerWindow : EditorWindow
 
         if (showPrerequisites)
         {
-            EditorGUILayout.Space(-10);
+            EditorGUILayout.Space(0);
 
             EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+
+            // Draw a visible 3px high dark line across the window
+            Rect lineRect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(1.7f), GUILayout.ExpandWidth(true));
+            Color lineColor = EditorGUIUtility.isProSkin ? new Color(0.15f, 0.15f, 0.15f, 1f) : new Color(0.6f, 0.6f, 0.6f, 1f);
+            EditorGUI.DrawRect(lineRect, lineColor);
 
             // Active serverMode
             GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
@@ -741,7 +746,7 @@ public class ServerWindow : EditorWindow
                 "Default: http://127.0.0.1:3000/\n" +
                 "Note: The port number is required.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.TextField(serverUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(serverUrl, GUILayout.Width(150));
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
@@ -864,7 +869,7 @@ public class ServerWindow : EditorWindow
                 "The full URL of your SpacetimeDB server including port number.\n" +
                 "Note: The port number is required.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.TextField(customServerUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(customServerUrl, GUILayout.Width(150));
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
