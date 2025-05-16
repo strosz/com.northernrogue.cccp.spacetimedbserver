@@ -55,6 +55,7 @@ public class ServerWindow : EditorWindow
 
     // Pre-requisites Maincloud Server
     //private string maincloudUrl = "maincloud.spacetimedb.com";
+    private string maincloudAuthToken = "";
    
     // Server status
     private double lastCheckTime = 0;
@@ -401,6 +402,8 @@ public class ServerWindow : EditorWindow
 
         // Add this line to initialize WSL status
         isWslRunning = serverManager.IsWslRunning;
+
+        maincloudAuthToken = serverManager.MaincloudAuthToken;
     }
    
     private async void EditorUpdateHandler()
@@ -481,13 +484,6 @@ public class ServerWindow : EditorWindow
     {
         windowFocused = focused;
     }
-    
-    private void OnServerChangesDetected(bool changesDetected)
-    {
-        // Update local state for UI
-        serverChangesDetected = changesDetected;
-        Repaint();
-    }
     #endregion
     
     #region Pre-RequisitesUI
@@ -505,11 +501,11 @@ public class ServerWindow : EditorWindow
 
             EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            // Active Server Mode
+            // Active serverMode
             GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
             activeToolbarButton.normal.textColor = Color.green;
 
-            // Inactive Server Mode
+            // Inactive serverMode
             GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
             inactiveToolbarButton.normal.textColor = Color.gray5;
 
@@ -517,24 +513,32 @@ public class ServerWindow : EditorWindow
             string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
             if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
+                if (serverManager.serverStarted && serverMode != ServerMode.WslServer)
+                {
+                    serverManager.StopServer();
+                }
                 serverMode = ServerMode.WslServer;
                 UpdateServerModeState();
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted)
+                if (serverManager.serverStarted && serverMode == ServerMode.WslServer)
                 {
-                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Server and change the server mode to Custom server?","OK","Cancel");
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your server and change the server mode to Custom server?","OK","Cancel");
                     if (modeChange)
                     {
                         serverManager.StopServer();
                         serverMode = ServerMode.CustomServer;
                         UpdateServerModeState();
                     }
-                } 
-                else 
+                }
+                else if (serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
                 {
+                    serverManager.StopServer();
+                    serverMode = ServerMode.CustomServer;
+                    UpdateServerModeState();
+                } else {
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                 }
@@ -542,8 +546,21 @@ public class ServerWindow : EditorWindow
             string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                serverMode = ServerMode.MaincloudServer;
-                UpdateServerModeState();
+                if (serverManager.serverStarted && serverMode == ServerMode.WslServer)
+                {
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your server and change the server mode to Maincloud server?","OK","Cancel");
+                    if (modeChange)
+                    {
+                        serverManager.StopServer();
+                        serverMode = ServerMode.MaincloudServer;
+                        UpdateServerModeState();
+                    }
+                } 
+                else 
+                {
+                    serverMode = ServerMode.MaincloudServer;
+                    UpdateServerModeState();
+                }
             }
             EditorGUILayout.EndHorizontal();
             
@@ -560,26 +577,6 @@ public class ServerWindow : EditorWindow
             #region Shared Settings
             // Shared settings
             GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
-
-            // Backup Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string backupDirectoryTooltip = 
-            "Directory where SpacetimeDB server backups will be saved.\n\n"+
-            "Note: Create a new empty folder if the server backups have not been created yet.\n"+
-            "Backups for the server use little space, so you can commit this folder to your repository.";
-            EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
-            {
-                string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    backupDirectory = path;
-                    serverManager.SetBackupDirectory(backupDirectory);
-                    LogMessage($"Backup directory set to: {backupDirectory}", 1);
-                }
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
 
             // Server Directory setting
             EditorGUILayout.BeginHorizontal();
@@ -700,6 +697,26 @@ public class ServerWindow : EditorWindow
             {
                 // WSL Settings
                 GUILayout.Label("WSL Server Settings", EditorStyles.centeredGreyMiniLabel);
+
+                // Backup Directory setting
+                EditorGUILayout.BeginHorizontal();
+                string backupDirectoryTooltip = 
+                "Directory where SpacetimeDB server backups will be saved.\n\n"+
+                "Note: Create a new empty folder if the server backups have not been created yet.\n"+
+                "Backups for the server use little space, so you can commit this folder to your repository.";
+                EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
+                if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
+                {
+                    string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        backupDirectory = path;
+                        serverManager.SetBackupDirectory(backupDirectory);
+                        LogMessage($"Backup directory set to: {backupDirectory}", 1);
+                    }
+                }
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
 
                 // Debian Username setting
                 EditorGUILayout.BeginHorizontal();
@@ -931,23 +948,23 @@ public class ServerWindow : EditorWindow
                     {
                         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
                     }
-                    serverManager.RunServerCommand("spacetime login", "Logging in");
+                    LoginMaincloud();
                 }
                 EditorGUILayout.EndHorizontal();
 
                 // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
                 string tokenTooltip = 
-                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Required for the Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.";
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
-                if (newAuthToken != authToken)
+                string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken, GUILayout.Width(150));
+                if (newAuthToken != maincloudAuthToken)
                 {
-                    authToken = newAuthToken;
-                    serverManager.SetAuthToken(authToken);
+                    maincloudAuthToken = newAuthToken;
+                    serverManager.SetMaincloudAuthToken(maincloudAuthToken);
                 }
-                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
+                GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(maincloudAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.Space(3);
@@ -1401,12 +1418,11 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
         EditorGUILayout.EndHorizontal();
 
-
         EditorGUILayout.EndVertical();
     }
     #endregion
 
-    #region UtilityUI
+    #region CommandUI
 
     private void DrawCommandsSection()
     {
@@ -1428,27 +1444,40 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
             {
-                serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
+                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
+                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
-                serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
+                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
+                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
             }
 
             if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
             {
-                serverManager.RunServerCommand("spacetime list", "Showing active modules");
+                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime list", "Showing active modules");
+                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
             }
-            
-            if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+
+            if (GUILayout.Button("Show Module Config", GUILayout.Height(20)))
             {
-                serverManager.PingServer(true);
+                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime module list", "Showing module config");
+                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
+            }
+
+            if (serverMode != ServerMode.MaincloudServer)
+            {
+                if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+                {
+                    serverManager.PingServer(true);
+                }
             }
             
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
             {
-                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
             }
 
             if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
@@ -1733,13 +1762,13 @@ public class ServerWindow : EditorWindow
             LogMessage("Connected to Maincloud successfully!", 1);
             
             // After connection check, also verify auth token if available
-            if (string.IsNullOrEmpty(serverManager.AuthToken))
+            if (string.IsNullOrEmpty(serverManager.MaincloudAuthToken))
             {
                 LogMessage("No auth token set. Please click Show Login Info in Commands and paste the token to your pre-requisites field.", -2);
             }
             
             // Start the server to enable log viewing regardless of auth token status
-            serverManager.StartServer();
+            //serverManager.StartServer();
         }
         else
         {
@@ -1749,11 +1778,6 @@ public class ServerWindow : EditorWindow
     #endregion
 
     #region Server Methods
-
-    private void Publish(bool resetDatabase)
-    {
-        serverManager.Publish(resetDatabase);
-    }
 
     private void InitNewModule()
     {
@@ -1775,12 +1799,14 @@ public class ServerWindow : EditorWindow
         logProcessor.ClearDatabaseLog();
         if (debugMode) LogMessage("Database log cleared successfully", 1);
     }
-    #endregion
 
-    private void RunServerCommand(string command, string description)
+    public async void LoginMaincloud()
     {
-        serverManager.RunServerCommand(command, description);
+        serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible local login...");
+        await Task.Delay(1000); // Wait for logout to complete
+        serverManager.RunServerCommand("spacetime login", "Launching Maincloud login...");
     }
+    #endregion
 
     #region LogMessage
     
@@ -1820,99 +1846,15 @@ public class ServerWindow : EditorWindow
         
         Repaint();
     }
-
-    // Opens Output Log window in silent mode or CMD window with Database logs in CMD mode
-    private void ViewServerLogs()
-    {
-        serverManager.ViewServerLogs();
-    }
-
-    private void OpenDebianWindow()
-    {
-        serverManager.OpenDebianWindow();
-    }
-
-    private bool PingServerStatus()
-    {
-        return serverManager.PingServerStatus();
-    }
-
-    private void PingServer(bool showLog)
-    {
-        serverManager.PingServer(showLog);
-    }
     #endregion
     
     #region Utility Methods
-
-    private string GetWslPath(string windowsPath)
-    {
-        return cmdProcessor.GetWslPath(windowsPath);
-    }
     
     private string GetStatusIcon(bool status)
     {
         return status ? "✓" : "○";
     }
     
-    private string GetRelativeClientPath()
-    {
-        // Default path if nothing else works
-        string defaultPath = "../Assets/Scripts/Server";
-        
-        if (string.IsNullOrEmpty(clientDirectory))
-        {
-            return defaultPath;
-        }
-        
-        try
-        {
-            // Normalize path to forward slashes
-            string normalizedPath = clientDirectory.Replace('\\', '/');
-            
-            // If the path already starts with "../Assets", use it directly
-            if (normalizedPath.StartsWith("../Assets"))
-            {
-                return normalizedPath;
-            }
-            
-            // Find the "Assets" directory in the path
-            int assetsIndex = normalizedPath.IndexOf("Assets/");
-            if (assetsIndex < 0)
-            {
-                assetsIndex = normalizedPath.IndexOf("Assets");
-            }
-            
-            if (assetsIndex >= 0)
-            {
-                // Extract from "Assets" to the end and prepend "../"
-                string relativePath = "../" + normalizedPath.Substring(assetsIndex);
-                
-                // Ensure it has proper structure
-                if (!relativePath.Contains("/"))
-                {
-                    relativePath += "/";
-                }
-                
-                // Add quotes if path contains spaces
-                if (relativePath.Contains(" "))
-                {
-                    return $"\"{relativePath}\"";
-                }
-                return relativePath;
-            }
-            
-            // If no "Assets" in path, just return default
-            return defaultPath;
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) LogMessage($"Error in path handling: {ex.Message}", -1);
-            return defaultPath;
-        }
-    }
-    #endregion
-
     private void CopyDirectory(string sourceDir, string destDir)
     {
         // Get all files from the source
@@ -2064,7 +2006,8 @@ public class ServerWindow : EditorWindow
         
         UpdateServerModeState();
     }
-    
+    #endregion
+
     // Display Cosmos Cove Control Panel title text in the menu bar
     [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", priority = -11000)]
     private static void CosmosCoveControlPanel(){}

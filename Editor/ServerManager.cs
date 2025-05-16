@@ -47,6 +47,7 @@ public class ServerManager
     private string authToken;
 
     private string maincloudUrl;
+    private string maincloudAuthToken;
     
     // Custom server properties
     private string sshUserName;
@@ -110,6 +111,9 @@ public class ServerManager
     public bool AutoCloseWsl { get => autoCloseWsl; set => SetAutoCloseWsl(value); }
     public bool ClearModuleLogAtStart => clearModuleLogAtStart;
     public bool ClearDatabaseLogAtStart => clearDatabaseLogAtStart;
+
+    public string MaincloudUrl => maincloudUrl;
+    public string MaincloudAuthToken => maincloudAuthToken;
 
     // Status properties
     public bool IsServerStarted => serverStarted;
@@ -215,6 +219,7 @@ public class ServerManager
         authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
 
         maincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        maincloudAuthToken = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudAuthToken", "");
 
         // Load local settings
         backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
@@ -287,7 +292,9 @@ public class ServerManager
         EditorPrefs.SetString(PrefsKeyPrefix + "MaincloudURL", maincloudUrl);
         
         if (debugMode) LogMessage($"Maincloud URL set to: {maincloudUrl}", 0);
-    }   
+    }
+    public void SetMaincloudAuthToken(string value) { maincloudAuthToken = value; EditorPrefs.SetString(PrefsKeyPrefix + "MaincloudAuthToken", value); }
+
     public void SetSSHUserName(string value) { sshUserName = value; EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", value); }
     public void SetCustomServerUrl(string value) { customServerUrl = value; EditorPrefs.SetString(PrefsKeyPrefix + "CustomServerURL", value); }
     public void SetCustomServerPort(int value) { customServerPort = value; EditorPrefs.SetInt(PrefsKeyPrefix + "CustomServerPort", value); }
@@ -318,6 +325,21 @@ public class ServerManager
     {
         serverMode = mode;
         EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", mode.ToString());
+    }
+
+    public bool CLIAvailable()
+    {
+        // Check if the CLI is available
+        if (hasWSL)
+        {
+            if (debugMode) LogMessage("SpacetimeDB CLI is available.", 1);
+            return true;
+        }
+        else
+        {
+            if (debugMode) LogMessage("SpacetimeDB CLI is not available.", -2);
+            return false;
+        }
     }
 
     public void Configure()
@@ -351,7 +373,7 @@ public class ServerManager
         }
     }
 
-    #region Server Start Methods
+    #region Server Start
 
     public void StartServer()
     {
@@ -539,7 +561,7 @@ public class ServerManager
 
     #endregion
 
-    #region Server Stop Methods
+    #region Server Stop
 
     public void StopServer()
     {
@@ -555,9 +577,15 @@ public class ServerManager
             RepaintCallback?.Invoke();
             return;
         }
-        if (serverMode == ServerMode.WslServer)
+        else if (serverMode == ServerMode.WslServer)
         {
             StopWslServer();
+            RepaintCallback?.Invoke();
+            return;
+        }
+        else if (serverMode == ServerMode.MaincloudServer)
+        {
+            StopMaincloudLog();
             RepaintCallback?.Invoke();
             return;
         }
@@ -630,6 +658,26 @@ public class ServerManager
             
             RepaintCallback?.Invoke();
         }
+    }
+
+    private void StopMaincloudLog()
+    {
+        // Stop the log processors
+        logProcessor.StopLogging();
+        
+        // Force state update
+        serverStarted = false;
+        isStartingUp = false;
+        serverConfirmedRunning = false;
+        justStopped = true; // Set flag indicating stop was just initiated
+        stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
+
+        LogMessage("Maincloud Server Successfully Stopped.", 1);
+        
+        // Update log processor state
+        logProcessor.SetServerRunningState(false);
+        
+        RepaintCallback?.Invoke();
     }
 
     #endregion
@@ -741,7 +789,7 @@ public class ServerManager
                     serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                     string msg = isActuallyRunning
                         ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: open")})"
-                        : $"WSL Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: closed")})";
+                        : $"WSL SpacetimeDB Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: closed")})";
                     LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                     // If state changed to NOT running, update the main serverStarted flag
@@ -1449,6 +1497,11 @@ public class ServerManager
                             status += " (Auth error, but server is reachable)";
                         }
                         LogMessage($"Maincloud status updated to: {status}", 0);
+                    }
+
+                    if (isMaincloudConnected)
+                    {
+                        StartServer();
                     }
                     
                     // Trigger UI update
