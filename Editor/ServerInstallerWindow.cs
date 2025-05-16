@@ -26,6 +26,9 @@ public class ServerInstallerWindow : EditorWindow
     private string userName = "";
     // Temporary field for username input
     private string tempUserNameInput = "";
+
+    private string spacetimeDBCurrentVersion = "";
+    private string spacetimeDBLatestVersion = "";
     
     // Styles
     private GUIStyle titleStyle;
@@ -114,6 +117,10 @@ public class ServerInstallerWindow : EditorWindow
         // Cache the current username
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         tempUserNameInput = userName; // Initialize the temp input with the stored username
+
+        // Load version info of SpacetimeDB
+        spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+        spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         InitializeInstallerItems();
         
@@ -499,9 +506,26 @@ public class ServerInstallerWindow : EditorWindow
         
         // Title - reuse cached content when possible
         EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));
+
+        bool showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+                                !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
+                                !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
+                                spacetimeDBCurrentVersion != spacetimeDBLatestVersion;
         
         // Status (installed or install button)
-        if (item.isInstalled && !alwaysShowInstall)
+        if (showUpdateButton)
+        {
+            EditorGUILayout.Space(2);
+            EditorGUI.BeginDisabledGroup(isDisabled);
+            if (GUILayout.Button("Update to v"+spacetimeDBLatestVersion, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
+            {
+                EditorApplication.delayCall += () => {
+                    item.installAction?.Invoke();
+                };
+            }
+            EditorGUI.EndDisabledGroup();
+        }
+        else if (item.isInstalled && !alwaysShowInstall)
         {
             EditorGUILayout.LabelField("✓ Installed", installedStyle, GUILayout.Width(100));
         }
@@ -938,11 +962,6 @@ public class ServerInstallerWindow : EditorWindow
         CheckInstallationStatus();
         await Task.Delay(1000);
         
-        if (hasSpacetimeDBServer)
-        {
-            SetStatus("SpacetimeDB Server is already installed.", Color.green);
-            return;
-        }
         if (!hasWSL)
         {
             SetStatus("WSL2 with Debian is required to install SpacetimeDB Server. Please install WSL2 with Debian first.", Color.red);
@@ -961,6 +980,11 @@ public class ServerInstallerWindow : EditorWindow
         if (string.IsNullOrEmpty(userName))
         {
             SetStatus("Please enter your Debian username to install SpacetimeDB Server.", Color.red);
+            return;
+        }
+        if (hasSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersion))
+        {
+            SetStatus("The latest version of SpacetimeDB Server is already installed.", Color.green);
             return;
         }
         

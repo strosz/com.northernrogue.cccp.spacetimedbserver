@@ -72,6 +72,10 @@ public class ServerWindow : EditorWindow
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
 
+    // Update SpacetimeDB
+    private string spacetimeDBCurrentVersion = "";
+    private string spacetimeDBLatestVersion = "";
+
     // UI
     private Vector2 scrollPosition;
     private string commandOutputLog = "";
@@ -391,6 +395,9 @@ public class ServerWindow : EditorWindow
         
         serverMode = (ServerMode)serverManager.CurrentServerMode;
         serverChangesDetected = serverManager.ServerChangesDetected;
+
+        spacetimeDBCurrentVersion = serverManager.spacetimeDBCurrentVersion;
+        spacetimeDBLatestVersion = serverManager.spacetimeDBLatestVersion;
 
         // Add this line to initialize WSL status
         isWslRunning = serverManager.IsWslRunning;
@@ -1333,9 +1340,9 @@ public class ServerWindow : EditorWindow
         GUILayout.EndHorizontal();
         
         if (GUILayout.Button(reducerContent, buttonStyle, GUILayout.ExpandHeight(true)))
-            {
-                ServerReducerWindow.ShowWindow();
-            }
+        {
+            ServerReducerWindow.ShowWindow();
+        }
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
                
@@ -1372,12 +1379,29 @@ public class ServerWindow : EditorWindow
             connectedStyle.normal.textColor = Color.gray;
             statusText = "STOPPED";
         }
-        
+
         EditorGUILayout.LabelField(statusText, connectedStyle);
-        // Restore the original color after using it
-        connectedStyle.normal.textColor = originalStatusColor;
+
         EditorGUILayout.EndHorizontal();
         
+        GUILayout.Space(-20);
+
+        EditorGUILayout.BeginHorizontal();
+
+        GUILayout.FlexibleSpace();
+        
+        // Restore the original color after using it
+        connectedStyle.normal.textColor = originalStatusColor;
+
+        GUIStyle versionStyle = new GUIStyle(EditorStyles.miniLabel);
+        versionStyle.fontSize = 10;
+        versionStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+
+        EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
+        EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
+        EditorGUILayout.EndHorizontal();
+
+
         EditorGUILayout.EndVertical();
     }
     #endregion
@@ -1396,11 +1420,11 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(-10);
 
             if (serverMode == ServerMode.WslServer)
-            EditorGUILayout.LabelField("WSL SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("WSL SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.CustomServer)
-            EditorGUILayout.LabelField("Remote SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("Remote SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.MaincloudServer)
-            EditorGUILayout.LabelField("Maincloud SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("Maincloud SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
             {
@@ -1425,6 +1449,17 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
             {
                 serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+            }
+
+            if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
+            {
+                string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the server is not running.";
+                EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
+                if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
+                {
+                    ServerInstallerWindow.ShowWindow();
+                }
+                EditorGUI.EndDisabledGroup();
             }
 
             EditorGUILayout.LabelField("WSL Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));

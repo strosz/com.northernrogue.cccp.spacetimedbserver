@@ -9,7 +9,7 @@ public class ServerManager
 {
     // EditorPrefs key prefix
     private const string PrefsKeyPrefix = "CCCP_";
-    
+        
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
@@ -77,6 +77,10 @@ public class ServerManager
     private bool hasRust;
     private bool wslPrerequisitesChecked;
     private bool initializedFirstModule;
+
+    // Update SpacetimeDB
+    public string spacetimeDBCurrentVersion;
+    public string spacetimeDBLatestVersion;
     
     // Properties for external access
     public string UserName => userName;
@@ -237,6 +241,9 @@ public class ServerManager
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
+
+        spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+        spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         // Load server mode
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer"); // CustomServer // MaincloudServer
@@ -1316,8 +1323,8 @@ public class ServerManager
             string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
             await Task.Run(() => process.WaitForExit());
             
-            // Log the output
-            if (debugMode) LogMessage($"WSL status check output: {output}", 0);
+            // Log the output // runs every wslCheckInterval
+            //if (debugMode) LogMessage($"WSL status check output: {output}", 0);
             
             // Parse status - now simply using the WSL_PROCESSES indicator
             bool wslRunning = output.Contains("WSL_PROCESSES=Running");
@@ -1328,6 +1335,12 @@ public class ServerManager
             {
                 isWslRunning = wslRunning;
                 if (debugMode) LogMessage($"WSL status updated to: {(isWslRunning ? "Running" : "Stopped")}", 0);
+                
+                // Check SpacetimeDB version and update once every time WSL is confirmed running
+                if (isWslRunning)
+                {
+                    await CheckSpacetimeDBVersion();
+                }
             }
             
             // Update Debian installed status
@@ -1451,6 +1464,53 @@ public class ServerManager
         }
     }
 
+    public async Task CheckSpacetimeDBVersion()
+    {
+        if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
+        
+        // Use RunServerCommandAsync to run the spacetime --version command
+        var result = await cmdProcessor.RunServerCommandAsync("spacetime --version", serverDirectory);
+        
+        if (string.IsNullOrEmpty(result.output))
+        {
+            if (debugMode) LogMessage("Failed to get SpacetimeDB version", -1);
+            return;
+        }
+        //UnityEngine.Debug.Log($"SpacetimeDB version output: {result.output}");
+        
+        // Parse the version from output that looks like:
+        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.1.0/spacetimedb-cli
+        // Commit: 
+        // spacetimedb tool version 1.1.0; spacetimedb-lib version 1.1.0;"
+        string version = "";
+        
+        // Try to find the version using regex pattern
+        System.Text.RegularExpressions.Match match = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
+
+        if (match.Success && match.Groups.Count > 1)
+        {
+            version = match.Groups[1].Value;
+            if (debugMode) LogMessage($"Detected SpacetimeDB version: {version}", 1);
+
+            // Save to EditorPrefs
+            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersion", version);
+
+            spacetimeDBCurrentVersion = version;
+
+            // Check if update is available by comparing with the latest version from ServerUpdateProcess
+            spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+            if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
+            {
+                LogMessage($"SpacetimeDB update available! Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
+            }
+        }
+        else
+        {
+            if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+        }
+    }
     #endregion
 } // Class
 } // Namespace

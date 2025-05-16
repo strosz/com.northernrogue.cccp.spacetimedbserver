@@ -26,19 +26,20 @@ public class ServerUpdateProcess : EditorWindow
     public static bool debugMode = false;
 
     /////////////////////// Cosmos Unity Version Update Checker ///////////////////////////
-    //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";
-
-    /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////
-    //private const string SpacetimeDBUpdateAvailablePrefKey = "CCCP_SpacetimeDBUpdateAvailable";
+    //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";    /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////
 
     /////////////////////////////// SpacetimeDB Update Installer ///////////////////////////////
-    // To be created
+    private const string SpacetimeDBUpdateAvailablePrefKey = "CCCP_SpacetimeDBUpdateAvailable";
+    private const string SpacetimeDBVersionPrefKey = "CCCP_SpacetimeDBVersion";
+    private const string SpacetimeDBLatestVersionPrefKey = "CCCP_SpacetimeDBLatestVersion";
+    private static string spacetimeDBLatestVersion = "";
 
     static ServerUpdateProcess()
     {
         EditorApplication.delayCall += () => {
             var instance = CreateInstance<ServerUpdateProcess>();
             instance.CheckForNewCommit();
+            instance.CheckForSpacetimeDBUpdate();
         };
     }
 
@@ -208,6 +209,91 @@ public class ServerUpdateProcess : EditorWindow
         
         return currentVersion;
     }
+    
+    #region SpacetimeDB Update
+    public bool CheckForSpacetimeDBUpdate()
+    {
+        FetchSpacetimeDBVersionAsync();
+        return EditorPrefs.GetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+    }
+
+    private void FetchSpacetimeDBVersionAsync()
+    {
+        string url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest";
+
+        UnityWebRequest request = UnityWebRequest.Get(url);
+        request.SetRequestHeader("User-Agent", "UnitySpacetimeDBChecker");
+        
+        UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+        operation.completed += _ => {
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                if (debugMode) Debug.LogError("SpacetimeDB API request failed: " + request.error);
+            }
+            else
+            {
+                ProcessSpacetimeDBReleaseResponse(request.downloadHandler.text);
+            }
+            request.Dispose();
+        };
+    }
+
+    private void ProcessSpacetimeDBReleaseResponse(string json)
+    {
+        try
+        {
+            // Parse the JSON response to extract the tag_name
+            ReleaseData releaseData = JsonUtility.FromJson<ReleaseData>(json);
+            string version = releaseData.tag_name;
+            
+            if (!string.IsNullOrEmpty(version) && version.StartsWith("v"))
+            {
+                // Remove 'v' prefix if present
+                version = version.Substring(1);
+            }
+            
+            spacetimeDBLatestVersion = version;
+            EditorPrefs.SetString(SpacetimeDBLatestVersionPrefKey, spacetimeDBLatestVersion);
+            
+            if (debugMode) Debug.Log($"Latest SpacetimeDB version: {spacetimeDBLatestVersion}");
+            
+            // Compare with current installed version
+            string currentSpacetimeDBVersion = EditorPrefs.GetString(SpacetimeDBVersionPrefKey, "");
+            if (!string.IsNullOrEmpty(currentSpacetimeDBVersion) && currentSpacetimeDBVersion != spacetimeDBLatestVersion)
+            {
+                if (debugMode) Debug.Log($"SpacetimeDB update available! Current: {currentSpacetimeDBVersion}, Latest: {spacetimeDBLatestVersion}");
+                EditorPrefs.SetBool(SpacetimeDBUpdateAvailablePrefKey, true);
+            }
+            else
+            {
+                EditorPrefs.SetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+            }
+        }
+        catch (Exception e)
+        {
+            if (debugMode) Debug.LogError("Failed to parse SpacetimeDB release data: " + e.Message);
+        }
+    }
+
+    // Public method to check if a SpacetimeDB update is available
+    public static bool IsSpacetimeDBUpdateAvailable()
+    {
+        return EditorPrefs.GetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+    }
+    
+    // Public method to get the latest SpacetimeDB version
+    public static string SpacetimeDBLatestVersion()
+    {
+        return EditorPrefs.GetString(SpacetimeDBLatestVersionPrefKey, "");
+    }
+
+    // Data model for SpacetimeDB release response
+    [Serializable]
+    private class ReleaseData
+    {
+        public string tag_name;
+    }
+    #endregion
 
 } // Class
 } // Namespace
