@@ -75,6 +75,7 @@ public class ServerWindow : EditorWindow
 
     // Update SpacetimeDB
     private string spacetimeDBCurrentVersion = "";
+    private string spacetimeDBCurrentVersionCustom = "";
     private string spacetimeDBLatestVersion = "";
 
     // UI
@@ -398,6 +399,7 @@ public class ServerWindow : EditorWindow
         serverChangesDetected = serverManager.ServerChangesDetected;
 
         spacetimeDBCurrentVersion = serverManager.spacetimeDBCurrentVersion;
+        spacetimeDBCurrentVersionCustom = serverManager.spacetimeDBCurrentVersionCustom;
         spacetimeDBLatestVersion = serverManager.spacetimeDBLatestVersion;
 
         // Add this line to initialize WSL status
@@ -1420,7 +1422,13 @@ public class ServerWindow : EditorWindow
         versionStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
-        EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
+        if (serverMode == ServerMode.WslServer)
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
+        else if (serverMode == ServerMode.CustomServer)
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
+        else if (serverMode == ServerMode.MaincloudServer)
+            EditorGUILayout.LabelField(spacetimeDBLatestVersion, versionStyle, GUILayout.Width(25));
+
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.EndVertical();
@@ -1485,17 +1493,6 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
             }
 
-            if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
-            {
-                string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the server is not running.";
-                EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
-                if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
-                {
-                    ServerInstallerWindow.ShowWindow();
-                }
-                EditorGUI.EndDisabledGroup();
-            }
-
             EditorGUILayout.LabelField("WSL Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
@@ -1503,7 +1500,7 @@ public class ServerWindow : EditorWindow
                 serverManager.OpenDebianWindow();
             }
 
-            if (serverMode != ServerMode.MaincloudServer)
+            if (serverMode == ServerMode.WslServer)
             {
                 string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
@@ -1520,6 +1517,17 @@ public class ServerWindow : EditorWindow
                     serverManager.RestoreServerData();
                 }
                 EditorGUI.EndDisabledGroup();
+
+                if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
+                {
+                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the WSL server is not running.";
+                    EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
+                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB on WSL", updateTooltip), GUILayout.Height(20)))
+                    {
+                        ServerInstallerWindow.ShowWindow();
+                    }
+                    EditorGUI.EndDisabledGroup();
+                }
             }
         }
         
@@ -1738,7 +1746,6 @@ public class ServerWindow : EditorWindow
         if (connectionSuccessful)
         {           
             await serverCustomProcess.CheckSpacetimeDBInstalled();
-            await serverCustomProcess.GetSpacetimeDBVersion();
         }
         else
         {

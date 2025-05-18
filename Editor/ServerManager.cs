@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System;
 using System.Threading.Tasks;
 
+// Runs the methods related to managing and controlling the WSL server and Maincloud ///
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerManager
@@ -81,6 +83,7 @@ public class ServerManager
 
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion;
+    public string spacetimeDBCurrentVersionCustom;
     public string spacetimeDBLatestVersion;
     
     // Properties for external access
@@ -248,6 +251,7 @@ public class ServerManager
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
 
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+        spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         // Load server mode
@@ -1517,7 +1521,7 @@ public class ServerManager
         }
     }
 
-    public async Task CheckSpacetimeDBVersion()
+    public async Task CheckSpacetimeDBVersion() // Only runs in WSL once when WSL has started
     {
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
         
