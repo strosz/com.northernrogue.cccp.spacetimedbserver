@@ -3,15 +3,18 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
-// Check and install everything necessary to run SpacetimeDB in WSL with this window ///
+// Check and install everything necessary to run SpacetimeDB with this window ///
 
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerInstallerWindow : EditorWindow
 {
     private List<InstallerItem> installerItems = new List<InstallerItem>();
+    private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
     private ServerCMDProcess cmdProcess;
+    private ServerCustomProcess customProcess;
     
     // UI
     private Vector2 scrollPosition;
@@ -22,10 +25,15 @@ public class ServerInstallerWindow : EditorWindow
     private double lastRepaintTime = 0;
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
-    // EditorPrefs
-    private string userName = "";
-    // Temporary field for username input
+    // Tab selection
+    private int currentTab = 0; // 0 = WSL Installer, 1 = Custom Debian Installer
+    private readonly string[] tabNames = { "WSL Installer", "Custom Debian Installer" };
+      // EditorPrefs
+    private string userName = ""; // For WSL mode
+    private string sshUserName = ""; // For SSH remote server mode
+    // Temporary fields for username input
     private string tempUserNameInput = "";
+    private string tempCreateUserNameInput = ""; // For creating new user on remote SSH server
 
     private string spacetimeDBCurrentVersion = "";
     private string spacetimeDBLatestVersion = "";
@@ -37,7 +45,7 @@ public class ServerInstallerWindow : EditorWindow
     private GUIStyle installButtonStyle;
     private bool stylesInitialized = false;
     
-    // Installation states
+    // WSL Installation states
     private bool isRefreshing = false;
     private bool hasWSL = false;
     private bool hasDebian = false;
@@ -48,6 +56,17 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasRust = false;
     private bool hasSpacetimeDBUnitySDK = false;
 
+    // Custom SSH installation states
+    private bool isCustomRefreshing = false;
+    private bool hasCustomDebianUser = false;
+    private bool hasCustomDebianTrixie = false;
+    private bool hasCustomCurl = false;
+    private bool hasCustomSpacetimeDBServer = false;
+    private bool hasCustomSpacetimeDBPath = false;
+    private bool hasCustomRust = false;
+
+    private bool isConnectedSSH = false;
+    
     // WSL 1 requires unique install logic for Debian apps
     private bool WSL1Installed;
 
@@ -62,19 +81,31 @@ public class ServerInstallerWindow : EditorWindow
     
     // Settings
     private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
-    private const string FirstTimeOpenKey = "FirstTimeOpen";
+    private const string FirstTimeOpenKey = "FirstTimeOpen";    
 
     [MenuItem("SpacetimeDB/Server Installer", priority = -10001)]
     public static void ShowWindow()
     {
         ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");
         window.minSize = new Vector2(500, 400);
+        window.currentTab = 0; // Default to WSL tab
         window.InitializeInstallerItems();
     }
     
+    public static void ShowCustomWindow()
+    {
+        ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");
+        window.minSize = new Vector2(500, 400);
+        window.currentTab = 1; // Set to Custom SSH tab
+        window.InitializeInstallerItems();
+    }
+    
+    #region OnEnable
     private void OnEnable()
     {
+        // Initialize both processes
         cmdProcess = new ServerCMDProcess(LogMessage, false);
+        customProcess = new ServerCustomProcess(LogMessage, false);
         
         // Check if this is the first time the window is opened
         bool isFirstTime = !EditorPrefs.HasKey(PrefsKeyPrefix+FirstTimeOpenKey);
@@ -97,7 +128,7 @@ public class ServerInstallerWindow : EditorWindow
             };
         }
         
-        // Load installation status from EditorPrefs
+        // Load WSL installation status from EditorPrefs
         hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
         hasDebian = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebian", false);
         hasDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebianTrixie", false);
@@ -106,6 +137,14 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
+
+        // Load Custom SSH installation status from EditorPrefs
+        hasCustomDebianUser = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomDebianUser", false);
+        hasCustomDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomDebianTrixie", false);
+        hasCustomCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomCurl", false);
+        hasCustomSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", false);
+        hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
+        hasCustomRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomRust", false);
 
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
@@ -116,31 +155,50 @@ public class ServerInstallerWindow : EditorWindow
         
         // Cache the current username
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        tempUserNameInput = userName; // Initialize the temp input with the stored username
-
+        sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
+        tempUserNameInput = userName; // Initialize the temp input with the stored username for WSL
+        tempCreateUserNameInput = ""; // Initialize empty for the "Create User" functionality
+        
         // Load version info of SpacetimeDB
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
+        // Initialize both installer item lists
         InitializeInstallerItems();
         
         // Reduce frequency of automatic repaints
         EditorApplication.update += OnEditorUpdate;
         
-        CheckInstallationStatus();
+        // Check installation status for the current tab
+        if (currentTab == 0) {
+            CheckInstallationStatus();
+        } else {
+            CheckCustomInstallationStatus();
+        }
 
         // Update installer items status based on loaded prefs
         UpdateInstallerItemsStatus();
+    }
+
+    private void OnFocus()
+    {
+        InitializeCustomInstallerWindow();
+    }
+
+    private void InitializeCustomInstallerWindow()
+    {
+        customProcess = new ServerCustomProcess(LogMessage, false);
+        if (customProcess.StartSession())
+        {
+            sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
+            CheckCustomInstallationStatus();
+        }
     }
     
     private void OnDisable()
     {
         // Clean up the update callback when the window is closed
         EditorApplication.update -= OnEditorUpdate;
-
-        // Update Pre-requisities so server can be started if requirements are met. // Added button instead
-        //ServerWindow serverWindow = GetWindow<ServerWindow>();
-        //serverWindow.CheckPrerequisites(); 
     }
 
     private void OnEditorUpdate()
@@ -153,10 +211,12 @@ public class ServerInstallerWindow : EditorWindow
             RequestRepaint(); // Use a helper to request repaint
         }
     }
+    #endregion
     
     #region Installer Items
     private void InitializeInstallerItems()
     {
+        // Initialize WSL installer items
         installerItems = new List<InstallerItem>
         {
             new InstallerItem
@@ -224,59 +284,192 @@ public class ServerInstallerWindow : EditorWindow
                 installAction = InstallSpacetimeDBUnitySDK
             }
         };
+
+        // Initialize Custom SSH installer items (no WSL entry as we assume Debian is already installed)
+        customInstallerItems = new List<InstallerItem>
+        {            new InstallerItem
+            {
+                title = "Install User",
+                description = "Creates a new user on the SSH Debian server with sudo privileges\n"+
+                "Required to run SpacetimeDB Server with proper permissions\n"+
+                "Note: You will be prompted to set a password for the new user",
+                isInstalled = hasCustomDebianUser,
+                isEnabled = isConnectedSSH,
+                installAction = InstallCustomUser,
+                hasUsernameField = true,
+                usernameLabel = "Create Username:"
+            },
+            new InstallerItem
+            {
+                title = "Install Debian Trixie Update",
+                description = "Debian Trixie Update (Debian Version 13)\n"+
+                "Required to run the SpacetimeDB Server\n"+
+                "Note: May take some minutes to install",
+                isInstalled = hasCustomDebianTrixie,
+                isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(sshUserName),
+                installAction = InstallCustomDebianTrixie
+            },
+            new InstallerItem
+            {
+                title = "Install cURL",
+                description = "cURL is a command-line tool for transferring data with URLs\n"+
+                "Required to install the SpacetimeDB Server",
+                isInstalled = hasCustomCurl,
+                isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomCurl
+            },
+            new InstallerItem
+            {
+                title = "Install SpacetimeDB Server",
+                description = "SpacetimeDB Server Installation for Debian\n"+
+                "Note: Will install to the current SSH user session home directory (SpacetimedDB default)",
+                isInstalled = hasCustomSpacetimeDBServer,
+                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomSpacetimeDBServer
+            },
+            new InstallerItem
+            {
+                title = "Install SpacetimeDB PATH",
+                description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
+                isInstalled = hasCustomSpacetimeDBPath,
+                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomSpacetimeDBPath
+            },
+            new InstallerItem
+            {
+                title = "Install Rust",
+                description = "Rust is a programming language that runs 2x faster than C#\n"+
+                "Note: Required to use the SpacetimeDB Server with Rust Language",
+                isInstalled = hasCustomRust,
+                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomRust
+            },
+            new InstallerItem
+            {
+                title = "Install SpacetimeDB Unity SDK",
+                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
+                "Examples include a network manager that syncs the client state with the database",
+                isInstalled = hasSpacetimeDBUnitySDK,
+                isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
+                installAction = InstallSpacetimeDBUnitySDK
+            }
+        };
     }
 
     private void UpdateInstallerItemsStatus()
     {
         bool repaintNeeded = false;
-        foreach (var item in installerItems)
-        {
-            bool previousState = item.isInstalled;
-            bool previousEnabledState = item.isEnabled;
-            bool newState = previousState; // Default to no change
-            bool newEnabledState = previousEnabledState;
-            
-            if (item.title.Contains("WSL"))
+
+        // Update the correct list based on current tab
+        List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+        
+        // For WSL installer items
+        if (currentTab == 0) {
+            foreach (var item in itemsToUpdate
+            )
             {
-                newState = hasWSL && hasDebian;
-                newEnabledState = true; // Always enabled
+                bool previousState = item.isInstalled;
+                bool previousEnabledState = item.isEnabled;
+                bool newState = previousState; // Default to no change
+                bool newEnabledState = previousEnabledState;
+                
+                if (item.title.Contains("WSL"))
+                {
+                    newState = hasWSL && hasDebian;
+                    newEnabledState = true; // Always enabled
+                }
+                else if (item.title.Contains("Debian Trixie"))
+                {
+                    newState = hasDebianTrixie;
+                    newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("cURL"))
+                {
+                    newState = hasCurl;
+                    newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("SpacetimeDB Server"))
+                {
+                    newState = hasSpacetimeDBServer;
+                    newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("SpacetimeDB PATH"))
+                {
+                    newState = hasSpacetimeDBPath;
+                    newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("Rust"))
+                {
+                    newState = hasRust;
+                    newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    newState = hasSpacetimeDBUnitySDK;
+                    newEnabledState = true; // Always enabled
+                }
+                
+                if (newState != previousState || newEnabledState != previousEnabledState)
+                {
+                    item.isInstalled = newState;
+                    item.isEnabled = newEnabledState;
+                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                }
             }
-            else if (item.title.Contains("Debian Trixie"))
+        }
+        // For Custom SSH installer items
+        else {
+            foreach (var item in itemsToUpdate)
             {
-                newState = hasDebianTrixie;
-                newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
-            }
-            else if (item.title.Contains("cURL"))
-            {
-                newState = hasCurl;
-                newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
-            }
-            else if (item.title.Contains("SpacetimeDB Server"))
-            {
-                newState = hasSpacetimeDBServer;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
-            }
-            else if (item.title.Contains("SpacetimeDB PATH"))
-            {
-                newState = hasSpacetimeDBPath;
-                newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
-            }
-            else if (item.title.Contains("Rust"))
-            {
-                newState = hasRust;
-                newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
-            }
-            else if (item.title.Contains("SpacetimeDB Unity SDK"))
-            {
-                newState = hasSpacetimeDBUnitySDK;
-                newEnabledState = true; // Always enabled
-            }
-            
-            if (newState != previousState || newEnabledState != previousEnabledState)
-            {
-                item.isInstalled = newState;
-                item.isEnabled = newEnabledState;
-                repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                bool previousState = item.isInstalled;
+                bool previousEnabledState = item.isEnabled;
+                bool newState = previousState; // Default to no change
+                bool newEnabledState = previousEnabledState;
+                
+                bool isSessionActive = customProcess.IsSessionActive();
+
+                if (item.title.Contains("Install User"))
+                {
+                    newState = hasCustomDebianUser;
+                    newEnabledState = isSessionActive && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("Debian Trixie"))
+                {
+                    newState = hasCustomDebianTrixie;
+                    newEnabledState = isSessionActive && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("cURL"))
+                {
+                    newState = hasCustomCurl;
+                    newEnabledState = isSessionActive && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("SpacetimeDB Server"))
+                {
+                    newState = hasCustomSpacetimeDBServer;
+                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("SpacetimeDB PATH"))
+                {
+                    newState = hasCustomSpacetimeDBPath;
+                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("Rust"))
+                {
+                    newState = hasCustomRust;
+                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    newState = hasSpacetimeDBUnitySDK;
+                    newEnabledState = true; // Always enabled
+                }
+                
+                if (newState != previousState || newEnabledState != previousEnabledState)
+                {
+                    item.isInstalled = newState;
+                    item.isEnabled = newEnabledState;
+                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                }
             }
         }
         
@@ -298,7 +491,54 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.BeginVertical();
         
         DrawToolbar();
+
+        // Draw the tab bar
+        int newTab = GUILayout.Toolbar(currentTab, tabNames);
+        if (newTab != currentTab)
+        {
+            currentTab = newTab;
+            // When switching tabs, check the appropriate installation status
+            if (currentTab == 0) {
+                CheckInstallationStatus();
+            } else {
+                if (customProcess.StartSession())
+                {
+                    CheckCustomInstallationStatus();
+                }
+            }
+            UpdateInstallerItemsStatus();
+        }
+
         EditorGUILayout.Space(5);
+        
+        // Show connection status for Custom installer
+        /*if (currentTab == 1)
+        {
+            isConnectedSSH = customProcess.IsSessionActive();
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+            
+            if (isConnectedSSH)
+            {
+                EditorGUILayout.LabelField("SSH Connection: ", GUILayout.Width(100));
+                EditorGUILayout.LabelField("✓ Connected", installedStyle);
+            }
+            else
+            {
+                EditorGUILayout.LabelField("SSH Connection: ", GUILayout.Width(100));
+                EditorGUILayout.LabelField("✕ Disconnected", new GUIStyle(EditorStyles.label) { normal = { textColor = Color.red } });
+                
+                if (GUILayout.Button("Connect", GUILayout.Width(100)))
+                {
+                    if (customProcess.StartSession())
+                    {
+                        CheckCustomInstallationStatus();
+                    }
+                }
+            }
+            
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(5);
+        }*/
         
         DrawInstallerItemsList();
         EditorGUILayout.Space(5);
@@ -339,10 +579,18 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         
         // Refresh Button
-        EditorGUI.BeginDisabledGroup(isRefreshing);
+        EditorGUI.BeginDisabledGroup(currentTab == 0 ? isRefreshing : isCustomRefreshing);
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(60)))
         {
-            CheckInstallationStatus();
+            if (currentTab == 0) {
+                CheckInstallationStatus();
+            } else {
+                if (customProcess.StartSession())
+                {
+                    sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
+                    CheckCustomInstallationStatus();
+                }
+            }
         }
         EditorGUI.EndDisabledGroup();
                
@@ -387,27 +635,28 @@ public class ServerInstallerWindow : EditorWindow
         // Minimize GUIContent creation during rendering
         if (titleStyle != null)
         {
-            GUILayout.Label("SpacetimeDB Server Installer", titleStyle);
+            GUILayout.Label(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom SSH Server Installer", titleStyle);
         }
         else
         {
-            EditorGUILayout.LabelField("SpacetimeDB Server Installer");
+            EditorGUILayout.LabelField(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom SSH Server Installer");
         }
         
-        EditorGUILayout.LabelField("Install all the required software to run your local SpacetimeDB Server.\n"+
-        "Alpha Version - May yet require manual control.",
+        string description = currentTab == 0 ? 
+            "Install all the required software to run your local SpacetimeDB Server in WSL." : 
+            "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.";
+            
+        EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
-        
-        // To debug showusernameprompt
-        //hasWSL = true; hasDebian = true; hasDebianTrixie = true; 
-        //hasCurl = false; hasSpacetimeDBServer = false; hasSpacetimeDBPath = false; hasRust = false;
 
         // Show usernameprompt for clarity before SpacetimeDB install
-        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && hasWSL && hasDebian;
+        bool showUsernamePrompt = String.IsNullOrEmpty(userName) && 
+            (currentTab == 0 ? (hasWSL && hasDebian) : customProcess.IsSessionActive());
         
         if (showUsernamePrompt)
         {
-            foreach (var item in installerItems) item.isEnabled = false;
+            List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+            foreach (var item in itemsToUpdate) item.isEnabled = false;
             userNamePrompt = true;
 
             EditorGUILayout.Space(10);
@@ -435,14 +684,18 @@ public class ServerInstallerWindow : EditorWindow
                 // Submit the username only on Enter
                 userName = tempUserNameInput;
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                foreach (var item in installerItems) item.isEnabled = true;
+                foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
-                Debug.Log("Username submitted via Enter: " + userName);
+                UnityEngine.Debug.Log("Username submitted via Enter: " + userName);
                 
                 // Use the current event to prevent it from propagating
                 e.Use();
 
-                CheckInstallationStatus();
+                if (currentTab == 0) {
+                    CheckInstallationStatus();
+                } else {
+                    CheckCustomInstallationStatus();
+                }
             }
             
             // Add a submit button for clarity
@@ -451,11 +704,15 @@ public class ServerInstallerWindow : EditorWindow
                 // Submit the username only on button click
                 userName = tempUserNameInput;
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
-                foreach (var item in installerItems) item.isEnabled = true;
+                foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
-                Debug.Log("Username submitted via button: " + userName);
+                UnityEngine.Debug.Log("Username submitted via button: " + userName);
 
-                CheckInstallationStatus();
+                if (currentTab == 0) {
+                    CheckInstallationStatus();
+                } else {
+                    CheckCustomInstallationStatus();
+                }
             }
             
             EditorGUILayout.EndHorizontal();
@@ -470,16 +727,19 @@ public class ServerInstallerWindow : EditorWindow
         // Begin the scrollview for the installer items
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         
-        if (installerItems.Count == 0)
+        // Get the appropriate list based on current tab
+        List<InstallerItem> displayItems = currentTab == 0 ? installerItems : customInstallerItems;
+        
+        if (displayItems.Count == 0)
         {
             EditorGUILayout.HelpBox("No installer items found.", MessageType.Info);
         }
         else
         {
             // Cache to reduce GC and memory allocations
-            for (int i = 0; i < installerItems.Count; i++)
+            for (int i = 0; i < displayItems.Count; i++)
             {
-                DrawInstallerItem(installerItems[i], i);
+                DrawInstallerItem(displayItems[i], i);
             }
         }
         
@@ -505,9 +765,8 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
         
         // Title - reuse cached content when possible
-        EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));
-
-        bool showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+        EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        bool showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+                                currentTab == 0 && // Only show update button in WSL mode, not in custom SSH mode
                                 !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
                                 !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
                                 spacetimeDBCurrentVersion != spacetimeDBLatestVersion;
@@ -546,21 +805,47 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         EditorGUILayout.EndHorizontal();
-        
-        // Description
+
         EditorGUILayout.LabelField(item.description, EditorStyles.wordWrappedMiniLabel);
         
-        // Add username field for SpacetimeDB Server installer
-        if (item.title.Contains("SpacetimeDB Server"))
+        // Add username field for installers that need it
+        if (item.hasUsernameField || item.title.Contains("SpacetimeDB Server"))
         {
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Debian Username:", GUILayout.Width(120));
+            string labelText = item.hasUsernameField ? item.usernameLabel : "Install as Username:";
+            EditorGUILayout.LabelField(labelText, GUILayout.Width(120));
             EditorGUI.BeginChangeCheck();
-            string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
-            if (EditorGUI.EndChangeCheck() && newUserName != userName)
+            
+            if (currentTab == 0) // For WSL mode, use the regular username
             {
-                userName = newUserName;
-                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", newUserName);
+                string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
+                if (EditorGUI.EndChangeCheck() && newUserName != userName)
+                {
+                    userName = newUserName;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                }
+            }
+            else if (currentTab == 1)
+            {
+                if (item.title == "Install User") // Use temp name for Install User
+                {
+                    // For user creation, use the special temporary field
+                    string newUserName = EditorGUILayout.TextField(tempCreateUserNameInput, GUILayout.Width(150));
+                    if (EditorGUI.EndChangeCheck() && newUserName != tempCreateUserNameInput)
+                    {
+                        tempCreateUserNameInput = newUserName;
+                    }
+                }
+                else // For other installers in SSH mode (like Install SpacetimeDB Server) use sshUserName
+                {
+                    EditorGUI.BeginDisabledGroup(true);
+                    string newUserName = EditorGUILayout.TextField(sshUserName, GUILayout.Width(150));
+                    if (EditorGUI.EndChangeCheck() && newUserName != sshUserName)
+                    {
+                        sshUserName = newUserName;
+                    }
+                    EditorGUI.EndDisabledGroup();
+                }
             }
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(2);
@@ -612,7 +897,7 @@ public class ServerInstallerWindow : EditorWindow
         if (isRefreshing) return; // Don't start a new refresh if one is already running
         
         isRefreshing = true;
-        SetStatus("Checking installation status...", Color.yellow);
+        SetStatus("Checking WSL installation status...", Color.yellow);
         
         // Check for SpacetimeDB Unity SDK separately
         ServerSpacetimeSDKInstaller.IsSDKInstalled((isSDKInstalled) => {
@@ -629,15 +914,6 @@ public class ServerInstallerWindow : EditorWindow
             hasSpacetimeDBServer = spacetime;
             hasSpacetimeDBPath = spacetimePath;
             hasRust = rust;
-
-            // Debug force to false to test the installer
-            //hasWSL = false;
-            //hasDebian = false;
-            //hasDebianTrixie = false;
-            //hasCurl = false;
-            //hasSpacetimeDBServer = false;
-            //hasSpacetimeDBPath = false;
-            //hasRust = false;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -653,8 +929,98 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
             
             isRefreshing = false;
-            SetStatus("Installation status updated.", Color.green); // This might request repaint (throttled)
+            SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
         });
+    }
+    
+    private async void CheckCustomInstallationStatus()
+    {
+        // Don't check if the SSH session isn't active
+        if (!customProcess.IsSessionActive())
+        {
+            // Reset installation status
+            hasCustomDebianUser = false;
+            hasCustomDebianTrixie = false;
+            hasCustomCurl = false;
+            hasCustomSpacetimeDBServer = false;
+            hasCustomSpacetimeDBPath = false;
+            hasCustomRust = false;
+            
+            // Update UI
+            UpdateInstallerItemsStatus();
+            return;
+        }
+        
+        isCustomRefreshing = true;
+        SetStatus("Checking remote installation status...", Color.yellow);
+        
+        // Check if a username is set for SSH operations
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            // If no username is set, disable custom installer items
+            hasCustomDebianUser = false;
+            hasCustomDebianTrixie = false;
+            hasCustomCurl = false;
+            hasCustomSpacetimeDBServer = false;
+            hasCustomSpacetimeDBPath = false;
+            hasCustomRust = false;
+            
+            UpdateInstallerItemsStatus();
+            isCustomRefreshing = false;
+            SetStatus("Please enter your Debian username to check installation status.", Color.yellow);
+            return;
+        }
+
+        // Check Debian User
+        SetStatus("Checking Debian User status...", Color.yellow);
+        var userResult = await customProcess.RunCustomCommandAsync($"getent group sudo | cut -d: -f4");
+        hasCustomDebianUser = userResult.success && !string.IsNullOrEmpty(userResult.output);
+        await Task.Delay(100); // Small delay between checks
+        
+        // Check Debian Trixie
+        SetStatus("Checking Debian Trixie status...", Color.yellow);
+        var debianResult = await customProcess.RunCustomCommandAsync("cat /etc/debian_version");
+        hasCustomDebianTrixie = debianResult.success && (debianResult.output.Contains("trixie") || debianResult.output.Contains("13"));
+        await Task.Delay(100); // Small delay between checks
+        
+        // Check cURL
+        SetStatus("Checking cURL status...", Color.yellow);
+        var curlResult = await customProcess.RunCustomCommandAsync("which curl");
+        hasCustomCurl = curlResult.success && curlResult.output.Contains("curl");
+        await Task.Delay(100);
+        
+        // Check SpacetimeDB Server
+        SetStatus("Checking SpacetimeDB Server status...", Color.yellow);
+        string spacetimeDBServerExecutablePath = $"/home/{sshUserName}/.local/bin/spacetime";
+        var spacetimeDBResult = await customProcess.RunCustomCommandAsync($"test -x {spacetimeDBServerExecutablePath} && echo 'executable' || echo 'not_executable_or_not_found'");
+        hasCustomSpacetimeDBServer = spacetimeDBResult.success && spacetimeDBResult.output.Trim() == "executable";
+        await Task.Delay(100);
+
+        // Check SpacetimeDB PATH - Use which command to verify it's actually in PATH
+        SetStatus("Checking SpacetimeDB PATH status...", Color.yellow);
+        var pathResult = await customProcess.RunCustomCommandAsync($"bash -l -c 'which spacetime' 2>/dev/null");
+        hasCustomSpacetimeDBPath = pathResult.success && !string.IsNullOrEmpty(pathResult.output) && pathResult.output.Contains("spacetime");
+        await Task.Delay(100);
+        
+        // Check Rust - Verify rustc and cargo are actually installed and working
+        SetStatus("Checking Rust status...", Color.yellow);
+        var rustResult = await customProcess.RunCustomCommandAsync($"bash -l -c 'which rustc && which cargo' 2>/dev/null");
+        hasCustomRust = rustResult.success && !string.IsNullOrEmpty(rustResult.output) && rustResult.output.Contains("rustc") && rustResult.output.Contains("cargo");
+        
+        // Save installation status to EditorPrefs
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianUser", hasCustomDebianUser);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianTrixie", hasCustomDebianTrixie);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomCurl", hasCustomCurl);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", hasCustomSpacetimeDBServer);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
+        EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+        
+        // Update UI
+        UpdateInstallerItemsStatus();
+        
+        isCustomRefreshing = false;
+        SetStatus("Remote installation status check complete.", Color.green);
     }
     #endregion
     
@@ -1197,6 +1563,484 @@ public class ServerInstallerWindow : EditorWindow
     }
     #endregion
     
+    #region Custom Installation Methods
+    private async void InstallCustomUser()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(tempCreateUserNameInput))
+        {
+            SetStatus("Please enter a username to create.", Color.red);
+            return;
+        }
+        
+        string newUserName = tempCreateUserNameInput;
+
+        // Check if the username already exists
+        var checkUserResult = await customProcess.RunCustomCommandAsync($"id -u {newUserName} > /dev/null 2>&1 && echo 'exists' || echo 'notexists'");
+        if (checkUserResult.success && checkUserResult.output.Trim() == "exists")
+        {
+            SetStatus($"User '{newUserName}' already exists on the remote server.", Color.yellow);
+            return;
+        }
+
+        // Create commands to be executed in the terminal
+        string commands = 
+            "# Step 0: Install Sudo\n" +
+            $"apt install -y sudo\n\n" +
+            "# Step 1: Create new user (will prompt for password)\n" +
+            $"adduser {newUserName}\n\n" +
+            "# Step 2: Add user to sudo group\n" +
+            $"usermod -aG sudo {newUserName}\n\n" +
+            "# Step 3: Create SSH directory for the new user\n" +
+            $"mkdir -p /home/{newUserName}/.ssh\n" +
+            $"chmod 700 /home/{newUserName}/.ssh\n\n" +
+            "# Step 4: Copy authorized_keys from root to new user (if exists)\n" +
+            "if [ -f /root/.ssh/authorized_keys ]; then\n" +
+            $"  cp /root/.ssh/authorized_keys /home/{newUserName}/.ssh/\n" +
+            "fi\n\n" +
+            "# Step 5: Set correct ownership and permissions\n" +
+            $"chown -R {newUserName}:{newUserName} /home/{newUserName}/.ssh\n" +
+            $"if [ -f /home/{newUserName}/.ssh/authorized_keys ]; then\n" +
+            $"  chmod 600 /home/{newUserName}/.ssh/authorized_keys\n" +
+            "fi\n\n" +
+            "# Step 6: NOPASSWD for sudo - create with cat instead of printf\n" +
+            $"cat > /etc/sudoers.d/{newUserName} << EOF\n" +
+            $"{newUserName} ALL=(ALL) NOPASSWD: ALL\n" +
+            "EOF\n" +
+            $"chmod 0440 /etc/sudoers.d/{newUserName}\n\n" +
+            "# Confirm success\n" +
+            "echo \"\"\n" +
+            "echo \"=======================\"\n" +
+            $"echo \"User {newUserName} has been successfully created and added to the sudo group.\"\n" +
+            "echo \"=======================\"\n";
+
+        SetStatus($"Creating user '{newUserName}' on remote server. Please follow the prompts in the terminal window...", Color.yellow);
+
+        // Use the RunVisibleSSHCommand method from ServerCustomProcess
+        // This is needed since adduser command requires interactive input for password
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            // Update the SSH username if it's not already set
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                sshUserName = newUserName;
+                EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+            }
+            
+            SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
+            
+            // Update UI
+            CheckCustomInstallationStatus();
+
+            EditorUtility.DisplayDialog(
+                "New User Created",
+                $"User '{newUserName}' has been created successfully.\n\n" +
+                $"Please close the installer window and enter '{newUserName}' as your SSH username.\n\n" +
+                "Then press 'Check Pre-Requisites and Connect' and continue installing as your new user.",
+                "OK"
+            );
+        }
+        else
+        {
+            SetStatus($"Failed to create user '{newUserName}' on remote server. Please check terminal output.", Color.red);
+        }
+    }    
+
+    private async void InstallCustomDebianTrixie()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomDebianTrixie && !installIfAlreadyInstalled)
+        {
+            SetStatus("Remote Debian Trixie Update is already installed.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing Debian Trixie Update on remote server...", Color.yellow);
+        
+        // Create a single bash script with all the steps
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Step 1: Updating package lists =====\"\n" +
+            "sudo apt update\n" +
+            "if [ $? -ne 0 ]; then\n" +
+            "  echo \"ERROR: Failed to update package lists\"\n" +
+            "  exit 1\n" +
+            "fi\n\n" +
+            
+            "echo \"===== Step 2: Upgrading packages =====\"\n" +
+            "sudo apt upgrade -y\n" +
+            "# Continue even if this step has issues\n\n" +
+            
+            "echo \"===== Step 3: Installing update-manager-core =====\"\n" +
+            "sudo apt install -y update-manager-core\n" +
+            "# Continue even if this step has issues\n\n" +
+            
+            "echo \"===== Step 4: Updating sources.list to Trixie =====\"\n" +
+            "sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\n" +
+            "if [ $? -ne 0 ]; then\n" +
+            "  echo \"ERROR: Failed to update sources.list\"\n" +
+            "  exit 1\n" +
+            "fi\n\n" +
+            
+            "echo \"===== Step 5: Updating package lists for Trixie =====\"\n" +
+            "sudo apt update\n" +
+            "if [ $? -ne 0 ]; then\n" +
+            "  echo \"ERROR: Failed to update Trixie package lists\"\n" +
+            "  exit 1\n" +
+            "fi\n\n" +
+            
+            "echo \"===== Step 6: Performing full upgrade to Trixie =====\"\n" +
+            "sudo apt full-upgrade -y\n" +
+            "if [ $? -ne 0 ]; then\n" +
+            "  echo \"WARNING: Full upgrade encountered issues. Check system status.\"\n" +
+            "else\n" +
+            "  echo \"===== Trixie upgrade completed successfully! =====\"\n" +
+            "fi\n\n" +
+            
+            "echo \"===== Done! =====\"\n";
+
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Running Debian Trixie upgrade in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("Debian Trixie Update installation completed. Checking installation status...", Color.green);
+            // Wait for changes to apply
+            await Task.Delay(3000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomDebianTrixie)
+            {
+                SetStatus("Debian Trixie Update installed successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("Debian Trixie Update verification failed. The installation might still be successful.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("Debian Trixie Update installation process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+
+    private async void InstallCustomCurl()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            SetStatus("Please enter a SSH username first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomCurl && !installIfAlreadyInstalled)
+        {
+            SetStatus("cURL is already installed on the remote server.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing cURL on remote server...", Color.yellow);
+        
+        // Create a bash script for curl installation
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Updating package lists =====\"\n" +
+            "sudo apt update\n\n" +
+            "echo \"===== Installing cURL =====\"\n" +
+            "sudo apt install -y curl\n\n" +
+            "# Check if curl was installed successfully\n" +
+            "if command -v curl &> /dev/null; then\n" +
+            "  echo \"===== cURL installed successfully! =====\"\n" +
+            "  curl --version\n" +
+            "else\n" +
+            "  echo \"ERROR: cURL installation failed\"\n" +
+            "  exit 1\n" +
+            "fi\n\n" +
+            "echo \"===== Done! =====\"\n";
+        
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Installing cURL in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("cURL installation completed. Checking installation status...", Color.green);
+            await Task.Delay(2000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomCurl)
+            {
+                SetStatus("cURL installed successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("cURL installation verification failed. Please check the terminal output.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("cURL installation process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+
+    private async void InstallCustomSpacetimeDBServer()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            SetStatus("Please enter a SSH username first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomSpacetimeDBServer && !installIfAlreadyInstalled)
+        {
+            SetStatus("SpacetimeDB Server is already installed on the remote server.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing SpacetimeDB Server on remote server...", Color.yellow);
+        
+        // Create a bash script for SpacetimeDB Server installation
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Installing SpacetimeDB Server =====\"\n" +
+            $"# As user {sshUserName}\n" +
+            $"curl -sSf https://install.spacetimedb.com/ | sh\n\n" +
+            "# Check if installation was successful\n" +
+            $"if [ -f /home/{sshUserName}/.local/bin/spacetime ]; then\n" +
+            "  echo \"===== SpacetimeDB Server installed successfully! =====\"\n" +
+            $"  sudo -u {sshUserName} /home/{sshUserName}/.local/bin/spacetime --version\n" +
+            "else\n" +
+            "  echo \"WARNING: SpacetimeDB installation verification failed\"\n" +
+            "  echo \"Please verify installation manually\"\n" +
+            "fi\n\n" +
+            "echo \"===== Done! =====\"\n";
+        
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Installing SpacetimeDB Server in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
+            await Task.Delay(2000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomSpacetimeDBServer)
+            {
+                SetStatus("SpacetimeDB Server installed successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("SpacetimeDB Server installation verification failed. Please check the terminal output.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("SpacetimeDB Server installation process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+
+    private async void InstallCustomSpacetimeDBPath()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            SetStatus("Please enter a SSH username first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomSpacetimeDBPath && !installIfAlreadyInstalled)
+        {
+            SetStatus("SpacetimeDB PATH is already configured on the remote server.", Color.green);
+            return;
+        }
+        
+        SetStatus("Configuring SpacetimeDB PATH on remote server...", Color.yellow);
+        
+        // Create a bash script for SpacetimeDB PATH configuration
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Configuring SpacetimeDB PATH =====\"\n" +
+            $"# Check if spacetime is already in PATH for user {sshUserName}\n" +
+            $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{userName}/.bashrc; then\n" +
+            "  echo \"Adding SpacetimeDB to PATH in .bashrc file\"\n" +
+            $"  echo 'export PATH=\"$HOME/.spacetime/bin:$HOME/.local/bin:$PATH\"' >> /home/{sshUserName}/.bashrc\n" +
+            $"  chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
+            "  echo \"===== PATH updated successfully! =====\"\n" +
+            "else\n" +
+            "  echo \"===== SpacetimeDB PATH already configured! =====\"\n" +
+            "fi\n\n" +
+            $"# Show the current PATH configuration for user {sshUserName}\n" +
+            $"echo \"Current PATH entries in /home/{sshUserName}/.bashrc:\"\n" +
+            $"grep -i \"PATH\" /home/{sshUserName}/.bashrc | cat\n\n" +
+            "echo \"===== Done! =====\"\n";
+        
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Configuring SpacetimeDB PATH in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("SpacetimeDB PATH configuration completed. Checking status...", Color.green);
+            await Task.Delay(2000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomSpacetimeDBPath)
+            {
+                SetStatus("SpacetimeDB PATH configured successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("SpacetimeDB PATH configuration verification may need a server restart to take effect.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("SpacetimeDB PATH configuration process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+
+    private async void InstallCustomRust()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            SetStatus("Please enter a SSH username first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomRust && !installIfAlreadyInstalled)
+        {
+            SetStatus("Rust is already installed on the remote server.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing Rust on remote server...", Color.yellow);
+        
+        // Create a more structured bash script for Rust installation
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Installing Rust on Remote Server =====\"\n\n" +
+            "echo \"===== Step 1: Installing prerequisites =====\"\n" +
+            "sudo apt update\n" +
+            "sudo apt install -y build-essential curl\n\n" +
+            
+            "echo \"===== Step 2: Downloading Rust installer =====\"\n" +
+            $"cd /home/{sshUserName}\n" +
+            "sudo curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh\n" +
+            "sudo chmod +x rustup.sh\n" +
+            $"sudo chown {sshUserName}:{sshUserName} rustup.sh\n\n" +
+            
+            "echo \"===== Step 3: Installing Rust with automatic -y =====\"\n" +
+            $"sudo -u {sshUserName} bash -c './rustup.sh -y'\n" +
+            "sudo rm rustup.sh\n\n" +
+            
+            "echo \"===== Step 4: Setting up Rust environment =====\"\n" +
+            $"# Add Rust to PATH for user {sshUserName} if not already present\n" +
+            $"if ! grep -q \"HOME/.cargo/env\" /home/{sshUserName}/.bashrc; then\n" +
+            $"  echo 'source \"$HOME/.cargo/env\"' >> /home/{sshUserName}/.bashrc\n" +
+            $"  sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
+            "fi\n\n" +
+            
+            "echo \"===== Step 5: Verifying installation =====\"\n" +
+            "echo \"Checking Rust version:\"\n" +
+            $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && rustc --version'\n\n" +
+            "echo \"Checking Cargo version:\"\n" +
+            $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && cargo --version'\n\n" +
+            
+            "echo \"===== Done! =====\"\n";
+            
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Installing Rust in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("Rust installation completed. Checking installation status...", Color.green);
+            await Task.Delay(2000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomRust)
+            {
+                SetStatus("Rust installed successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("Rust installation verification failed. It may take a server restart to take effect.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("Rust installation process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+    #endregion
+    
     #region Log Messages
     private void LogMessage(string message, int type)
     {
@@ -1246,6 +2090,8 @@ public class ServerInstallerWindow : EditorWindow
         public bool isInstalled;
         public bool isEnabled = true; // Whether the item is enabled or greyed out
         public Action installAction;
+        public bool hasUsernameField = false; // Whether to show a username input field
+        public string usernameLabel = "Debian Username:"; // Default label for the username field
     }
     #endregion
 } // Class

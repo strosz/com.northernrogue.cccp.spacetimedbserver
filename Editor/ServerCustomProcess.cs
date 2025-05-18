@@ -186,7 +186,7 @@ namespace NorthernRogue.CCCP.Editor
             try
             {
                 // Use a very basic test command with short timeout
-                Log("Testing SSH connection to " + customServerUrl + " with simple test command...", 0);
+                Log("Testing SSH connection with " + sshUserName + " to " + customServerUrl + " with simple test command...", 0);
                 var result = RunSimpleCommand("echo CONNECTION_TEST_OK", 3000);
                 
                 if (result.success && result.output.Contains("CONNECTION_TEST_OK"))
@@ -702,5 +702,135 @@ namespace NorthernRogue.CCCP.Editor
                 }
             });
         }
+
+        // For simple prerequisites check
+        public async void CheckPrerequisites(Action<bool, bool, bool, bool, bool> callback)
+        {
+            if (!IsSessionActive())
+            {
+                Log("Cannot check prerequisites: SSH session not active", -1);
+                callback(false, false, false, false, false);
+                return;
+            }
+
+            try
+            {
+                Log("Checking prerequisites on remote Debian machine...", 0);
+                
+                // Check Debian version (trixie)
+                var debianCheckResult = await RunCustomCommandAsync("cat /etc/os-release | grep VERSION_CODENAME");
+                bool hasTrixie = debianCheckResult.success && debianCheckResult.output.Contains("trixie");
+                
+                // Check curl
+                var curlCheckResult = await RunCustomCommandAsync("which curl");
+                bool hasCurl = curlCheckResult.success && curlCheckResult.output.Contains("/usr/bin/curl");
+                
+                // Check SpacetimeDB
+                bool hasSpacetimeDB = await CheckSpacetimeDBInstalled();
+                
+                // Check PATH
+                var pathCheckResult = await RunCustomCommandAsync("bash -l -c 'which spacetime'");
+                bool hasSpacetimeDBPath = pathCheckResult.success && pathCheckResult.output.Contains("spacetime");
+                
+                // Check Rust
+                var rustCheckResult = await RunCustomCommandAsync("bash -l -c 'which rustup'");
+                bool hasRust = rustCheckResult.success && rustCheckResult.output.Contains("rustup");
+
+                Log($"Prerequisites check complete. Trixie: {hasTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}", 0);
+                
+                callback(hasTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust);
+            }
+            catch (Exception ex)
+            {
+                Log($"Error checking prerequisites: {ex.Message}", -1);
+                callback(false, false, false, false, false);
+            }
+        }
+        
+        // Run SSH commands in a visible PowerShell window
+        // This is needed for commands requiring interactive user input (like password prompts)
+        public async Task<bool> RunVisibleSSHCommand(string commands)
+        {
+            try
+            {
+                // Load SSH settings
+                LoadSettings();
+                
+                // Extract hostname from URL if needed
+                string serverHost = customServerUrl;
+                if (serverHost.Contains("://"))
+                {
+                    Uri uri = new Uri(serverHost);
+                    serverHost = uri.Host;
+                }
+                
+                // Create a temporary script file to run the SSH commands
+                string tempScriptPath = Path.Combine(Path.GetTempPath(), $"sshcommands_{DateTime.Now.Ticks}.ps1");
+                
+                // Prepare the PowerShell script content
+                string scriptContent = 
+                    "# Show SSH command being executed\n" +
+                    $"Write-Host \"Connecting to {serverHost} as {sshUserName}...\" -ForegroundColor Cyan\n\n" +
+                    "# SSH command with proper escaping\n" +
+                    $"ssh -i \"{sshPrivateKeyPath}\" {sshUserName}@{serverHost} -t \"bash -c '{commands.Replace("'", "''")}'\"" +
+                    "\n\n" +
+                    "# Keep window open\n" +
+                    "Write-Host \"Press any key to close this window...\" -ForegroundColor Yellow\n" +
+                    "$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')\n";
+                
+                // Write the script to the temp file
+                File.WriteAllText(tempScriptPath, scriptContent);
+                
+                if (debugMode) Log($"Created temporary PowerShell script at: {tempScriptPath}", 0);
+                
+                // Create process to run the PowerShell script
+                Process process = new Process();
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-ExecutionPolicy Bypass -File \"{tempScriptPath}\"",
+                    UseShellExecute = true, // Required for visible window
+                    CreateNoWindow = false,
+                    WindowStyle = ProcessWindowStyle.Normal
+                };
+                
+                process.StartInfo = startInfo;
+                process.Start();
+                
+                if (debugMode) Log("Started PowerShell process for SSH command", 0);
+                
+                // Wait for the process to exit
+                await Task.Run(() => {
+                    process.WaitForExit();
+                });
+                
+                // Clean up the temporary script file
+                try
+                {
+                    if (File.Exists(tempScriptPath))
+                    {
+                        File.Delete(tempScriptPath);
+                        if (debugMode) Log("Cleaned up temporary script file", 0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Ignore deletion errors
+                    if (debugMode) Log($"Failed to delete temp script (non-critical): {ex.Message}", 0);
+                }
+                
+                Log(process.ExitCode == 0 
+                    ? "SSH command executed successfully" 
+                    : "SSH command returned non-zero exit code", 
+                    process.ExitCode == 0 ? 1 : -1);
+                    
+                return process.ExitCode == 0;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error running SSH command: {ex.Message}", -1);
+                return false;
+            }
+        }
     }
-} 
+}

@@ -851,7 +851,7 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 string userNameTooltip = 
                 "The SSH username to use to login to your distro.";
-                EditorGUILayout.LabelField(new GUIContent("Distro Username:", userNameTooltip), GUILayout.Width(110));
+                EditorGUILayout.LabelField(new GUIContent("SSH Username:", userNameTooltip), GUILayout.Width(110));
                 string newUserName = EditorGUILayout.DelayedTextField(sshUserName, GUILayout.Width(150));
                 if (newUserName != sshUserName)
                 {
@@ -913,8 +913,8 @@ public class ServerWindow : EditorWindow
                 
                 EditorGUILayout.Space(3);
 
-                if (GUILayout.Button("Show Documentation"))
-                        Application.OpenURL(ServerWindow.Documentation);
+                if (GUILayout.Button("Launch Custom Server Installer"))
+                    ServerInstallerWindow.ShowCustomWindow();
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesCustom();
 

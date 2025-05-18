@@ -1555,7 +1555,7 @@ public class ServerManager
             spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
             if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
             {
-                LogMessage($"SpacetimeDB update available! Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                LogMessage($"SpacetimeDB update available for WSL! Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
             }
         }
