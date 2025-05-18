@@ -3,7 +3,6 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Runtime.CompilerServices;
 
 // Check and install everything necessary to run SpacetimeDB with this window ///
 
@@ -15,11 +14,13 @@ public class ServerInstallerWindow : EditorWindow
     private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
     private ServerCMDProcess cmdProcess;
     private ServerCustomProcess customProcess;
-    
+    private ServerManager serverManager;
+        
     // UI
     private Vector2 scrollPosition;
     private string statusMessage = "Ready to install components.";
     private bool userNamePrompt = false;
+    private bool showUpdateButton = false;
     private Color statusColor = Color.grey;
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
     private double lastRepaintTime = 0;
@@ -28,14 +29,17 @@ public class ServerInstallerWindow : EditorWindow
     // Tab selection
     private int currentTab = 0; // 0 = WSL Installer, 1 = Custom Debian Installer
     private readonly string[] tabNames = { "WSL Installer", "Custom Debian Installer" };
-      // EditorPrefs
+
+    // EditorPrefs
     private string userName = ""; // For WSL mode
     private string sshUserName = ""; // For SSH remote server mode
+
     // Temporary fields for username input
     private string tempUserNameInput = "";
     private string tempCreateUserNameInput = ""; // For creating new user on remote SSH server
 
     private string spacetimeDBCurrentVersion = "";
+    private string spacetimeDBCurrentVersionCustom = "";
     private string spacetimeDBLatestVersion = "";
     
     // Styles
@@ -106,6 +110,7 @@ public class ServerInstallerWindow : EditorWindow
         // Initialize both processes
         cmdProcess = new ServerCMDProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
+        serverManager = new ServerManager(LogMessage, () => Repaint());
         
         // Check if this is the first time the window is opened
         bool isFirstTime = !EditorPrefs.HasKey(PrefsKeyPrefix+FirstTimeOpenKey);
@@ -161,6 +166,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Load version info of SpacetimeDB
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+        spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         // Initialize both installer item lists
@@ -182,7 +188,9 @@ public class ServerInstallerWindow : EditorWindow
 
     private void OnFocus()
     {
-        InitializeCustomInstallerWindow();
+        if (currentTab == 1) {
+            InitializeCustomInstallerWindow();
+        }
     }
 
     private void InitializeCustomInstallerWindow()
@@ -643,9 +651,11 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         string description = currentTab == 0 ? 
-            "Install all the required software to run your local SpacetimeDB Server in WSL." : 
-            "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.";
-            
+            "Install all the required software to run your local SpacetimeDB Server in WSL.\n" +
+            "This has been tested to work on a fresh install from the ground up." :
+            "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.\n" +
+            "This has been tested to work on a fresh Debian homelab server, VM or VPS instance from the ground up.";
+
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
 
@@ -765,11 +775,19 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
         
         // Title - reuse cached content when possible
-        EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        bool showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
-                                currentTab == 0 && // Only show update button in WSL mode, not in custom SSH mode
-                                !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
-                                !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
-                                spacetimeDBCurrentVersion != spacetimeDBLatestVersion;
+        EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        
+
+        if (currentTab == 0) {
+            showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+                                    !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
+                                    !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
+                                    spacetimeDBCurrentVersion != spacetimeDBLatestVersion;
+        } else if (currentTab == 1) {
+            showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+                                    !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
+                                    !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
+                                    spacetimeDBCurrentVersionCustom != spacetimeDBLatestVersion;
+        }
         
         // Status (installed or install button)
         if (showUpdateButton)
@@ -892,7 +910,7 @@ public class ServerInstallerWindow : EditorWindow
     #endregion
     
     #region Check Installation Status
-    private void CheckInstallationStatus()
+    private async void CheckInstallationStatus()
     {
         if (isRefreshing) return; // Don't start a new refresh if one is already running
         
@@ -924,13 +942,16 @@ public class ServerInstallerWindow : EditorWindow
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
             EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
-            
-            // Update UI
-            UpdateInstallerItemsStatus();
-            
-            isRefreshing = false;
-            SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
         });
+
+        // Check SpacetimeDB version to update it if it was updated in the installer
+        await serverManager.CheckSpacetimeDBVersion();
+
+        // Update UI
+        UpdateInstallerItemsStatus();
+        
+        isRefreshing = false;
+        SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
     }
     
     private async void CheckCustomInstallationStatus()
@@ -1016,6 +1037,9 @@ public class ServerInstallerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
         EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
         
+        // Update SpacetimeDB version for custom installation
+        await customProcess.CheckSpacetimeDBVersionCustom();
+
         // Update UI
         UpdateInstallerItemsStatus();
         

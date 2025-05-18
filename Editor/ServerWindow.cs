@@ -1314,7 +1314,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !customServerActive && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1455,42 +1455,85 @@ public class ServerWindow : EditorWindow
             else if (serverMode == ServerMode.MaincloudServer)
                 EditorGUILayout.LabelField("Maincloud SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
+            if (GUILayout.Button("Login", GUILayout.Height(20)))
+            {
+                if (serverManager.CLIAvailableLocal() && serverMode == ServerMode.WslServer) serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
+                #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                                else if (serverManager.CLIAvailableRemote() && serverMode == ServerMode.CustomServer) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
+                #pragma warning restore CS4014
+                else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
+            }
+
             if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
             {
-                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
-                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
+                if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote()) 
+                serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
+                else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
-                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
-                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
+                if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote())
+                serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
+                else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
             }
 
             if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
             {
-                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime list", "Showing active modules");
-                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
+                if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote())  
+                serverManager.RunServerCommand("spacetime list", "Showing active modules");
+                else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
             }
 
-            if (GUILayout.Button("Show Module Config", GUILayout.Height(20)))
+            /*if (GUILayout.Button("Show Module Config", GUILayout.Height(20)))
             {
                 if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime module list", "Showing module config");
                 else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
-            }
+            }*/
 
             if (serverMode != ServerMode.MaincloudServer)
             {
                 if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
                 {
+                    if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote())
                     serverManager.PingServer(true);
+                    else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
                 }
             }
             
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
             {
-                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
+                if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote())   
+                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
+            }
+
+            if (serverMode == ServerMode.WslServer)
+            {
+                if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
+                {
+                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the WSL server is not running.";
+                    EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
+                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
+                    {
+                        ServerInstallerWindow.ShowWindow();
+                    }
+                    EditorGUI.EndDisabledGroup();
+                }
+            }
+
+            if (serverMode == ServerMode.CustomServer)
+            {
+                if (spacetimeDBCurrentVersionCustom != spacetimeDBLatestVersion)
+                {
+                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the server is not running.";
+                    EditorGUI.BeginDisabledGroup(serverCustomProcess.IsSessionActive());
+                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
+                    {
+                        ServerInstallerWindow.ShowCustomWindow();
+                    }
+                    EditorGUI.EndDisabledGroup();
+                }
             }
 
             EditorGUILayout.LabelField("WSL Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
@@ -1517,17 +1560,6 @@ public class ServerWindow : EditorWindow
                     serverManager.RestoreServerData();
                 }
                 EditorGUI.EndDisabledGroup();
-
-                if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
-                {
-                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the WSL server is not running.";
-                    EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
-                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB on WSL", updateTooltip), GUILayout.Height(20)))
-                    {
-                        ServerInstallerWindow.ShowWindow();
-                    }
-                    EditorGUI.EndDisabledGroup();
-                }
             }
         }
         

@@ -331,17 +331,30 @@ public class ServerManager
         EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", mode.ToString());
     }
 
-    public bool CLIAvailable()
+    public bool CLIAvailableLocal()
     {
-        // Check if the CLI is available
         if (hasWSL)
         {
-            if (debugMode) LogMessage("SpacetimeDB CLI is available.", 1);
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is available.", 1);
             return true;
         }
         else
         {
-            if (debugMode) LogMessage("SpacetimeDB CLI is not available.", -2);
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is not available.", -2);
+            return false;
+        }
+    }
+
+    public bool CLIAvailableRemote()
+    {
+        if (serverCustomProcess.StartSession())
+        {
+            if (debugMode) LogMessage("SpacetimeDB Remote CLI is available.", 1);
+            return true;
+        }
+        else
+        {
+            if (debugMode) LogMessage("SpacetimeDB Remote CLI is not available.", -2);
             return false;
         }
     }
@@ -880,11 +893,10 @@ public class ServerManager
         {
             // Run the command silently and capture the output
             LogMessage($"{description}...", 0);
-            
+
             // Choose the right processor based on server mode
-            if (serverMode == ServerMode.CustomServer)
+            if (serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate"))
             {
-                // Use the custom server processor for SSH commands
                 var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command);
                 
                 // Display the results in the output log
@@ -902,7 +914,7 @@ public class ServerManager
                 {
                     LogMessage("Command completed with no output.", 0);
                 }
-                
+
                 // Handle special cases for publish and generate
                 bool isPublishCommand = command.Contains("spacetime publish");
                 bool isGenerateCommand = command.Contains("spacetime generate");
@@ -934,9 +946,8 @@ public class ServerManager
                     }
                 }
             }
-            else
+            else // WSL mode
             {
-                // Use the standard command processor for WSL mode
                 // Execute the command through the command processor
                 var result = await cmdProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
@@ -1020,6 +1031,10 @@ public class ServerManager
             if (serverMode == ServerMode.MaincloudServer)
             {
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName}", $"Publishing module '{ModuleName}' to Maincloud");
+            }
+            else if (serverMode == ServerMode.CustomServer)
+            {
+                RunServerCommand($"spacetime publish --server {CustomServerUrl} {ModuleName}", $"Publishing module '{ModuleName}' to Custom Server");
             }
             else
             {

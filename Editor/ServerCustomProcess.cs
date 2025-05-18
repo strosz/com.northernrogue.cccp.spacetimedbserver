@@ -381,7 +381,7 @@ public class ServerCustomProcess
     #region Commands
 
     // Helper function to run a SpacetimeDB command
-    public async Task<(bool success, string output, string error)> RunSpacetimeDBCommandAsync(string command, int timeoutMs = 5000)
+    public async Task<(bool success, string output, string error)> RunSpacetimeDBCommandAsync(string command, int timeoutMs = 10000)
     {
         // Use the full path to spacetime executable
         string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
@@ -420,7 +420,8 @@ public class ServerCustomProcess
         // Wrap the synchronous result in a completed task to match the async signature
         return await Task.FromResult(result);
     }
-        // Check if SpacetimeDB is installed on the remote server
+
+    // Check if SpacetimeDB is installed on the remote server
     public async Task<bool> CheckSpacetimeDBInstalled()
     {
         // Use cached result if available
