@@ -685,6 +685,11 @@ public class ServerOutputWindow : EditorWindow
         strippedLog = Regex.Replace(strippedLog, 
             @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
             "$1");
+
+        // Handle journalctl output format - remove middle timestamp and service info
+        strippedLog = Regex.Replace(strippedLog,
+            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ [A-Za-z]+ spacetime\[\d+\]: ",
+            "$1 ");
         
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");
@@ -692,6 +697,7 @@ public class ServerOutputWindow : EditorWindow
         strippedLog = strippedLog.Replace("WARN", "<color=#FFCC66>WARN</color>");
         strippedLog = strippedLog.Replace("warning:", "<color=#FFCC66>warning:</color>");
         strippedLog = strippedLog.Replace("INFO", "<color=#66CCFF>INFO</color>");
+        strippedLog = strippedLog.Replace("DEBUG", "<color=#66CCFF>DEBUG</color>");
           // Also convert any existing formatted timestamps if showing local time
         if (showLocalTime) {
             strippedLog = Regex.Replace(strippedLog, 
