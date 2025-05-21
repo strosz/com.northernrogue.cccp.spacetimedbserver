@@ -509,11 +509,11 @@ public class ServerWindow : EditorWindow
             Color lineColor = EditorGUIUtility.isProSkin ? new Color(0.15f, 0.15f, 0.15f, 1f) : new Color(0.6f, 0.6f, 0.6f, 1f);
             EditorGUI.DrawRect(lineRect, lineColor);
 
-            // Active serverMode
+            // Style Active serverMode
             GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
             activeToolbarButton.normal.textColor = Color.green;
 
-            // Inactive serverMode
+            // Style Inactive serverMode
             GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
             inactiveToolbarButton.normal.textColor = Color.gray5;
 
@@ -1197,7 +1197,7 @@ public class ServerWindow : EditorWindow
             }
             EditorGUILayout.EndHorizontal();
 
-            if (serverManager.SilentMode && serverMode == ServerMode.WslServer)
+            if (serverManager.SilentMode && serverMode != ServerMode.MaincloudServer)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);

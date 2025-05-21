@@ -206,7 +206,7 @@ public class ServerDataWindow : EditorWindow
         maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
 
         string rawCustomServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
-        customServerUrl = GetApiBaseUrl(customServerUrl);
+        customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
         
         serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
 

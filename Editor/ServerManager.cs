@@ -406,10 +406,7 @@ public class ServerManager
                 StartWslServer();
                 break;
             case ServerMode.CustomServer:
-                // Handle async method without changing method signature
-                EditorApplication.delayCall += async () => {
-                    await StartCustomServer();
-                };
+                EditorApplication.delayCall += async () => { await StartCustomServer(); };
                 break;
             case ServerMode.MaincloudServer:
                 StartMaincloudServer();
@@ -510,19 +507,28 @@ public class ServerManager
 
         if (success)
         {
-            bool confirmed = PingServerStatus();
-            if (!confirmed)
+            if (debugMode) LogMessage("Custom server process started and confirmed running.", 1);                // Mark as connected to the custom server
+            serverStarted = true;
+            serverConfirmedRunning = true;
+            isStartingUp = true; // To give time for the status check
+            
+            // Configure log processor for custom server if in silent mode
+            if (silentMode && logProcessor != null)
             {
-                if (debugMode) LogMessage("Custom server process started but not confirmed running. Please check the server status.", -1);
-                return;
-            }
-            else
-            {
-                if (debugMode) LogMessage("Custom server process started and confirmed running.", 1);
-                // Mark as connected to the custom server
-                serverStarted = true;
-                serverConfirmedRunning = true;
-                isStartingUp = false;
+                // Extract hostname from CustomServerUrl
+                string sshHost = ExtractHostname(CustomServerUrl);
+                
+                // Configure SSH details for the log processor
+                logProcessor.ConfigureSSH(
+                    SSHUserName,
+                    sshHost,
+                    SSHPrivateKeyPath,
+                    true // isCustomServer = true
+                );
+                
+                logProcessor.SetServerRunningState(true);
+                logProcessor.StartSSHLogging();
+                if (debugMode) LogMessage("Custom server log processors started successfully.", 1);
             }
         }
         RepaintCallback?.Invoke();
@@ -653,6 +659,13 @@ public class ServerManager
         try
         {
             await serverCustomProcess.StopCustomServer();
+            
+            // Stop SSH logging if we were using it
+            if (silentMode && logProcessor != null)
+            {
+                logProcessor.StopSSHLogging();
+                if (DebugMode) LogMessage("Custom server log processors stopped.", 0);
+            }
         }
         catch (Exception ex)
         {
@@ -699,7 +712,7 @@ public class ServerManager
 
     #endregion
 
-    #region Check Server Status
+    #region Server Status
 
     public async Task CheckServerStatus()
     {
@@ -720,7 +733,8 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
+                    isActuallyRunning = true; // Already confirmed running by the StartCustomServer method
+                    // Will be confirmed in the regular check below when serverStarted is true
                 }
                 else // WSL and other modes
                 {
@@ -739,8 +753,6 @@ public class ServerManager
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(true);
 
-                    RepaintCallback?.Invoke();
-
                     // Auto-publish check if applicable
                     if (AutoPublishMode && ServerChangesDetected && !string.IsNullOrEmpty(ModuleName))
                     {
@@ -751,8 +763,10 @@ public class ServerManager
                         {
                             detectionProcess.ResetTrackingAfterPublish();
                         }
-                        return; // Confirmed, skip further checks this cycle
                     }
+                    RepaintCallback?.Invoke();
+                    await Task.Delay(5000); // Occupy the method until next checkInterval in ServerWindow, to give the status methods time to update
+                    return;
                 }
                 // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
@@ -793,7 +807,9 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
+                    await serverCustomProcess.CheckServerRunning(true);
+                    isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
+                    //UnityEngine.Debug.Log("serverStarted result: " + isActuallyRunning);
                 }
                 else // WSL and other modes
                 {
@@ -805,8 +821,8 @@ public class ServerManager
                 {
                     serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                     string msg = isActuallyRunning
-                        ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: open")})"
-                        : $"WSL SpacetimeDB Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}: closed")})";
+                        ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: open")})"
+                        : $"SpacetimeDB Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")})";
                     LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                     // If state changed to NOT running, update the main serverStarted flag
@@ -861,8 +877,7 @@ public class ServerManager
                         bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : PingServerStatus();
                         
                         if (confirmed)
-                        {
-                            // Detected server running, not recently stopped -> likely external start/recovery
+                        {                            // Detected server running, not recently stopped -> likely external start/recovery
                             if (DebugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
@@ -871,6 +886,24 @@ public class ServerManager
 
                             // Update logProcessor state
                             logProcessor.SetServerRunningState(true);
+                              // If we detected a custom server is running and we are in silent mode,
+                            // start the SSH log processors
+                            if (serverMode == ServerMode.CustomServer && isActuallyRunning && silentMode && logProcessor != null)
+                            {
+                                // Extract hostname from CustomServerUrl
+                                string sshHost = ExtractHostname(CustomServerUrl);
+                                
+                                // Configure SSH details for the log processor
+                                logProcessor.ConfigureSSH(
+                                    SSHUserName,
+                                    sshHost,
+                                    SSHPrivateKeyPath,
+                                    true // isCustomServer = true
+                                );
+                                
+                                logProcessor.StartSSHLogging();
+                                if (DebugMode) LogMessage("Custom server log processors started automatically.", 1);
+                            }
                         }
 
                         RepaintCallback?.Invoke();
@@ -1317,14 +1350,42 @@ public class ServerManager
     {
         if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting tail restart.");
         
-        // Delegate to the logProcessor for tail restart
-        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+        // Handle different server modes
+        if (serverMode == ServerMode.CustomServer)
         {
-            logProcessor.AttemptTailRestartAfterReload();
+            // For custom server, use SSH tail restart
+            if (IsServerStarted && SilentMode)
+            {
+                // Extract hostname from CustomServerUrl
+                string sshHost = ExtractHostname(CustomServerUrl);
+                
+                // Configure SSH details for the log processor
+                logProcessor.ConfigureSSH(
+                    SSHUserName,
+                    sshHost,
+                    SSHPrivateKeyPath,
+                    true // isCustomServer = true
+                );
+                
+                logProcessor.AttemptSSHTailRestartAfterReload();
+                if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Attempted SSH tail restart for custom server");
+            }
+            else
+            {
+                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart SSH tail process - custom server not running or not in silent mode");
+            }
         }
         else
         {
-            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart tail process - server not running or not in silent mode");
+            // Original code for WSL mode
+            if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+            {
+                logProcessor.AttemptTailRestartAfterReload();
+            }
+            else
+            {
+                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart tail process - server not running or not in silent mode");
+            }
         }
     }
 
@@ -1340,10 +1401,37 @@ public class ServerManager
     {
         if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Checking database log process");
         
-        // Delegate to the logProcessor
-        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+        if (serverMode == ServerMode.CustomServer)
         {
-            logProcessor.AttemptDatabaseLogRestartAfterReload();
+            // For custom server, use SSH database log restart
+            if (IsServerStarted && SilentMode)
+            {
+                // Extract hostname from CustomServerUrl
+                string sshHost = ExtractHostname(CustomServerUrl);
+                
+                // Configure SSH details for the log processor
+                logProcessor.ConfigureSSH(
+                    SSHUserName,
+                    sshHost,
+                    SSHPrivateKeyPath,
+                    true // isCustomServer = true
+                );
+                
+                logProcessor.AttemptSSHDatabaseLogRestartAfterReload();
+                if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Attempted SSH database log restart for custom server");
+            }
+        }
+        else
+        {
+            // Original code for WSL mode
+            if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+            {
+                logProcessor.AttemptDatabaseLogRestartAfterReload();
+            }
+            else
+            {
+                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart database log process - server not running or not in silent mode");
+            }
         }
     }
 
@@ -1437,14 +1525,32 @@ public class ServerManager
         {
             await CheckWslStatus();
             await CheckServerStatus();
+            
+            // Check log processes for WSL mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
         }
         else if (serverMode == ServerMode.CustomServer)
         {
             await CheckServerStatus();
+            
+            // Check SSH log processes for custom server mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
+            }
         }
         else if (serverMode == ServerMode.MaincloudServer)
         {
             await CheckMaincloudConnectivity();
+            
+            // Check log processes for Maincloud mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
         }
     }
 
@@ -1587,6 +1693,32 @@ public class ServerManager
         {
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
         }
+    }
+
+    // Helper method to extract hostname from URL
+    private string ExtractHostname(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return string.Empty;
+            
+        string hostname = url;
+        
+        // Remove protocol if present
+        if (hostname.StartsWith("http://")) 
+            hostname = hostname.Substring(7);
+        else if (hostname.StartsWith("https://")) 
+            hostname = hostname.Substring(8);
+        
+        // Remove path and port if present
+        int colonIndex = hostname.IndexOf(':');
+        if (colonIndex > 0) 
+            hostname = hostname.Substring(0, colonIndex);
+            
+        int slashIndex = hostname.IndexOf('/');
+        if (slashIndex > 0) 
+            hostname = hostname.Substring(0, slashIndex);
+            
+        return hostname;
     }
     #endregion
 } // Class

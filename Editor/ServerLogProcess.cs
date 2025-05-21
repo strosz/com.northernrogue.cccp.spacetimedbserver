@@ -72,6 +72,747 @@ public class ServerLogProcess
     private const int TARGET_SIZE = 50000;
     private volatile bool isProcessing = false;
     
+    #region SSH Log Methods for Custom Server
+    
+    // Path for remote server logs
+    public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
+    
+    // SSH process variables
+    private Process sshTailProcess;
+    private Process sshDatabaseLogProcess;
+      // SSH details
+    private string sshUser = "";
+    private string sshHost = "";
+    private string sshKeyPath = "";
+    private bool isCustomServer = false;
+    private string remoteSpacetimePath = "spacetime"; // Default path
+    
+    // Configure SSH details for custom server log capture
+    public void ConfigureSSH(string sshUser, string sshHost, string sshKeyPath, bool isCustomServer)
+    {
+        this.sshUser = sshUser;
+        this.sshHost = sshHost;
+        this.sshKeyPath = sshKeyPath;
+        this.isCustomServer = isCustomServer;
+        
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured SSH: User={sshUser}, Host={sshHost}, KeyPath={sshKeyPath}, IsCustomServer={isCustomServer}");
+          // Find spacetime path asynchronously
+        EditorApplication.delayCall += async () => 
+        {
+            try
+            {
+                remoteSpacetimePath = await FindRemoteSpacetimePathAsync();
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Remote spacetime path set to: {remoteSpacetimePath}");
+                
+                // Test the connection and spacetime command
+                bool testResult = await TestSSHAndSpacetimeAsync();
+                if (!testResult)
+                {
+                    logCallback("Warning: Could not verify SpacetimeDB on the remote server. Log capture may not work correctly.", -2);
+                    logCallback("Check that you can SSH to the server and that spacetime is installed and in PATH.", -2);
+                }
+            }
+            catch (Exception ex) 
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error finding remote spacetime path: {ex.Message}");
+                remoteSpacetimePath = "spacetime"; // Default fallback
+                logCallback("Error establishing SSH connection. Check SSH credentials and server details.", -1);
+            }
+        };
+    }
+      // Start SSH-based log tailing for custom server
+    public async void StartSSHLogging()
+    {
+        // Clean up any leftover tail processes on the remote server before starting new ones
+        KillRemoteTailProcesses();
+        
+        // Clear logs if needed
+        if (clearModuleLogAtStart)
+        {
+            ClearSSHModuleLogFile();
+        }
+        
+        if (clearDatabaseLogAtStart)
+        {
+            ClearSSHDatabaseLog();
+        }
+        
+        // Start SSH-based log tailing processes
+        StopSSHTailingLogs(); // Make sure no previous tail process is running
+        
+        // Ensure we have found the spacetime path
+        // If not previously found, try to find it now
+        if (remoteSpacetimePath == "spacetime")
+        {
+            try
+            {
+                remoteSpacetimePath = await FindRemoteSpacetimePathAsync();
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Found spacetime path before starting logs: {remoteSpacetimePath}");
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error finding spacetime path: {ex.Message}");
+            }
+        }
+          // Small delay to ensure log files are ready
+        System.Threading.Thread.Sleep(200);
+        
+        // Check if the spacetimedb service is running
+        bool serviceRunning = false;
+        try 
+        {
+            serviceRunning = await CheckSpacetimeDBServiceStatus();
+            if (serviceRunning && debugMode) 
+                logCallback("SpacetimeDB service is running, will use journalctl for logs", 1);
+            else if (debugMode)
+                logCallback("SpacetimeDB service not detected, falling back to log file", 0);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) 
+                UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking service status: {ex.Message}");
+        }
+        
+        // Try to use journalctl for service logs first if service is running
+        Process serviceLogProcess = serviceRunning ? StartSSHServiceLogProcess() : null;
+        
+        if (serviceLogProcess != null)
+        {
+            // Successfully started service log monitoring
+            sshTailProcess = serviceLogProcess;
+            if (debugMode) logCallback("Using journalctl to monitor spacetimedb.service logs", 1);
+        }
+        else 
+        {
+            // Fall back to log file tailing if journalctl didn't work
+            if (debugMode) logCallback("Falling back to log file tailing", 0);
+            
+            // Start module log tailing
+            sshTailProcess = StartSSHTailingLogFile(CustomServerCombinedLogPath, (line) => {
+                const int maxLogLength = 75000;
+                const int trimToLength = 50000;
+                if (silentServerCombinedLog.Length > maxLogLength)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {silentServerCombinedLog.Length} chars.");
+                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncated SSH log length: {silentServerCombinedLog.Length}");
+                }
+                
+                string formattedLine = FormatServerLogLine(line);
+                moduleLogAccumulator.Append(formattedLine).Append("\n");
+                
+                // Update SessionState periodically
+                UpdateSessionStateIfNeeded();
+                
+                // Notify of log update
+                onModuleLogUpdated?.Invoke();
+            });
+        }
+          // Start database log tailing
+        StartSSHDatabaseLogProcess();
+        
+        // Service log monitoring was already attempted earlier
+        // No need to call StartSSHServiceLogProcess() again since sshTailProcess is already set
+    }
+    
+    // Clear the module log file on the remote server
+    public void ClearSSHModuleLogFile()
+    {
+        if (debugMode) logCallback("Clearing SSH log file...", 0);
+        
+        try
+        {
+            // Create a process to clear the log file via SSH
+            Process clearProcess = new Process();
+            clearProcess.StartInfo.FileName = "ssh";
+            clearProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"sudo truncate -s 0 {CustomServerCombinedLogPath}\"";
+            clearProcess.StartInfo.UseShellExecute = false;
+            clearProcess.StartInfo.CreateNoWindow = true;
+            clearProcess.StartInfo.RedirectStandardOutput = true;
+            clearProcess.StartInfo.RedirectStandardError = true;
+            
+            clearProcess.Start();
+            clearProcess.WaitForExit(5000); // Wait up to 5 seconds
+            
+            // Also clear the in-memory log
+            silentServerCombinedLog = "";
+            SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+            
+            if (debugMode) logCallback("SSH log file cleared successfully", 1);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error clearing SSH log file: {ex.Message}", -1);
+        }
+    }
+    
+    // Clear the database log for SSH
+    public void ClearSSHDatabaseLog()
+    {
+        if (debugMode) logCallback("Clearing SSH database log...", 0);
+        
+        databaseLogContent = "";
+        cachedDatabaseLogContent = "";
+        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        
+        if (debugMode) logCallback("SSH database log cleared successfully", 1);
+    }
+    
+    // Start tailing a log file via SSH
+    private Process StartSSHTailingLogFile(string remotePath, Action<string> onNewLine)
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        {
+            if (debugMode) logCallback("SSH connection details incomplete", -1);
+            return null;
+        }
+        
+        if (debugMode) logCallback($"Starting SSH tail for {remotePath}", 0);
+        
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "ssh";
+            // Use sudo to access system logs and tail -F for robustness
+            string tailCommand = $"sudo tail -F -n +1 {remotePath}";
+            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{tailCommand}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.EnableRaisingEvents = true;
+            
+            process.OutputDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Tail Raw Output");
+                    EditorApplication.delayCall += () => {
+                        try {
+                            // Pass data to callback
+                            onNewLine(args.Data);
+                        }
+                        catch (Exception ex) {
+                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH tail output handler: {ex.Message}");
+                        }
+                    };
+                }
+            };
+            
+            process.ErrorDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Tail Error: {args.Data}");
+                    EditorApplication.delayCall += () => {
+                        try {
+                            // Format as error and pass to callback
+                            string formattedLine = FormatServerLogLine(args.Data, true);
+                            onNewLine(formattedLine);
+                        }
+                        catch (Exception ex) {
+                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH tail error handler: {ex.Message}");
+                        }
+                    };
+                }
+            };
+            
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            
+            if (debugMode) logCallback("Started SSH log tailing process", 1);
+            return process;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error starting SSH log tailing: {ex.Message}", -1);
+            return null;
+        }
+    }
+      // Stop all SSH tailing processes
+    private void StopSSHTailingLogs()
+    {
+        if (sshTailProcess != null)
+        {
+            if (debugMode) logCallback("Stopping SSH tail process", 0);
+            
+            try
+            {
+                if (!sshTailProcess.HasExited)
+                {
+                    sshTailProcess.Kill();
+                    sshTailProcess.WaitForExit(1000); // Give it time to exit properly
+                    sshTailProcess.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping SSH tail process: {ex.Message}");
+            }
+            
+            sshTailProcess = null;
+        }
+        
+        // Also kill any leftover remote tail processes to prevent accumulation
+        KillRemoteTailProcesses();
+        
+        if (debugMode) logCallback("SSH tail process stopped", 0);
+    }
+    
+    // Start process to monitor database logs via spacetime logs
+    private void StartSSHDatabaseLogProcess()
+    {
+        try
+        {
+            if (debugMode) logCallback("Starting SSH database logs process...", 0);
+            
+            // Mark state in SessionState
+            SessionState.SetBool(SessionKeyDatabaseLogRunning, true);
+            
+            // Check for required parameters
+            if (string.IsNullOrEmpty(moduleName))
+            {
+                if (debugMode) logCallback($"Module name is not set, cannot start SSH database log", -1);
+                return;
+            }
+
+            // Create a new process to run the spacetime logs command via SSH
+            sshDatabaseLogProcess = new Process();
+            sshDatabaseLogProcess.StartInfo.FileName = "ssh";            
+            
+            // Build the command to run spacetime logs with the module name using discovered path
+            // Wrap in a login shell to ensure proper environment is loaded
+            string logCommand = $"bash -l -c '{remoteSpacetimePath} logs {moduleName} -f'";
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Running remote command: {logCommand}");
+            sshDatabaseLogProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{logCommand}\"";
+            sshDatabaseLogProcess.StartInfo.UseShellExecute = false;
+            sshDatabaseLogProcess.StartInfo.CreateNoWindow = true;
+            sshDatabaseLogProcess.StartInfo.RedirectStandardOutput = true;
+            sshDatabaseLogProcess.StartInfo.RedirectStandardError = true;
+            sshDatabaseLogProcess.EnableRaisingEvents = true;
+            
+            // Clear existing logs when starting new process
+            databaseLogContent = "";
+            cachedDatabaseLogContent = "";
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+            
+            sshDatabaseLogProcess.OutputDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Database Log Raw Output");
+                    
+                    // Format the line immediately
+                    string formattedLine = FormatDatabaseLogLine(args.Data);
+                    
+                    // Update logs directly instead of using queue
+                    lock (logLock)
+                    {
+                        databaseLogContent += formattedLine + "\n";
+                        cachedDatabaseLogContent += formattedLine + "\n";
+                        
+                        // Check if we need to truncate
+                        if (databaseLogContent.Length > BUFFER_SIZE)
+                        {
+                            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars.");
+                            string truncatedContent = "[... Log Truncated ...]\n" + 
+                                databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
+                            databaseLogContent = truncatedContent;
+                            cachedDatabaseLogContent = truncatedContent;
+                        }
+                    }
+                    
+                    // Update SessionState and notify UI
+                    EditorApplication.delayCall += () => {
+                        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+                        onDatabaseLogUpdated?.Invoke();
+                    };
+                }
+            };
+            
+            sshDatabaseLogProcess.ErrorDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {                    
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Database Log Error: {args.Data}");
+                    
+                    // Special handling for common error messages
+                    string errorMessage = args.Data;
+                    if (errorMessage.Contains("command not found"))
+                    {
+                        logCallback($"ERROR: spacetime command not found on the remote server. Check that SpacetimeDB is installed and in PATH.", -1);
+                        errorMessage = "spacetime command not found on remote server. Check installation.";
+                    }
+                    else if (errorMessage.Contains("Permission denied"))
+                    {
+                        logCallback($"ERROR: Permission denied accessing spacetime on remote server.", -1);
+                    }
+                    
+                    // Format and add error message directly
+                    string formattedLine = FormatDatabaseLogLine($"ERROR: {errorMessage}", true);
+                    
+                    lock (logLock)
+                    {
+                        databaseLogContent += formattedLine + "\n";
+                        cachedDatabaseLogContent += formattedLine + "\n";
+                    }
+                    
+                    // Update SessionState and notify UI
+                    EditorApplication.delayCall += () => {
+                        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+                        onDatabaseLogUpdated?.Invoke();
+                    };
+                }
+            };
+            
+            sshDatabaseLogProcess.Start();
+            sshDatabaseLogProcess.BeginOutputReadLine();
+            sshDatabaseLogProcess.BeginErrorReadLine();
+            
+            if (debugMode) logCallback("Started SSH database log process", 1);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error starting SSH database log process: {ex.Message}", -1);
+            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+        }
+    }
+    
+    // Start process to monitor spacetimedb service logs via journalctl
+    private Process StartSSHServiceLogProcess()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        {
+            if (debugMode) logCallback("SSH connection details incomplete", -1);
+            return null;
+        }
+        
+        if (debugMode) logCallback("Starting SSH service log monitoring via journalctl", 0);
+        
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "ssh";
+            
+            // Use journalctl to monitor spacetimedb.service logs
+            // The -f flag follows the log in real-time
+            // The -u flag specifies the service unit name
+            // The --no-pager flag prevents pagination
+            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager";
+            
+            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.EnableRaisingEvents = true;
+            
+            process.OutputDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Service Log Raw Output");
+                    EditorApplication.delayCall += () => {
+                        try {
+                            // Format as service log entry and pass to module log
+                            string formattedLine = FormatServerLogLine($"[SERVICE] {args.Data}");
+                            moduleLogAccumulator.Append(formattedLine).Append("\n");
+                            
+                            // Update SessionState periodically
+                            UpdateSessionStateIfNeeded();
+                            
+                            // Notify of log update
+                            onModuleLogUpdated?.Invoke();
+                        }
+                        catch (Exception ex) {
+                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log output handler: {ex.Message}");
+                        }
+                    };
+                }
+            };
+            
+            process.ErrorDataReceived += (sender, args) => {
+                if (args.Data != null)
+                {                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Service Log Error: {args.Data}");
+                    
+                    // Special handling for common service log errors
+                    string errorMessage = args.Data;
+                    if (errorMessage.Contains("No entries"))
+                    {
+                        if (debugMode) logCallback("No service log entries found. Service may be newly started.", 0);
+                    }
+                    else if (errorMessage.Contains("Failed to") || errorMessage.Contains("error"))
+                    {
+                        logCallback($"Service log error: {errorMessage}", -1);
+                    }
+                    
+                    EditorApplication.delayCall += () => {
+                        try {
+                            // Format as error and pass to module log
+                            string formattedLine = FormatServerLogLine($"[SERVICE ERROR] {errorMessage}", true);
+                            moduleLogAccumulator.Append(formattedLine).Append("\n");
+                            
+                            // Update SessionState periodically
+                            UpdateSessionStateIfNeeded();
+                            
+                            // Notify of log update
+                            onModuleLogUpdated?.Invoke();
+                        }
+                        catch (Exception ex) {
+                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log error handler: {ex.Message}");
+                        }
+                    };
+                }
+            };
+            
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            
+            if (debugMode) logCallback("Started SSH service log monitoring process", 1);
+            return process;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error starting SSH service log monitoring: {ex.Message}", -1);
+            return null;
+        }
+    }
+      // Stop SSH database log process
+    private void StopSSHDatabaseLogProcess()
+    {
+        if (sshDatabaseLogProcess != null)
+        {
+            if (debugMode) logCallback("Stopping SSH database log process", 0);
+            
+            try
+            {
+                if (!sshDatabaseLogProcess.HasExited)
+                {
+                    sshDatabaseLogProcess.Kill();
+                    sshDatabaseLogProcess.WaitForExit(1000); // Give it time to exit properly
+                    sshDatabaseLogProcess.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping SSH database log process: {ex.Message}");
+            }
+            
+            sshDatabaseLogProcess = null;
+            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+            
+            // Also try to kill any leftover database log processes on the remote server
+            try
+            {
+                if (!string.IsNullOrEmpty(sshUser) && !string.IsNullOrEmpty(sshHost) && !string.IsNullOrEmpty(sshKeyPath) && !string.IsNullOrEmpty(moduleName))
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Cleaning up remote database log processes");
+                    
+                    Process cleanupProcess = new Process();
+                    cleanupProcess.StartInfo.FileName = "ssh";
+                    // Find and kill all spacetime logs processes for this module
+                    string killCommand = $"sudo pkill -f '{remoteSpacetimePath} logs {moduleName}'";
+                    cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
+                    cleanupProcess.StartInfo.UseShellExecute = false;
+                    cleanupProcess.StartInfo.CreateNoWindow = true;
+                    
+                    cleanupProcess.Start();
+                    cleanupProcess.WaitForExit(2000); // Wait up to 2 seconds
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up remote database log processes: {ex.Message}");
+            }
+            
+            if (debugMode) logCallback("SSH database log process stopped", 0);
+        }
+    }
+    
+    // Method to check SSH log processes and restart if needed
+    public void CheckSSHLogProcesses(double currentTime)
+    {
+        if (currentTime - lastTailCheckTime > tailCheckInterval)
+        {
+            lastTailCheckTime = currentTime;
+            
+            if (serverRunning && isCustomServer)
+            {
+                CheckSSHTailProcess();
+                CheckSSHDatabaseLogProcess();
+            }
+        }
+    }
+    
+    private void CheckSSHTailProcess()
+    {
+        if (sshTailProcess == null && serverRunning && isCustomServer)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH tail process needs restart");
+            AttemptSSHTailRestartAfterReload();
+        }
+        else if (sshTailProcess != null && (sshTailProcess.HasExited || !serverRunning || !isCustomServer))
+        {
+            if (!serverRunning || !isCustomServer)
+            {
+                StopSSHTailingLogs();
+            }
+            else if (sshTailProcess.HasExited)
+            {
+                AttemptSSHTailRestartAfterReload();
+            }
+        }
+    }
+    
+    private void CheckSSHDatabaseLogProcess()
+    {
+        if (sshDatabaseLogProcess == null && serverRunning && isCustomServer)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH database log process needs restart");
+            AttemptSSHDatabaseLogRestartAfterReload();
+        }
+        else if (sshDatabaseLogProcess != null && (sshDatabaseLogProcess.HasExited || !serverRunning || !isCustomServer))
+        {
+            if (!serverRunning || !isCustomServer)
+            {
+                StopSSHDatabaseLogProcess();
+            }
+            else if (sshDatabaseLogProcess.HasExited)
+            {
+                AttemptSSHDatabaseLogRestartAfterReload();
+            }
+        }
+    }
+      // Attempt to restart SSH tail process after domain reload
+    public void AttemptSSHTailRestartAfterReload()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Attempting to restart SSH tail process");
+        
+        if (serverRunning && isCustomServer && sshTailProcess == null)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Starting SSH tail process after reload");
+            
+            // Clean up any leftover processes first
+            KillRemoteTailProcesses();
+            
+            string remotePath = CustomServerCombinedLogPath;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using remote path: {remotePath}");
+            
+            sshTailProcess = StartSSHTailingLogFile(remotePath, (line) => {
+                // Logic is same as StartSSHLogging
+                const int maxLogLength = 75000;
+                const int trimToLength = 50000;
+                if (silentServerCombinedLog.Length > maxLogLength)
+                {
+                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                }
+                
+                string formattedLine = FormatServerLogLine(line);
+                moduleLogAccumulator.Append(formattedLine).Append("\n");
+                
+                // Update SessionState periodically
+                UpdateSessionStateIfNeeded();
+                
+                // Notify of log update
+                onModuleLogUpdated?.Invoke();
+            });
+            
+            if (sshTailProcess != null)
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH tail process restarted successfully");
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] SSH tail restart FAILED. StartSSHTailingLogFile returned NULL.");
+            }
+        }
+        else
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Not restarting SSH tail. ServerRunning: {serverRunning}, IsCustomServer: {isCustomServer}, TailProcess: {(sshTailProcess != null ? "exists" : "null")}");
+        }
+    }
+      // Attempt to restart SSH database log process after domain reload
+    public void AttemptSSHDatabaseLogRestartAfterReload()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Attempting to restart SSH database log process");
+        
+        if (serverRunning && isCustomServer && (sshDatabaseLogProcess == null || sshDatabaseLogProcess.HasExited))
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Starting SSH database log process after reload");
+            
+            // First kill any leftover processes
+            if (!string.IsNullOrEmpty(sshUser) && !string.IsNullOrEmpty(sshHost) && !string.IsNullOrEmpty(sshKeyPath) && !string.IsNullOrEmpty(moduleName))
+            {
+                try
+                {
+                    Process cleanupProcess = new Process();
+                    cleanupProcess.StartInfo.FileName = "ssh";
+                    string killCommand = $"sudo pkill -f '{remoteSpacetimePath} logs {moduleName}'";
+                    cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
+                    cleanupProcess.StartInfo.UseShellExecute = false;
+                    cleanupProcess.StartInfo.CreateNoWindow = true;
+                    
+                    cleanupProcess.Start();
+                    cleanupProcess.WaitForExit(2000);
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up before restart: {ex.Message}");
+                }
+            }
+            
+            StartSSHDatabaseLogProcess();
+        }
+    }
+    
+    // Stop all SSH logging processes
+    public void StopSSHLogging()
+    {
+        StopSSHTailingLogs();
+        StopSSHDatabaseLogProcess();
+        // Clean up any leftover tail processes on the remote server
+        KillRemoteTailProcesses();
+    }
+    
+    // Kill all leftover tail processes on the remote server
+    private void KillRemoteTailProcesses()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH connection details incomplete, cannot kill remote processes");
+            return;
+        }
+        
+        try
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Cleaning up remote tail processes");
+            
+            // Create a process to kill all tail processes on the remote server
+            Process cleanupProcess = new Process();
+            cleanupProcess.StartInfo.FileName = "ssh";
+            // Find and kill all tail processes related to our log file
+            string killCommand = $"sudo pkill -f 'tail -F -n \\+1 {CustomServerCombinedLogPath}'";
+            cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
+            cleanupProcess.StartInfo.UseShellExecute = false;
+            cleanupProcess.StartInfo.CreateNoWindow = true;
+            cleanupProcess.StartInfo.RedirectStandardOutput = true;
+            cleanupProcess.StartInfo.RedirectStandardError = true;
+            
+            cleanupProcess.Start();
+            cleanupProcess.WaitForExit(3000); // Wait up to 3 seconds
+            
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Remote tail processes cleanup completed");
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up remote tail processes: {ex.Message}");
+        }
+    }
+    
+    #endregion
+    
     public ServerLogProcess(
         Action<string, int> logCallback, 
         Action onModuleLogUpdated,
@@ -114,7 +855,7 @@ public class ServerLogProcess
         serverRunning = isRunning;
     }
     
-    #region Log Management Methods
+    #region Log Methods
     
     public void ClearModuleLogFile()
     {
@@ -305,7 +1046,7 @@ public class ServerLogProcess
     
     #endregion
     
-    #region Tail Process Management
+    #region Tail Processes
     
     private void StopTailingLogs()
     {
@@ -583,7 +1324,7 @@ public class ServerLogProcess
     
     #endregion
     
-    #region Database Log Management
+    #region DatabaseLog
     
     private void StartDatabaseLogProcess()
     {
@@ -852,6 +1593,171 @@ public class ServerLogProcess
     }
     
     #endregion
+
+    // Find spacetime binary path on the remote server
+    private async Task<string> FindRemoteSpacetimePathAsync()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        {
+            if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] SSH connection details incomplete");
+            return "spacetime"; // Default fallback
+        }
+
+        try
+        {            Process process = new Process();
+            process.StartInfo.FileName = "ssh";
+            
+            // Use a login shell to ensure PATH is fully loaded, similar to ServerInstallerWindow approach
+            string findCommand = "bash -l -c 'which spacetime' 2>/dev/null";
+            
+            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{findCommand}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            
+            process.Start();
+            
+            string output = await process.StandardOutput.ReadToEndAsync();
+            process.WaitForExit(5000); // Wait up to 5 seconds
+              string path = output.Trim();
+            if (!string.IsNullOrEmpty(path))
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Found remote spacetime path: {path}");
+                return path;
+            }
+            
+            // If the first approach failed, try checking common installation locations
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] First path detection failed, trying alternative locations");
+            
+            // List of common spacetime installation paths to check
+            string[] commonPaths = new string[] {
+                "/usr/local/bin/spacetime",
+                "/usr/bin/spacetime",
+                "$HOME/.local/bin/spacetime",
+                "$HOME/.local/share/spacetime/bin/spacetime-cli"
+            };
+            
+            foreach (string commonPath in commonPaths)
+            {
+                // Use test -x to check if the file exists and is executable
+                string checkCommand = $"test -x {commonPath} && echo {commonPath}";
+                
+                process = new Process();
+                process.StartInfo.FileName = "ssh";
+                process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{checkCommand}\"";
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                
+                process.Start();
+                string checkOutput = await process.StandardOutput.ReadToEndAsync();
+                process.WaitForExit(5000);
+                
+                string foundPath = checkOutput.Trim();
+                if (!string.IsNullOrEmpty(foundPath))
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Found spacetime at alternate location: {foundPath}");
+                    return foundPath;
+                }
+            }
+            
+            if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Could not find spacetime in any standard location, falling back to default");
+            logCallback("Warning: Could not find spacetime in PATH. Using default 'spacetime' command.", -2);
+            logCallback("Hint: Make sure spacetime is installed and accessible in your PATH on the remote server.", -2);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error finding spacetime path: {ex.Message}");
+        }
+        
+        return "spacetime"; // Default fallback
+    }
+
+    // Test SSH connection and check spacetime availability
+    private async Task<bool> TestSSHAndSpacetimeAsync()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+            return false;
+
+        try
+        {            Process process = new Process();
+            process.StartInfo.FileName = "ssh";
+            // Command to test connection and run a simple spacetime command with login shell
+            string testCommand = $"echo 'Testing SSH connection' && bash -l -c '{remoteSpacetimePath} --version'";
+            
+            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{testCommand}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            
+            process.Start();
+            
+            string output = await process.StandardOutput.ReadToEndAsync();
+            string error = await process.StandardError.ReadToEndAsync();
+            process.WaitForExit(5000);
+            
+            bool success = process.ExitCode == 0 && output.Contains("spacetime");
+            
+            if (success)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH and spacetime test successful: {output}");
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH test failed. Exit code: {process.ExitCode}, Output: {output}, Error: {error}");
+            }
+            
+            return success;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error testing SSH: {ex.Message}");
+            return false;
+        }
+    }
+
+    // Check if spacetimedb service is running on the remote server
+    public async Task<bool> CheckSpacetimeDBServiceStatus()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+            return false;
+
+        try
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "ssh";
+            // Check service status
+            string checkCommand = "sudo systemctl is-active spacetimedb.service";
+            
+            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{checkCommand}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            
+            process.Start();
+            
+            string output = await process.StandardOutput.ReadToEndAsync();
+            process.WaitForExit(5000);
+            
+            bool isActive = output.Trim() == "active";
+            
+            if (debugMode) 
+            {
+                UnityEngine.Debug.Log($"[ServerLogProcess] SpacetimeDB service status: {output.Trim()}");
+            }
+            
+            return isActive;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking service status: {ex.Message}");
+            return false;
+        }
+    }
 } // Class
 } // Namespace
 

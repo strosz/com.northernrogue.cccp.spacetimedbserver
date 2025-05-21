@@ -497,31 +497,35 @@ public class ServerCustomProcess
             Log("SpacetimeDB server is already running", 1);
             return true;
         }
-        LoadSettings();
+        LoadSettings(); // To know if we are in service mode or not
         
         if (serviceMode)
-        {
-            // Start the service using systemctl
-            Log("Starting SpacetimeDB service...", 0);
-            var result = await RunCustomCommandAsync("sudo systemctl start spacetimedb", 3000);
-            
-            if (!result.success)
             {
-                Log("Failed to start SpacetimeDB service. Please check service configuration.", -1);
-                return false;
-            }
-        }
-        else
-        {
-            // Use the full path to spacetime executable
-            string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
-            
-            // Start the server
-            if (debugMode) Log("Starting SpacetimeDB server in server custom process ...", 0);
-            await RunCustomCommandAsync($"{spacetimePath} start", 3000);
-        }
+                // Start the service using systemctl
+                Log("Starting SpacetimeDB service...", 0);
+                var result = await RunCustomCommandAsync("sudo systemctl start spacetimedb", 3000);
 
-        // Wait a moment for it to start
+                if (!result.success)
+                {
+                    Log("Failed to start SpacetimeDB service. Please check service configuration.", -1);
+                    return false;
+                }
+                else
+                {
+                    Log("SpacetimeDB service started successfully!", 1);
+                    return true;
+                }
+            }
+            else
+            {
+                // Use the full path to spacetime executable
+                string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
+
+                // Start the server
+                if (debugMode) Log("Starting SpacetimeDB server in server custom process ...", 0);
+                await RunCustomCommandAsync($"{spacetimePath} start", 3000);
+            }
+        
         await Task.Delay(1000);
 
         await CheckServerRunning(true);
@@ -559,6 +563,10 @@ public class ServerCustomProcess
             {
                 Log("Failed to stop SpacetimeDB service. Please check service configuration.", -1);
                 return false;
+            } else {
+                if (debugMode) Log("SpacetimeDB service stopped successfully on remote machine.", 1);
+                commandCache.Clear();
+                return true;
             }
         }
         else
@@ -567,7 +575,6 @@ public class ServerCustomProcess
             await RunCustomCommandAsync("pkill -9 -f spacetime", 3000);
         }
         
-        // Wait a moment for the process to terminate
         await Task.Delay(1000);
 
         await CheckServerRunning(true);
@@ -613,9 +620,9 @@ public class ServerCustomProcess
         }
         
         // Run actual check if cache expired
-        var result = await RunCustomCommandAsync("ps aux | grep spacetime | grep -v grep", 3000);
-        bool running = result.success && result.output.Contains("spacetime");
-        
+        var result = await RunCustomCommandAsync("ps aux | grep spacetimedb-standalone | grep -v grep", 3000);
+        bool running = result.success && result.output.Contains("spacetimedb-standalone");
+
         // Update cache
         cachedServerRunningStatus = running;
         lastStatusCacheTime = currentTime;
