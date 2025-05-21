@@ -494,14 +494,14 @@ public class ServerLogProcess
         try
         {
             Process process = new Process();
-            process.StartInfo.FileName = "ssh";
-            
-            // Use journalctl to monitor spacetimedb.service logs
+            process.StartInfo.FileName = "ssh";            // Use journalctl to get all logs since service start, then follow new logs
             // The -f flag follows the log in real-time
             // The -u flag specifies the service unit name
             // The --no-pager flag prevents pagination
-            // Use short-precise format which is more readable
-            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-precise";
+            // The -n all flag ensures we get all logs from journal (not just the last 10)
+            // Use short-iso-precise format for more robust timestamp parsing
+            // Don't use --since with dynamic timestamps as they can cause parsing errors
+            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-iso-precise -n all";
             
             process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
             process.StartInfo.UseShellExecute = false;

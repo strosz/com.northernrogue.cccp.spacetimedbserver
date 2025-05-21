@@ -735,8 +735,20 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = true; // Already confirmed running by the StartCustomServer method
-                    // Will be confirmed in the regular check below when serverStarted is true
+                    // For custom server, we trust that StartCustomServer() already verified it's running
+                    // This avoids false negatives from CheckServerRunning() right after startup
+                    if (elapsedTime < 5.0f) // Trust the startup for at least 5 seconds
+                    {
+                        isActuallyRunning = true; // Assume it's running during initial grace period
+                        if (DebugMode) LogMessage("Custom server in startup grace period, assuming running", 0);
+                    }
+                    else 
+                    {
+                        // After grace period, verify with actual check
+                        await serverCustomProcess.CheckServerRunning(true);
+                        isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
+                        if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
+                    }
                 }
                 else // WSL and other modes
                 {
@@ -805,12 +817,24 @@ public class ServerManager
         if (serverStarted)
         {
             bool isActuallyRunning = false;
+            
+            // Keep track of time since startup for recently started custom servers
+            float timeSinceStart = (float)(EditorApplication.timeSinceStartup - startupTime);
+            bool recentlyStarted = timeSinceStart < 10.0f; // Consider "recently started" for 10 seconds
+            
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
                     await serverCustomProcess.CheckServerRunning(true);
                     isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
-                    //UnityEngine.Debug.Log("serverStarted result: " + isActuallyRunning);
+                    
+                    // If recently started and previously confirmed running, but now reports not running,
+                    // this might be a false negative during server initialization
+                    if (recentlyStarted && serverConfirmedRunning && !isActuallyRunning)
+                    {
+                        if (DebugMode) LogMessage("Ignoring possible false negative server status check (server recently started)", 0);
+                        return; // Skip this check, maintain current state
+                    }
                 }
                 else // WSL and other modes
                 {
@@ -820,10 +844,12 @@ public class ServerManager
                 // State Change Detection:
                 if (serverConfirmedRunning != isActuallyRunning)
                 {
-                    serverConfirmedRunning = isActuallyRunning; // Update confirmed state
                     string msg = isActuallyRunning
                         ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: open")})"
                         : $"SpacetimeDB Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")})";
+                    
+                    // Update state
+                    serverConfirmedRunning = isActuallyRunning;
                     LogMessage(msg, isActuallyRunning ? 1 : -2);
 
                     // If state changed to NOT running, update the main serverStarted flag
