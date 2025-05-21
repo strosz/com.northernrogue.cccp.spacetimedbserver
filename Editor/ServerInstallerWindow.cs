@@ -68,6 +68,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasCustomSpacetimeDBServer = false;
     private bool hasCustomSpacetimeDBPath = false;
     private bool hasCustomRust = false;
+    private bool hasCustomSpacetimeDBService = false;
 
     private bool isConnectedSSH = false;
     
@@ -150,6 +151,7 @@ public class ServerInstallerWindow : EditorWindow
         hasCustomSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", false);
         hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
         hasCustomRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomRust", false);
+        hasCustomSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", false);
 
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
@@ -188,9 +190,7 @@ public class ServerInstallerWindow : EditorWindow
 
     private void OnFocus()
     {
-        if (currentTab == 1) {
-            InitializeCustomInstallerWindow();
-        }
+        InitializeCustomInstallerWindow();
     }
 
     private void InitializeCustomInstallerWindow()
@@ -345,6 +345,15 @@ public class ServerInstallerWindow : EditorWindow
             },
             new InstallerItem
             {
+                title = "Install SpacetimeDB Service",
+                description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
+                              "Creates a systemd service file to run SpacetimeDB in the background",
+                isInstalled = hasCustomSpacetimeDBService,
+                isEnabled = customProcess.IsSessionActive() && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomSpacetimeDBService
+            },
+            new InstallerItem
+            {
                 title = "Install Rust",
                 description = "Rust is a programming language that runs 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
@@ -460,6 +469,11 @@ public class ServerInstallerWindow : EditorWindow
                 {
                     newState = hasCustomSpacetimeDBPath;
                     newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("SpacetimeDB Service"))
+                {
+                    newState = hasCustomSpacetimeDBService;
+                    newEnabledState = isSessionActive && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(sshUserName);
                 }
                 else if (item.title.Contains("Rust"))
                 {
@@ -1027,6 +1041,12 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Checking Rust status...", Color.yellow);
         var rustResult = await customProcess.RunCustomCommandAsync($"bash -l -c 'which rustc && which cargo' 2>/dev/null");
         hasCustomRust = rustResult.success && !string.IsNullOrEmpty(rustResult.output) && rustResult.output.Contains("rustc") && rustResult.output.Contains("cargo");
+        await Task.Delay(100);
+
+        // Check if SpacetimeDB is installed as a service
+        SetStatus("Checking SpacetimeDB Service status...", Color.yellow);
+        var serviceResult = await customProcess.RunCustomCommandAsync("systemctl is-enabled spacetimedb.service 2>/dev/null || echo 'not-found'");
+        hasCustomSpacetimeDBService = serviceResult.success && serviceResult.output.Trim() == "enabled";
         
         // Save installation status to EditorPrefs
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianUser", hasCustomDebianUser);
@@ -1035,7 +1055,7 @@ public class ServerInstallerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", hasCustomSpacetimeDBServer);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
-        EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", hasCustomSpacetimeDBService);
         
         // Update SpacetimeDB version for custom installation
         await customProcess.CheckSpacetimeDBVersionCustom();
@@ -1938,7 +1958,7 @@ public class ServerInstallerWindow : EditorWindow
             "#!/bin/bash\n\n" +
             "echo \"===== Configuring SpacetimeDB PATH =====\"\n" +
             $"# Check if spacetime is already in PATH for user {sshUserName}\n" +
-            $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{userName}/.bashrc; then\n" +
+            $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{sshUserName}/.bashrc; then\n" +
             "  echo \"Adding SpacetimeDB to PATH in .bashrc file\"\n" +
             $"  echo 'export PATH=\"$HOME/.spacetime/bin:$HOME/.local/bin:$PATH\"' >> /home/{sshUserName}/.bashrc\n" +
             $"  chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
@@ -2061,6 +2081,102 @@ public class ServerInstallerWindow : EditorWindow
         else
         {
             SetStatus("Rust installation process encountered issues. Please check the terminal output.", Color.red);
+        }
+    }
+
+    private async void InstallCustomSpacetimeDBService()
+    {
+        // Ensure SSH session is active
+        if (!customProcess.IsSessionActive())
+        {
+            SetStatus("SSH connection not active. Please connect first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            SetStatus("Please enter a SSH username first.", Color.red);
+            return;
+        }
+
+        CheckCustomInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasCustomSpacetimeDBService && !installIfAlreadyInstalled)
+        {
+            SetStatus("SpacetimeDB Service is already installed on the remote server.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing SpacetimeDB Service on remote server...", Color.yellow);
+        
+        // Create a bash script for SpacetimeDB Service installation
+        string commands = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
+            
+            "# Create directory for SpacetimeDB if it doesn't exist\n" +
+            $"sudo mkdir -p /home/{sshUserName}/.local/share/spacetime\n" +
+            $"sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/share/spacetime\n\n" +
+            
+            "# Create the service file\n" +
+            "echo \"Creating systemd service file...\"\n" +
+            "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
+            "[Unit]\n" +
+            "Description=SpacetimeDB Server\n" +
+            "After=network.target\n\n" +
+            "[Service]\n" +
+            $"User={sshUserName}\n" +
+            $"Environment=HOME=/home/{sshUserName}\n" +
+            $"ExecStart=/home/{sshUserName}/.local/bin/spacetime \\\\\n" +
+            $"    --root-dir=/home/{sshUserName}/.local/share/spacetime \\\\\n" +
+            "    start \\\\\n" +
+            "    --listen-addr=0.0.0.0:3000\n" +
+            "Restart=always\n" +
+            $"WorkingDirectory=/home/{sshUserName}\n\n" +
+            "[Install]\n" +
+            "WantedBy=multi-user.target\n" +
+            "EOF\n\n" +
+            
+            "# Reload systemd to recognize the new service\n" +
+            "echo \"Reloading systemd...\"\n" +
+            "sudo systemctl daemon-reload\n\n" +
+            
+            "# Enable and start the service\n" +
+            "echo \"Enabling and starting SpacetimeDB service...\"\n" +
+            "sudo systemctl enable spacetimedb.service\n" +
+            "sudo systemctl start spacetimedb.service\n\n" +
+            
+            "# Check service status\n" +
+            "echo \"Checking service status...\"\n" +
+            "sudo systemctl status spacetimedb.service\n\n" +
+            
+            "echo \"===== Done! =====\"\n";
+        
+        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+        SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
+        bool success = await customProcess.RunVisibleSSHCommand(commands);
+        
+        if (success)
+        {
+            SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
+            await Task.Delay(2000);
+            
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomSpacetimeDBService)
+            {
+                SetStatus("SpacetimeDB Service installed and started successfully on remote server.", Color.green);
+            }
+            else
+            {
+                SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
+            }
+        }
+        else
+        {
+            SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
         }
     }
     #endregion

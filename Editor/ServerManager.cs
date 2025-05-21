@@ -513,12 +513,12 @@ public class ServerManager
             bool confirmed = PingServerStatus();
             if (!confirmed)
             {
-                LogMessage("Custom server process started but not confirmed running. Please check the server status.", -1);
+                if (debugMode) LogMessage("Custom server process started but not confirmed running. Please check the server status.", -1);
                 return;
             }
             else
             {
-                LogMessage("Custom server process started and confirmed running.", 1);
+                if (debugMode) LogMessage("Custom server process started and confirmed running.", 1);
                 // Mark as connected to the custom server
                 serverStarted = true;
                 serverConfirmedRunning = true;
@@ -668,7 +668,7 @@ public class ServerManager
             justStopped = true; // Set flag indicating stop was just initiated
             stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
 
-            LogMessage("Custom Server Successfully Stopped.", 1);
+            LogMessage("Custom remote SpacetimeDB Successfully Stopped!", 1);
             
             // Update log processor state
             logProcessor.SetServerRunningState(false);
@@ -720,7 +720,7 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning();
+                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
                 }
                 else // WSL and other modes
                 {
@@ -793,7 +793,7 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning();
+                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
                 }
                 else // WSL and other modes
                 {
@@ -842,7 +842,7 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning();
+                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
                 }
                 else // WSL and other modes
                 {
@@ -863,7 +863,7 @@ public class ServerManager
                         if (confirmed)
                         {
                             // Detected server running, not recently stopped -> likely external start/recovery
-                            LogMessage($"Detected WSL server running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
+                            if (DebugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
                             isStartingUp = false;
@@ -1034,7 +1034,12 @@ public class ServerManager
             }
             else if (serverMode == ServerMode.CustomServer)
             {
-                RunServerCommand($"spacetime publish --server {CustomServerUrl} {ModuleName}", $"Publishing module '{ModuleName}' to Custom Server");
+                string customServerUrl = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl : "";
+                if (customServerUrl.EndsWith("/"))
+                {
+                    customServerUrl = customServerUrl.TrimEnd('/');
+                }
+                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName}", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
             }
             else
             {

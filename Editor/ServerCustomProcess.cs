@@ -32,6 +32,9 @@ public class ServerCustomProcess
     // Session management
     private bool isConnected = false;
     
+    // Service mode flag
+    private bool serviceMode = false;
+    
     // Session status tracking
     private bool sessionActive = false;
     private double lastSessionCheckTime = 0;
@@ -40,7 +43,7 @@ public class ServerCustomProcess
     // Status cache to avoid repeated SSH calls
     private double lastStatusCacheTime = 0;
     private const double statusCacheTimeout = 20.0; // Status valid for 20 seconds
-    private bool cachedServerRunningStatus = false;
+    public bool cachedServerRunningStatus = false;
     
     // Command result cache to reduce load
     private Dictionary<string, (double timestamp, bool success, string output, string error)> commandCache = 
@@ -62,6 +65,7 @@ public class ServerCustomProcess
     {
         sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
         sshPrivateKeyPath = EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "");
+        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", false);
         
         // Get server URL for SSH connection (hostname only)
         string serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
@@ -488,31 +492,48 @@ public class ServerCustomProcess
     public async Task<bool> StartCustomServer()
     {
         // Check if server is already running - using cached status if available
-        if (await CheckServerRunning())
+        if (await CheckServerRunning(true))
         {
             Log("SpacetimeDB server is already running", 1);
             return true;
         }
+        LoadSettings();
         
-        // Use the full path to spacetime executable
-        string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
-        
-        // Start the server
-        Log("Starting SpacetimeDB server on remote machine...", 0);
-        var result = await RunCustomCommandAsync($"{spacetimePath} start", 5000);
-        
-        if (result.success)
+        if (serviceMode)
         {
-            // Force status cache update
-            cachedServerRunningStatus = true;
-            lastStatusCacheTime = EditorApplication.timeSinceStartup;
+            // Start the service using systemctl
+            Log("Starting SpacetimeDB service...", 0);
+            var result = await RunCustomCommandAsync("sudo systemctl start spacetimedb", 3000);
             
-            Log("SpacetimeDB server started successfully on remote machine", 1);
+            if (!result.success)
+            {
+                Log("Failed to start SpacetimeDB service. Please check service configuration.", -1);
+                return false;
+            }
+        }
+        else
+        {
+            // Use the full path to spacetime executable
+            string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
+            
+            // Start the server
+            if (debugMode) Log("Starting SpacetimeDB server in server custom process ...", 0);
+            await RunCustomCommandAsync($"{spacetimePath} start", 3000);
+        }
+
+        // Wait a moment for it to start
+        await Task.Delay(1000);
+
+        await CheckServerRunning(true);
+        
+        if (cachedServerRunningStatus)
+        {           
+            Log($"Custom SpacetimeDB {(serviceMode ? "service" : "server")} started successfully!", 1);
             return true;
         }
         else
         {
-            Log($"Failed to start SpacetimeDB server: {result.error}", -1);
+            Log($"Failed to start SpacetimeDB {(serviceMode ? "service" : "server")}. Please start it manually.", -1);
             return false;
         }
     }
@@ -521,47 +542,74 @@ public class ServerCustomProcess
     public async Task<bool> StopCustomServer()
     {
         // Check if server is running - using cached status if available
-        if (!await CheckServerRunning())
+        if (!await CheckServerRunning(true))
         {
             Log("SpacetimeDB server is not running", 0);
             return true;
         }
-        
-        // Use the full path to spacetime executable
-        string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
-        
-        // Stop the server
-        Log("Stopping SpacetimeDB server on remote machine...", 0);
-        var result = await RunCustomCommandAsync($"{spacetimePath} server stop", 5000);
-        
-        if (result.success)
+        LoadSettings();
+
+        if (serviceMode)
         {
-            // Force status cache update
-            cachedServerRunningStatus = false;
-            lastStatusCacheTime = EditorApplication.timeSinceStartup;
+            // Stop the service using systemctl
+            Log("Stopping SpacetimeDB service...", 0);
+            var result = await RunCustomCommandAsync("sudo systemctl stop spacetimedb", 3000);
             
+            if (!result.success)
+            {
+                Log("Failed to stop SpacetimeDB service. Please check service configuration.", -1);
+                return false;
+            }
+        }
+        else
+        {
+            Log("Stopping SpacetimeDB on remote machine...", 0);
+            await RunCustomCommandAsync("pkill -9 -f spacetime", 3000);
+        }
+        
+        // Wait a moment for the process to terminate
+        await Task.Delay(1000);
+
+        await CheckServerRunning(true);
+        
+        // Check if it's still running
+        if (!cachedServerRunningStatus)
+        {
             // Clear command cache as commands will likely return different results now
             commandCache.Clear();
             
-            Log("SpacetimeDB server stopped successfully on remote machine", 1);
+            if (debugMode) Log($"SpacetimeDB {(serviceMode ? "service" : "server")} stopped successfully on remote machine", 1);
             return true;
         }
         else
         {
-            Log($"Failed to stop SpacetimeDB server: {result.error}", -1);
+            Log($"Could not stop SpacetimeDB {(serviceMode ? "service" : "server")}. Please stop it manually.", -1);
             return false;
         }
     }
 
+    // Add method to check service status
+    public async Task<(bool success, string output, string error)> CheckServiceStatus()
+    {
+        LoadSettings();
+        if (!serviceMode)
+        {
+            return (false, "", "Service mode is not enabled");
+        }
+
+        return await RunCustomCommandAsync("sudo systemctl status spacetimedb", 3000);
+    }
+
     // Check if the SpacetimeDB server is running - optimized with caching
-    public async Task<bool> CheckServerRunning()
+    public async Task<bool> CheckServerRunning(bool instantCheck)
     {
         double currentTime = EditorApplication.timeSinceStartup;
-        
-        // Use cached result if recent enough
-        if (currentTime - lastStatusCacheTime < statusCacheTimeout)
-        {
-            return cachedServerRunningStatus;
+        if (!instantCheck) {
+
+            if (currentTime - lastStatusCacheTime < statusCacheTimeout)
+            {
+                return cachedServerRunningStatus;
+            }
         }
         
         // Run actual check if cache expired

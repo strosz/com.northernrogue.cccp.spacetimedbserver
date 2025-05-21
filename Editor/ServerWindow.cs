@@ -72,6 +72,7 @@ public class ServerWindow : EditorWindow
     private bool autoCloseWsl = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
+    private bool serviceMode = false;
 
     // Update SpacetimeDB
     private string spacetimeDBCurrentVersion = "";
@@ -1150,6 +1151,29 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
             }
+            else if (serverMode == ServerMode.CustomServer)
+            {
+                // Service Mode toggle for Custom Server
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginHorizontal();
+                string serviceModeTooltip = 
+                "Service Mode: Uses the SystemD service to run SpacetimeDB in the background (requires installation via Server Installer). \n\n"+
+                "Foreground Process: Runs SpacetimeDB as a foreground process directly over SSH.";
+                EditorGUILayout.LabelField(new GUIContent("Service Mode:", serviceModeTooltip), GUILayout.Width(120));
+                GUIStyle serviceModeStyle = new GUIStyle(GUI.skin.button);
+                if (serviceMode)
+                {
+                    serviceModeStyle.normal.textColor = recommendedColor;
+                    serviceModeStyle.hover.textColor = recommendedColor;
+                }
+                if (GUILayout.Button(serviceMode ? "Service" : "Foreground Process", serviceModeStyle))
+                {
+                    bool newServiceMode = !serviceMode;
+                    serviceMode = newServiceMode;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "ServiceMode", serviceMode);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
 
             // Command Output toggle button
             EditorGUILayout.Space(5);
@@ -1498,6 +1522,15 @@ public class ServerWindow : EditorWindow
                     if (serverManager.CLIAvailableLocal() || serverManager.CLIAvailableRemote())
                     serverManager.PingServer(true);
                     else LogMessage("SpacetimeDB CLI not available. Please install a local (WSL) or remote (SSH) first.", -1);
+                }
+            }
+
+            // Service Status button (only in Custom Server mode)
+            if (serverMode == ServerMode.CustomServer)
+            {
+                if (GUILayout.Button("Service Status", buttonStyle))
+                {
+                    CheckServiceStatus();
                 }
             }
             
@@ -1850,6 +1883,26 @@ public class ServerWindow : EditorWindow
         await Task.Delay(1000); // Wait for logout to complete
         serverManager.RunServerCommand("spacetime login", "Launching Maincloud login...");
     }
+
+    private async void CheckServiceStatus()
+    {
+        if (serverMode != ServerMode.CustomServer)
+        {
+            LogMessage("Service status check is only available in Custom Server mode", -1);
+            return;
+        }
+
+        var result = await serverCustomProcess.CheckServiceStatus();
+        if (result.success)
+        {
+            LogMessage("Service Status:", 0);
+            LogMessage(result.output, 0);
+        }
+        else
+        {
+            LogMessage($"Check if SpacetimeDB is installed as a service. Failed to get service status: {result.error}", -1);
+        }
+    }
     #endregion
 
     #region LogMessage
@@ -2047,6 +2100,9 @@ public class ServerWindow : EditorWindow
             // Update to new string format
             EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
         }
+        
+        // Load service mode setting for Custom Server
+        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", false);
         
         UpdateServerModeState();
     }
