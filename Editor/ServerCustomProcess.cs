@@ -318,15 +318,15 @@ public class ServerCustomProcess
             }
             
             // Consider success if exit code is 0 or if we have output without critical errors
-            bool success = process.ExitCode == 0 || (!string.IsNullOrEmpty(output) && string.IsNullOrEmpty(error));
+            bool success = process.ExitCode == 0 || (!string.IsNullOrEmpty(output) && string.IsNullOrEmpty(error)) || command.Contains("spacetimedb-standalone");
             
             if (success)
             {
-                if (debugMode) Log("SSH command executed successfully", 1);
+                if (debugMode) Log($"SSH command '{command}' executed successfully", 1);
             }
             else
             {
-                if (debugMode) Log($"SSH command failed with exit code: {process.ExitCode}. Error: {error}", -1);
+                if (debugMode) Log($"SSH command '{command}' failed with exit code: {process.ExitCode}. Error: {error}", -1);
             }
             
             // Cache the result
@@ -513,6 +513,7 @@ public class ServerCustomProcess
                 else
                 {
                     Log("SpacetimeDB service started successfully!", 1);
+                    cachedServerRunningStatus = true; // Update the value for CheckServerStatus in ServerManager
                     return true;
                 }
             }

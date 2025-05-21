@@ -500,7 +500,8 @@ public class ServerLogProcess
             // The -f flag follows the log in real-time
             // The -u flag specifies the service unit name
             // The --no-pager flag prevents pagination
-            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager";
+            // Use short-precise format which is more readable
+            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-precise";
             
             process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
             process.StartInfo.UseShellExecute = false;
@@ -512,18 +513,34 @@ public class ServerLogProcess
             process.OutputDataReceived += (sender, args) => {
                 if (args.Data != null)
                 {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Service Log Raw Output");
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Service Log Raw Output: " + args.Data);
                     EditorApplication.delayCall += () => {
                         try {
-                            // Format as service log entry and pass to module log
-                            string formattedLine = FormatServerLogLine($"[SERVICE] {args.Data}");
-                            moduleLogAccumulator.Append(formattedLine).Append("\n");
-                            
-                            // Update SessionState periodically
-                            UpdateSessionStateIfNeeded();
-                            
-                            // Notify of log update
-                            onModuleLogUpdated?.Invoke();
+                            string line = args.Data.Trim();
+                            if (!string.IsNullOrEmpty(line))
+                            {
+                                // Format the log line with the timestamp and message
+                                string formattedLine = FormatServerLogLine(line);
+                                
+                                // Update both the accumulator and the combined log
+                                moduleLogAccumulator.Append(formattedLine).Append("\n");
+                                silentServerCombinedLog += formattedLine + "\n";
+                                
+                                // Manage log size
+                                const int maxLogLength = 75000;
+                                const int trimToLength = 50000;
+                                if (silentServerCombinedLog.Length > maxLogLength)
+                                {
+                                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
+                                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                                }
+                                
+                                // Update SessionState periodically
+                                UpdateSessionStateIfNeeded();
+                                
+                                // Notify of log update
+                                onModuleLogUpdated?.Invoke();
+                            }
                         }
                         catch (Exception ex) {
                             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log output handler: {ex.Message}");
@@ -534,7 +551,8 @@ public class ServerLogProcess
             
             process.ErrorDataReceived += (sender, args) => {
                 if (args.Data != null)
-                {                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Service Log Error: {args.Data}");
+                {                    
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Service Log Error: {args.Data}");
                     
                     // Special handling for common service log errors
                     string errorMessage = args.Data;
@@ -551,7 +569,10 @@ public class ServerLogProcess
                         try {
                             // Format as error and pass to module log
                             string formattedLine = FormatServerLogLine($"[SERVICE ERROR] {errorMessage}", true);
+                            
+                            // Update both the accumulator and the combined log
                             moduleLogAccumulator.Append(formattedLine).Append("\n");
+                            silentServerCombinedLog += formattedLine + "\n";
                             
                             // Update SessionState periodically
                             UpdateSessionStateIfNeeded();
