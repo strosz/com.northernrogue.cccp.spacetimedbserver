@@ -680,10 +680,14 @@ public class ServerOutputWindow : EditorWindow
                 }
                 return match.Value;
             });
-        
-        // Clean up double timestamps
+          // Clean up double timestamps
         strippedLog = Regex.Replace(strippedLog, 
             @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
+            "$1");
+            
+        // Clean up duplicate timestamps in the format "[date time] [date time]"
+        strippedLog = Regex.Replace(strippedLog,
+            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
             "$1");
 
         // Handle journalctl output format - remove middle timestamp and service info

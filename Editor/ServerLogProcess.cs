@@ -494,14 +494,13 @@ public class ServerLogProcess
         try
         {
             Process process = new Process();
-            process.StartInfo.FileName = "ssh";            // Use journalctl to get all logs since service start, then follow new logs
+            process.StartInfo.FileName = "ssh";            // Use journalctl to get logs since the last service start, then follow new logs
             // The -f flag follows the log in real-time
             // The -u flag specifies the service unit name
             // The --no-pager flag prevents pagination
-            // The -n all flag ensures we get all logs from journal (not just the last 10)
             // Use short-iso-precise format for more robust timestamp parsing
-            // Don't use --since with dynamic timestamps as they can cause parsing errors
-            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-iso-precise -n all";
+            // Use -n 100 to limit initial output to last 100 lines (since we're filtering for session start)
+            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-iso-precise -n 100";
             
             process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
             process.StartInfo.UseShellExecute = false;
@@ -510,6 +509,10 @@ public class ServerLogProcess
             process.StartInfo.RedirectStandardError = true;
             process.EnableRaisingEvents = true;
             
+            // For tracking the current session
+            bool foundSessionStart = false;
+            string sessionStartMarker = "Started spacetimedb.service";
+            
             process.OutputDataReceived += (sender, args) => {
                 if (args.Data != null)
                 {
@@ -517,6 +520,25 @@ public class ServerLogProcess
                     EditorApplication.delayCall += () => {
                         try {
                             string line = args.Data.Trim();
+                            
+                            // If we have a new session start marker, clear previous log and start fresh
+                            if (line.Contains(sessionStartMarker))
+                            {
+                                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] New spacetimedb service session detected, clearing previous logs");
+                                
+                                // Clear the existing log when we find a session start marker
+                                moduleLogAccumulator.Clear();
+                                silentServerCombinedLog = "";
+                                foundSessionStart = true;
+                            }
+                            
+                            // If we're still waiting to find the session start marker, skip this line
+                            if (!foundSessionStart && !line.Contains(sessionStartMarker))
+                            {
+                                // Skip lines until we find a session start message
+                                return;
+                            }
+                            
                             if (!string.IsNullOrEmpty(line))
                             {
                                 // Format the log line with the timestamp and message
@@ -567,18 +589,22 @@ public class ServerLogProcess
                     
                     EditorApplication.delayCall += () => {
                         try {
-                            // Format as error and pass to module log
-                            string formattedLine = FormatServerLogLine($"[SERVICE ERROR] {errorMessage}", true);
-                            
-                            // Update both the accumulator and the combined log
-                            moduleLogAccumulator.Append(formattedLine).Append("\n");
-                            silentServerCombinedLog += formattedLine + "\n";
-                            
-                            // Update SessionState periodically
-                            UpdateSessionStateIfNeeded();
-                            
-                            // Notify of log update
-                            onModuleLogUpdated?.Invoke();
+                            // Only process errors if we've already found the session start or if this is about session start
+                            if (foundSessionStart || errorMessage.Contains(sessionStartMarker))
+                            {
+                                // Format as error and pass to module log
+                                string formattedLine = FormatServerLogLine($"[SERVICE ERROR] {errorMessage}", true);
+                                
+                                // Update both the accumulator and the combined log
+                                moduleLogAccumulator.Append(formattedLine).Append("\n");
+                                silentServerCombinedLog += formattedLine + "\n";
+                                
+                                // Update SessionState periodically
+                                UpdateSessionStateIfNeeded();
+                                
+                                // Notify of log update
+                                onModuleLogUpdated?.Invoke();
+                            }
                         }
                         catch (Exception ex) {
                             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log error handler: {ex.Message}");
@@ -1281,39 +1307,79 @@ public class ServerLogProcess
             if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] AttemptTailRestartAfterReload called but conditions not met (serverRunning={serverRunning}, tailProcessIsNull={tailProcess == null})");
         }
     }
-    
-    // Helper method to format server log lines with consistent timestamps
+      // Helper method to format server log lines with consistent timestamps
     private string FormatServerLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
             return logLine;
 
-        // Check for timestamp pattern like "2025-05-01T20:29:22.528775Z"
-        var match = System.Text.RegularExpressions.Regex.Match(logLine, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+        // Check if line already has a properly formatted timestamp
+        if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        {
+            // Line already has a properly formatted timestamp at the start
+            string errorPrefix = isError ? " [ERROR]" : "";
+            
+            // Make sure there's no double timestamp in the content already
+            string cleanedLine = System.Text.RegularExpressions.Regex.Replace(logLine,
+                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
+                "$1");
+                
+            // Add error indicator if needed
+            if (isError && !cleanedLine.Contains("[ERROR]"))
+            {
+                // Insert ERROR marker after timestamp
+                return System.Text.RegularExpressions.Regex.Replace(
+                    cleanedLine, 
+                    @"^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])",
+                    "$1 [ERROR]");
+            }
+            
+            return cleanedLine;
+        }
+
+        // Journalctl format: "2025-05-21T20:22:27.029473+00:00 LoreMagic systemd[1]: Started spacetimedb.service - SpacetimeDB Server."
+        // Extract ISO timestamp and message content
+        var match = System.Text.RegularExpressions.Regex.Match(
+            logLine, 
+            @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:\+|-)\d{2}:\d{2})\s+(\S+)\s+(\S+)\[\d+\]:\s+(.*)");
         
         if (match.Success)
         {
-            // Extract the timestamp
+            // Extract timestamp and actual message
             string originalTimestamp = match.Groups[1].Value;
+            string messageContent = match.Groups[4].Value;
             
-            // Try to parse it as DateTimeOffset
+            // Try to parse the timestamp as DateTimeOffset
             if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
             {
                 // Format it as [YYYY-MM-DD HH:MM:SS]
                 string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
                 
-                // Replace the original timestamp with the formatted one
-                string result = logLine.Replace(originalTimestamp, "").Trim();
-                
                 // Add error indicator if needed
                 string errorPrefix = isError ? " [ERROR]" : "";
                 
-                // Return formatted output with timestamp at the start
+                // Return formatted output with timestamp at the start and only the actual message content
+                return $"{formattedTimestamp}{errorPrefix} {messageContent}";
+            }
+        }
+        
+        // Try alternative timestamp format: "2025-05-01T20:29:22.528775Z"
+        match = System.Text.RegularExpressions.Regex.Match(logLine, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+        
+        if (match.Success)
+        {
+            string originalTimestamp = match.Groups[1].Value;
+            
+            if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+            {
+                string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                string result = logLine.Replace(originalTimestamp, "").Trim();
+                string errorPrefix = isError ? " [ERROR]" : "";
                 return $"{formattedTimestamp}{errorPrefix} {result}";
             }
         }
         
-        // If no timestamp found or parsing failed, use current time
+        // If no known timestamp format found, use current time
         string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string errorSuffix = isError ? " [ERROR]" : "";
         return $"{fallbackTimestamp}{errorSuffix} {logLine}";
