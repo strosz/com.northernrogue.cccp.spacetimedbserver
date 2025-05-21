@@ -507,17 +507,19 @@ public class ServerManager
 
         if (success)
         {
-            if (debugMode) LogMessage("Custom server process started and confirmed running.", 1);                // Mark as connected to the custom server
+            if (debugMode) LogMessage("Custom server process started, waiting for confirmation...", 1);
+            // Mark as starting up, but do not confirm running yet
             serverStarted = true;
-            serverConfirmedRunning = true;
-            isStartingUp = true; // To give time for the status check
-            
+            isStartingUp = true;
+            serverConfirmedRunning = false;
+            startupTime = (float)EditorApplication.timeSinceStartup;
+
             // Configure log processor for custom server if in silent mode
             if (silentMode && logProcessor != null)
             {
                 // Extract hostname from CustomServerUrl
                 string sshHost = ExtractHostname(CustomServerUrl);
-                
+
                 // Configure SSH details for the log processor
                 logProcessor.ConfigureSSH(
                     SSHUserName,
@@ -525,7 +527,7 @@ public class ServerManager
                     SSHPrivateKeyPath,
                     true // isCustomServer = true
                 );
-                
+
                 logProcessor.SetServerRunningState(true);
                 logProcessor.StartSSHLogging();
                 if (debugMode) LogMessage("Custom server log processors started successfully.", 1);
@@ -765,7 +767,6 @@ public class ServerManager
                         }
                     }
                     RepaintCallback?.Invoke();
-                    await Task.Delay(5000); // Occupy the method until next checkInterval in ServerWindow, to give the status methods time to update
                     return;
                 }
                 // If grace period expires and still not running, assume failure
