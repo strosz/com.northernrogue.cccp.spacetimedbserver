@@ -331,34 +331,6 @@ public class ServerManager
         EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", mode.ToString());
     }
 
-    public bool CLIAvailableLocal()
-    {
-        if (hasWSL)
-        {
-            if (debugMode) LogMessage("SpacetimeDB Local CLI is available.", 1);
-            return true;
-        }
-        else
-        {
-            if (debugMode) LogMessage("SpacetimeDB Local CLI is not available.", -2);
-            return false;
-        }
-    }
-
-    public bool CLIAvailableRemote()
-    {
-        if (serverCustomProcess.StartSession())
-        {
-            if (debugMode) LogMessage("SpacetimeDB Remote CLI is available.", 1);
-            return true;
-        }
-        else
-        {
-            if (debugMode) LogMessage("SpacetimeDB Remote CLI is not available.", -2);
-            return false;
-        }
-    }
-
     public void Configure()
     {
         // Configure the log processor
@@ -885,7 +857,8 @@ public class ServerManager
             try {
                 if (serverMode == ServerMode.CustomServer)
                 {
-                    isActuallyRunning = await serverCustomProcess.CheckServerRunning(true);
+                    await serverCustomProcess.CheckServerRunning(true);
+                    isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                 }
                 else // WSL and other modes
                 {
@@ -954,10 +927,10 @@ public class ServerManager
             // Run the command silently and capture the output
             LogMessage($"{description}...", 0);
 
-            // Choose the right processor based on server mode
+            // Publish and Generate requires the local CLI below and is not run on SSH
             if (serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate"))
             {
-                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command);
+                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command); // SSH command
                 
                 // Display the results in the output log
                 if (!string.IsNullOrEmpty(result.output))

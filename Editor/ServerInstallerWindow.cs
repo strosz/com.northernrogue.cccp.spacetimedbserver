@@ -27,7 +27,7 @@ public class ServerInstallerWindow : EditorWindow
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Tab selection
-    private int currentTab = 0; // 0 = WSL Installer, 1 = Custom Debian Installer
+    private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
     private readonly string[] tabNames = { "WSL Installer", "Custom Debian Installer" };
 
     // EditorPrefs
@@ -95,6 +95,7 @@ public class ServerInstallerWindow : EditorWindow
         window.minSize = new Vector2(500, 400);
         window.currentTab = 0; // Default to WSL tab
         window.InitializeInstallerItems();
+        window.CheckInstallationStatus();
     }
     
     public static void ShowCustomWindow()
@@ -103,8 +104,9 @@ public class ServerInstallerWindow : EditorWindow
         window.minSize = new Vector2(500, 400);
         window.currentTab = 1; // Set to Custom SSH tab
         window.InitializeInstallerItems();
+        window.CheckCustomInstallationStatus();
     }
-    
+
     #region OnEnable
     private void OnEnable()
     {
@@ -176,13 +178,6 @@ public class ServerInstallerWindow : EditorWindow
         
         // Reduce frequency of automatic repaints
         EditorApplication.update += OnEditorUpdate;
-        
-        // Check installation status for the current tab
-        if (currentTab == 0) {
-            CheckInstallationStatus();
-        } else {
-            CheckCustomInstallationStatus();
-        }
 
         // Update installer items status based on loaded prefs
         UpdateInstallerItemsStatus();
@@ -196,10 +191,11 @@ public class ServerInstallerWindow : EditorWindow
     private void InitializeCustomInstallerWindow()
     {
         customProcess = new ServerCustomProcess(LogMessage, false);
-        if (customProcess.StartSession())
+        isConnectedSSH = customProcess.IsSessionActive();
+        if (isConnectedSSH)
         {
-            sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
             CheckCustomInstallationStatus();
+            sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
         }
     }
     
@@ -523,10 +519,7 @@ public class ServerInstallerWindow : EditorWindow
             if (currentTab == 0) {
                 CheckInstallationStatus();
             } else {
-                if (customProcess.StartSession())
-                {
-                    CheckCustomInstallationStatus();
-                }
+                CheckCustomInstallationStatus();
             }
             UpdateInstallerItemsStatus();
         }
@@ -607,11 +600,8 @@ public class ServerInstallerWindow : EditorWindow
             if (currentTab == 0) {
                 CheckInstallationStatus();
             } else {
-                if (customProcess.StartSession())
-                {
-                    sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
-                    CheckCustomInstallationStatus();
-                }
+                CheckCustomInstallationStatus();
+                sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
             }
         }
         EditorGUI.EndDisabledGroup();
@@ -979,10 +969,12 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomCurl = false;
             hasCustomSpacetimeDBServer = false;
             hasCustomSpacetimeDBPath = false;
+            hasCustomSpacetimeDBService = false;
             hasCustomRust = false;
             
             // Update UI
             UpdateInstallerItemsStatus();
+            SetStatus("SSH session is not active. Please connect to your server.", Color.yellow);
             return;
         }
         

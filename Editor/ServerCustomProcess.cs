@@ -29,7 +29,7 @@ public class ServerCustomProcess
     private string customServerAuthToken;
     private string sshPrivateKeyPath = ""; // Path to the SSH private key file
     
-    // Session management
+    // SSH connection status
     private bool isConnected = false;
     
     // Service mode flag
@@ -106,7 +106,7 @@ public class ServerCustomProcess
     #region SSH Start
             
     // Start a persistent SSH session
-    public bool StartSession()
+    public async Task<bool> StartSession()
     {
         LoadSettings();
         
@@ -131,7 +131,7 @@ public class ServerCustomProcess
         
         // Verify connection first with a simple command
         if (debugMode) Log("Attempting SSH connection verification...", 0);
-        bool connectionVerified = VerifyConnection();
+        bool connectionVerified = await VerifyConnection();
         
         if (connectionVerified)
         {
@@ -190,13 +190,13 @@ public class ServerCustomProcess
     }
     
     // Verify if the SSH connection is working
-    private bool VerifyConnection()
+    private async Task<bool> VerifyConnection()
     {
         try
         {
             // Use a very basic test command with short timeout
             Log("Testing SSH connection with " + sshUserName + " to " + customServerUrl + " with simple test command...", 0);
-            var result = RunSimpleCommand("echo CONNECTION_TEST_OK", 3000);
+            var result = await RunSimpleCommandAsync("echo CONNECTION_TEST_OK", 3000);
             
             if (result.success && result.output.Contains("CONNECTION_TEST_OK"))
             {
@@ -217,7 +217,7 @@ public class ServerCustomProcess
     }
     
     // Run a command process using SSH key
-    private (bool success, string output, string error) RunSimpleCommand(string command, int timeoutMs = 5000)
+    private async Task<(bool success, string output, string error)> RunSimpleCommandAsync(string command, int timeoutMs = 5000)
     {
         try 
         {
@@ -291,8 +291,11 @@ public class ServerCustomProcess
             
             // Wait for the process to complete with a timeout
             if (debugMode) Log("Waiting for SSH command to complete...", 0);
-            bool finished = process.WaitForExit(timeoutMs);
+            // bool finished = process.WaitForExit(timeoutMs); // Original synchronous wait
             
+            // Asynchronous wait
+            bool finished = await Task.Run(() => process.WaitForExit(timeoutMs));
+
             if (!finished)
             {
                 if (debugMode) Log("SSH command timed out", -1);
@@ -387,6 +390,14 @@ public class ServerCustomProcess
     // Helper function to run a SpacetimeDB command
     public async Task<(bool success, string output, string error)> RunSpacetimeDBCommandAsync(string command, int timeoutMs = 10000)
     {
+        LoadSettings(); // Ensure SSH settings, including sshUserName, are current
+
+        if (string.IsNullOrEmpty(sshUserName))
+        {
+            Log("SSH User Name is not configured. Cannot run SpacetimeDB command.", -1); // Log level -1 for error
+            return (false, "", "SSH User Name not configured. Please set it in the server settings.");
+        }
+
         // Use the full path to spacetime executable
         string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
         
@@ -398,6 +409,7 @@ public class ServerCustomProcess
         }
         
         string spacetimeCmd = $"{spacetimePath} {trimmedCommand}";
+        if (debugMode) Log($"Running SpacetimeDB command on custom server: {spacetimeCmd}", 0);
         return await RunCustomCommandAsync(spacetimeCmd, timeoutMs);
     }
     
@@ -419,10 +431,10 @@ public class ServerCustomProcess
         }
         
         // Run the command with a shorter timeout
-        var result = RunSimpleCommand(command, timeoutMs);
+        var result = await RunSimpleCommandAsync(command, timeoutMs);
         
         // Wrap the synchronous result in a completed task to match the async signature
-        return await Task.FromResult(result);
+        return result;
     }
 
     // Check if SpacetimeDB is installed on the remote server
