@@ -38,17 +38,17 @@ public class ServerCustomProcess
     // Session status tracking
     private bool sessionActive = false;
     private double lastSessionCheckTime = 0;
-    private const double sessionCheckInterval = 10.0; // Reduced frequency - check every 10 seconds
+    private const double sessionCheckInterval = 5;
     
     // Status cache to avoid repeated SSH calls
     private double lastStatusCacheTime = 0;
-    private const double statusCacheTimeout = 20.0; // Status valid for 20 seconds
+    private const double statusCacheTimeout = 10; // Status valid for 10 seconds
     public bool cachedServerRunningStatus = false;
     
     // Command result cache to reduce load
     private Dictionary<string, (double timestamp, bool success, string output, string error)> commandCache = 
         new Dictionary<string, (double timestamp, bool success, string output, string error)>();
-    private const double commandCacheTimeout = 10.0; // Cache command results for 10 seconds
+    private const double commandCacheTimeout = 10; // Cache command results for 10 seconds
 
     // Background connection check
     private Process backgroundCheckProcess = null;
@@ -65,7 +65,7 @@ public class ServerCustomProcess
     {
         sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
         sshPrivateKeyPath = EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "");
-        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", false);
+        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", true);
         
         // Get server URL for SSH connection (hostname only)
         string serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
@@ -710,6 +710,8 @@ public class ServerCustomProcess
     // Check if the SSH session is currently active - just return cached value
     public bool IsSessionActive()
     {
+        // Call UpdateSessionStatusIfNeeded to ensure the session status is up-to-date
+        UpdateSessionStatusIfNeeded();
         return sessionActive;
     }
 

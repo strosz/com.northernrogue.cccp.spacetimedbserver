@@ -960,6 +960,7 @@ public class ServerInstallerWindow : EditorWindow
     
     private async void CheckCustomInstallationStatus()
     {
+        await customProcess.StartSession();
         // Don't check if the SSH session isn't active
         if (!customProcess.IsSessionActive())
         {

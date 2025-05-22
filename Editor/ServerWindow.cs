@@ -1159,7 +1159,7 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
             }
-            else if (serverMode == ServerMode.CustomServer)
+            else if (serverMode == ServerMode.CustomServer && debugMode)
             {
                 // Service Mode toggle for Custom Server
                 EditorGUILayout.Space(5);
@@ -2141,7 +2141,7 @@ public class ServerWindow : EditorWindow
         }
         
         // Load service mode setting for Custom Server
-        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", false);
+        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", true);
         
         UpdateServerModeState();
     }
