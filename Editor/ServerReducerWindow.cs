@@ -462,6 +462,8 @@ public class ServerReducerWindow : EditorWindow
     {
         if (isRefreshing) return;
 
+        LoadSettings();
+
         if (serverMode == "WslServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
@@ -612,6 +614,8 @@ public class ServerReducerWindow : EditorWindow
     
     private void RunReducer(ReducerInfo reducer)
     {
+        LoadSettings();
+
         if (serverMode == "WslServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))

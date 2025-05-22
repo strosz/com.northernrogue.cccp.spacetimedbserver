@@ -764,11 +764,17 @@ public class ServerWindow : EditorWindow
                     serverManager.SetServerUrl(serverUrl);
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(serverUrl);
-                    if (extractedPort > 0 && extractedPort != serverPort)
+                    if (extractedPort > 0) // If a valid port is found
                     {
-                        serverPort = extractedPort;
-                        serverManager.SetServerPort(serverPort);
-                        if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
+                        if (extractedPort != serverPort) // If the port is different from the current customServerPort
+                        {
+                            serverPort = extractedPort;
+                            serverManager.SetServerPort(serverPort);
+
+                            if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
+                        }
+                        // If the port is the same, we don't need to do anything,
+                        // as the URL itself has changed and been set.
                     }
                     else
                     {
@@ -877,8 +883,10 @@ public class ServerWindow : EditorWindow
                 // URL Custom Server setting
                 EditorGUILayout.BeginHorizontal();
                 string urlTooltip = 
-                "The full URL of your SpacetimeDB server including port number.\n" +
-                "Note: The port number is required.";
+                "The full URL of your remote SpacetimeDB server including SpacetimeDB port number.\n" +
+                "Note: The port number is required. Example: http://0.0.0.0:3000/\n" +
+                "Make sure port 22 (SSH, used automatically) and port 3000 (SpacetimeDB) are open.\n" +
+                "Press Enter after editing to apply changes.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
                 string newUrl = EditorGUILayout.DelayedTextField(customServerUrl, GUILayout.Width(150));
                 if (newUrl != customServerUrl)
@@ -888,20 +896,21 @@ public class ServerWindow : EditorWindow
                     
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(customServerUrl);
-                    if (extractedPort > 0 && extractedPort != customServerPort)
+                    if (extractedPort > 0) // If a valid port is found
                     {
-                        customServerPort = extractedPort;
-                        serverManager.SetCustomServerPort(customServerPort);
-                        
-                        // Also set the main serverPort for consistency
-                        serverPort = customServerPort;
-                        serverManager.SetServerPort(serverPort);
-                        
-                        if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
+                        if (extractedPort != customServerPort) // If the port is different from the current customServerPort
+                        {
+                            customServerPort = extractedPort;
+                            serverManager.SetCustomServerPort(customServerPort);
+                            
+                            if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
+                        }
+                        // If the port is the same, we don't need to do anything,
+                        // as the URL itself has changed and been set.
                     }
                     else
                     {
-                        LogMessage("No valid port found in URL. Please include port in format 'http://127.0.0.1:3000/'", -2);
+                        LogMessage("No valid port found in URL. Please include port in format \'http://127.0.0.1:3000/\'", -2);
                     }
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerUrl)), GUILayout.Width(20));

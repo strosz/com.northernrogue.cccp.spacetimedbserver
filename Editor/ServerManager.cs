@@ -690,6 +690,7 @@ public class ServerManager
 
     public async Task CheckServerStatus()
     {
+        UnityEngine.Debug.Log("CheckServerStatus called");
         // --- Reset justStopped flag after 5 seconds if grace period expired ---
         const double stopGracePeriod = 5.0;
         if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))

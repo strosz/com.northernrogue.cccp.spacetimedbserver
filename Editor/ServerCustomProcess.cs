@@ -112,7 +112,7 @@ public class ServerCustomProcess
         
         if (isConnected)
         {
-            Log("SSH session already active", 0);
+            Log($"SSH session already active on {customServerUrl}:{customServerPort}", 0);
             return true;
         }
         
