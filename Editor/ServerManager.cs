@@ -877,7 +877,8 @@ public class ServerManager
                         bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : PingServerStatus();
                         
                         if (confirmed)
-                        {                            // Detected server running, not recently stopped -> likely external start/recovery
+                        {                            
+                            // Detected server running, probably it was already running when Unity started
                             if (DebugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;

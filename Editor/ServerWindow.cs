@@ -1491,8 +1491,8 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
                 if (serverMode == ServerMode.WslServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
-                #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
+                #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
+                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
                 #pragma warning restore CS4014
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }

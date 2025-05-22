@@ -72,7 +72,7 @@ public class ServerLogProcess
     private const int TARGET_SIZE = 50000;
     private volatile bool isProcessing = false;
     
-    #region SSH Log Methods for Custom Server
+    #region SSH Logging
     
     // Path for remote server logs
     public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
@@ -208,7 +208,7 @@ public class ServerLogProcess
                 onModuleLogUpdated?.Invoke();
             });
         }
-          // Start database log tailing
+        // Start database log tailing
         StartSSHDatabaseLogProcess();
         
         // Service log monitoring was already attempted earlier
@@ -433,9 +433,9 @@ public class ServerLogProcess
             };
             
             sshDatabaseLogProcess.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {                    
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Database Log Error: {args.Data}");
+                if (args.Data != null && debugMode)
+                {
+                    UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Database Log Error: {args.Data}");
                     
                     // Special handling for common error messages
                     string errorMessage = args.Data;
@@ -443,6 +443,10 @@ public class ServerLogProcess
                     {
                         logCallback($"ERROR: spacetime command not found on the remote server. Check that SpacetimeDB is installed and in PATH.", -1);
                         errorMessage = "spacetime command not found on remote server. Check installation.";
+                    }
+                    else if (errorMessage.Contains("decoding response"))
+                    {
+                        errorMessage = "Error decoding response from remote server. Server is not running.";
                     }
                     else if (errorMessage.Contains("Permission denied"))
                     {
@@ -1630,7 +1634,7 @@ public class ServerLogProcess
         
         // If no timestamp found or parsing failed, use current time
         string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-        string errorSuffix = isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
+        string errorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{fallbackTimestamp}{errorSuffix} {logLine}";
     }
     #endregion
