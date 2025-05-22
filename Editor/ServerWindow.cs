@@ -1394,14 +1394,15 @@ public class ServerWindow : EditorWindow
         // Activation of Server Windows
         bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
         bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
-        bool customServerActive = isConnected && serverMode == ServerMode.CustomServer;
+        bool customServerActive = serverManager.IsServerStarted && serverMode == ServerMode.CustomServer;
+        bool customServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
 
         // Begin horizontal layout for the three buttons
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !customServerActiveSilent && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1672,8 +1673,8 @@ public class ServerWindow : EditorWindow
             updateStyle.fontStyle = FontStyle.Bold;
             
             // Add clickable visual indicator
-            string displayText = !serverManager.AutoPublishMode ? "New Server Update! (Click to dismiss)" : "New Server Update! (Auto Publish Mode) (Click to dismiss)";
-            string tooltip = "Server Changes have been detected and are ready to be published as a new version of your module. Click to dismiss this notification until new changes are detected.";
+            string displayText = !serverManager.AutoPublishMode ? "New Server Update Ready to Publish!" : "New Server Update! (Auto Publish Mode) (Click to dismiss)";
+            string tooltip = "Server changes have been detected and are ready to be published. \nClick to dismiss this notification until new changes are detected.";
             
             // Create a button-like appearance
             GUILayout.BeginHorizontal();
@@ -1757,7 +1758,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button("Generate Unity Files", GUILayout.Height(37)))
             {
                 string outDir = serverManager.GetRelativeClientPath();
-                serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang}", "Generating Unity files");
+                serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y", "Generating Unity files");
                 LogMessage($"Generated Unity files to: {outDir}", 1);
             }
         }

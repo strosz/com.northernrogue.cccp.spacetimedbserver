@@ -718,7 +718,7 @@ public class ServerManager
 
     public async Task CheckServerStatus()
     {
-        UnityEngine.Debug.Log("CheckServerStatus called");
+        //UnityEngine.Debug.Log("CheckServerStatus called");
         // --- Reset justStopped flag after 5 seconds if grace period expired ---
         const double stopGracePeriod = 5.0;
         if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
@@ -1000,13 +1000,13 @@ public class ServerManager
                         {
                             LogMessage("Publish successful, automatically generating Unity files...", 0);
                             string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang}", "Generating Unity files (auto)");
+                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
                         }
                     }
                     else if (isGenerateCommand && description == "Generating Unity files (auto)")
                     {
-                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
-                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                        LogMessage("Publish and generate successful! Remember to recompile to activate any client changes.", 1);
+                        //UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
                     }
                 }
             }
@@ -1052,7 +1052,7 @@ public class ServerManager
                         {
                             LogMessage("Publish successful, automatically generating Unity files...", 0);
                             string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang}", "Generating Unity files (auto)");
+                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
                         }
                     }
                     else if (isGenerateCommand && description == "Generating Unity files (auto)")
@@ -1068,10 +1068,9 @@ public class ServerManager
             LogMessage($"Error running command: {ex.Message}", -1);
         }
     }
-
     #endregion
 
-    #region Utility Methods
+    #region Publish
 
     public void Publish(bool resetDatabase)
     {
@@ -1085,30 +1084,33 @@ public class ServerManager
             LogMessage("Please set the module name in the pre-requisites.",-2);
             return;
         }
+
+        // Always trim trailing slashes from CustomServerUrl for all usages
+        string customServerUrl = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl.TrimEnd('/') : "";
         
         if (resetDatabase)
         {
-            RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            if (serverMode == ServerMode.WslServer)
+                RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            else if (serverMode == ServerMode.CustomServer)
+                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+
+            UnityEngine.Debug.Log($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y");
         }
         else
         {
             if (serverMode == ServerMode.MaincloudServer)
             {
-                RunServerCommand($"spacetime publish --server maincloud {ModuleName}", $"Publishing module '{ModuleName}' to Maincloud");
+                RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
             }
             else if (serverMode == ServerMode.CustomServer)
             {
-                string customServerUrl = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl : "";
-                if (customServerUrl.EndsWith("/"))
-                {
-                    customServerUrl = customServerUrl.TrimEnd('/');
-                }
-                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName}", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
+                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
             }
             else
             {
                 // Default to local server for WSL and CustomServer modes
-                RunServerCommand($"spacetime publish --server local {ModuleName}", $"Publishing module '{ModuleName}' to Local");
+                RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
             }
         }
 
@@ -1122,6 +1124,9 @@ public class ServerManager
 
         // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
     }
+    #endregion
+
+    #region Server Methods
 
     public void InitNewModule()
     {
@@ -1582,6 +1587,11 @@ public class ServerManager
             {
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
             }
+        }
+
+        if (detectServerChanges && detectionProcess != null)
+        {
+            detectionProcess.CheckForChanges();
         }
     }
 
