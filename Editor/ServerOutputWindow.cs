@@ -867,16 +867,27 @@ public class ServerOutputWindow : EditorWindow
             string logContent = "";
             string logType = "";
             
-            if (selectedTab == 2) // Database All
+            // Get the formatted log content that's being displayed in the window
+            string displayedContent = GetFormattedLogForDisplay();
+            
+            // Strip any rich text formatting
+            displayedContent = Regex.Replace(displayedContent, @"<color=[^>]+>", "");
+            displayedContent = Regex.Replace(displayedContent, @"</color>", "");
+            
+            if (selectedTab == 2 || selectedTab == 3) // Database logs
             {
-                logContent = databaseLogFull;
                 logType = "DatabaseLogs";
             }
-            else // Module All or Module Errors
+            else // Module logs
             {
-                logContent = outputLogFull;
                 logType = "ModuleLogs";
             }
+            
+            // Use the displayed content rather than raw logs
+            // For raw logs, use the following line instead:
+            // logContent = outputLogFull;
+            // logContent = databaseLogFull;
+            logContent = displayedContent;
             
             if (string.IsNullOrEmpty(logContent))
             {

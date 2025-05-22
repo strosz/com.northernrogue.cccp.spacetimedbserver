@@ -158,7 +158,15 @@ public class ServerWindow : EditorWindow
             subTitleStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
             subTitleStyle.hover.textColor = new Color(0.43f, 0.43f, 0.43f);
             subTitleStyle.alignment = TextAnchor.MiddleCenter;
-            GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
+
+            //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
+            if (serverMode == ServerMode.WslServer)
+                EditorGUILayout.LabelField("WSL Server Mode", subTitleStyle);
+            else if (serverMode == ServerMode.CustomServer)
+                EditorGUILayout.LabelField("Custom Server Mode", subTitleStyle);
+            else if (serverMode == ServerMode.MaincloudServer)
+                EditorGUILayout.LabelField("Maincloud Server Mode", subTitleStyle);
+
             GUILayout.EndHorizontal();
 
             EditorGUILayout.Space(-15);

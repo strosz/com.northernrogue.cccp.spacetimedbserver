@@ -1313,76 +1313,102 @@ public class ServerLogProcess
         if (string.IsNullOrEmpty(logLine))
             return logLine;
 
-        // Check if line already has a properly formatted timestamp
-        if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        string timestampPrefix = "";
+        string messageContent = logLine;
+        bool existingPrefixFound = false;
+
+        // Check if line already starts with a [YYYY-MM-DD HH:MM:SS] timestamp
+        var prefixMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(.*)");
+        if (prefixMatch.Success)
         {
-            // Line already has a properly formatted timestamp at the start
-            string errorPrefix = isError ? " [ERROR]" : "";
-            
-            // Make sure there's no double timestamp in the content already
-            string cleanedLine = System.Text.RegularExpressions.Regex.Replace(logLine,
-                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
-                "$1");
-                
-            // Add error indicator if needed
-            if (isError && !cleanedLine.Contains("[ERROR]"))
-            {
-                // Insert ERROR marker after timestamp
-                return System.Text.RegularExpressions.Regex.Replace(
-                    cleanedLine, 
-                    @"^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])",
-                    "$1 [ERROR]");
-            }
-            
-            return cleanedLine;
+            timestampPrefix = prefixMatch.Groups[1].Value;
+            messageContent = prefixMatch.Groups[2].Value.TrimStart();
+            existingPrefixFound = true;
         }
 
-        // Journalctl format: "2025-05-21T20:22:27.029473+00:00 LoreMagic systemd[1]: Started spacetimedb.service - SpacetimeDB Server."
-        // Extract ISO timestamp and message content
-        var match = System.Text.RegularExpressions.Regex.Match(
-            logLine, 
-            @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?:\+|-)\d{2}:\d{2})\s+(\S+)\s+(\S+)\[\d+\]:\s+(.*)");
-        
-        if (match.Success)
-        {
-            // Extract timestamp and actual message
-            string originalTimestamp = match.Groups[1].Value;
-            string messageContent = match.Groups[4].Value;
+        // Clean messageContent of any ISO-style timestamps regardless of where they appear
+        // Handle pattern "2025-05-21T20:51:40.352732Z"
+        messageContent = System.Text.RegularExpressions.Regex.Replace(
+            messageContent,
+            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b",
+            "");
             
-            // Try to parse the timestamp as DateTimeOffset
-            if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+        // Handle pattern "2025-05-21T20:22:27.029473+00:00"
+        messageContent = System.Text.RegularExpressions.Regex.Replace(
+            messageContent,
+            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\+|-)\d{2}:\d{2}\b",
+            "");
+            
+        // Trim any resulting extra spaces
+        messageContent = messageContent.Trim();
+
+        // If we still don't have a timestamp prefix, try to find one in the original line
+        if (!existingPrefixFound)
+        {
+            // Try journalctl format: "2025-05-21T20:22:27.029473+00:00 LoreMagic systemd[1]:"
+            var journalMatch = System.Text.RegularExpressions.Regex.Match(
+                logLine, 
+                @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\+|-)\d{2}:\d{2})\s+(\S+)\s+(\S+)\[\d+\]:\s+(.*)");
+            
+            if (journalMatch.Success)
             {
-                // Format it as [YYYY-MM-DD HH:MM:SS]
-                string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                string originalTimestamp = journalMatch.Groups[1].Value;
+                messageContent = journalMatch.Groups[4].Value;
                 
-                // Add error indicator if needed
-                string errorPrefix = isError ? " [ERROR]" : "";
+                if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+                {
+                    timestampPrefix = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                }
+            }
+            else
+            {
+                // Try alternative format: "2025-05-01T20:29:22.528775Z DEBUG ..."
+                var isoMatch = System.Text.RegularExpressions.Regex.Match(
+                    logLine, 
+                    @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+(\w+)\s+(.*)");
                 
-                // Return formatted output with timestamp at the start and only the actual message content
-                return $"{formattedTimestamp}{errorPrefix} {messageContent}";
+                if (isoMatch.Success)
+                {
+                    string originalTimestamp = isoMatch.Groups[1].Value;
+                    string logLevel = isoMatch.Groups[2].Value;
+                    string content = isoMatch.Groups[3].Value;
+                    
+                    if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+                    {
+                        timestampPrefix = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                        messageContent = $"{logLevel} {content}";
+                    }
+                }
+                else
+                {
+                    // Try to find any ISO timestamp in the line
+                    var anyIsoMatch = System.Text.RegularExpressions.Regex.Match(
+                        logLine, 
+                        @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|(?:\+|-)\d{2}:\d{2}))");
+                    
+                    if (anyIsoMatch.Success)
+                    {
+                        string originalTimestamp = anyIsoMatch.Groups[1].Value;
+                        
+                        if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+                        {
+                            timestampPrefix = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                            // Replace the timestamp in the original message
+                            messageContent = logLine.Replace(originalTimestamp, "").Trim();
+                        }
+                    }
+                }
             }
         }
-        
-        // Try alternative timestamp format: "2025-05-01T20:29:22.528775Z"
-        match = System.Text.RegularExpressions.Regex.Match(logLine, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
-        
-        if (match.Success)
+
+        // If no timestamp could be determined, use current time as fallback
+        if (string.IsNullOrEmpty(timestampPrefix))
         {
-            string originalTimestamp = match.Groups[1].Value;
-            
-            if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
-            {
-                string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
-                string result = logLine.Replace(originalTimestamp, "").Trim();
-                string errorPrefix = isError ? " [ERROR]" : "";
-                return $"{formattedTimestamp}{errorPrefix} {result}";
-            }
+            timestampPrefix = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         }
-        
-        // If no known timestamp format found, use current time
-        string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-        string errorSuffix = isError ? " [ERROR]" : "";
-        return $"{fallbackTimestamp}{errorSuffix} {logLine}";
+
+        string errorMarker = isError ? " [ERROR]" : "";
+        return $"{timestampPrefix}{errorMarker} {messageContent}".TrimEnd();
     }
     
     public void StopTailProcessExplicitly()
