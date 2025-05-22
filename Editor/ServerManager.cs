@@ -185,6 +185,14 @@ public class ServerManager
         // Initialize VersionProcessor
         versionProcessor = new ServerVersionProcess(cmdProcessor, LogMessage, debugMode);
         
+        // Initialize ServerDetectionProcess
+        detectionProcess = new ServerDetectionProcess(debugMode);
+        if (!string.IsNullOrEmpty(serverDirectory))
+        {
+            detectionProcess.Configure(serverDirectory, detectServerChanges);
+        }
+        detectionProcess.OnServerChangesDetected += OnServerChangesDetected;
+        
         // Configure the server control delegates
         versionProcessor.ConfigureServerControlDelegates(
             () => serverStarted, // IsServerRunning
@@ -265,7 +273,17 @@ public class ServerManager
     // Helper methods to update settings with persistence
     public void SetUserName(string value) { userName = value; EditorPrefs.SetString(PrefsKeyPrefix + "UserName", value); }
     public void SetBackupDirectory(string value) { backupDirectory = value; EditorPrefs.SetString(PrefsKeyPrefix + "BackupDirectory", value); }
-    public void SetServerDirectory(string value) { serverDirectory = value; EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", value); }
+    public void SetServerDirectory(string value) 
+    { 
+        serverDirectory = value; 
+        EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", value);
+        
+        // Update ServerDetectionProcess if it exists
+        if (detectionProcess != null)
+        {
+            detectionProcess.Configure(serverDirectory, detectServerChanges);
+        }
+    }
     public void SetUnityLang(string value) { unityLang = value; EditorPrefs.SetString(PrefsKeyPrefix + "UnityLang", value); }
     public void SetClientDirectory(string value) { clientDirectory = value; EditorPrefs.SetString(PrefsKeyPrefix + "ClientDirectory", value); }
     public void SetServerLang(string value) { serverLang = value; EditorPrefs.SetString(PrefsKeyPrefix + "ServerLang", value); }
@@ -307,7 +325,17 @@ public class ServerManager
     
     public void SetDebugMode(bool value) { debugMode = value; EditorPrefs.SetBool(PrefsKeyPrefix + "DebugMode", value); }
     public void SetHideWarnings(bool value) { hideWarnings = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HideWarnings", value); }
-    public void SetDetectServerChanges(bool value) { detectServerChanges = value; EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", value); }
+    public void SetDetectServerChanges(bool value) 
+    { 
+        detectServerChanges = value; 
+        EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", value);
+        
+        // Update ServerDetectionProcess if it exists
+        if (detectionProcess != null)
+        {
+            detectionProcess.SetDetectChanges(value);
+        }
+    }
     public void SetAutoPublishMode(bool value) { autoPublishMode = value; EditorPrefs.SetBool(PrefsKeyPrefix + "AutoPublishMode", value); }
     public void SetPublishAndGenerateMode(bool value) { publishAndGenerateMode = value; EditorPrefs.SetBool(PrefsKeyPrefix + "PublishAndGenerateMode", value); }
     public void SetSilentMode(bool value) { silentMode = value; EditorPrefs.SetBool(PrefsKeyPrefix + "SilentMode", value); }
@@ -927,6 +955,7 @@ public class ServerManager
         try
         {
             // Run the command silently and capture the output
+            if (!string.IsNullOrWhiteSpace(description))
             LogMessage($"{description}...", 0);
 
             // Publish and Generate requires the local CLI below and is not run on SSH

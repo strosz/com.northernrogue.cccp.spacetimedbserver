@@ -544,9 +544,30 @@ public class ServerWindow : EditorWindow
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your server and change the server mode to Custom server?","OK","Cancel");
                     if (modeChange)
                     {
+                        // Store and disable autoCloseWsl before stopping server
+                        bool originalAutoCloseWsl = serverManager.AutoCloseWsl;
+                        if (originalAutoCloseWsl)
+                        {
+                            serverManager.SetAutoCloseWsl(false);
+                            if (debugMode) LogMessage("Temporarily disabled AutoCloseWsl for mode switch", 0);
+                        }
+                        
                         serverManager.StopServer();
                         serverMode = ServerMode.CustomServer;
                         UpdateServerModeState();
+                        
+                        // Restore autoCloseWsl setting after a delay
+                        if (originalAutoCloseWsl)
+                        {
+                            EditorApplication.delayCall += () => {
+                                System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ => {
+                                    EditorApplication.delayCall += () => {
+                                        serverManager.SetAutoCloseWsl(true);
+                                        if (debugMode) LogMessage("Restored AutoCloseWsl setting", 0);
+                                    };
+                                });
+                            };
+                        }
                     }
                 }
                 else if (serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
@@ -567,9 +588,30 @@ public class ServerWindow : EditorWindow
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your server and change the server mode to Maincloud server?","OK","Cancel");
                     if (modeChange)
                     {
+                        // Store and disable autoCloseWsl before stopping server
+                        bool originalAutoCloseWsl = serverManager.AutoCloseWsl;
+                        if (originalAutoCloseWsl)
+                        {
+                            serverManager.SetAutoCloseWsl(false);
+                            if (debugMode) LogMessage("Temporarily disabled AutoCloseWsl for mode switch", 0);
+                        }
+                        
                         serverManager.StopServer();
                         serverMode = ServerMode.MaincloudServer;
                         UpdateServerModeState();
+                        
+                        // Restore autoCloseWsl setting after a delay
+                        if (originalAutoCloseWsl)
+                        {
+                            EditorApplication.delayCall += () => {
+                                System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ => {
+                                    EditorApplication.delayCall += () => {
+                                        serverManager.SetAutoCloseWsl(true);
+                                        if (debugMode) LogMessage("Restored AutoCloseWsl setting", 0);
+                                    };
+                                });
+                            };
+                        }
                     }
                 } 
                 else 
@@ -600,7 +642,8 @@ public class ServerWindow : EditorWindow
             "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
             "Note: Create a new empty folder if the module has not been created yet.";
             EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Server Directory", GUILayout.Width(150), GUILayout.Height(20)))
+            string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
+            if (GUILayout.Button(new GUIContent("Set Server Directory", serverDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
             {
                 string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
                 if (!string.IsNullOrEmpty(path))
@@ -646,7 +689,8 @@ public class ServerWindow : EditorWindow
             "Directory where Unity client scripts will be generated.\n\n"+
             "Note: This should be placed in the Assets folder of your Unity project.";
             EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Set Client Directory", GUILayout.Width(150), GUILayout.Height(20)))
+            string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
+            if (GUILayout.Button(new GUIContent("Set Client Directory", clientDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
             {
                 string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
                 if (!string.IsNullOrEmpty(path))
@@ -721,7 +765,8 @@ public class ServerWindow : EditorWindow
                 "Note: Create a new empty folder if the server backups have not been created yet.\n"+
                 "Backups for the server use little space, so you can commit this folder to your repository.";
                 EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Set Backup Directory", GUILayout.Width(150), GUILayout.Height(20)))
+                string backupDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(backupDirectory) ? "Not Set" : backupDirectory);
+                if (GUILayout.Button(new GUIContent("Set Backup Directory", backupDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
                 {
                     string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
                     if (!string.IsNullOrEmpty(path))
@@ -2107,21 +2152,27 @@ public class ServerWindow : EditorWindow
         switch (serverMode)
         {
             case ServerMode.WslServer:
-                if (debugMode) LogMessage("Server mode set to: WSL Local", 0);
+                if (debugMode) LogMessage("Server mode set-default config: Local", 0);
                 EditorUpdateHandler();
+                // Configure SpacetimeDB CLI for local server
+                serverManager.RunServerCommand("spacetime server set-default local", "");
                 break;
             case ServerMode.CustomServer:
-                if (debugMode) LogMessage("Server mode set to: Custom", 0);
+                if (debugMode) LogMessage("Server mode set to: Custom Remote (local in config)", 0);
                 EditorUpdateHandler();
                 if (serverCustomProcess == null)
                 {
                     serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
                     serverCustomProcess.LoadSettings();
                 }
+                // Configure SpacetimeDB CLI for local server (for publish and generate)
+                serverManager.RunServerCommand("spacetime server set-default local", "");
                 break;
             case ServerMode.MaincloudServer:
-                if (debugMode) LogMessage("Server mode set to: Maincloud", 0);
+                if (debugMode) LogMessage("Server mode set-default config: Maincloud", 0);
                 EditorUpdateHandler();
+                // Configure SpacetimeDB CLI for maincloud server
+                serverManager.RunServerCommand("spacetime server set-default maincloud", "");
                 break;
         }
 
