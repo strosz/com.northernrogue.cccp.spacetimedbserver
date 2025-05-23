@@ -120,7 +120,8 @@ public class ServerLogProcess
             }
         };
     }
-      // Start SSH-based log tailing for custom server
+    
+    // Start SSH-based log tailing for custom server
     public async void StartSSHLogging()
     {
         // Clean up any leftover tail processes on the remote server before starting new ones
@@ -576,7 +577,7 @@ public class ServerLogProcess
             };
             
             process.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null)
+                if (args.Data != null && debugMode) // Testing requiring debug mode since most messages here are not important
                 {                    
                     if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Service Log Error: {args.Data}");
                     

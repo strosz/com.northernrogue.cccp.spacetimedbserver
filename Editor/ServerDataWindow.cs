@@ -18,6 +18,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerDataWindow : EditorWindow
 {
+    public static bool debugMode = false;
+
     // Configuration (Loaded from EditorPrefs via ServerWindow keys)
     private string serverURL = "http://127.0.0.1:3000/v1";
     private string moduleName = "";
@@ -147,7 +149,7 @@ public class ServerDataWindow : EditorWindow
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Failed to load column widths: {ex.Message}");
+                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Failed to load column widths: {ex.Message}");
                 tableColumnWidths = new Dictionary<string, Dictionary<string, float>>();
             }
         }
@@ -162,7 +164,7 @@ public class ServerDataWindow : EditorWindow
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogWarning($"[ServerDataWindow] Failed to save column widths: {ex.Message}");
+            if (debugMode) Debug.LogWarning($"[ServerDataWindow] Failed to save column widths: {ex.Message}");
         }
     }
 
@@ -232,7 +234,7 @@ public class ServerDataWindow : EditorWindow
             parentServerWindow = windows[0];
         }
         // else {
-        //     UnityEngine.Debug.LogWarning("[ServerDataWindow] Could not find parent ServerWindow.");
+        //     if (debugMode) Debug.LogWarning("[ServerDataWindow] Could not find parent ServerWindow.");
         // }
     }
 
@@ -451,7 +453,7 @@ public class ServerDataWindow : EditorWindow
                             }
                             else
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not find schema->elements in JSON for table '{selectedTable}'.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not find schema->elements in JSON for table '{selectedTable}'.");
                                 columns = new List<string>(); // Ensure columns is empty if schema is missing
                             }
 
@@ -467,19 +469,19 @@ public class ServerDataWindow : EditorWindow
                                     }
                                     else
                                     {
-                                        UnityEngine.Debug.LogWarning($"[ServerDataWindow] Unexpected item type in 'rows' array for table '{selectedTable}'. Expected JArray, got {item.Type}");
+                                        if (debugMode) Debug.LogWarning($"[ServerDataWindow] Unexpected item type in 'rows' array for table '{selectedTable}'. Expected JArray, got {item.Type}");
                                     }
                                 }
                             }
                             else
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not find 'rows' array in JSON for table '{selectedTable}'. Assuming empty.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not find 'rows' array in JSON for table '{selectedTable}'. Assuming empty.");
                                 // rows list is already initialized empty, so nothing needed here
                             }
                         }
                         else
                         {
-                            UnityEngine.Debug.LogWarning($"[ServerDataWindow] Unexpected JSON structure for table '{selectedTable}'. Could not find 'schema' or 'rows'.");
+                            if (debugMode) Debug.LogWarning($"[ServerDataWindow] Unexpected JSON structure for table '{selectedTable}'. Could not find 'schema' or 'rows'.");
                             EditorGUILayout.LabelField("Error parsing table data structure. See console.", EditorStyles.wordWrappedLabel);
                         }
                     }
@@ -490,14 +492,14 @@ public class ServerDataWindow : EditorWindow
                 }
                 catch (JsonReaderException jsonEx)
                 {
-                    UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to parse JSON for table '{selectedTable}': {jsonEx.Message}Raw JSON:{rawJson}");
+                    if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to parse JSON for table '{selectedTable}': {jsonEx.Message}Raw JSON:{rawJson}");
                     EditorGUILayout.LabelField($"Error parsing JSON data: {jsonEx.Message}", EditorStyles.wordWrappedLabel);
                     GUILayout.EndVertical(); // Ensure we end the vertical layout
                     return;
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogError($"[ServerDataWindow] Error processing JSON for table '{selectedTable}': {ex}");
+                    if (debugMode) Debug.LogError($"[ServerDataWindow] Error processing JSON for table '{selectedTable}': {ex}");
                     EditorGUILayout.LabelField($"Error processing data: {ex.Message}", EditorStyles.wordWrappedLabel);
                     GUILayout.EndVertical(); // Ensure we end the vertical layout
                     return;
@@ -688,7 +690,7 @@ public class ServerDataWindow : EditorWindow
         catch (Exception ex)
         {
             // Catch any other exceptions to prevent editor from crashing
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Exception in DrawDataTable: {ex}");
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Exception in DrawDataTable: {ex}");
             if (Event.current.type == EventType.Repaint)
             {
                 // Only try to end GUI layouts during repaint to avoid further corruption
@@ -767,7 +769,7 @@ public class ServerDataWindow : EditorWindow
         string deleteQuery = $"DELETE FROM {tableName} WHERE {pkColumn} = {formattedValue};";
         
         // Log the query for debugging
-        UnityEngine.Debug.Log($"[ServerDataWindow] Executing DELETE query: {deleteQuery}");
+        if (debugMode) Debug.Log($"[ServerDataWindow] Executing DELETE query: {deleteQuery}");
         
         // Execute the delete operation with authentication
         ExecuteSqlStatement(deleteQuery, "row deletion");
@@ -863,7 +865,7 @@ public class ServerDataWindow : EditorWindow
             catch (Exception ex)
             {
                 string errorMsg = $"Exception during {operationType}: {ex.Message}";
-                UnityEngine.Debug.LogError($"[ServerDataWindow] {errorMsg}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] {errorMsg}");
                 
                 // Set the result for the waiting method
                 tcs.SetResult(false);
@@ -969,12 +971,12 @@ public class ServerDataWindow : EditorWindow
                 }
                 
                 // If we can't parse the array structure, log a warning and treat as string
-                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Unknown array format for value: {value}");
+                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Unknown array format for value: {value}");
                 return $"'{value.Replace("'", "''")}'";
             }
             catch (JsonException) {
                 // If JSON parsing fails, fall back to treating it as a string
-                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Failed to parse array value: {value}");
+                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Failed to parse array value: {value}");
             }
         }
 
@@ -1045,7 +1047,7 @@ public class ServerDataWindow : EditorWindow
 
         // Log the values being used for the request (URL base already logged)
         string tokenSnippet = string.IsNullOrEmpty(authToken) ? "None" : authToken.Substring(0, Math.Min(authToken.Length, 5)) + "...";
-        // UnityEngine.Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
+        // if (debugMode) Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
 
         if (serverMode == "WslServer")
             urlBase = GetApiBaseUrl(serverURL);
@@ -1098,13 +1100,13 @@ public class ServerDataWindow : EditorWindow
         // Check result
         if (!schemaFetchOk)
         {
-            UnityEngine.Debug.LogWarning($"[ServerDataWindow] Schema request (HttpClient) failed: {schemaFetchError}\nURL: {schemaUrl} \nResponse: Make sure you have entered the correct server URL and module name and that the server is running.");
+            if (debugMode) Debug.LogWarning($"[ServerDataWindow] Schema request (HttpClient) failed: {schemaFetchError}\nURL: {schemaUrl} \nResponse: Make sure you have entered the correct server URL and module name and that the server is running.");
             callback?.Invoke(false, $"Error fetching schema: {schemaFetchError}");
             showServerReachableInformation = true;
             yield break; // Stop coroutine on schema failure
         }
 
-        // UnityEngine.Debug.Log($"[ServerDataWindow] Schema response JSON: {schemaResponseJson}"); // Optional: Log raw response
+        // if (debugMode) Debug.Log($"[ServerDataWindow] Schema response JSON: {schemaResponseJson}"); // Optional: Log raw response
 
         try
         {
@@ -1124,14 +1126,14 @@ public class ServerDataWindow : EditorWindow
                  // If we couldn't find any public tables via schema, fall back to the predefined list
                  if (!tableNames.Any())
                  {
-                     UnityEngine.Debug.LogWarning("[ServerDataWindow] Could not detect public tables from schema. Falling back to predefined list.");
+                     if (debugMode) Debug.LogWarning("[ServerDataWindow] Could not detect public tables from schema. Falling back to predefined list.");
                      tableNames = allSchemaTables.Where(tn => fallbackQueryablePublicTables.Contains(tn)).ToList();
                  }
 
                  // Log excluded tables (optional)
                  var excludedTables = allSchemaTables.Except(tableNames).ToList();
                  if (excludedTables.Any()) {
-                    //UnityEngine.Debug.Log($"[ServerDataWindow] Excluding non-queryable/non-public tables from UI list: {string.Join(", ", excludedTables)}");
+                    //if (debugMode) Debug.Log($"[ServerDataWindow] Excluding non-queryable/non-public tables from UI list: {string.Join(", ", excludedTables)}");
                  }
 
                  if (!tableNames.Any()) {
@@ -1146,7 +1148,7 @@ public class ServerDataWindow : EditorWindow
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to parse schema JSON: {ex.Message}Response: {schemaResponseJson}");
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to parse schema JSON: {ex.Message}Response: {schemaResponseJson}");
             callback?.Invoke(false, $"Error parsing schema: {ex.Message}");
             yield break;
         }
@@ -1174,7 +1176,7 @@ public class ServerDataWindow : EditorWindow
             // Skip if table name is null or empty (shouldn't happen)
             if (string.IsNullOrEmpty(tableName))
             {
-                UnityEngine.Debug.LogWarning("[ServerDataWindow] Skipping data fetch for null or empty table name.");
+                if (debugMode) Debug.LogWarning("[ServerDataWindow] Skipping data fetch for null or empty table name.");
                 continue;
             }
 
@@ -1236,13 +1238,13 @@ public class ServerDataWindow : EditorWindow
 
                 // Log the raw JSON for the "message" table fetch for debugging
                 //if (tableName == "message") {
-                //     UnityEngine.Debug.Log($"[ServerDataWindow] Raw JSON for 'message' table:\n{tableResponseJson}");
+                //     if (debugMode) Debug.Log($"[ServerDataWindow] Raw JSON for 'message' table:\n{tableResponseJson}");
                 //}
 
                 // Basic JSON validation (optional)
                 try { JToken.Parse(tableData[tableName]); }
                 catch (JsonException jsonEx) {
-                     UnityEngine.Debug.LogWarning($"[ServerDataWindow] Fetched data for '{tableName}' but it seems invalid JSON: {jsonEx.Message}");
+                     if (debugMode) Debug.LogWarning($"[ServerDataWindow] Fetched data for '{tableName}' but it seems invalid JSON: {jsonEx.Message}");
                      // Store a valid JSON error object instead of potentially corrupt data
                      tableData[tableName] = JsonConvert.SerializeObject(new { error = "Invalid JSON received from server", details = jsonEx.Message });
                 }
@@ -1250,7 +1252,7 @@ public class ServerDataWindow : EditorWindow
             else
             {
                 errorCount++;
-                UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to fetch data for table '{tableName}': {tableFetchError}\nURL: {sqlUrl}\nQuery: {sqlQuery}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to fetch data for table '{tableName}': {tableFetchError}\nURL: {sqlUrl}\nQuery: {sqlQuery}");
                  // Store error info as a valid JSON object
                  tableData[tableName] = JsonConvert.SerializeObject(new { error = "Failed to fetch data", details = tableFetchError });
             }
@@ -1323,7 +1325,7 @@ public class ServerDataWindow : EditorWindow
             catch (Exception ex)
             {
                  SetStatus($"Error: Backup directory does not exist and could not be created: {ex.Message}", Color.red);
-                 UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to create backup directory '{backupDirectory}': {ex}");
+                 if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to create backup directory '{backupDirectory}': {ex}");
                  EditorUtility.DisplayDialog("Export Error", $"Backup Directory does not exist and could not be created:{backupDirectory} Error: {ex.Message}", "OK");
                  return;
             }
@@ -1340,7 +1342,7 @@ public class ServerDataWindow : EditorWindow
         catch (Exception ex)
         {
              SetStatus($"Error creating export folder: {ex.Message}", Color.red);
-             UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to create export folder '{exportFolderPath}': {ex}");
+             if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to create export folder '{exportFolderPath}': {ex}");
              EditorUtility.DisplayDialog("Export Error", $"Could not create export folder:{exportFolderPath} Error: {ex.Message}", "OK");
              return;
         }
@@ -1374,7 +1376,7 @@ public class ServerDataWindow : EditorWindow
             catch (Exception ex)
             {
                  errors++;
-                 UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to write JSON file '{filePath}': {ex}");
+                 if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to write JSON file '{filePath}': {ex}");
             }
         }
 
@@ -1419,7 +1421,7 @@ public class ServerDataWindow : EditorWindow
             catch (Exception ex)
             {
                 SetStatus($"Error: Backup directory does not exist and could not be created: {ex.Message}", Color.red);
-                UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to create backup directory '{backupDirectory}': {ex}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to create backup directory '{backupDirectory}': {ex}");
                 EditorUtility.DisplayDialog("Export Error", $"Backup Directory does not exist and could not be created:{backupDirectory} Error: {ex.Message}", "OK");
                 return;
             }
@@ -1452,7 +1454,7 @@ public class ServerDataWindow : EditorWindow
                 return; // Exit the ExportToCsv method immediately
             default:
                 // Should not happen with DisplayDialogComplex, but handle defensively
-                UnityEngine.Debug.LogError("[ServerDataWindow] Unexpected delimiter choice result: " + delimiterChoice);
+                if (debugMode) Debug.LogError("[ServerDataWindow] Unexpected delimiter choice result: " + delimiterChoice);
                 SetStatus("CSV Export cancelled due to unexpected error.", Color.red);
                 return;
         }
@@ -1468,7 +1470,7 @@ public class ServerDataWindow : EditorWindow
         catch (Exception ex)
         {
             SetStatus($"Error creating export folder: {ex.Message}", Color.red);
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to create export folder '{exportFolderPath}': {ex}");
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to create export folder '{exportFolderPath}': {ex}");
             EditorUtility.DisplayDialog("Export Error", $"Could not create export folder:{exportFolderPath} Error: {ex.Message}", "OK");
             return;
         }
@@ -1510,7 +1512,7 @@ public class ServerDataWindow : EditorWindow
                             }
                             else
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not find schema->elements in JSON for table '{tableName}'.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not find schema->elements in JSON for table '{tableName}'.");
                                 columns = new List<string>(); // Ensure columns is empty if schema is missing
                             }
 
@@ -1526,13 +1528,13 @@ public class ServerDataWindow : EditorWindow
                                     }
                                     else
                                     {
-                                        UnityEngine.Debug.LogWarning($"[ServerDataWindow] Unexpected item type in 'rows' array for table '{tableName}'. Expected JArray, got {item.Type}");
+                                        if (debugMode) Debug.LogWarning($"[ServerDataWindow] Unexpected item type in 'rows' array for table '{tableName}'. Expected JArray, got {item.Type}");
                                     }
                                 }
                             }
                             else
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not find 'rows' array in JSON for table '{tableName}'. Assuming empty.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not find 'rows' array in JSON for table '{tableName}'. Assuming empty.");
                             }
                         }
                     }
@@ -1622,7 +1624,7 @@ public class ServerDataWindow : EditorWindow
             catch (Exception ex)
             {
                 errors++;
-                UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to write CSV file '{filePath}': {ex}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to write CSV file '{filePath}': {ex}");
             }
         }
 
@@ -1663,7 +1665,7 @@ public class ServerDataWindow : EditorWindow
         if (!tableNames.Any())
         {
             tableNames = new List<string>(fallbackQueryablePublicTables);
-            UnityEngine.Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
+            if (debugMode) Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
         }
 
         // 1. Ask user to select a single JSON file
@@ -1685,7 +1687,7 @@ public class ServerDataWindow : EditorWindow
             if (!tableNames.Contains(tableName))
             {
                 errorMessage = $"Selected file '{Path.GetFileName(selectedFilePath)}' corresponds to table '{tableName}', which is not in the queryable list. Import aborted.";
-                UnityEngine.Debug.LogWarning($"[ServerDataWindow] {errorMessage}");
+                if (debugMode) Debug.LogWarning($"[ServerDataWindow] {errorMessage}");
             }
             else
             {
@@ -1699,7 +1701,7 @@ public class ServerDataWindow : EditorWindow
                     if (jsonData == null)
                     {
                         errorMessage = $"Failed to convert CSV file '{selectedFilePath}' to JSON format. Import aborted.";
-                        UnityEngine.Debug.LogError($"[ServerDataWindow] {errorMessage}");
+                        if (debugMode) Debug.LogError($"[ServerDataWindow] {errorMessage}");
                     }
                 }
                 else if (fileExtension == ".json")
@@ -1711,13 +1713,13 @@ public class ServerDataWindow : EditorWindow
                     catch (JsonException jsonEx)
                     {
                         errorMessage = $"Invalid JSON content in file '{selectedFilePath}': {jsonEx.Message}. Import aborted.";
-                        UnityEngine.Debug.LogError($"[ServerDataWindow] {errorMessage}");
+                        if (debugMode) Debug.LogError($"[ServerDataWindow] {errorMessage}");
                     }
                 }
                 else
                 {
                     errorMessage = $"Unsupported file extension '{fileExtension}'. Only .json and .csv files are supported.";
-                    UnityEngine.Debug.LogError($"[ServerDataWindow] {errorMessage}");
+                    if (debugMode) Debug.LogError($"[ServerDataWindow] {errorMessage}");
                     jsonData = null;
                 }
 
@@ -1730,7 +1732,7 @@ public class ServerDataWindow : EditorWindow
         catch (Exception ex)
         {
              errorMessage = $"Error reading or processing file '{selectedFilePath}': {ex.Message}. Import aborted.";
-             UnityEngine.Debug.LogError($"[ServerDataWindow] {errorMessage}");
+             if (debugMode) Debug.LogError($"[ServerDataWindow] {errorMessage}");
         }
 
         if (errorMessage != null)
@@ -1790,7 +1792,7 @@ public class ServerDataWindow : EditorWindow
         if (!tableNames.Any())
         {
             tableNames = new List<string>(fallbackQueryablePublicTables);
-            UnityEngine.Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
+            if (debugMode) Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
         }
          
         if (string.IsNullOrEmpty(backupDirectory))
@@ -1826,7 +1828,7 @@ public class ServerDataWindow : EditorWindow
         catch (Exception ex)
         {
              SetStatus($"Error reading directory '{selectedFolderPath}': {ex.Message}", Color.red);
-             UnityEngine.Debug.LogError($"[ServerDataWindow] Error reading directory '{selectedFolderPath}': {ex}");
+             if (debugMode) Debug.LogError($"[ServerDataWindow] Error reading directory '{selectedFolderPath}': {ex}");
              EditorUtility.DisplayDialog("Import Error", $"Could not read the selected directory:\n{selectedFolderPath}\nError: {ex.Message}", "OK");
              return;
         }
@@ -1841,7 +1843,7 @@ public class ServerDataWindow : EditorWindow
                  string tableName = Path.GetFileNameWithoutExtension(filePath);
                  // Basic validation: Check if table name is in our known list (optional but good)
                  if (!tableNames.Contains(tableName)) {
-                     UnityEngine.Debug.LogWarning($"[ServerDataWindow] Skipping import for file '{Path.GetFileName(filePath)}' as table '{tableName}' is not in the queryable list.");
+                     if (debugMode) Debug.LogWarning($"[ServerDataWindow] Skipping import for file '{Path.GetFileName(filePath)}' as table '{tableName}' is not in the queryable list.");
                      continue;
                  }
 
@@ -1854,7 +1856,7 @@ public class ServerDataWindow : EditorWindow
                      jsonData = ConvertCsvToJson(filePath, tableName);
                      if (jsonData == null)
                      {
-                         UnityEngine.Debug.LogError($"[ServerDataWindow] Failed to convert CSV file '{filePath}' to JSON format. Skipping this file.");
+                         if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to convert CSV file '{filePath}' to JSON format. Skipping this file.");
                          readFileErrors++;
                          continue;
                      }
@@ -1868,7 +1870,7 @@ public class ServerDataWindow : EditorWindow
                  // Basic JSON validation before sending
                  try { JToken.Parse(jsonData); }
                  catch (JsonException jsonEx) {
-                      UnityEngine.Debug.LogError($"[ServerDataWindow] Invalid JSON content in file '{filePath}': {jsonEx.Message}. Skipping this file.");
+                      if (debugMode) Debug.LogError($"[ServerDataWindow] Invalid JSON content in file '{filePath}': {jsonEx.Message}. Skipping this file.");
                       readFileErrors++;
                       continue; // Skip this file
                  }
@@ -1877,7 +1879,7 @@ public class ServerDataWindow : EditorWindow
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError($"[ServerDataWindow] Error reading or processing file '{filePath}': {ex.Message}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Error reading or processing file '{filePath}': {ex.Message}");
                 readFileErrors++;
             }
         }
@@ -1927,7 +1929,7 @@ public class ServerDataWindow : EditorWindow
             // Check if file exists
             if (!File.Exists(csvFilePath))
             {
-                UnityEngine.Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' does not exist.");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' does not exist.");
                 return null;
             }
 
@@ -1951,7 +1953,7 @@ public class ServerDataWindow : EditorWindow
                 
                 if (lines.Length == 0 || string.IsNullOrEmpty(lines[0]))
                 {
-                    UnityEngine.Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' appears to be empty.");
+                    if (debugMode) Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' appears to be empty.");
                     return null;
                 }
 
@@ -1960,7 +1962,7 @@ public class ServerDataWindow : EditorWindow
                 
                 // Auto-detect the delimiter
                 delimiter = AutoDetectDelimiter(firstLine);
-                UnityEngine.Debug.Log($"[ServerDataWindow] Auto-detected delimiter '{delimiter}' for CSV file '{csvFilePath}'");
+                if (debugMode) Debug.Log($"[ServerDataWindow] Auto-detected delimiter '{delimiter}' for CSV file '{csvFilePath}'");
 
                 // Parse all lines into rows
                 foreach (string line in lines)
@@ -1975,18 +1977,18 @@ public class ServerDataWindow : EditorWindow
             }
             catch (IOException ioEx)
             {
-                UnityEngine.Debug.LogError($"[ServerDataWindow] IO Error reading CSV file '{csvFilePath}': {ioEx.Message}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] IO Error reading CSV file '{csvFilePath}': {ioEx.Message}");
                 return null;
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogError($"[ServerDataWindow] Error reading CSV file '{csvFilePath}': {ex.Message}");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Error reading CSV file '{csvFilePath}': {ex.Message}");
                 return null;
             }
 
             if (allRows.Count <= 1) // Only headers or empty
             {
-                UnityEngine.Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' has no data rows.");
+                if (debugMode) Debug.LogError($"[ServerDataWindow] CSV file '{csvFilePath}' has no data rows.");
                 return null;
             }
 
@@ -2205,7 +2207,7 @@ public class ServerDataWindow : EditorWindow
                             else
                             {
                                 // Fall back to string (though this might cause reducer errors)
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not parse ID field '{header}' value '{value}' as number. Server may reject this.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not parse ID field '{header}' value '{value}' as number. Server may reject this.");
                                 rowArray.Add(value);
                             }
                         }
@@ -2294,7 +2296,7 @@ public class ServerDataWindow : EditorWindow
                             }
                             catch (Exception ex)
                             {
-                                UnityEngine.Debug.LogWarning($"Failed to parse vector3 value '{value}': {ex.Message}. Using default zero vector.");
+                                if (debugMode) Debug.LogWarning($"Failed to parse vector3 value '{value}': {ex.Message}. Using default zero vector.");
                                 // Default to zero vector on error
                                 JObject defaultVector = new JObject();
                                 defaultVector["x"] = 0f;
@@ -2316,7 +2318,7 @@ public class ServerDataWindow : EditorWindow
                             }
                             else
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Could not parse float field '{header}' value '{value}' as number. Server may reject this.");
+                                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Could not parse float field '{header}' value '{value}' as number. Server may reject this.");
                                 rowArray.Add(value);
                             }
                         }
@@ -2370,7 +2372,7 @@ public class ServerDataWindow : EditorWindow
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Error converting CSV to JSON: {ex.Message}\n{ex.StackTrace}");
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Error converting CSV to JSON: {ex.Message}\n{ex.StackTrace}");
             return null;
         }
     }
@@ -2458,7 +2460,7 @@ public class ServerDataWindow : EditorWindow
             var response = httpClient.GetAsync(schemaUrl).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
-                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Failed to fetch schema for column types: {response.StatusCode}");
+                if (debugMode) Debug.LogWarning($"[ServerDataWindow] Failed to fetch schema for column types: {response.StatusCode}");
                 return columnTypes;
             }
             
@@ -2601,7 +2603,7 @@ public class ServerDataWindow : EditorWindow
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogError($"[ServerDataWindow] Error getting column types from schema: {ex.Message}");
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Error getting column types from schema: {ex.Message}");
         }
         
         return columnTypes;
@@ -2684,13 +2686,13 @@ public class ServerDataWindow : EditorWindow
             if (importOk)
             {
                 successCount++;
-                UnityEngine.Debug.Log($"[ServerDataWindow] Successfully imported data for table '{tableName}'.");
+                if (debugMode) Debug.Log($"[ServerDataWindow] Successfully imported data for table '{tableName}'.");
             }
             else
             {
                 errorCount++;
                 string errorMsg = $"[ServerDataWindow] Failed to import data for table '{tableName}': {importError}\nEndpoint: {reducerEndpoint}\nPayload Sent (first 100 chars): {(payloadJson.Length > 100 ? payloadJson.Substring(0, 100) + "..." : payloadJson)}";
-                UnityEngine.Debug.LogError(errorMsg);
+                if (debugMode) Debug.LogError(errorMsg);
                 errorDetails.AppendLine($"- {tableName}: {importError}");
             }
             // No task dispose needed here as Task.Run task completes automatically
@@ -2707,7 +2709,7 @@ public class ServerDataWindow : EditorWindow
         else
         {
              finalMessage = $"Import finished with {errorCount} error(s) for {successCount} successful tables. See console.";
-             UnityEngine.Debug.LogError($"[ServerDataWindow] Import Errors Summary:\n{errorDetails}");
+             if (debugMode) Debug.LogError($"[ServerDataWindow] Import Errors Summary:\n{errorDetails}");
         }
 
         callback?.Invoke(overallSuccess, finalMessage);
@@ -2742,7 +2744,7 @@ public class ServerDataWindow : EditorWindow
         // Null safety checks
         if (tableName == null || columns == null)
         {
-            UnityEngine.Debug.LogWarning($"[ServerDataWindow] GetColumnWidths called with null parameters: tableName={tableName == null}, columns={columns == null}");
+            if (debugMode) Debug.LogWarning($"[ServerDataWindow] GetColumnWidths called with null parameters: tableName={tableName == null}, columns={columns == null}");
             return new Dictionary<string, float>(); // Return empty dictionary as fallback
         }
 

@@ -908,7 +908,7 @@ public class ServerManager
                         if (confirmed)
                         {                            
                             // Detected server running, probably it was already running when Unity started
-                            if (DebugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "CustomServer remote check" : $"Port {ServerPort}" )}).", 1);
+                            LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"Port {ServerPort}" )})", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
                             isStartingUp = false;
@@ -916,7 +916,8 @@ public class ServerManager
 
                             // Update logProcessor state
                             logProcessor.SetServerRunningState(true);
-                              // If we detected a custom server is running and we are in silent mode,
+                            
+                            // If we detected a custom server is running and we are in silent mode,
                             // start the SSH log processors
                             if (serverMode == ServerMode.CustomServer && isActuallyRunning && silentMode && logProcessor != null)
                             {

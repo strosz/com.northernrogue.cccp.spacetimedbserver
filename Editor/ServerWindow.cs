@@ -16,7 +16,6 @@ public class ServerWindow : EditorWindow
     
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
-    private ServerLogProcess logProcessor;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
     private Process serverProcess;
@@ -531,10 +530,35 @@ public class ServerWindow : EditorWindow
             {
                 if (serverManager.serverStarted && serverMode != ServerMode.WslServer)
                 {
-                    serverManager.StopServer();
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your server and change the server mode to WSL server?","OK","Cancel");
+                    if (modeChange)
+                    {
+                        // Store and disable autoCloseWsl before stopping server
+                        bool originalAutoCloseWsl = serverManager.AutoCloseWsl;
+                        if (originalAutoCloseWsl)
+                        {
+                            serverManager.SetAutoCloseWsl(false);
+                            if (debugMode) LogMessage("Temporarily disabled AutoCloseWsl for mode switch", 0);
+                        }
+                        
+                        serverManager.StopServer();
+                        serverMode = ServerMode.WslServer;
+                        UpdateServerModeState();
+                        
+                        // Restore autoCloseWsl setting after a delay
+                        if (originalAutoCloseWsl)
+                        {
+                            EditorApplication.delayCall += () => {
+                                System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ => {
+                                    EditorApplication.delayCall += () => {
+                                        serverManager.SetAutoCloseWsl(true);
+                                        if (debugMode) LogMessage("Restored AutoCloseWsl setting", 0);
+                                    };
+                                });
+                            };
+                        }
+                    }
                 }
-                serverMode = ServerMode.WslServer;
-                UpdateServerModeState();
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
@@ -1322,7 +1346,7 @@ public class ServerWindow : EditorWindow
             {
                 bool newDebugMode = !serverManager.DebugMode;
                 serverManager.SetDebugMode(newDebugMode);
-                debugMode = newDebugMode; // Keep local field in sync
+                debugMode = newDebugMode;
                 
                 // Update other components that need to know about debug mode
                 ServerOutputWindow.debugMode = newDebugMode;
@@ -1331,6 +1355,7 @@ public class ServerWindow : EditorWindow
                 ServerLogProcess.debugMode = newDebugMode;
                 ServerCMDProcess.debugMode = newDebugMode;
                 ServerCustomProcess.debugMode = newDebugMode;
+                ServerDataWindow.debugMode = newDebugMode;
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1931,16 +1956,12 @@ public class ServerWindow : EditorWindow
 
     public void ClearModuleLogFile() // Clears the module tmp log file
     {
-        if (debugMode) LogMessage("Clearing log file...", 0);
-        logProcessor.ClearModuleLogFile();
-        if (debugMode) LogMessage("Log file cleared successfully", 1);
+        serverManager.ClearModuleLogFile();
     }
     
     public void ClearDatabaseLog() // Clears the database log content (only kept in memory for performance)
     {
-        if (debugMode) LogMessage("Clearing database log...", 0);
-        logProcessor.ClearDatabaseLog();
-        if (debugMode) LogMessage("Database log cleared successfully", 1);
+        serverManager.ClearDatabaseLog();
     }
 
     public async void LoginMaincloud()
