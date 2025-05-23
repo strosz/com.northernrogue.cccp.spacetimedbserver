@@ -440,7 +440,7 @@ public class ServerWindow : EditorWindow
 
             // Inactive Server Mode
             GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            inactiveToolbarButton.normal.textColor = Color.gray5;
+            inactiveToolbarButton.normal.textColor = Color.gray;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             if (GUILayout.Button("WSL Local", serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
