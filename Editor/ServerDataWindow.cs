@@ -95,7 +95,9 @@ public class ServerDataWindow : EditorWindow
     private int draggingColumnIndex = -1;
 
     string urlBase;
+    string sqlUrl;
     string schemaUrl;
+    string reducerEndpoint;
 
     // --- Window Setup ---
     [MenuItem("SpacetimeDB/Server Database")]
@@ -693,17 +695,28 @@ public class ServerDataWindow : EditorWindow
                 try { GUILayout.EndVertical(); } catch { /* Ignore */ }
             }
         }
-    }
-
-    // Helper method to determine primary key information for a row
+    }    // Helper method to determine primary key information for a row
     private bool TryGetPrimaryKeyInfo(List<string> columns, List<JToken> rowValues, out string pkColumn, out string pkValue)
     {
         // Initialize out parameters
         pkColumn = string.Empty;
         pkValue = string.Empty;
         
-        // First priority: Look for an "id" column (or similar)
-        string[] idColumnNames = new string[] { "id", "message_id", "entity_id", "player_id", "schedule_id" };
+        // FIRST PRIORITY: Look for the actual primary key field "identity" which is standard in SpacetimeDB
+        string[] primaryKeyNames = new string[] { "identity" };
+        foreach (var pkName in primaryKeyNames)
+        {
+            int pkIndex = columns.FindIndex(col => col.Equals(pkName, StringComparison.OrdinalIgnoreCase));
+            if (pkIndex >= 0 && pkIndex < rowValues.Count)
+            {
+                pkColumn = columns[pkIndex];
+                pkValue = rowValues[pkIndex].ToString();
+                return true;
+            }
+        }
+        
+        // Second priority: Look for common ID column patterns
+        string[] idColumnNames = new string[] { "id", "player_id", "message_id", "entity_id", "schedule_id" };
         foreach (var idName in idColumnNames)
         {
             int idIndex = columns.FindIndex(col => col.Equals(idName, StringComparison.OrdinalIgnoreCase));
@@ -715,10 +728,10 @@ public class ServerDataWindow : EditorWindow
             }
         }
         
-        // Second priority: Standard primary key column names
+        // Third priority: Standard primary key column names
         string[] possiblePkNames = new string[] 
         { 
-            "identity", "primary_key", "pk", "key", "uid", "uuid" // Other possible names
+            "primary_key", "pk", "key", "uid", "uuid" // Other possible names
         };
         
         foreach (var possiblePk in possiblePkNames)
@@ -789,9 +802,15 @@ public class ServerDataWindow : EditorWindow
         Repaint();
         
         // Use GetApiBaseUrl to ensure URL has /v1
-        string urlBase = GetApiBaseUrl(serverURL);
-        string sqlUrl = $"{urlBase}/database/{moduleName}/sql";
-        
+        if (serverMode == "WslServer")
+            urlBase = GetApiBaseUrl(serverURL);
+        else if (serverMode == "CustomServer")
+            urlBase = GetApiBaseUrl(customServerUrl);
+        else if (serverMode == "MaincloudServer")
+            urlBase = GetApiBaseUrl(maincloudUrl);
+
+        sqlUrl = $"{urlBase}/database/{moduleName}/sql";
+
         // Use TaskCompletionSource to manage the async operation within the synchonous method
         var tcs = new TaskCompletionSource<bool>();
         
@@ -886,17 +905,19 @@ public class ServerDataWindow : EditorWindow
         
         // Execute the clear operation
         ExecuteSqlStatement(sqlQuery, "table clearing");
-    }
-
-    // Formats a value for use in SQL based on its apparent type
+    }    // Formats a value for use in SQL based on its apparent type
     private string FormatSqlValue(string value)
     {
-        // Check if the value is a JSON array (common for Identity values and timestamps in SpacetimeDB)
+        // Check if the value is a JSON array (common for Identity values, timestamps, and Option types in SpacetimeDB)
         if (value.StartsWith("[") && value.EndsWith("]"))
         {
             try {
                 // Parse the JSON array
-                JArray array = JArray.Parse(value);
+                JArray array = JArray.Parse(value);                // Handle empty arrays (represents None for Option types)
+                if (array.Count == 0)
+                {
+                    return value; // Keep original JSON array format []
+                }
                 
                 // If it's an array with a single element
                 if (array.Count == 1)
@@ -917,12 +938,39 @@ public class ServerDataWindow : EditorWindow
                         // If it's just a string in an array, return the string value with quotes
                         return $"'{firstElement.ToString().Replace("'", "''")}'";
                     }
-                    // If it's a number (like a SpacetimeDB timestamp)
+                    // If it's a number (like a SpacetimeDB timestamp or Option<u32>)
                     else if (firstElement.Type == JTokenType.Integer)
                     {
                         return firstElement.ToString(); // Return just the numeric value for id columns
                     }
+                }                // Handle arrays with multiple elements (this might be an Option type with enum variants)
+                // For SpacetimeDB Option types, we need to handle the format differently
+                // Arrays like [0, 1] represent Some(1) where 0 is the variant tag
+                // SpacetimeDB expects the raw JSON array format for Option types in SQL
+                if (array.Count == 2 && array[0].Type == JTokenType.Integer && array[1].Type == JTokenType.Integer)
+                {
+                    int variantTag = (int)array[0];
+                    if (variantTag == 0) // "Some" variant
+                    {
+                        // Return the raw JSON array format as SpacetimeDB expects it
+                        return value; // Keep original JSON array format [0, 1]
+                    }
+                    else if (variantTag == 1) // "None" variant (though this should be just [1])
+                    {
+                        return value; // Keep original JSON array format [1, ...]
+                    }
                 }
+                
+                // Handle single element arrays that might be None variants for Option types
+                if (array.Count == 1 && array[0].Type == JTokenType.Integer && (int)array[0] == 1)
+                {
+                    // This might be a None variant represented as [1]
+                    return value; // Keep original JSON array format [1]
+                }
+                
+                // If we can't parse the array structure, log a warning and treat as string
+                UnityEngine.Debug.LogWarning($"[ServerDataWindow] Unknown array format for value: {value}");
+                return $"'{value.Replace("'", "''")}'";
             }
             catch (JsonException) {
                 // If JSON parsing fails, fall back to treating it as a string
@@ -1000,18 +1048,13 @@ public class ServerDataWindow : EditorWindow
         // UnityEngine.Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
 
         if (serverMode == "WslServer")
-        {
             urlBase = GetApiBaseUrl(serverURL);
-            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-        } else if (serverMode == "CustomServer")
-        {
+        else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
-            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-        } else if (serverMode == "MaincloudServer")
-        {
+        else if (serverMode == "MaincloudServer")
             urlBase = GetApiBaseUrl(maincloudUrl);
-            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-        }
+
+        schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
 
         string schemaResponseJson = null;
         bool schemaFetchOk = false;
@@ -2403,19 +2446,14 @@ public class ServerDataWindow : EditorWindow
         try
         {
             if (serverMode == "WslServer")
-            {
                 urlBase = GetApiBaseUrl(serverURL);
-                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-            } else if (serverMode == "CustomServer")
-            {
+            else if (serverMode == "CustomServer")
                 urlBase = GetApiBaseUrl(customServerUrl);
-                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-            } else if (serverMode == "MaincloudServer")
-            {
+            else if (serverMode == "MaincloudServer")
                 urlBase = GetApiBaseUrl(maincloudUrl);
-                schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
-            }
-            
+
+            schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
+
             // Make a synchronous request since this is called from a synchronous context
             var response = httpClient.GetAsync(schemaUrl).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
@@ -2573,8 +2611,14 @@ public class ServerDataWindow : EditorWindow
     private IEnumerator ImportDataCoroutine(List<(string tableName, string jsonData)> tablesToImport, Action<bool, string> callback)
     {
         // Reuse HttpClient and base URL logic from Refresh
-        string urlBase = GetApiBaseUrl(serverURL);
-        string reducerEndpoint = $"{urlBase}/database/{moduleName}/call/import_table_data";
+        if (serverMode == "WslServer")
+            urlBase = GetApiBaseUrl(serverURL);
+        else if (serverMode == "CustomServer")
+            urlBase = GetApiBaseUrl(customServerUrl);
+        else if (serverMode == "MaincloudServer")
+            urlBase = GetApiBaseUrl(maincloudUrl);
+
+        reducerEndpoint = $"{urlBase}/database/{moduleName}/call/import_table_data";
 
         int successCount = 0;
         int errorCount = 0;

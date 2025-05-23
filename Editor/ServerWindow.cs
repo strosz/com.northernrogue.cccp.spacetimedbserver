@@ -178,8 +178,8 @@ public class ServerWindow : EditorWindow
             GUIStyle titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
             titleControlStyle.fontSize = 10;
             titleControlStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
-            GUILayout.Label("v" + ServerUpdateProcess.GetCurrentPackageVersion(), titleControlStyle, GUILayout.Width(33));
-            if (GUILayout.Button("color", titleControlStyle, GUILayout.Width(30)))
+            string tooltipVersion = "Click to change logo color";
+            if (GUILayout.Button(new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion), titleControlStyle))
             {
                 colorLogo = !colorLogo;
                 EditorPrefs.SetBool(PrefsKeyPrefix + "ColorLogo", colorLogo);

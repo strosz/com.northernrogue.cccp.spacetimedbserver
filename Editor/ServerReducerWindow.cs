@@ -87,10 +87,18 @@ public class ServerReducerWindow : EditorWindow
         public string name;
         public JObject @params;
         public JObject lifecycle;
+
+        [NonSerialized]
+        private List<ReducerParam> _cachedParameters = null;
         
         public List<ReducerParam> GetParameters()
         {
-            List<ReducerParam> result = new List<ReducerParam>();
+            if (_cachedParameters != null)
+            {
+                return _cachedParameters;
+            }
+
+            _cachedParameters = new List<ReducerParam>();
             if (@params != null && @params["elements"] != null)
             {
                 JArray elements = @params["elements"] as JArray;
@@ -101,7 +109,12 @@ public class ServerReducerWindow : EditorWindow
                         try
                         {
                             ReducerParam param = element.ToObject<ReducerParam>();
-                            result.Add(param);
+                            // Ensure TagValue is initialized for new params, especially for text fields
+                            if (param.TagValue == null)
+                            {
+                                param.TagValue = "";
+                            }
+                            _cachedParameters.Add(param);
                         }
                         catch (Exception ex)
                         {
@@ -110,7 +123,7 @@ public class ServerReducerWindow : EditorWindow
                     }
                 }
             }
-            return result;
+            return _cachedParameters;
         }
         
         public bool IsLifecycleReducer()
@@ -708,12 +721,15 @@ public class ServerReducerWindow : EditorWindow
             
             paramValues.Add(convertedValue);
         }
-        
+
         // Call the reducer with parameters
         StartCoroutineOwnerless(RunReducerCoroutine(reducer.name, paramValues, (success, message) => {
             if (success)
             {
-                SetStatus($"Reducer '{reducer.name}' executed successfully: {message}", Color.green);
+                string sentMsg = (paramValues != null && paramValues.Count > 0 && paramValues[0] != null)
+                    ? $" Sent: {paramValues[0]}"
+                    : "";
+                SetStatus($"Reducer '{reducer.name}' successful!{sentMsg}", Color.green);
             }
             else
             {
@@ -752,6 +768,7 @@ public class ServerReducerWindow : EditorWindow
             callback(false, $"Error serializing parameters: {ex.Message}");
             yield break;
         }
+        //Debug.Log($"Reducer: {jsonParameters}"); // Keep for debug
         
         // Send the request - keep yield outside try-catch
         var sendTask = httpClient.SendAsync(request);
