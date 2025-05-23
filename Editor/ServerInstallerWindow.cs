@@ -256,7 +256,7 @@ public class ServerInstallerWindow : EditorWindow
             {
                 title = "Install SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
-                "Note: Only supports installing to the users home directory (SpacetimedDB default)",
+                "Note: Only supports installing to the users home directory (SpacetimeDB default)",
                 isInstalled = hasSpacetimeDBServer,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBServer
@@ -291,11 +291,12 @@ public class ServerInstallerWindow : EditorWindow
 
         // Initialize Custom SSH installer items (no WSL entry as we assume Debian is already installed)
         customInstallerItems = new List<InstallerItem>
-        {            new InstallerItem
+        {   
+            new InstallerItem
             {
                 title = "Install User",
-                description = "Creates a new user on the SSH Debian server with sudo privileges\n"+
-                "Required to run SpacetimeDB Server with proper permissions\n"+
+                description = "Creates a new user on the SSH Debian server with proper permissions\n"+
+                "Will add your public SSH key to the user. Requires a manual SSH connection initially\n"+
                 "Note: You will be prompted to set a password for the new user",
                 isInstalled = hasCustomDebianUser,
                 isEnabled = isConnectedSSH,
@@ -655,10 +656,10 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         string description = currentTab == 0 ? 
-            "Install all the required software to run your local SpacetimeDB Server in WSL.\n" +
-            "This has been tested to work on a fresh install from the ground up." :
+            "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +
+            "This will give you a local CLI for spacetime commands. Required for all modes to be able to publish." :
             "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.\n" +
-            "This has been tested to work on a fresh Debian homelab server, VM or VPS instance from the ground up.";
+            "This has been tested to work on a fresh Debian 12 server, VM or VPS instance from the ground up.";
 
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
@@ -1613,6 +1614,12 @@ public class ServerInstallerWindow : EditorWindow
         if (string.IsNullOrEmpty(tempCreateUserNameInput))
         {
             SetStatus("Please enter a username to create.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "")))
+        {
+            SetStatus("Please first generate a SSH private key and enter the path.", Color.red);
             return;
         }
         

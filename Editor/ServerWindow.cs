@@ -522,7 +522,7 @@ public class ServerWindow : EditorWindow
 
             // Style Inactive serverMode
             GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            inactiveToolbarButton.normal.textColor = Color.gray5;
+            inactiveToolbarButton.normal.textColor = Color.gray;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
@@ -558,6 +558,9 @@ public class ServerWindow : EditorWindow
                             };
                         }
                     }
+                } else {
+                    serverMode = ServerMode.WslServer;
+                    UpdateServerModeState();
                 }
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";

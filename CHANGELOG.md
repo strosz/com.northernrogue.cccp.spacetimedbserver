@@ -1,18 +1,20 @@
 # Changelog
 
 
-## [0.3.6] - 2025-05-10
+## [0.3.6] - 2025-05-23
 
 ### Added
-- Custom and Maincloud server mode can now be used.
+- Big update with lots of new features.
+- Custom server mode can now be used. Requires a Debian based fresh server.
+- Maincloud server mode can now be used. Log in with the UI.
 
 ### Fixed & Changed
 - Database Window now lets you DEL and CLR in all types of tables.
-- Reducer Window now properly let's you call reducers with params.
+- Reducer Window now properly lets you call reducers with params.
+- Lots of fixes to the UI and server management.
 
 
-
-## [0.3.5] - 2025-05-10
+## [0.3.5] - 2025-05-16
 
 ### New Features
 - Initial support for Custom and Maincloud server.
@@ -22,7 +24,6 @@
 - Refactored scripts to be more focused and less all in one.
 
 
-
 ## [0.3.4] - 2025-05-12
 
 ### New Features
@@ -30,7 +31,6 @@
 
 ### Fixed & Changed
 - UI fixes.
-
 
 
 ## [0.3.3] - 2025-05-10
