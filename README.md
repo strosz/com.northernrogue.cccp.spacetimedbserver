@@ -4,7 +4,7 @@
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
 <a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/buy%20me%20a%20ko-fi-8A2BE2"></a>
 </p>
-<img src="https://northernrogue.se/cosmos_cover_new.png" alt="Alt text" width="900">
+<img src="https://northernrogue.se/cosmos_cover_newupdate.png" alt="Alt text" width="900">
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
@@ -16,8 +16,13 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Features
 
+🌌 **WSL Local, Custom Remote or Maincloud**
+   - Use your server mode of choice.
+   - Control any SpacetimeDB server running on a Debian based distro.
+   - Quickly start developing with a local WSL server then publish it to a custom server or Maincloud.
+
 🚀 **Silent Server and One-Click Server Management**
-   - Start your local WSL SpacetimeDB server silently in about three seconds.
+   - Start your server silently in about three seconds.
    - Automatic pre-requisite checks ensure a smooth start.
    - No extra command-line windows needed!
 
@@ -27,8 +32,9 @@ Install directly in your Unity Package Manager with this git URL
 
 🌱 **Automatic Installer**
    - Server Installer Window which installs everything necessary from the ground up.
-   - If starting fresh you will have your own local SpacetimeDB server in no-time.
+   - If starting fresh you will have your own local WSL or custom remote SpacetimeDB server in no-time.
    - Extra compability checks for important steps.
+   - Get notified of new SpacetimeDB server updates and update it in the Server Installer Window.
 
 📊 **Real-time Monitoring**
    - Monitor server status and port availability directly in Unity.
@@ -44,12 +50,12 @@ Install directly in your Unity Package Manager with this git URL
    - Easily clear tables or delete specific rows.
 
 ✅ **Run Reducers**
-   - Access a list of all your SpacetimeDB reducers (server methods).
-   - Call reducers directly from the Unity editor interface.
+   - Access a list of all your SpacetimeDB reducers.
+   - Run reducers with custom parametres directly from the Unity editor interface.
 
 ⬇️⬆️ **Data Import/Export**
    - Export all database tables to JSON or CSV format.
-   - Import single tables or entire folders in JSON or CSV format (with manual steps).
+   - Import single tables or entire folders in JSON or CSV format (requires manual steps).
 
 ⚡ **Performance**
    - No noticeable performance impact during editor runtime.
@@ -74,9 +80,9 @@ Install directly in your Unity Package Manager with this git URL
    **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
 
 ## Upcoming Features
-   - Server profiles.
-   - Maincloud support.
-   - Notification and updater to a new SpacetimeDB server version.
+   - Save and load server profiles.
+   - Backup and restore custom server.
+   - Binaryen Web Assembly Optimizer installer.
 
 ## Community Made
    - Created by a solo MMO developer.
