@@ -1727,13 +1727,23 @@ public class ServerManager
             spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
             if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
             {
-                LogMessage($"SpacetimeDB update available for WSL! Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                LogMessage($"SpacetimeDB update available for WSL! Click on the update button in Commands. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
             }
         }
         else
         {
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+        }
+    }
+
+    public void ResetServerDetection()
+    {
+        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
+        {
+            detectionProcess.ResetTrackingAfterPublish(); // New baseline of current file sizes
+            ServerChangesDetected = false;
+            if (DebugMode) LogMessage("Reset server change detection tracking.", 0);
         }
     }
 

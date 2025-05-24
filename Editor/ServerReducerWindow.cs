@@ -17,7 +17,7 @@ public class ServerReducerWindow : EditorWindow
     #region Variables
     private string serverURL = "http://127.0.0.1:3000/v1"; // Default, should be overridden
     private string moduleName = "magical"; // Default, should be overridden
-    private string authToken = ""; // Should be overridden if needed
+    private string authToken = ""; // Required for authentication, to be able to run reducers and not just read schema
 
     private string customServerUrl = "";
     private string maincloudUrl = "";
@@ -276,8 +276,8 @@ public class ServerReducerWindow : EditorWindow
         
         if (reducers.Count == 0)
         {
-            EditorGUILayout.HelpBox("No reducers found. Click 'Refresh Reducers' to fetch available reducers.\n" +
-            "Make sure the server is running and the module is loaded.", MessageType.Info);
+            EditorGUILayout.HelpBox("Couldn't fetch reducers. Have you created any?\n" +
+            "Check that your server URL is correct, your module is published and the server is running.", MessageType.Info);
         }
         else
         {

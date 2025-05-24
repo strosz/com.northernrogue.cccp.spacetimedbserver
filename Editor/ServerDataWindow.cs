@@ -23,7 +23,7 @@ public class ServerDataWindow : EditorWindow
     // Configuration (Loaded from EditorPrefs via ServerWindow keys)
     private string serverURL = "http://127.0.0.1:3000/v1";
     private string moduleName = "";
-    private string authToken = "";
+    private string authToken = ""; // Required to be authenticated to access all of the SQL API
     private string backupDirectory = "";
     private string customServerUrl = "";
     private string maincloudUrl = "";
@@ -40,15 +40,6 @@ public class ServerDataWindow : EditorWindow
     private bool isRefreshing = false;
     private bool isImporting = false; // Added flag for import process
     private bool showServerReachableInformation = false;
-
-    // List of tables expected to be public and queryable via SQL API
-    // This is now kept as a fallback for use without schema parsing
-    private readonly List<string> fallbackQueryablePublicTables = new List<string>
-    {
-        "your",
-        "tables",
-        "here",
-    };
 
     // Scroll positions
     private Vector2 scrollPositionTables;
@@ -680,10 +671,11 @@ public class ServerDataWindow : EditorWindow
             }
             else
             {
-                EditorGUILayout.LabelField(tableNames.Any() ? "Select a table from the left." : "Refresh to load tables.", EditorStyles.centeredGreyMiniLabel);
-                if (showServerReachableInformation)
+                //EditorGUILayout.LabelField(tableNames.Any() ? "Select a table from the left." : "Refresh to load tables.", EditorStyles.centeredGreyMiniLabel);
+                if (showServerReachableInformation) // Enabled if schema couldn't be found
                 {
-                    EditorGUILayout.HelpBox("Check that you have entered the correct server URL and module name.", MessageType.Info);
+                    EditorGUILayout.HelpBox("Couldn't fetch database schema.\n" +
+                    "Check that your server URL is correct, your module is published and the server is running.", MessageType.Info);
                 }
             }
             
@@ -1124,13 +1116,6 @@ public class ServerDataWindow : EditorWindow
                      .Where(t => t.table_access != null && t.table_access.Public != null)
                      .Select(t => t.name)
                      .ToList();
-                     
-                 // If we couldn't find any public tables via schema, fall back to the predefined list
-                 if (!tableNames.Any())
-                 {
-                     if (debugMode) Debug.LogWarning("[ServerDataWindow] Could not detect public tables from schema. Falling back to predefined list.");
-                     tableNames = allSchemaTables.Where(tn => fallbackQueryablePublicTables.Contains(tn)).ToList();
-                 }
 
                  // Log excluded tables (optional)
                  var excludedTables = allSchemaTables.Except(tableNames).ToList();
@@ -1663,13 +1648,6 @@ public class ServerDataWindow : EditorWindow
             return;
         }
         
-        // Ensure tableNames is populated if schema hasn't been loaded yet
-        if (!tableNames.Any())
-        {
-            tableNames = new List<string>(fallbackQueryablePublicTables);
-            if (debugMode) Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
-        }
-
         // 1. Ask user to select a single JSON file
         string selectedFilePath = EditorUtility.OpenFilePanel("Select SpacetimeDB Table JSON or CSV File", backupDirectory, "json,csv");
 
@@ -1788,13 +1766,6 @@ public class ServerDataWindow : EditorWindow
         {
             SetStatus("Error: Module/DB Name not set in ServerWindow.", Color.red);
             return;
-        }
-        
-        // Ensure tableNames is populated if schema hasn't been loaded yet
-        if (!tableNames.Any())
-        {
-            tableNames = new List<string>(fallbackQueryablePublicTables);
-            if (debugMode) Debug.LogWarning("[ServerDataWindow] Using fallback table list as schema hasn't been loaded yet.");
         }
          
         if (string.IsNullOrEmpty(backupDirectory))

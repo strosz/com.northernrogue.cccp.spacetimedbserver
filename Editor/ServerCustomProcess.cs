@@ -685,7 +685,7 @@ public class ServerCustomProcess
             string latestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
             if (!string.IsNullOrEmpty(latestVersion) && version != latestVersion)
             {
-                Log($"SpacetimeDB update available for custom server! Current version: {version} and latest version: {latestVersion}", 1);
+                Log($"SpacetimeDB update available for custom server! Click on the update button in Commands. Current version: {version} and latest version: {latestVersion}", 1);
             }
         }
         else

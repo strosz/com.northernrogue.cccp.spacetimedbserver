@@ -42,7 +42,7 @@ Install directly in your Unity Package Manager with this git URL
    - Server errors are mirrored in the Unity console for easy debugging.
 
 💾 **Backup and Restore**
-   - Create and restore highly compressed backups of your entire server.
+   - Create and restore highly compressed backups of your entire SpacetimeDB within WSL.
    - Restore previous states in seconds.
 
 🔍 **Database Browser**

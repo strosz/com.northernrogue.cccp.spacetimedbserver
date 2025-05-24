@@ -859,7 +859,7 @@ public class ServerWindow : EditorWindow
                 // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
                 string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "AuthToken",
-                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
@@ -991,10 +991,12 @@ public class ServerWindow : EditorWindow
                     }
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerUrl)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();                // Custom Serer Auth Token
+                EditorGUILayout.EndHorizontal();                
+
+                // Custom Serer Auth Token
                 EditorGUILayout.BeginHorizontal();
                 string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "CustomServerAuthToken",
-                "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken, GUILayout.Width(150));
@@ -1050,10 +1052,12 @@ public class ServerWindow : EditorWindow
                     }
                     LoginMaincloud();
                 }
-                EditorGUILayout.EndHorizontal();                // Auth Token setting
+                EditorGUILayout.EndHorizontal();                
+
+                // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
                 string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "MaincloudAuthToken",
-                "Required for the Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken, GUILayout.Width(150));
@@ -1200,7 +1204,7 @@ public class ServerWindow : EditorWindow
             "Publish will Generate: Publish button publishes the module and generates the Unity files. \n\n"+
             "Separate Generate: Separate generate button to generate the Unity files.\n\n"+
             "Recommended: Publish will Generate.";
-            EditorGUILayout.LabelField(new GUIContent("Publish and Generate:", publishGenerateTooltip), GUILayout.Width(120));
+            EditorGUILayout.LabelField(new GUIContent("Publish / Generate:", publishGenerateTooltip), GUILayout.Width(120));
             GUIStyle publishGenerateStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.PublishAndGenerateMode)
             {
@@ -1595,18 +1599,14 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
-            if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
-            {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.RunServerCommand("spacetime list", "Showing active modules");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
-            }
-
-            /*if (GUILayout.Button("Show Module Config", GUILayout.Height(20)))
-            {
-                if (serverManager.CLIAvailable()) serverManager.RunServerCommand("spacetime module list", "Showing module config");
-                else LogMessage("SpacetimeDB CLI not available. Please install it first.", -1);
-            }*/
+            EditorGUI.BeginDisabledGroup(serverMode != ServerMode.MaincloudServer && !serverManager.IsServerStarted);
+                if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
+                {
+                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                    serverManager.RunServerCommand("spacetime list", "Showing active modules");
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                }
+            EditorGUI.EndDisabledGroup();
 
             if (serverMode != ServerMode.MaincloudServer)
             {
@@ -1712,8 +1712,7 @@ public class ServerWindow : EditorWindow
             // Use a button that looks like a label for better click response
             if (GUILayout.Button(new GUIContent(displayText, tooltip), updateStyle))
             {
-                // Call serverManager to reset change detection
-                // TODO: Add method to ServerManager to reset detection state
+                serverManager.ResetServerDetection();
                 Repaint();
             }
             

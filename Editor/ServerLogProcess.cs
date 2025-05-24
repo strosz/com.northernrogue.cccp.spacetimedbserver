@@ -899,7 +899,7 @@ public class ServerLogProcess
         this.clearDatabaseLogAtStart = clearDatabaseLogAtStart;
         this.userName = userName;
         
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}");
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}");
     }
     
     public void SetServerRunningState(bool isRunning)
@@ -1450,6 +1450,21 @@ public class ServerLogProcess
         {
             if (debugMode) logCallback("Starting database logs process...", 0);
             
+            // Check for required parameters first
+            if (string.IsNullOrEmpty(moduleName))
+            {
+                logCallback("ERROR: Module name is not configured, cannot start database log process", -1);
+                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] StartDatabaseLogProcess failed: moduleName is null/empty");
+                return;
+            }
+            
+            if (string.IsNullOrEmpty(userName))
+            {
+                logCallback("ERROR: Username is not configured, cannot start database log process", -1);
+                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] StartDatabaseLogProcess failed: userName is null/empty");
+                return;
+            }
+            
             // Mark state in SessionState
             SessionState.SetBool(SessionKeyDatabaseLogRunning, true);
             
@@ -1476,7 +1491,15 @@ public class ServerLogProcess
                 }
             }
             
-            databaseLogProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{logCommand}\"";
+            string wslArguments = $"-d Debian -u {userName} --exec bash -l -c \"{logCommand}\"";
+            databaseLogProcess.StartInfo.Arguments = wslArguments;
+            
+            // Log the exact command being executed for debugging
+            if (debugMode) 
+            {
+                logCallback($"Database log WSL command: wsl.exe {wslArguments}", 0);
+                UnityEngine.Debug.Log($"[ServerLogProcess] Starting database log process with command: wsl.exe {wslArguments}");
+            }
             databaseLogProcess.StartInfo.UseShellExecute = false;
             databaseLogProcess.StartInfo.CreateNoWindow = true;
             databaseLogProcess.StartInfo.RedirectStandardOutput = true;
@@ -1491,12 +1514,12 @@ public class ServerLogProcess
                     databaseLogQueue.Enqueue(line);
                 }
             };
-            
-            // Handle error data received (Only enabled if debugMode is true)
+              // Handle error data received (Always enabled to catch startup errors)
             databaseLogProcess.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null && debugMode)
+                if (args.Data != null)
                 {
                     string formattedLine = FormatDatabaseLogLine(args.Data, true);
+                    logCallback($"Database Log Error: {args.Data}", -1);
                     if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
                     databaseLogQueue.Enqueue(formattedLine);
                 }
@@ -1542,13 +1565,35 @@ public class ServerLogProcess
                     }
                 };
             };
-            
-            // Start the process
-            databaseLogProcess.Start();
-            databaseLogProcess.BeginOutputReadLine();
-            databaseLogProcess.BeginErrorReadLine();
-            
-            if (debugMode) logCallback($"Database log process started (PID: {databaseLogProcess.Id}).", 0);
+              // Start the process
+            try
+            {
+                databaseLogProcess.Start();
+                databaseLogProcess.BeginOutputReadLine();
+                databaseLogProcess.BeginErrorReadLine();
+                
+                if (debugMode) logCallback($"Database log process started successfully (PID: {databaseLogProcess.Id}).", 1);
+                
+                // Check if process exits immediately (common issue)
+                System.Threading.Thread.Sleep(500); // Give it a moment to potentially fail
+                if (databaseLogProcess.HasExited)
+                {
+                    int exitCode = databaseLogProcess.ExitCode;
+                    logCallback($"ERROR: Database log process exited immediately with code {exitCode}", -1);
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Database log process failed to start - exited with code {exitCode}");
+                    databaseLogProcess = null;
+                    SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+                    return;
+                }
+            }
+            catch (Exception startEx)
+            {
+                logCallback($"ERROR: Failed to start database log process: {startEx.Message}", -1);
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception starting database log process: {startEx}");
+                databaseLogProcess = null;
+                SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+                return;
+            }
             
             // Add initial message to show logs are cleared
             /*if (clearDatabaseLogAtStart)
