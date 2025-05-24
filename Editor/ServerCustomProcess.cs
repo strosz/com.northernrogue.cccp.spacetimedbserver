@@ -223,7 +223,7 @@ public class ServerCustomProcess
         {
             if (string.IsNullOrEmpty(sshPrivateKeyPath))
             {
-                Log("SSH Private Key Path is not set. Please specify the path to your private key file.", -1);
+                if (debugMode) Log("SSH Private Key Path is not set. Please specify the path to your private key file.", -1);
                 return (false, "", "SSH Private Key Path not set");
             }
             

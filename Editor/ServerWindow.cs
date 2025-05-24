@@ -854,13 +854,13 @@ public class ServerWindow : EditorWindow
                     }
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverUrl)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-    
+                EditorGUILayout.EndHorizontal();                
+                
                 // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = 
+                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "AuthToken",
                 "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
-                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
                 if (newAuthToken != authToken)
@@ -900,14 +900,17 @@ public class ServerWindow : EditorWindow
                 // SSH Keygen button
                 EditorGUILayout.BeginHorizontal();
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
-                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
+                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
                 {
                     if (cmdProcessor == null)
                     {
                         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
                     }
-                    cmdProcessor.RunPowerShellCommand("ssh-keygen -t ed25519", LogMessage);
+                    // Generate SSH key pair with default path and empty passphrase non-interactively
+                    string sshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+                    string defaultKeyPath = Path.Combine(sshDir, "id_ed25519");
+                    // Create .ssh directory first, then generate the key pair
+                    cmdProcessor.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
                 }
                 EditorGUILayout.EndHorizontal();
                 
@@ -917,11 +920,13 @@ public class ServerWindow : EditorWindow
                 if (!string.IsNullOrEmpty(sshPrivateKeyPath))
                 {
                     keyPathTooltip += $"\n\nCurrent path: {sshPrivateKeyPath}";
-                }
+                }                
                 EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
                 if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip), GUILayout.Width(150)))
-                {
-                    string path = EditorUtility.OpenFilePanel("Select SSH Private Key", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "/.ssh", "");
+                {                    
+                    // Use the same default .ssh directory as SSH key generation
+                    string defaultSshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+                    string path = EditorUtility.OpenFilePanel("Select SSH Private Key", defaultSshDir, "");
                     if (!string.IsNullOrEmpty(path))
                     {
                         sshPrivateKeyPath = path;
@@ -986,13 +991,11 @@ public class ServerWindow : EditorWindow
                     }
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerUrl)), GUILayout.Width(20));
-                EditorGUILayout.EndHorizontal();
-
-                // Custom Serer Auth Token
+                EditorGUILayout.EndHorizontal();                // Custom Serer Auth Token
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = 
+                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "CustomServerAuthToken",
                 "Required for the Server Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
-                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken, GUILayout.Width(150));
                 if (newAuthToken != customServerAuthToken)
@@ -1047,13 +1050,11 @@ public class ServerWindow : EditorWindow
                     }
                     LoginMaincloud();
                 }
-                EditorGUILayout.EndHorizontal();
-
-                // Auth Token setting
+                EditorGUILayout.EndHorizontal();                // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = 
+                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "MaincloudAuthToken",
                 "Required for the Database Window. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
-                "Important: Keep this token secret and do not share it with anyone outside of your team.";
+                "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
                 string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken, GUILayout.Width(150));
                 if (newAuthToken != maincloudAuthToken)
@@ -2036,6 +2037,28 @@ public class ServerWindow : EditorWindow
     #endregion
     
     #region Utility Methods
+
+    // Helper method to format auth token tooltip with first and last 20 characters
+    private string GetAuthTokenTooltip(string prefsKey, string baseTooltip)
+    {
+        string storedToken = EditorPrefs.GetString(prefsKey, "");
+        if (string.IsNullOrEmpty(storedToken))
+        {
+            return baseTooltip;
+        }
+        
+        if (storedToken.Length <= 40)
+        {
+            // If token is 40 characters or less, show the partial token
+            return baseTooltip + "\n\nCurrent token: " + storedToken.Substring(0, Math.Min(20, storedToken.Length)) + " ... " + 
+                   (storedToken.Length > 20 ? storedToken.Substring(Math.Max(0, storedToken.Length - 20)) : "");
+        }
+        else
+        {
+            // Show first 20 and last 20 characters
+            return baseTooltip + "\n\nCurrent token: " + storedToken.Substring(0, 20) + " ... " + storedToken.Substring(storedToken.Length - 20);
+        }
+    }
 
     public bool CLIAvailableLocal()
     {
