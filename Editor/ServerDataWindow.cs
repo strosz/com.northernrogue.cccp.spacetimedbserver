@@ -189,9 +189,11 @@ public class ServerDataWindow : EditorWindow
             url = url + "/v1";
         }
         
-        // Also replace 127.0.0.1 with localhost as done in other places
+        // Replace localhost addresses with localhost for consistency
         if (url.Contains("127.0.0.1"))
             url = url.Replace("127.0.0.1", "localhost");
+        else if (url.Contains("0.0.0.0"))
+            url = url.Replace("0.0.0.0", "localhost");
             
         return url;
     }

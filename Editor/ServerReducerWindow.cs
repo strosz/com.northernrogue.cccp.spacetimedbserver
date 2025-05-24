@@ -415,60 +415,45 @@ public class ServerReducerWindow : EditorWindow
     #endregion
     
     #region Load Settings
+    // Helper method to ensure server URL has /v1 suffix and handle localhost conversion
+    private string GetApiBaseUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return "http://127.0.0.1:3000/v1"; // Default if empty
+            
+        // Trim any trailing slashes
+        url = url.TrimEnd('/');
+        
+        // Check if URL already ends with /v1
+        if (!url.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+        {
+            url = url + "/v1";
+        }
+        
+        // Replace localhost addresses with localhost for consistency
+        if (url.Contains("127.0.0.1"))
+            url = url.Replace("127.0.0.1", "localhost");
+        else if (url.Contains("0.0.0.0"))
+            url = url.Replace("0.0.0.0", "localhost");
+            
+        return url;
+    }
+    
     private void LoadSettings()
     {
         // Load settings from EditorPrefs (shared with ServerWindow)
-        serverURL = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", serverURL);
+        string rawServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
+        serverURL = GetApiBaseUrl(rawServerUrl);
         moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", moduleName);
         authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", authToken);
         
-        // If URL doesn't have a protocol, add http://
-        if (!string.IsNullOrEmpty(serverURL) && !serverURL.StartsWith("http"))
-        {
-            serverURL = "http://" + serverURL;
-        }
+        string rawMaincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
         
-        // Add default port and API path if missing
-        if (!string.IsNullOrEmpty(serverURL))
-        {
-            Uri uri;
-            if (Uri.TryCreate(serverURL, UriKind.Absolute, out uri))
-            {
-                if (uri.Segments.Length == 1)
-                {
-                    // Add v1 path if missing
-                    serverURL = serverURL.TrimEnd('/') + "/v1";
-                }
-            }
-        }
-        maincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        string rawCustomServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+        customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
+        
         serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
-        
-        if (!string.IsNullOrEmpty(maincloudUrl))
-        {
-            Uri uri;
-            if (Uri.TryCreate(maincloudUrl, UriKind.Absolute, out uri))
-            {
-                if (uri.Segments.Length == 1)
-                {
-                    // Add v1 path if missing
-                    maincloudUrl = maincloudUrl.TrimEnd('/') + "/v1";
-                }
-            }
-        }
-        customServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
-        if (!string.IsNullOrEmpty(customServerUrl))
-        {
-            Uri uri;
-            if (Uri.TryCreate(customServerUrl, UriKind.Absolute, out uri))
-            {
-                if (uri.Segments.Length == 1)
-                {
-                    // Add v1 path if missing
-                    customServerUrl = customServerUrl.TrimEnd('/') + "/v1";
-                }
-            }
-        }
     }
     
     private void RefreshReducers()
