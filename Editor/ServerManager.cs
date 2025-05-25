@@ -908,7 +908,7 @@ public class ServerManager
                         if (confirmed)
                         {                            
                             // Detected server running, probably it was already running when Unity started
-                            LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"Port {ServerPort}" )})", 1);
+                            if (debugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"Port {ServerPort}" )})", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
                             isStartingUp = false;
@@ -967,7 +967,9 @@ public class ServerManager
                 // Display the results in the output log
                 if (!string.IsNullOrEmpty(result.output))
                 {
-                    LogMessage(result.output, 0);
+                    // Check if this is login info output and apply color formatting
+                    string formattedOutput = FormatLoginInfoOutput(result.output);
+                    LogMessage(formattedOutput, 0);
                 }
                 
                 if (!string.IsNullOrEmpty(result.error))
@@ -1019,7 +1021,9 @@ public class ServerManager
                 // Display the results in the output log
                 if (!string.IsNullOrEmpty(result.output))
                 {
-                    LogMessage(result.output, 0);
+                    // Check if this is login info output and apply color formatting
+                    string formattedOutput = FormatLoginInfoOutput(result.output);
+                    LogMessage(formattedOutput, 0);
                 }
                 
                 if (!string.IsNullOrEmpty(result.error))
@@ -1554,48 +1558,6 @@ public class ServerManager
         }
     }
 
-    // Add WSL status check to the existing EditorUpdateHandler/CheckServerStatus cycle
-    public async Task CheckAllStatus()
-    {
-        // Check appropriate status based on server mode
-        if (serverMode == ServerMode.WslServer)
-        {
-            await CheckWslStatus();
-            await CheckServerStatus();
-            
-            // Check log processes for WSL mode
-            if (serverStarted && silentMode && logProcessor != null)
-            {
-                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
-            }
-        }
-        else if (serverMode == ServerMode.CustomServer)
-        {
-            await CheckServerStatus();
-            
-            // Check SSH log processes for custom server mode
-            if (serverStarted && silentMode && logProcessor != null)
-            {
-                logProcessor.CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
-            }
-        }
-        else if (serverMode == ServerMode.MaincloudServer)
-        {
-            await CheckMaincloudConnectivity();
-            
-            // Check log processes for Maincloud mode
-            if (serverStarted && silentMode && logProcessor != null)
-            {
-                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
-            }
-        }
-
-        if (detectServerChanges && detectionProcess != null)
-        {
-            detectionProcess.CheckForChanges();
-        }
-    }
-
     // Add this method in the #region Utility Methods section
     public async Task CheckMaincloudConnectivity()
     {
@@ -1689,6 +1651,120 @@ public class ServerManager
         }
     }
 
+    public void ResetServerDetection()
+    {
+        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
+        {
+            detectionProcess.ResetTrackingAfterPublish(); // New baseline of current file sizes
+            ServerChangesDetected = false;
+            if (DebugMode) LogMessage("Reset server change detection tracking.", 0);
+        }
+    }
+
+    private string ExtractHostname(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return string.Empty;
+            
+        string hostname = url;
+        
+        // Remove protocol if present
+        if (hostname.StartsWith("http://")) 
+            hostname = hostname.Substring(7);
+        else if (hostname.StartsWith("https://")) 
+            hostname = hostname.Substring(8);
+        
+        // Remove path and port if present
+        int colonIndex = hostname.IndexOf(':');
+        if (colonIndex > 0) 
+            hostname = hostname.Substring(0, colonIndex);
+            
+        int slashIndex = hostname.IndexOf('/');
+        if (slashIndex > 0) 
+            hostname = hostname.Substring(0, slashIndex);
+            
+        return hostname;
+    }
+
+    private string FormatLoginInfoOutput(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return output;
+        
+        // Color to use for login ID and auth token - Color(0.3f, 0.8f, 0.3f) = #4CCC4C
+        string colorTag = "#4CCC4C";
+        
+        string formattedOutput = output;
+        
+        // Format login ID line: "You are logged in as <username>"
+        string loginPattern = @"(You are logged in as\s+)([^\r\n]+)";
+        formattedOutput = System.Text.RegularExpressions.Regex.Replace(
+            formattedOutput, 
+            loginPattern, 
+            $"$1<color={colorTag}>$2</color>", 
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        
+        // Format auth token line: "Your auth token (don't share this!) is <token>"
+        string tokenPattern = @"(Your auth token \(don't share this!\) is\s+)([^\r\n]+)";
+        formattedOutput = System.Text.RegularExpressions.Regex.Replace(
+            formattedOutput, 
+            tokenPattern, 
+            $"$1<color={colorTag}>$2</color>", 
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        
+        return formattedOutput;
+    }
+    #endregion
+
+    #region Check All Status
+
+    // Add WSL status check to the existing EditorUpdateHandler/CheckServerStatus cycle
+    public async Task CheckAllStatus()
+    {
+        // Check appropriate status based on server mode
+        if (serverMode == ServerMode.WslServer)
+        {
+            await CheckWslStatus();
+            await CheckServerStatus();
+            
+            // Check log processes for WSL mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
+        }
+        else if (serverMode == ServerMode.CustomServer)
+        {
+            await CheckServerStatus();
+            
+            // Check SSH log processes for custom server mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
+            }
+        }
+        else if (serverMode == ServerMode.MaincloudServer)
+        {
+            await CheckMaincloudConnectivity();
+            
+            // Check log processes for Maincloud mode
+            if (serverStarted && silentMode && logProcessor != null)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
+        }
+
+        if (detectServerChanges && detectionProcess != null)
+        {
+            detectionProcess.CheckForChanges();
+        }
+    }
+    #endregion
+
+    #region Spacetime Version
+
     public async Task CheckSpacetimeDBVersion() // Only runs in WSL once when WSL has started
     {
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
@@ -1735,42 +1811,6 @@ public class ServerManager
         {
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
         }
-    }
-
-    public void ResetServerDetection()
-    {
-        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-        {
-            detectionProcess.ResetTrackingAfterPublish(); // New baseline of current file sizes
-            ServerChangesDetected = false;
-            if (DebugMode) LogMessage("Reset server change detection tracking.", 0);
-        }
-    }
-
-    // Helper method to extract hostname from URL
-    private string ExtractHostname(string url)
-    {
-        if (string.IsNullOrEmpty(url))
-            return string.Empty;
-            
-        string hostname = url;
-        
-        // Remove protocol if present
-        if (hostname.StartsWith("http://")) 
-            hostname = hostname.Substring(7);
-        else if (hostname.StartsWith("https://")) 
-            hostname = hostname.Substring(8);
-        
-        // Remove path and port if present
-        int colonIndex = hostname.IndexOf(':');
-        if (colonIndex > 0) 
-            hostname = hostname.Substring(0, colonIndex);
-            
-        int slashIndex = hostname.IndexOf('/');
-        if (slashIndex > 0) 
-            hostname = hostname.Substring(0, slashIndex);
-            
-        return hostname;
     }
     #endregion
 } // Class

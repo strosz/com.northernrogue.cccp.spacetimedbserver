@@ -83,6 +83,11 @@ public class ServerWindow : EditorWindow
     private string commandOutputLog = "";
     private bool autoscroll = true;
     private bool colorLogo = true;
+    
+    // Scroll tracking for autoscroll behavior
+    private Vector2 lastScrollPosition;
+    private bool wasAutoScrolling = false;
+    private bool needsScrollToBottom = false; // Flag to control when to apply autoscroll
     private Texture2D logoTexture;
     private GUIStyle connectedStyle;
     private GUIStyle buttonStyle;
@@ -96,11 +101,10 @@ public class ServerWindow : EditorWindow
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
     private const string PrefsKeyPrefix = "CCCP_";
 
-    // Add a field to track WSL status
+    // Track WSL status
     private bool isWslRunning = false;
 
-    // Add these fields at class level near other private fields
-    private bool isStatusCheckRunning = false;
+    // Cancellation token source for status checks
     private System.Threading.CancellationTokenSource statusCheckCTS;
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
@@ -209,18 +213,28 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(5);
         
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.Width(120));
+        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel);
 
         GUILayout.FlexibleSpace();
 
+        // Autoscroll button
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
         GUIStyle autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
         autoscrollStyle.fontSize = 12;
-        autoscrollStyle.normal.textColor = autoscroll ? new Color(0.43f, 0.43f, 0.43f) : new Color(0.3f, 0.3f, 0.3f);
-        if (GUILayout.Button("autoscroll", autoscrollStyle, GUILayout.Width(75)))
+        autoscrollStyle.normal.textColor = autoscroll ? new Color(0.5f, 0.5f, 0.5f) : new Color(0.34f, 0.34f, 0.34f);
+        autoscrollStyle.hover.textColor = autoscrollStyle.normal.textColor; // Explicitly define hover textColor        
+        if (GUILayout.Button(new GUIContent("autoscroll"), autoscrollStyle, GUILayout.Width(75)))
         {
             autoscroll = !autoscroll;
+            EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+            
+            // If autoscroll was just enabled, scroll to bottom immediately
+            if (autoscroll)
+            {
+                needsScrollToBottom = true;
+            }
+            
             Repaint();
         }
         EditorGUILayout.EndVertical();
@@ -232,8 +246,9 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(2);
         GUIStyle clearStyle = new GUIStyle(EditorStyles.miniLabel);
         clearStyle.fontSize = 12;
-        clearStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
-        if (GUILayout.Button("clear", clearStyle, GUILayout.Width(50)))
+        clearStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+        clearStyle.hover.textColor = clearStyle.normal.textColor; // Explicitly define hover textColor
+        if (GUILayout.Button(new GUIContent("clear"), clearStyle, GUILayout.Width(50)))
         {
             commandOutputLog = "";
             Repaint();
@@ -245,16 +260,14 @@ public class ServerWindow : EditorWindow
         // Output log with rich text support
         GUIStyle richTextStyle = new GUIStyle(EditorStyles.textArea);
         richTextStyle.richText = true;
-        
+        // Store previous scroll position to detect user scrolling
+        Vector2 previousScrollPosition = scrollPosition;        
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
         EditorGUILayout.TextArea(commandOutputLog.TrimEnd('\n'), richTextStyle, GUILayout.ExpandHeight(true));
         EditorGUILayout.EndScrollView();
         
-        // Auto-scroll to bottom if enabled
-        if (autoscroll && Event.current.type == EventType.Repaint)
-        {
-            scrollPosition.y = float.MaxValue;
-        }
+        // Handle autoscroll behavior based on user interaction
+        HandleAutoscrollBehavior(previousScrollPosition);
 
         // Github Update Button
         if (ServerUpdateProcess.IsGithubUpdateAvailable())
@@ -308,6 +321,10 @@ public class ServerWindow : EditorWindow
 
             // Sync local fields from ServerManager's values (for UI display only)
             SyncFieldsFromServerManager();
+
+            // Load UI preferences
+            autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
+            colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", true);
 
             // Register for focus events
             EditorApplication.focusChanged += OnFocusChanged;
@@ -423,8 +440,7 @@ public class ServerWindow : EditorWindow
         // Throttle how often we check things to not overload the main thread
         double currentTime = EditorApplication.timeSinceStartup;
         
-        // Only start a new check if we're not already checking and enough time has passed
-        if (!isStatusCheckRunning && currentTime - lastCheckTime > checkInterval)
+        if (currentTime - lastCheckTime > checkInterval)
         {
             lastCheckTime = currentTime;
             
@@ -437,8 +453,6 @@ public class ServerWindow : EditorWindow
             
             statusCheckCTS = new System.Threading.CancellationTokenSource();
             
-            // Start the check in a non-blocking way
-            isStatusCheckRunning = true;
             await CheckStatusAsync(statusCheckCTS.Token);
         }
         
@@ -457,7 +471,7 @@ public class ServerWindow : EditorWindow
         try
         {
             await serverManager.CheckAllStatus();
-            
+            //UnityEngine.Debug.Log($"[ServerWindow CheckStatusAsync] Status check completed at {DateTime.Now}"); // Keep for debugging
             // Only update UI if the operation wasn't cancelled
             if (!token.IsCancellationRequested)
             {
@@ -472,10 +486,6 @@ public class ServerWindow : EditorWindow
             {
                 UnityEngine.Debug.LogError($"Error in status check: {ex.Message}");
             }
-        }
-        finally
-        {
-            isStatusCheckRunning = false;
         }
     }
     
@@ -2031,6 +2041,12 @@ public class ServerWindow : EditorWindow
             commandOutputLog = commandOutputLog.Substring(commandOutputLog.Length - 10000);
         }
         
+        // Set flag to scroll to bottom if autoscroll is enabled
+        if (autoscroll)
+        {
+            needsScrollToBottom = true;
+        }
+        
         Repaint();
     }
     #endregion
@@ -2251,7 +2267,66 @@ public class ServerWindow : EditorWindow
         serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", true);
         
         UpdateServerModeState();
+    }        
+
+    private void HandleAutoscrollBehavior(Vector2 previousScrollPosition)
+    {
+        if (Event.current.type == EventType.Repaint)
+        {
+            // Check if scroll position changed
+            bool scrollPositionChanged = Vector2.Distance(scrollPosition, previousScrollPosition) > 0.1f;
+            
+            // Calculate content dimensions for bottom detection
+            GUIStyle richTextStyle = new GUIStyle(EditorStyles.textArea);
+            richTextStyle.richText = true;
+            
+            // Estimate scroll view width (window width minus padding and scrollbar)
+            float estimatedScrollViewWidth = position.width - 40f; // Account for padding and scrollbar
+            float contentHeight = richTextStyle.CalcHeight(new GUIContent(commandOutputLog.TrimEnd('\n')), estimatedScrollViewWidth);
+            
+            // Better estimation of scroll view height (total window height minus header/buttons area)
+            float headerHeight = 120f; // Approximate height of all the UI above the scroll view
+            float scrollViewHeight = Mathf.Max(100f, position.height - headerHeight);
+            float maxScrollY = Mathf.Max(0, contentHeight - scrollViewHeight);
+            
+            // Check if we're at the bottom (within 30 pixels tolerance)
+            bool isAtBottom = maxScrollY <= 30f || scrollPosition.y >= maxScrollY - 30f;
+            
+            if (scrollPositionChanged && !wasAutoScrolling)
+            {
+                if (autoscroll && !isAtBottom)
+                {
+                    // User manually scrolled up while autoscroll was on - turn it off
+                    autoscroll = false;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+                    Repaint();
+                }
+                else if (!autoscroll && isAtBottom)
+                {
+                    // User scrolled to the bottom while autoscroll was off - turn it on
+                    autoscroll = true;
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+                    Repaint();
+                }
+            }
+            
+            // Apply autoscroll only when new content is added (flag is set) or when manually enabled
+            if (autoscroll && needsScrollToBottom)
+            {
+                wasAutoScrolling = true;
+                scrollPosition.y = float.MaxValue;
+                needsScrollToBottom = false; // Clear the flag after applying scroll
+            }
+            else
+            {
+                wasAutoScrolling = false;
+            }
+            
+            // Update last position for next frame
+            lastScrollPosition = scrollPosition;
+        }
     }
+    
     #endregion
 
     // Display Cosmos Cove Control Panel title text in the menu bar

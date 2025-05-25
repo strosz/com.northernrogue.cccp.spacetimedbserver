@@ -123,9 +123,10 @@ public class ServerInstallerWindow : EditorWindow
             EditorApplication.delayCall += () => {
                 bool continuePressed = EditorUtility.DisplayDialog(
                     "SpacetimeDB Automatic Installer",
-                    "Welcome to the automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB.\n\n" +
-                    "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n\n" +
-                    "It works by entering the same commands as in the manual installation process for the purpose of ease of use.",
+                    "Welcome to the automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB from the ground up.\n" +
+                    "Start from the top and click the install commands. The installer will gray out the steps that you can't yet complete, before the previous steps are installed.\n\n" +
+                    "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n" +
+                    "The installer window works by entering the same commands as in the manual installation process for the purpose of ease of use.",
                     "Continue", "Documentation");
                 
                 if (!continuePressed) {
@@ -880,7 +881,7 @@ public class ServerInstallerWindow : EditorWindow
             GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
             prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange
             if (!hasDebianTrixie)
-            EditorGUILayout.LabelField("Requires WSL2 with Debian Trixie to be installed first", prereqStyle);
+            EditorGUILayout.LabelField("Requires WSL with Debian Trixie to be installed first", prereqStyle);
             else if (!hasCurl)
             EditorGUILayout.LabelField("Requires cURL to be installed first", prereqStyle);
         }
@@ -1089,7 +1090,7 @@ public class ServerInstallerWindow : EditorWindow
             if (EditorUtility.DisplayDialog("Install WSL1 with Debian", "This will install WSL1 with Debian. You may have to press keys during the install process. Do you want to continue?", "Yes", "No"))
             {
                 string dismCommand = "powershell.exe -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'\"";
-                string wsl1SetupCommand = "cmd.exe /c \"wsl --set-default-version 1 && wsl --install -d Debian\"";
+                string wsl1SetupCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 1 && wsl --install -d Debian\"";
 
                 bool dismSuccess = await cmdProcess.RunPowerShellInstallCommand(dismCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 if (dismSuccess)
@@ -1134,7 +1135,7 @@ public class ServerInstallerWindow : EditorWindow
                     if(dismSuccess) // Only wsl1SetupCommand failed - common if DISM requires a restart
                     {
                         SetStatus("Please restart your PC and try to install WSL1 again.", Color.yellow);
-                        EditorUtility.DisplayDialog("Restart Needed","Please restart your PC and try to install WSL1 again.", "OK");
+                        EditorUtility.DisplayDialog("Restart Needed","Please restart your PC and Unity and try to install WSL1 again.", "OK");
                     }
                 }
             } else {
@@ -1148,7 +1149,7 @@ public class ServerInstallerWindow : EditorWindow
             
             if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
             {
-                string wsl2InstallCommand = "wsl --set-default-version 2 && wsl --install -d Debian";
+                string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
                 installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 if (installedSuccessfully)
                 {
@@ -1167,11 +1168,23 @@ public class ServerInstallerWindow : EditorWindow
                         // Launch visible Debian window without username required
                         bool userNameReq = false;
                         cmdProcess.OpenDebianWindow(userNameReq);
+                    } else {
+                        EditorUtility.DisplayDialog(
+                            "Restart and Try Again",
+                            "Sometimes the WSL install process requires a system restart.\n\n" +
+                            "Please restart your PC and Unity and try to install WSL2 with Debian again.",
+                            "OK"
+                        );
+                        SetStatus("WSL2 with Debian installation failed or requires a restart.", Color.red);
                     }
-                    else
-                    {
-                        SetStatus("WSL2 with Debian installation failed or requires a restart. Please check console output and restart if prompted.", Color.red);
-                    }
+                } else {
+                    EditorUtility.DisplayDialog(
+                        "Restart and Try Again",
+                        "Sometimes the WSL install process requires a system restart.\n\n" +
+                        "Please restart your PC and Unity and try to install WSL2 with Debian again.",
+                        "OK"
+                    );
+                    SetStatus("WSL2 with Debian installation failed or requires a restart.", Color.red);
                 }
             } else {
                 SetStatus("WSL2 with Debian installation cancelled.", Color.yellow);
@@ -1351,7 +1364,7 @@ public class ServerInstallerWindow : EditorWindow
         }
         else
         {
-            SetStatus("cURL installation failed. Please check console output.", Color.red);
+            SetStatus("cURL installation failed. Please install manually.", Color.red);
         }
     }
     
@@ -1910,6 +1923,8 @@ public class ServerInstallerWindow : EditorWindow
             await Task.Delay(2000);
             
             CheckCustomInstallationStatus();
+            showUpdateButton = false; // Hide update button after successful installation
+
             await Task.Delay(1000);
             
             if (hasCustomSpacetimeDBServer)
@@ -2150,7 +2165,6 @@ public class ServerInstallerWindow : EditorWindow
             "# Check service status\n" +
             "echo \"Checking service status...\"\n" +
             "sudo systemctl status spacetimedb.service\n\n" +
-            
             "echo \"===== Done! =====\"\n";
         
         // Use the RunVisibleSSHCommand method which won't block Unity's main thread
