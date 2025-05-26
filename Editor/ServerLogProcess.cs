@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEngine;
 using System.Diagnostics;
 using System;
 using System.Text;
@@ -28,7 +29,7 @@ public class ServerLogProcess
     private StringBuilder moduleLogAccumulator = new StringBuilder();
     private StringBuilder databaseLogAccumulator = new StringBuilder();
     private DateTime lastSessionStateUpdateTime = DateTime.MinValue;
-    private const double sessionStateUpdateInterval = 1.0; // Update SessionState at most once per second
+    private const double sessionStateUpdateInterval = 1.0; // Update SessionState every 1 second
     
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
@@ -71,6 +72,22 @@ public class ServerLogProcess
     private const int BUFFER_SIZE = 300000; // Equals to around 700kB
     private const int TARGET_SIZE = 50000;
     private volatile bool isProcessing = false;
+
+    // Helper classes for parsing SpacetimeDB JSON logs
+    [System.Serializable]
+    private class SpacetimeDbJsonLogEntry
+    {
+        public string timestamp;
+        public string level;
+        public SpacetimeDbJsonLogFields fields;
+        public string target;
+    }
+
+    [System.Serializable]
+    private class SpacetimeDbJsonLogFields
+    {
+        public string message;
+    }
     
     #region SSH Logging
     
@@ -404,36 +421,12 @@ public class ServerLogProcess
                 {
                     if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Database Log Raw Output");
                     
-                    // Format the line immediately
+                    // Format the line and add to queue (same as regular database logs)
                     string formattedLine = FormatDatabaseLogLine(args.Data);
-                    
-                    // Update logs directly instead of using queue
-                    lock (logLock)
-                    {
-                        databaseLogContent += formattedLine + "\n";
-                        cachedDatabaseLogContent += formattedLine + "\n";
-                        
-                        // Check if we need to truncate
-                        if (databaseLogContent.Length > BUFFER_SIZE)
-                        {
-                            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars.");
-                            string truncatedContent = "[... Log Truncated ...]\n" + 
-                                databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
-                            databaseLogContent = truncatedContent;
-                            cachedDatabaseLogContent = truncatedContent;
-                        }
-                    }
-                    
-                    // Update SessionState and notify UI
-                    EditorApplication.delayCall += () => {
-                        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-                        onDatabaseLogUpdated?.Invoke();
-                    };
+                    databaseLogQueue.Enqueue(formattedLine);
                 }
             };
-            
-            sshDatabaseLogProcess.ErrorDataReceived += (sender, args) => {
+              sshDatabaseLogProcess.ErrorDataReceived += (sender, args) => {
                 if (args.Data != null && debugMode)
                 {
                     UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Database Log Error: {args.Data}");
@@ -454,21 +447,9 @@ public class ServerLogProcess
                         logCallback($"ERROR: Permission denied accessing spacetime on remote server.", -1);
                     }
                     
-                    // Format and add error message directly
+                    // Format and add error message to queue (consistent with regular logs)
                     string formattedLine = FormatDatabaseLogLine($"ERROR: {errorMessage}", true);
-                    
-                    lock (logLock)
-                    {
-                        databaseLogContent += formattedLine + "\n";
-                        cachedDatabaseLogContent += formattedLine + "\n";
-                    }
-                    
-                    // Update SessionState and notify UI
-                    EditorApplication.delayCall += () => {
-                        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-                        onDatabaseLogUpdated?.Invoke();
-                    };
+                    databaseLogQueue.Enqueue(formattedLine);
                 }
             };
             
@@ -1726,7 +1707,14 @@ public class ServerLogProcess
         if (string.IsNullOrEmpty(logLine))
             return logLine;
 
-        // Check for timestamp pattern like "2025-05-01T20:29:22.528775Z"
+        // First try to parse as JSON (SpacetimeDB format)
+        string jsonParsedResult = TryParseJsonDatabaseLog(logLine, isError);
+        if (!string.IsNullOrEmpty(jsonParsedResult))
+        {
+            return jsonParsedResult;
+        }
+
+        // Fall back to existing timestamp extraction logic
         var match = System.Text.RegularExpressions.Regex.Match(logLine, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
         
         if (match.Success)
@@ -1755,6 +1743,49 @@ public class ServerLogProcess
         string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string errorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{fallbackTimestamp}{errorSuffix} {logLine}";
+    }
+
+    private string TryParseJsonDatabaseLog(string jsonLogEntry, bool isError = false)
+    {
+        if (string.IsNullOrEmpty(jsonLogEntry) || !jsonLogEntry.Trim().StartsWith("{"))
+            return null; // Not JSON
+
+        try
+        {
+            SpacetimeDbJsonLogEntry entry = JsonUtility.FromJson<SpacetimeDbJsonLogEntry>(jsonLogEntry);
+
+            if (entry == null || string.IsNullOrEmpty(entry.timestamp))
+            {
+                return null; // Not the expected JSON format
+            }
+
+            // Parse timestamp
+            DateTimeOffset dto = DateTimeOffset.Parse(entry.timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
+            string timestampStr = dto.ToString("yyyy-MM-dd HH:mm:ss");
+            
+            // Get log level
+            string levelStr = string.IsNullOrEmpty(entry.level) ? "INFO" : entry.level.ToUpper();
+            
+            // Get message
+            string messageStr = entry.fields?.message ?? jsonLogEntry;
+            
+            // Add target if available and in debug mode
+            if (debugMode && !string.IsNullOrEmpty(entry.target))
+            {
+                messageStr += $" (target: {entry.target})";
+            }
+
+            // Add error indicator if needed
+            string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
+            
+            return $"[{timestampStr}]{errorPrefix} [{levelStr}] {messageStr}";
+        }
+        catch (Exception ex)
+        {
+            // JSON parsing failed - this is expected for non-JSON logs
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Failed to parse JSON DB log (this is normal for non-JSON logs): {ex.Message}");
+            return null; // Let the caller fall back to non-JSON parsing
+        }
     }
     #endregion
 
@@ -1803,8 +1834,15 @@ public class ServerLogProcess
         {
             lock (logLock)
             {
-                databaseLogContent += batchedLogs.ToString();
-                cachedDatabaseLogContent += batchedLogs.ToString();
+                // Add a single newline at the end if content exists
+                string newContent = batchedLogs.ToString();
+                if (!string.IsNullOrEmpty(databaseLogContent) && !databaseLogContent.EndsWith("\n"))
+                    databaseLogContent += "\n";
+                databaseLogContent += newContent;
+                
+                if (!string.IsNullOrEmpty(cachedDatabaseLogContent) && !cachedDatabaseLogContent.EndsWith("\n"))
+                    cachedDatabaseLogContent += "\n";
+                cachedDatabaseLogContent += newContent;
 
                 // Check if we need to truncate
                 if (databaseLogContent.Length > BUFFER_SIZE)
@@ -1819,7 +1857,10 @@ public class ServerLogProcess
 
             // Update UI on main thread
             EditorApplication.delayCall += () => {
-                UpdateSessionStateIfNeeded();
+                // Force immediate SessionState update for database logs (bypass rate limiting)
+                SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+                
                 if (onDatabaseLogUpdated != null)
                 {
                     onDatabaseLogUpdated();
@@ -1827,7 +1868,6 @@ public class ServerLogProcess
             };
         }
     }
-    
     #endregion
 
     // Find spacetime binary path on the remote server

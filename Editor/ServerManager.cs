@@ -177,7 +177,7 @@ public class ServerManager
         logProcessor = new ServerLogProcess(
             LogMessage,
             () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
-            () => ServerOutputWindow.RefreshOpenWindow(), // Database log update callback
+            () => ServerOutputWindow.RefreshDatabaseLogs(), // Database log update callback - uses high-priority refresh
             cmdProcessor,
             debugMode
         );

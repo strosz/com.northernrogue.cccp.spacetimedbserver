@@ -176,11 +176,7 @@ public class ServerOutputWindow : EditorWindow
     // Reload logs when the window gets focus
     private void OnFocus()
     {
-        ReloadLogs(); // Reload directly on focus now
-        needsRepaint = true;
-        
-        // Re-check styles in case fonts were loaded/unloaded
-        InitializeStyles();
+        ForceRefreshLogs();
     }
 
     // Called by ServerWindow when new log data arrives
@@ -226,6 +222,44 @@ public class ServerOutputWindow : EditorWindow
             }
         }
         openWindows.RemoveAll(item => item == null); // Clean up null entries just in case
+    }
+    
+    // High-priority refresh for database logs (bypasses rate limiting)
+    public static void RefreshDatabaseLogs()
+    {
+        ForceRefreshLogs();
+    }
+    
+    // Force refresh that bypasses rate limiting for critical updates
+    public static void ForceRefreshLogs()
+    {
+        // This helps prevent UI calls during potentially unstable Editor state transitions.
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ForceRefreshLogs skipped due to play mode change.");
+            return;
+        }
+
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshLogs() called - immediate update for database logs.");
+        
+        // Mark windows for immediate update
+        var windowsToRefresh = openWindows.ToList(); 
+        foreach (var window in windowsToRefresh)
+        {
+            if (window != null)
+            {
+                try
+                {
+                    window.needsRepaint = true;
+                    window.Repaint(); // Force immediate repaint
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Exception during ForceRefreshLogs for window '{window.titleContent.text}': {ex.Message}");
+                }
+            }
+        }
+        openWindows.RemoveAll(item => item == null); // Clean up null entries
     }
     #endregion
 
