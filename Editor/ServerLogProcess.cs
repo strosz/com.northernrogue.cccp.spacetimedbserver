@@ -955,6 +955,25 @@ public class ServerLogProcess
     
     public void StartLogging()
     {
+        // Ensure background processing task is running before starting any logging processes
+        if (!isProcessing || processingTask == null || processingTask.IsCompleted)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Ensuring background processing task is running before starting logging...");
+            
+            // Cancel existing task if it exists
+            if (processingCts != null && !processingCts.IsCancellationRequested)
+            {
+                processingCts.Cancel();
+            }
+            
+            // Create new cancellation token and restart the background task
+            processingCts = new CancellationTokenSource();
+            isProcessing = false; // Reset the flag so StartLogLimiter can restart
+            StartLogLimiter();
+            
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task ensured before starting logging");
+        }
+        
         // Clear logs if needed
         if (clearModuleLogAtStart)
         {
@@ -997,14 +1016,27 @@ public class ServerLogProcess
     
     public void StopLogging()
     {
-        processingCts?.Cancel();
-        try
+        // Cancel and cleanup background processing task
+        if (processingCts != null)
         {
-            processingTask?.Wait(1000);
+            processingCts.Cancel();
+            try
+            {
+                processingTask?.Wait(1000);
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error waiting for processing task to complete: {ex.Message}");
+            }
         }
-        catch (Exception) { }
         
+        // Reset processing state
+        isProcessing = false;
+        
+        // Create new cancellation token for next time
         processingCts = new CancellationTokenSource();
+        
+        // Stop the actual logging processes
         StopTailingLogs();
         StopDatabaseLogProcess();
     }
@@ -1514,12 +1546,13 @@ public class ServerLogProcess
                     databaseLogQueue.Enqueue(line);
                 }
             };
-              // Handle error data received (Always enabled to catch startup errors)
+            
+            // Handle error data received (Always enabled to catch startup errors)
             databaseLogProcess.ErrorDataReceived += (sender, args) => {
                 if (args.Data != null)
                 {
                     string formattedLine = FormatDatabaseLogLine(args.Data, true);
-                    logCallback($"Database Log Error: {args.Data}", -1);
+                    if (debugMode) logCallback($"Database Log Error: {args.Data}", -1);
                     if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
                     databaseLogQueue.Enqueue(formattedLine);
                 }
@@ -1573,6 +1606,26 @@ public class ServerLogProcess
                 databaseLogProcess.BeginErrorReadLine();
                 
                 if (debugMode) logCallback($"Database log process started successfully (PID: {databaseLogProcess.Id}).", 1);
+                
+                // Ensure background processing task is running when we start a new database log process
+                // This is critical after Unity domain reloads or WSL restarts
+                if (!isProcessing || processingTask == null || processingTask.IsCompleted)
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Ensuring background processing task is running for new database log process...");
+                    
+                    // Cancel existing task if it exists
+                    if (processingCts != null && !processingCts.IsCancellationRequested)
+                    {
+                        processingCts.Cancel();
+                    }
+                    
+                    // Create new cancellation token and restart the background task
+                    processingCts = new CancellationTokenSource();
+                    isProcessing = false; // Reset the flag so StartLogLimiter can restart
+                    StartLogLimiter();
+                    
+                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task ensured for database logging");
+                }
                 
                 // Check if process exits immediately (common issue)
                 System.Threading.Thread.Sleep(500); // Give it a moment to potentially fail
@@ -1644,6 +1697,26 @@ public class ServerLogProcess
         {
             if (debugMode) logCallback("Attempting to restart database log process after domain reload...", 0);
             StartDatabaseLogProcess();
+        }
+        
+        // Ensure the background processing task is running after domain reload
+        // This is critical for processing the database log queue
+        if (!isProcessing || processingTask == null || processingTask.IsCompleted)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task not running, restarting...");
+            
+            // Cancel existing task if it exists
+            if (processingCts != null && !processingCts.IsCancellationRequested)
+            {
+                processingCts.Cancel();
+            }
+            
+            // Create new cancellation token and restart the background task
+            processingCts = new CancellationTokenSource();
+            isProcessing = false; // Reset the flag so StartLogLimiter can restart
+            StartLogLimiter();
+            
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task restarted");
         }
     }
     
