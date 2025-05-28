@@ -35,10 +35,9 @@ public class ServerOutputWindow : EditorWindow
     // Echo Logs to Console
     public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
     private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
-    private bool showLocalTime = false; // Toggle for showing timestamps in local time zone
-
-    // Session state keys
+    private bool showLocalTime = false; // Toggle for showing timestamps in local time zone    // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
+    private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
     
     // Performance optimizations
@@ -83,19 +82,20 @@ public class ServerOutputWindow : EditorWindow
     [MenuItem("SpacetimeDB/Server Logs (Silent)")]
     public static void ShowWindow()
     {
+        // Trigger SessionState refresh before opening window
+        TriggerSessionStateRefreshIfWindowExists();
+        
         ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs (Silent)");
-        window.minSize = new Vector2(400, 300);
+        window.minSize = new Vector2(400, 300);        
         window.Focus(); 
-        window.ReloadLogs(); 
-    }
+        window.ReloadLogs();
+    }    
 
-    /// <summary>
-    /// Opens the Server Logs window with a specific tab selected.
-    /// Tab indices: 0=Module All, 1=Module Errors, 2=Database All, 3=Database Errors
-    /// </summary>
-    /// <param name="tab">The tab index to select (0-3)</param>
     public static void ShowWindow(int tab)
     {
+        // Trigger SessionState refresh before opening window
+        TriggerSessionStateRefreshIfWindowExists();
+        
         ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs (Silent)");
         window.minSize = new Vector2(400, 300);
         window.selectedTab = Mathf.Clamp(tab, 0, 3); // Ensure tab index is valid
@@ -131,23 +131,18 @@ public class ServerOutputWindow : EditorWindow
         if (debugMode)
         {
             TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
-            Debug.Log($"[ServerOutputWindow] OnEnable - Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");
-        }
-        
-        // Load the log data
+            Debug.Log($"[ServerOutputWindow] OnEnable - Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");        }
+          // Load the log data
         ReloadLogs();
         
         isWindowEnabled = true;
         
         // Listen for play mode state changes
-        EditorApplication.playModeStateChanged += PlayModeStateChanged;
-
-        // Clear caches
+        EditorApplication.playModeStateChanged += PlayModeStateChanged;// Clear caches
         formattedLogCache.Clear();
         needsRepaint = true;
         
-        // Initialize styles
-        InitializeStyles();
+        // Note: InitializeStyles() is called lazily in OnGUI() to avoid EditorStyles availability issues
 
         // If a non-default tab was selected when opening the window, ensure we properly handle scrolling
         if (selectedTab > 0)
@@ -174,18 +169,107 @@ public class ServerOutputWindow : EditorWindow
             DestroyImmediate(backgroundTexture);
             backgroundTexture = null;
         }
-        
-        // Clear caches to free memory
-        formattedLogCache.Clear();
-        visibleLines.Clear();
+          // Clear caches to free memory
+        formattedLogCache.Clear();        visibleLines.Clear();
     }
-
+    
     // Reload logs when the window gets focus
     private void OnFocus()
     {
+        // Simply reload logs when window gets focus - avoid aggressive SSH restart attempts
+        // Try to trigger the same mechanism that ServerReducerWindow uses
+        // Load settings from EditorPrefs like ServerReducerWindow does        LoadServerSettings();
+        
+        // Trigger SessionState refresh if ServerWindow exists
+        TriggerSessionStateRefreshIfWindowExists();
+        
+        ReloadLogs();
         ForceRefreshLogs();
     }
-
+    
+    // Load server settings from EditorPrefs to potentially trigger SSH log refresh
+    private void LoadServerSettings()
+    {
+        // This mimics what ServerReducerWindow.LoadSettings() does
+        // Maybe accessing these EditorPrefs triggers some internal mechanism
+        string serverURL = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
+        string moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+        string authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
+        string serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");    }
+    
+    // Static method to trigger SessionState refresh if ServerWindow already exists
+    public static void TriggerSessionStateRefreshIfWindowExists()
+    {
+        try
+        {
+            // Check if ServerWindow exists without creating it
+            var existingWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (existingWindows != null && existingWindows.Length > 0)
+            {
+                var serverWindow = existingWindows[0];
+                if (serverWindow != null)
+                {
+                    serverWindow.ForceRefreshLogsFromSessionState();
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.Log("[ServerOutputWindow] SessionState refresh triggered on existing ServerWindow");
+                    }
+                }
+            }
+            else if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerOutputWindow] No existing ServerWindow found - skipping SessionState refresh");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to trigger SessionState refresh: {ex.Message}");
+            }
+        }
+    }
+    
+    // Simple method to trigger refresh by adding minimal content to SessionState
+    private void TriggerSessionStateUpdate()
+    {
+        try
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Adding minimal trigger to SessionState");
+            
+            // Get current SessionState content
+            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+            
+            // If both are empty, add a minimal trigger
+            if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
+            {
+                // Add a minimal marker that will be replaced by real content
+                string triggerContent = "[LOG REFRESH TRIGGER]\n";
+                SessionState.SetString(SessionKeyCombinedLog, triggerContent);
+                
+                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Added trigger content to SessionState");
+                
+                // Force immediate refresh
+                EditorApplication.delayCall += () => {
+                    // Try to get the real content again
+                    TriggerSessionStateRefreshIfWindowExists();
+                    
+                    EditorApplication.delayCall += () => {
+                        ReloadLogs();
+                        Repaint();
+                        
+                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Refresh cycle completed");
+                    };
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] TriggerSessionStateUpdate failed: {ex.Message}");
+        }
+    }
+    
     // Called by ServerWindow when new log data arrives
     public static void RefreshOpenWindow()
     {
@@ -212,11 +296,16 @@ public class ServerOutputWindow : EditorWindow
 
         // To debug how often this is called, uncomment the line below
         //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
-        
-        // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
+          // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
         if (echoToConsoleModule)
         {
-            EchoLogsToConsole(SessionState.GetString(SessionKeyCombinedLog, ""), true);
+            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+            
+            // Use the longer log to ensure we don't miss any content
+            string logToEcho = cachedLog.Length > currentLog.Length ? cachedLog : currentLog;
+            
+            EchoLogsToConsole(logToEcho, true);
         }
         
         // Mark windows for update without immediate repaint (or with immediate repaint for SSH)
@@ -279,14 +368,155 @@ public class ServerOutputWindow : EditorWindow
             }
         }
         openWindows.RemoveAll(item => item == null); // Clean up null entries
+    }    
+    
+    // Refresh specifically for post-compilation state recovery
+    private void ForceRefreshAfterCompilation()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: Starting aggressive refresh sequence.");
+        
+        // Step 1: Try to force SessionState refresh from the ServerWindow
+        TriggerSessionStateRefreshIfWindowExists();
+        
+        // Step 2: Simulate new log arrival to trigger the same mechanism that works during normal operation
+        SimulateLogArrival();
+        
+        // Step 3: Try the simple SessionState trigger method
+        TriggerSessionStateUpdate();
+        
+        // Step 4: Multiple attempts with delays to ensure SessionState is properly refreshed
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            EditorApplication.delayCall += () => {
+                // Try to trigger ServerWindow SessionState refresh again
+                try
+                {
+                    var existingWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+                    if (existingWindows != null && existingWindows.Length > 0)
+                    {
+                        var serverWindow = existingWindows[0];
+                        if (serverWindow != null)
+                        {
+                            serverWindow.ForceRefreshLogsFromSessionState();
+                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: ServerWindow SessionState refresh triggered");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] ForceRefreshAfterCompilation: ServerWindow refresh failed: {ex.Message}");
+                }
+                
+                // Check if we have log content after refresh attempt
+                string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+                string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+                
+                if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: Logs still empty, triggering fallback refresh method");
+                    TriggerFallbackLogRefresh();
+                }
+                
+                // Always reload and repaint after each attempt
+                LoadServerSettings();
+                ReloadLogs();
+                needsRepaint = true;
+                if (autoScroll) scrollToBottom = true;
+                Repaint();
+            };
+        }
+    }
+    
+    // Fallback method to trigger log display refresh by simulating log activity
+    private void TriggerFallbackLogRefresh()
+    {
+        try
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerFallbackLogRefresh: Implementing fallback trigger method");
+            
+            // Get current SessionState logs
+            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+            string databaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
+            
+            // If logs are still empty, try to force a minimal update to trigger the display system
+            if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
+            {
+                // Add a temporary trigger line and immediately remove it
+                string triggerLine = "\n"; // Just a newline to trigger the system
+                
+                // Temporarily add the trigger to SessionState
+                SessionState.SetString(SessionKeyCombinedLog, triggerLine);
+                
+                // Use delayCall to remove it immediately after
+                EditorApplication.delayCall += () => {
+                    SessionState.SetString(SessionKeyCombinedLog, "");
+                    
+                    // Force one more refresh cycle
+                    EditorApplication.delayCall += () => {
+                        TriggerSessionStateRefreshIfWindowExists();
+                        ReloadLogs();
+                        Repaint();
+                        
+                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerFallbackLogRefresh: Fallback trigger sequence completed");
+                    };
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] TriggerFallbackLogRefresh failed: {ex.Message}");
+        }
+    }
+
+    // Debug method to manually trigger SSH log refresh
+    public static void ForceSSHLogRefresh()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Manually forcing SSH log refresh...");        // Get all open ServerOutputWindows and trigger refresh
+        foreach (var window in openWindows)
+        {
+            if (window != null)
+            {
+                window.LoadServerSettings();
+                window.ReloadLogs();
+                window.Repaint();
+            }
+        }
+    }
+
+    // Debug method to manually test the post-compilation refresh
+    public static void DebugForcePostCompilationRefresh()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Manually triggering post-compilation refresh...");        
+        // Get all open ServerOutputWindows and trigger post-compilation refresh
+        foreach (var window in openWindows)
+        {
+            if (window != null)
+            {
+                window.ForceRefreshAfterCompilation();
+            }
+        }
     }
     #endregion
 
-    #region Styles
+    #region Styles    
     // Initialize styles for CMD-like appearance
     private void InitializeStyles()
     {
         if (stylesInitialized) return;
+        
+        // Check if EditorStyles are available - if not, defer initialization
+        try
+        {
+            // Test access to EditorStyles - this will throw if not ready
+            var testStyle = EditorStyles.textArea;
+            var testToolbarStyle = EditorStyles.toolbarButton;
+        }
+        catch
+        {
+            // EditorStyles not ready yet, defer initialization
+            return;
+        }
         
         // Try to find Consolas font
         consolasFont = Font.CreateDynamicFontFromOSFont("Consolas", 12);
@@ -350,9 +580,23 @@ public class ServerOutputWindow : EditorWindow
         {
             if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ReloadLogs skipped due to compilation.");
             return;
+        }        
+        string newOutputLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+        
+        // Use the longer log content (current vs cached) to ensure we get the most complete data
+        // This helps when server state gets confused after compilation
+        if (cachedModuleLog.Length > newOutputLog.Length)
+        {
+            newOutputLog = cachedModuleLog;
         }
-
-        string newOutputLog = SessionState.GetString(SessionKeyCombinedLog, "(No Module Log Found. Start your server to view logs.)");
+        
+        // If both are empty, show default message
+        if (string.IsNullOrEmpty(newOutputLog))
+        {
+            newOutputLog = "(No Module Log Found. Start your server to view logs.)";
+        }
+        
         string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found. Start your server to view logs.)");
         
         // Only update and invalidate cache if log content changed
@@ -399,6 +643,7 @@ public class ServerOutputWindow : EditorWindow
         GUILayout.BeginHorizontal(EditorStyles.toolbar);
         if (GUILayout.Button("Refresh", toolbarButtonStyle, GUILayout.Width(60)))
         {
+            ForceRefreshAfterCompilation();
             ReloadLogs();
             formattedLogCache.Clear(); // Clear all cached formatted logs
             needsRepaint = true;
@@ -406,8 +651,16 @@ public class ServerOutputWindow : EditorWindow
         
         if (GUILayout.Button("Clear Logs", toolbarButtonStyle, GUILayout.Width(80)))
         {
-            GetWindow<ServerWindow>().ClearModuleLogFile();
-            GetWindow<ServerWindow>().ClearDatabaseLog();
+            try
+            {
+                GetWindow<ServerWindow>().ClearModuleLogFile();
+                GetWindow<ServerWindow>().ClearDatabaseLog();
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to clear logs via ServerWindow: {ex.Message}");
+            }
+            
             outputLogFull = "";
             databaseLogFull = "";
             SessionState.SetString(SessionKeyCombinedLog, "");
@@ -791,8 +1044,8 @@ public class ServerOutputWindow : EditorWindow
             "<color=#AAAAAA>$1</color>");
         
         return strippedLog;
-    }
-
+    }    
+    
     private void CheckForLogUpdates()
     {
         // Track compilation state changes and force refresh after compilation completes
@@ -800,19 +1053,15 @@ public class ServerOutputWindow : EditorWindow
         {
             // Compilation just finished, force immediate refresh
             wasCompiling = false;
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Compilation finished, forcing log refresh for SSH logs.");
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Compilation finished, forcing log refresh.");
             
-            // Force clear cache and reload to ensure SSH logs show up
+            // Force clear cache and reload to refresh logs
             formattedLogCache.Clear();
             lastKnownLogHash = 0;
-            lastKnownDbLogHash = 0;
-            
-            // Use delayCall to ensure compilation is fully finished
+            lastKnownDbLogHash = 0;            // Use delayCall to ensure compilation is fully finished
             EditorApplication.delayCall += () => {
-                ReloadLogs();
-                needsRepaint = true;
-                if (autoScroll) scrollToBottom = true;
-                Repaint();
+                // More aggressive refresh after compilation
+                ForceRefreshAfterCompilation();
             };
             
             return;
@@ -832,11 +1081,13 @@ public class ServerOutputWindow : EditorWindow
         if (Time.realtimeSinceStartup - lastUpdateTime < checkInterval)
             return;
 
-        lastUpdateTime = Time.realtimeSinceStartup;
-
-        // Check main logs
+        lastUpdateTime = Time.realtimeSinceStartup;        // Check main logs (consider both current and cached module logs)
         string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
-        int currentHash = currentLog.GetHashCode();
+        string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+        
+        // Use the longer log content to ensure we detect changes properly
+        string effectiveModuleLog = cachedModuleLog.Length > currentLog.Length ? cachedModuleLog : currentLog;
+        int currentHash = effectiveModuleLog.GetHashCode();
 
         // Check database logs 
         string currentDbLog = SessionState.GetString(SessionKeyDatabaseLog, "");
@@ -1023,7 +1274,99 @@ public class ServerOutputWindow : EditorWindow
             Debug.LogError($"Error saving log: {ex}");
         }
     }
-    #endregion
+    #endregion    
+    
+    // Alternative method to force refresh by directly triggering log process refresh
+    private void SimulateLogArrival()
+    {
+        try
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SimulateLogArrival: Simulating new log arrival to trigger display");
+            
+            // First, try to force the ServerLogProcess to refresh its SessionState data
+            ForceLogProcessRefresh();
+            
+            // Then call the same method that gets called when new logs arrive
+            RefreshOpenWindow();
+            
+            // Also force the database log refresh
+            RefreshDatabaseLogs();
+            
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SimulateLogArrival: Simulation completed");
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] SimulateLogArrival failed: {ex.Message}");
+        }
+    }
+    
+    // Force the ServerLogProcess to refresh its SessionState data
+    private void ForceLogProcessRefresh()
+    {
+        try
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceLogProcessRefresh: Attempting to force log process to refresh SessionState");
+            
+            // Get the ServerWindow and access its log process
+            var existingWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (existingWindows != null && existingWindows.Length > 0)
+            {
+                var serverWindow = existingWindows[0];
+                if (serverWindow != null)
+                {
+                    // First try the existing method
+                    serverWindow.ForceRefreshLogsFromSessionState();
+                    
+                    // Try to access the log process directly through reflection if needed
+                    var logProcessField = serverWindow.GetType().GetField("logProcess", 
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    
+                    if (logProcessField != null)
+                    {
+                        var logProcess = logProcessField.GetValue(serverWindow);
+                        if (logProcess != null)
+                        {
+                            // Try to call ForceRefreshLogsFromSessionState on the log process
+                            var refreshMethod = logProcess.GetType().GetMethod("ForceRefreshLogsFromSessionState");
+                            if (refreshMethod != null)
+                            {
+                                refreshMethod.Invoke(logProcess, null);
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceLogProcessRefresh: Called ForceRefreshLogsFromSessionState on log process");
+                            }
+                            
+                            // Also try to trigger a log update by accessing the log content directly
+                            var moduleLogMethod = logProcess.GetType().GetMethod("GetModuleLogContent");
+                            var databaseLogMethod = logProcess.GetType().GetMethod("GetDatabaseLogContent");
+                            
+                            if (moduleLogMethod != null && databaseLogMethod != null)
+                            {
+                                string moduleLogContent = (string)moduleLogMethod.Invoke(logProcess, null);
+                                string databaseLogContent = (string)databaseLogMethod.Invoke(logProcess, null);
+                                
+                                // Force update SessionState with the actual log content
+                                if (!string.IsNullOrEmpty(moduleLogContent))
+                                {
+                                    SessionState.SetString(SessionKeyCombinedLog, moduleLogContent);
+                                    SessionState.SetString(SessionKeyCachedModuleLog, moduleLogContent);
+                                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] ForceLogProcessRefresh: Updated SessionState with {moduleLogContent.Length} chars of module log");
+                                }
+                                
+                                if (!string.IsNullOrEmpty(databaseLogContent))
+                                {
+                                    SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] ForceLogProcessRefresh: Updated SessionState with {databaseLogContent.Length} chars of database log");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] ForceLogProcessRefresh failed: {ex.Message}");
+        }
+    }
 } // Class
 } // Namespace
 

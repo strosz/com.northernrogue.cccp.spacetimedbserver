@@ -35,6 +35,10 @@ public class ServerManager
     private bool justStopped = false;
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
+    
+    // Server status resilience (prevent false positives during compilation/brief hiccups)
+    private int consecutiveFailedChecks = 0;
+    private const int maxConsecutiveFailuresBeforeStop = 2; // Require 2 consecutive failures before marking as stopped
 
     // Configuration properties - accessed directly from EditorPrefs
     private string userName;
@@ -344,6 +348,16 @@ public class ServerManager
     public void SetClearDatabaseLogAtStart(bool value) { clearDatabaseLogAtStart = value; EditorPrefs.SetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", value); }
     
     public void SetHasWSL(bool value) { hasWSL = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", value); }
+    
+    // Force refresh logs from SessionState - useful after compilation when logs appear empty
+    public void ForceRefreshLogsFromSessionState()
+    {
+        if (logProcessor != null)
+        {
+            logProcessor.ForceRefreshLogsFromSessionState();
+        }
+    }
+    
     public void SetHasDebian(bool value) { hasDebian = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", value); }
     public void SetHasDebianTrixie(bool value) { hasDebianTrixie = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", value); }
     public void SetHasCurl(bool value) { hasCurl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", value); }
@@ -593,6 +607,7 @@ public class ServerManager
         if (DebugMode) LogMessage("Stop Server process has been called.", 0);
         isStartingUp = false; // Ensure startup flag is cleared
         serverConfirmedRunning = false; // Reset confirmed state
+        consecutiveFailedChecks = 0; // Reset failure counter on explicit stop
 
         if (serverMode == ServerMode.CustomServer)
         {
@@ -764,6 +779,7 @@ public class ServerManager
                     serverStarted = true; // Explicitly confirm started state
                     serverConfirmedRunning = true;
                     justStopped = false; // Reset flag on successful start confirmation
+                    consecutiveFailedChecks = 0; // Reset failure counter on successful start
 
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(true);
@@ -781,8 +797,7 @@ public class ServerManager
                     }
                     RepaintCallback?.Invoke();
                     return;
-                }
-                // If grace period expires and still not running, assume failure
+                }                // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
                 {
                     LogMessage($"Server failed to start within grace period.", -1);
@@ -790,6 +805,7 @@ public class ServerManager
                     serverStarted = false;
                     serverConfirmedRunning = false;
                     justStopped = false; // Reset flag on failed start
+                    consecutiveFailedChecks = 0; // Reset failure counter on failed start
 
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(false);
@@ -840,38 +856,59 @@ public class ServerManager
                 else // WSL and other modes
                 {
                     isActuallyRunning = await cmdProcessor.CheckPortAsync(ServerPort);
-                }
-
-                // State Change Detection:
+                }                // State Change Detection with Resilience:
                 if (serverConfirmedRunning != isActuallyRunning)
                 {
-                    string msg = isActuallyRunning
-                        ? $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: open")})"
-                        : $"SpacetimeDB Server appears to have stopped ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")})";
-                    
-                    // Update state
-                    serverConfirmedRunning = isActuallyRunning;
-                    LogMessage(msg, isActuallyRunning ? 1 : -2);
-
-                    // If state changed to NOT running, update the main serverStarted flag
-                    if (!isActuallyRunning)
+                    if (isActuallyRunning)
                     {
-                        serverStarted = false;
-
-                        // Update logProcessor state
-                        logProcessor.SetServerRunningState(false);
-
-                        if (DebugMode) LogMessage("Server state updated to stopped.", -1);
-                    }
-                    else
-                    {
-                        // If we confirmed it IS running again, clear the stop flag
+                        // Server came back online - reset failure counter and update state immediately
+                        consecutiveFailedChecks = 0;
+                        serverConfirmedRunning = true;
                         justStopped = false;
+                        
+                        string msg = $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: open")})";
+                        LogMessage(msg, 1);
 
                         // Update logProcessor state
                         logProcessor.SetServerRunningState(true);
+                        
+                        if (DebugMode) LogMessage("Server state updated to running.", 1);
+                        RepaintCallback?.Invoke();
                     }
-                    RepaintCallback?.Invoke();
+                    else
+                    {
+                        // Server appears to have stopped - increment failure counter
+                        consecutiveFailedChecks++;
+                        
+                        if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")}", 0);
+                        
+                        // Only mark as stopped after multiple consecutive failures
+                        if (consecutiveFailedChecks >= maxConsecutiveFailuresBeforeStop)
+                        {
+                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")})";
+                            LogMessage(msg, -2);
+                            
+                            // Update state
+                            serverConfirmedRunning = false;
+                            serverStarted = false;
+
+                            // Update logProcessor state
+                            logProcessor.SetServerRunningState(false);
+
+                            if (DebugMode) LogMessage("Server state updated to stopped.", -1);
+                            RepaintCallback?.Invoke();
+                        }
+                        else
+                        {
+                            // Don't change state yet, just log the temporary failure
+                            if (DebugMode) LogMessage("Temporary server check failure - maintaining current state", 0);
+                        }
+                    }
+                }
+                else if (isActuallyRunning)
+                {
+                    // Server is running and status matches - reset failure counter
+                    consecutiveFailedChecks = 0;
                 }
             }
             catch (Exception ex) {
@@ -914,6 +951,7 @@ public class ServerManager
                             serverConfirmedRunning = true;
                             isStartingUp = false;
                             justStopped = false; // Ensure flag is clear if we recover state
+                            consecutiveFailedChecks = 0; // Reset failure counter on external recovery
 
                             // Update logProcessor state
                             logProcessor.SetServerRunningState(true);

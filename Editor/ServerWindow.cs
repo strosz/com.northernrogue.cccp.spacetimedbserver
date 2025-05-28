@@ -1977,6 +1977,21 @@ public class ServerWindow : EditorWindow
         serverManager.ClearDatabaseLog();
     }
 
+    public void AttemptDatabaseLogRestartAfterReload()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Checking database log process");
+        serverManager.AttemptDatabaseLogRestartAfterReload();
+    }
+
+    public void ForceRefreshLogsFromSessionState()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Force refreshing logs from SessionState");
+        if (serverManager != null)
+        {
+            serverManager.ForceRefreshLogsFromSessionState();
+        }
+    }
+
     public async void LoginMaincloud()
     {
         serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible local login...");
@@ -2146,37 +2161,8 @@ public class ServerWindow : EditorWindow
         serverManager.AttemptTailRestartAfterReload();
     }
 
-    public void StopTailProcessExplicitly()
-    {
+    public void StopTailProcessExplicitly()    {
         serverManager.StopTailProcessExplicitly();
-    }
-
-    public void AttemptDatabaseLogRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Checking database log process");
-        serverManager.AttemptDatabaseLogRestartAfterReload();
-    }
-
-    // Separate Exited handler for the background process (Silent Mode)
-    private void HandleBackgroundProcessExited(object sender, EventArgs e)
-    {
-         EditorApplication.delayCall += () => {
-            try {
-                int exitCode = -999;
-                string exitMsg = "Background WSL process exited.";
-                Process p = sender as Process;
-                if(p != null) { try { exitCode = p.ExitCode; } catch { exitCode = -998; } }
-                
-                // This exit doesn't necessarily mean the *server* stopped, just the initial WSL command finished.
-                // Only log it, don't change serverStarted state here. CheckServerStatus handles actual server state.
-                if (debugMode) LogMessage($"{exitMsg} Exit Code: {exitCode}. (CheckServerStatus confirms actual server state via port).", 0);
-
-                if(p == serverProcess) serverProcess = null; // Clear our reference to this process
-                Repaint();
-            } catch (Exception ex) {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow Background Exited Handler Error]: {ex}");
-            }
-        };
     }
 
     private int ExtractPortFromUrl(string url)

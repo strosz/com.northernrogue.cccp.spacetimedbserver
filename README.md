@@ -66,13 +66,31 @@ Install directly in your Unity Package Manager with this git URL
    - Soon releasing it under MIT license.
 
 ## Screenshots
-<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 800px; margin: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_manager.png" style="width: 100%; height: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_logs.png" style="width: 100%; height: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_database.png" style="width: 100%; height: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_reducers.png" style="width: 100%; height: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_installer.png" style="width: 100%; height: auto;">
-  <img src="https://www.northernrogue.se/CCCP/cccp_settings.png" style="width: 100%; height: auto;">
+<div align="center">
+  <table style="max-width: 600px;">
+    <tr>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_manager.png" alt="CCCP Manager" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_logs.png" alt="CCCP Logs" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_database.png" alt="CCCP Database" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_reducers.png" alt="CCCP Reducers" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_installer.png" alt="CCCP Installer" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+      <td style="text-align: center;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_settings.png" alt="CCCP Settings" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+      </td>
+    </tr>
+  </table>
 </div>
 
 ## Supported Platforms

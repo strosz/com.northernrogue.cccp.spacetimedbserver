@@ -22,6 +22,7 @@ public class ServerLogProcess
     
     // Log contents
     private string silentServerCombinedLog = "";
+    private string cachedModuleLogContent = ""; // Add cached version of module logs
     private string databaseLogContent = "";
     private string cachedDatabaseLogContent = ""; // Add cached version of database logs
     
@@ -33,6 +34,7 @@ public class ServerLogProcess
     
     // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
+    private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog"; // Add session key for cached module logs
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
     private const string SessionKeyCachedDatabaseLog = "ServerWindow_CachedDatabaseLog"; // Add session key for cached logs
     private const string SessionKeyDatabaseLogRunning = "ServerWindow_DatabaseLogRunning";
@@ -252,9 +254,11 @@ public class ServerLogProcess
             clearProcess.Start();
             clearProcess.WaitForExit(5000); // Wait up to 5 seconds
             
-            // Also clear the in-memory log
+            // Also clear the in-memory log and cached version
             silentServerCombinedLog = "";
+            cachedModuleLogContent = "";
             SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
             
             if (debugMode) logCallback("SSH log file cleared successfully", 1);
         }
@@ -519,6 +523,7 @@ public class ServerLogProcess
                                 // Clear the existing log when we find a session start marker
                                 moduleLogAccumulator.Clear();
                                 silentServerCombinedLog = "";
+                                cachedModuleLogContent = ""; // Also clear cached version
                                 foundSessionStart = true;
                             }
                             
@@ -537,6 +542,7 @@ public class ServerLogProcess
                                 // Update both the accumulator and the combined log
                                 moduleLogAccumulator.Append(formattedLine).Append("\n");
                                 silentServerCombinedLog += formattedLine + "\n";
+                                cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
                                 
                                 // Manage log size
                                 const int maxLogLength = 75000;
@@ -545,6 +551,7 @@ public class ServerLogProcess
                                 {
                                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
                                     silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                                    cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                                 }
                                 
                                 // Update SessionState periodically
@@ -588,6 +595,7 @@ public class ServerLogProcess
                                 // Update both the accumulator and the combined log
                                 moduleLogAccumulator.Append(formattedLine).Append("\n");
                                 silentServerCombinedLog += formattedLine + "\n";
+                                cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
                                 
                                 // Update SessionState periodically
                                 UpdateSessionStateIfNeeded();
@@ -869,6 +877,7 @@ public class ServerLogProcess
         
         // Load log content from session state
         silentServerCombinedLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        cachedModuleLogContent = SessionState.GetString(SessionKeyCachedModuleLog, ""); // Load cached module logs
         databaseLogContent = SessionState.GetString(SessionKeyDatabaseLog, "");
         cachedDatabaseLogContent = SessionState.GetString(SessionKeyCachedDatabaseLog, ""); // Load cached logs
 
@@ -890,6 +899,48 @@ public class ServerLogProcess
     public void SetServerRunningState(bool isRunning)
     {
         serverRunning = isRunning;
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
+    }
+    
+    // Force refresh in-memory logs from SessionState - used when ServerOutputWindow gets focus
+    public void ForceRefreshLogsFromSessionState()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Force refreshing logs from SessionState");
+        
+        // Load the most current data from SessionState
+        string sessionModuleLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        string sessionDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
+        string sessionCachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+        string sessionCachedDatabaseLog = SessionState.GetString(SessionKeyCachedDatabaseLog, "");
+        
+        // Update in-memory logs if SessionState has more recent/complete data
+        if (!string.IsNullOrEmpty(sessionModuleLog) && sessionModuleLog.Length > silentServerCombinedLog.Length)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing silentServerCombinedLog from SessionState ({sessionModuleLog.Length} chars)");
+            silentServerCombinedLog = sessionModuleLog;
+        }
+        
+        if (!string.IsNullOrEmpty(sessionDatabaseLog) && sessionDatabaseLog.Length > databaseLogContent.Length)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing databaseLogContent from SessionState ({sessionDatabaseLog.Length} chars)");
+            databaseLogContent = sessionDatabaseLog;
+        }
+        
+        if (!string.IsNullOrEmpty(sessionCachedModuleLog) && sessionCachedModuleLog.Length > cachedModuleLogContent.Length)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing cachedModuleLogContent from SessionState ({sessionCachedModuleLog.Length} chars)");
+            cachedModuleLogContent = sessionCachedModuleLog;
+        }
+        
+        if (!string.IsNullOrEmpty(sessionCachedDatabaseLog) && sessionCachedDatabaseLog.Length > cachedDatabaseLogContent.Length)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing cachedDatabaseLogContent from SessionState ({sessionCachedDatabaseLog.Length} chars)");
+            cachedDatabaseLogContent = sessionCachedDatabaseLog;
+        }
+        
+        // Notify callbacks that logs have been updated
+        onModuleLogUpdated?.Invoke();
+        onDatabaseLogUpdated?.Invoke();
     }
     
     #region Log Methods
@@ -907,7 +958,9 @@ public class ServerLogProcess
         
         // Also clear the in-memory log
         silentServerCombinedLog = "";
+        cachedModuleLogContent = "";
         SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
         
         // Notify that the log has been cleared
         if (debugMode) logCallback("Log file cleared successfully", 1);
@@ -929,7 +982,8 @@ public class ServerLogProcess
     
     public string GetModuleLogContent()
     {
-        return silentServerCombinedLog;
+        // Return cached logs if server is not running, otherwise return current logs
+        return serverRunning ? silentServerCombinedLog : cachedModuleLogContent;
     }
     
     public string GetDatabaseLogContent()
@@ -1177,17 +1231,18 @@ public class ServerLogProcess
                             
                             // Update in-memory log immediately
                             silentServerCombinedLog += formattedLine + "\n";
+                            cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
                             
                             // Add to accumulator
                             moduleLogAccumulator.AppendLine(formattedLine);
                             
                             // Manage log size immediately
                             const int maxLogLength = 75000;
-                            const int trimToLength = 50000;
-                            if (silentServerCombinedLog.Length > maxLogLength)
+                            const int trimToLength = 50000;                            if (silentServerCombinedLog.Length > maxLogLength)
                             {
                                 if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
                                 silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                                cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                             }
                             
                             // Update SessionState less frequently
@@ -1295,19 +1350,21 @@ public class ServerLogProcess
             if (debugMode) logCallback("Domain reload detected. Attempting to re-attach tail process...", 0);
             string logPath = WslCombinedLogPath;
             
-            if (debugMode) logCallback($"Re-starting tail for {logPath}...", 0);
-            tailProcess = StartTailingLogFile(logPath, (line) => {
+            if (debugMode) logCallback($"Re-starting tail for {logPath}...", 0);            tailProcess = StartTailingLogFile(logPath, (line) => {
                 silentServerCombinedLog += line + "\n";
+                cachedModuleLogContent += line + "\n"; // Keep cached version in sync
                 const int maxLogLength = 75000;
                 const int trimToLength = 50000;
                 if (silentServerCombinedLog.Length > maxLogLength)
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess Tail Reload] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
                     silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                    cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess Tail Reload] Truncated log length: {silentServerCombinedLog.Length}");
                 }
                 
                 SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+                SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
                 
                 if (onModuleLogUpdated != null)
                 {
@@ -1443,10 +1500,10 @@ public class ServerLogProcess
     // Helper method to update SessionState less frequently
     private void UpdateSessionStateIfNeeded()
     {
-        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;
-        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
+        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
         {
             SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+            SessionState.SetString(SessionKeyCachedModuleLog, silentServerCombinedLog); // Keep cached version in sync
             SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
             SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
             lastSessionStateUpdateTime = DateTime.Now;
@@ -1617,7 +1674,7 @@ public class ServerLogProcess
                 if (databaseLogProcess.HasExited)
                 {
                     int exitCode = databaseLogProcess.ExitCode;
-                    logCallback($"ERROR: Database log process exited immediately with code {exitCode}", -1);
+                    if (debugMode) logCallback($"ERROR: Database log process exited immediately with code {exitCode}", -1);
                     if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Database log process failed to start - exited with code {exitCode}");
                     databaseLogProcess = null;
                     SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
