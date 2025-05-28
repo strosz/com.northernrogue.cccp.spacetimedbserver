@@ -293,7 +293,8 @@ public class ServerLogProcess
             Process process = new Process();
             process.StartInfo.FileName = "ssh";
             // Use sudo to access system logs and tail -F for robustness
-            string tailCommand = $"sudo tail -F -n +1 {remotePath}";
+            // Add stdbuf -o0 to disable output buffering for immediate line delivery
+            string tailCommand = $"sudo stdbuf -o0 tail -F -n +1 {remotePath}";
             process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{tailCommand}\"";
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
@@ -309,6 +310,9 @@ public class ServerLogProcess
                         try {
                             // Pass data to callback
                             onNewLine(args.Data);
+                            
+                            // Force immediate UI refresh for SSH logs to avoid delays
+                            onModuleLogUpdated?.Invoke();
                         }
                         catch (Exception ex) {
                             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH tail output handler: {ex.Message}");

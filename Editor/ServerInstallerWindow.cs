@@ -28,7 +28,7 @@ public class ServerInstallerWindow : EditorWindow
     
     // Tab selection
     private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
-    private readonly string[] tabNames = { "WSL Installer", "Custom Debian Installer" };
+    private readonly string[] tabNames = { "WSL Server Installer", "Custom Server Installer" };
 
     // EditorPrefs
     private string userName = ""; // For WSL mode
@@ -229,7 +229,8 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install WSL with Debian",
                 description = "Windows Subsystem for Linux with Debian distribution\n"+
                 "Important: Will launch a checker tool that determines if your system supports WSL1 or WSL2\n"+
-                "Note: May require a system restart",
+                "Note: May require a system restart. If it reports as failed, please restart and try again\n"+
+                "Note: If you already have WSL installed, it will install Debian for your chosen WSL version",
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
                 installAction = InstallWSLDebian
@@ -239,6 +240,7 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
+                "Note: If it reports as failed, you may have to restart your PC since the first WSL step"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
@@ -646,15 +648,7 @@ public class ServerInstallerWindow : EditorWindow
         // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        // Minimize GUIContent creation during rendering
-        if (titleStyle != null)
-        {
-            GUILayout.Label(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom SSH Server Installer", titleStyle);
-        }
-        else
-        {
-            EditorGUILayout.LabelField(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom SSH Server Installer");
-        }
+        GUILayout.Label(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom Server Installer", titleStyle);
         
         string description = currentTab == 0 ? 
             "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +

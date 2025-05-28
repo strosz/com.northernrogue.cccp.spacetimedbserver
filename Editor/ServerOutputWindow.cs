@@ -57,6 +57,9 @@ public class ServerOutputWindow : EditorWindow
     private static double lastRefreshTime = 0;
     private const double REFRESH_INTERVAL = 1.0; // How often it can echo to console, won't affect rate of logs in window
     
+    // SSH log refresh optimization
+    private const double SSH_REFRESH_INTERVAL = 1.0;
+    
     // Style-related fields
     private GUIStyle logStyle;
     private GUIStyle containerStyle;
@@ -73,6 +76,9 @@ public class ServerOutputWindow : EditorWindow
 
     // Track instances
     private static List<ServerOutputWindow> openWindows = new List<ServerOutputWindow>();
+    
+    // Track compilation state to force refresh after compilation
+    private static bool wasCompiling = false;
 
     [MenuItem("SpacetimeDB/Server Logs (Silent)")]
     public static void ShowWindow()
@@ -135,7 +141,7 @@ public class ServerOutputWindow : EditorWindow
         
         // Listen for play mode state changes
         EditorApplication.playModeStateChanged += PlayModeStateChanged;
-        
+
         // Clear caches
         formattedLogCache.Clear();
         needsRepaint = true;
@@ -158,6 +164,7 @@ public class ServerOutputWindow : EditorWindow
     private void OnDisable()
     {
         EditorApplication.playModeStateChanged -= PlayModeStateChanged;
+        EditorApplication.update -= CheckForLogUpdates;
         isWindowEnabled = false;
         openWindows.Remove(this);
         
@@ -183,7 +190,14 @@ public class ServerOutputWindow : EditorWindow
     public static void RefreshOpenWindow()
     {
         double currentTime = EditorApplication.timeSinceStartup;
-        if (currentTime - lastRefreshTime < REFRESH_INTERVAL)
+        
+        // Load server mode
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        // Check if this might be an SSH log update (faster refresh needed)
+        bool isSSHLogUpdate = modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase);
+        double refreshInterval = isSSHLogUpdate ? SSH_REFRESH_INTERVAL : REFRESH_INTERVAL;
+        
+        if (currentTime - lastRefreshTime < refreshInterval)
         {
             return;
         }
@@ -205,7 +219,7 @@ public class ServerOutputWindow : EditorWindow
             EchoLogsToConsole(SessionState.GetString(SessionKeyCombinedLog, ""), true);
         }
         
-        // Mark windows for update without immediate repaint
+        // Mark windows for update without immediate repaint (or with immediate repaint for SSH)
         var windowsToRefresh = openWindows.ToList(); 
         foreach (var window in windowsToRefresh)
         {
@@ -214,6 +228,11 @@ public class ServerOutputWindow : EditorWindow
                 try
                 {
                     window.needsRepaint = true;
+                    // Force immediate repaint for SSH log updates to improve responsiveness
+                    if (isSSHLogUpdate)
+                    {
+                        window.Repaint();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -697,7 +716,7 @@ public class ServerOutputWindow : EditorWindow
         if (string.IsNullOrEmpty(logContent))
             return logContent;
               // Strip ANSI Escape Codes
-        string strippedLog = Regex.Replace(logContent, @"\x1B\[[0-?]*[ -/]*[@-~]", "");
+        string strippedLog = Regex.Replace(logContent, @"\[[0-?]*[ -/]*[@-~]", "");
           // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
         strippedLog = Regex.Replace(strippedLog, 
             @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
@@ -776,6 +795,34 @@ public class ServerOutputWindow : EditorWindow
 
     private void CheckForLogUpdates()
     {
+        // Track compilation state changes and force refresh after compilation completes
+        if (wasCompiling && !EditorApplication.isCompiling)
+        {
+            // Compilation just finished, force immediate refresh
+            wasCompiling = false;
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Compilation finished, forcing log refresh for SSH logs.");
+            
+            // Force clear cache and reload to ensure SSH logs show up
+            formattedLogCache.Clear();
+            lastKnownLogHash = 0;
+            lastKnownDbLogHash = 0;
+            
+            // Use delayCall to ensure compilation is fully finished
+            EditorApplication.delayCall += () => {
+                ReloadLogs();
+                needsRepaint = true;
+                if (autoScroll) scrollToBottom = true;
+                Repaint();
+            };
+            
+            return;
+        }
+        else if (!wasCompiling && EditorApplication.isCompiling)
+        {
+            wasCompiling = true;
+            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Compilation started.");
+        }
+        
         // Only block during compilation
         if (!isWindowEnabled || EditorApplication.isCompiling)
             return;

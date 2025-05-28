@@ -882,6 +882,7 @@ public class ServerManager
         // Only check if not already started, not starting up, and server is running
         else if (!serverStarted && !isStartingUp)
         {
+            //UnityEngine.Debug.Log("Checking if server is running externally...");
             bool isActuallyRunning = false;
             try {
                 if (serverMode == ServerMode.CustomServer)
