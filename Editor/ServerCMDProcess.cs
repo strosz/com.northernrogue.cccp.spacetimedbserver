@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Diagnostics;
 using System;
+using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 
@@ -624,6 +625,11 @@ public class ServerCMDProcess
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
+            
+            // Configure UTF-8 encoding to properly handle special characters from WSL
+            process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = Encoding.UTF8;
+            
             process.Start();
             process.WaitForExit(5000); // Add a timeout (5 seconds)
             if (!process.HasExited)
@@ -677,6 +683,10 @@ public class ServerCMDProcess
             wslProcess.StartInfo.CreateNoWindow = true;
             wslProcess.StartInfo.RedirectStandardOutput = true; 
             wslProcess.StartInfo.RedirectStandardError = true;  
+            
+            // Configure UTF-8 encoding to properly handle special characters from WSL
+            wslProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            wslProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
             
             wslProcess.Start();
             
@@ -825,6 +835,10 @@ public class ServerCMDProcess
             process.StartInfo.RedirectStandardError = true;
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
+            
+            // Configure UTF-8 encoding to properly handle special characters from WSL
+            process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = Encoding.UTF8;
             
             process.Start();
             

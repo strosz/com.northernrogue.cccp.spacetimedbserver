@@ -955,7 +955,7 @@ public class ServerOutputWindow : EditorWindow
         
         // Otherwise, format the log and cache it
         string formattedLog = FormatLogContent(rawLog);
-          // Update cache and current state
+        // Update cache and current state
         formattedLogCache[selectedTab] = formattedLog;
         currentLogHash = logHash ^ (showLocalTime ? 1 : 0); // Store combined hash
         currentFormattedLog = formattedLog; // Keep reference to current formatted log
@@ -967,9 +967,47 @@ public class ServerOutputWindow : EditorWindow
     private string FormatLogContent(string logContent)
     {
         if (string.IsNullOrEmpty(logContent))
-            return logContent;
-              // Strip ANSI Escape Codes
-        string strippedLog = Regex.Replace(logContent, @"\[[0-?]*[ -/]*[@-~]", "");
+            return logContent;        // Strip ANSI Escape Codes with improved pattern
+        string strippedLog = Regex.Replace(logContent, @"\x1B\[[0-9;]*[mK]", "");
+        
+        // Remove only problematic control characters, preserve Unicode art characters
+        // Remove null, bell, backspace, form feed, and delete characters
+        strippedLog = Regex.Replace(strippedLog, @"[\x00\x07\x08\x0C\x7F]", "");
+        
+        // Replace Unicode characters that don't render properly in Unity Editor with ASCII alternatives
+        // Map common Braille and box-drawing characters to ASCII equivalents for better display
+        strippedLog = strippedLog
+            .Replace("⢀", "'")
+            .Replace("⣼", "#")
+            .Replace("⠟", "*")
+            .Replace("⣠", "#")
+            .Replace("⣶", "#")
+            .Replace("⡿", "#")
+            .Replace("⠿", "0")
+            .Replace("⠛", "*")
+            .Replace("⣠", "#")
+            .Replace("⡾", "#")
+            .Replace("⠋", "*")
+            .Replace("⠤", "-")
+            .Replace("⠞", "*")
+            .Replace("⠉", "'")
+            .Replace("⢀", "'")
+            .Replace("⡼", "#")
+            .Replace("⠋", "*")
+            .Replace("⢀", ",")
+            .Replace("⠔", ".")
+            .Replace("⢠", ".")
+            .Replace("⣴", "d")
+            .Replace("⣦", "h")
+            .Replace("⣤", "o")
+            .Replace("⠒", "-")
+            .Replace("⠶", "o")
+            .Replace("⣀", ".")
+            .Replace("⣾", "d")
+            .Replace("⣷", "b");
+
+        // Replace only the Unicode replacement character (�) with spaces
+        strippedLog = strippedLog.Replace('\uFFFD', ' ');
           // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
         strippedLog = Regex.Replace(strippedLog, 
             @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 

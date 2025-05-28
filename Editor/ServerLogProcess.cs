@@ -1219,6 +1219,10 @@ public class ServerLogProcess
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
             process.EnableRaisingEvents = true;
+            
+            // Configure UTF-8 encoding to properly handle special characters from WSL
+            process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = Encoding.UTF8;
 
             process.OutputDataReceived += (sender, args) => {
                 if (args.Data != null)
@@ -1579,6 +1583,10 @@ public class ServerLogProcess
             databaseLogProcess.StartInfo.RedirectStandardOutput = true;
             databaseLogProcess.StartInfo.RedirectStandardError = true;
             databaseLogProcess.EnableRaisingEvents = true;
+            
+            // Configure UTF-8 encoding to properly handle special characters from WSL
+            databaseLogProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            databaseLogProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
             
             // Handle output data received
             databaseLogProcess.OutputDataReceived += (sender, args) => {
