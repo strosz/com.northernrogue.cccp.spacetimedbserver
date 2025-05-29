@@ -19,7 +19,7 @@ Install directly in your Unity Package Manager with this git URL
 🌌 **WSL Local, Custom Remote or Maincloud**
    - Use your server mode of choice.
    - Control any SpacetimeDB server running on a Debian based distro.
-   - Quickly start developing with a local WSL server then publish it to a custom server or Maincloud.
+   - Quickly start developing using SpacetimeDB with a local WSL server then publish the exact same project to a custom server or Maincloud.
 
 🚀 **Silent Server and One-Click Server Management**
    - Start your server silently in about three seconds.

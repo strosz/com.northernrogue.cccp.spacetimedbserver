@@ -525,6 +525,24 @@ public class ServerCustomProcess
                 else
                 {
                     Log("SpacetimeDB service started successfully!", 1);
+
+                    if (EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false))
+                    {
+                        // Start the custom logs service if configured
+                        if (debugMode) Log("Starting custom SpacetimeDB logs service...", 0);
+                        var resultLogService = await RunCustomCommandAsync("sudo systemctl start spacetimedb-logs", 3000);
+                        
+                        if (!resultLogService.success)
+                        {
+                            if (debugMode) Log("Failed to start SpacetimeDB logs service. Please check service configuration.", -1);
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        if (debugMode) Log("Custom SpacetimeDB logs service is not configured. Skipping.", 0);
+                    }
+
                     cachedServerRunningStatus = true; // Update the value for CheckServerStatus in ServerManager
                     return true;
                 }
@@ -578,6 +596,24 @@ public class ServerCustomProcess
                 return false;
             } else {
                 if (debugMode) Log("SpacetimeDB service stopped successfully on remote machine.", 1);
+
+                if (EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false))
+                {
+                    // Stop the custom logs service if configured
+                    if (debugMode) Log("Stopping custom SpacetimeDB logs service...", 0);
+                    var resultLogService = await RunCustomCommandAsync("sudo systemctl stop spacetimedb-logs", 3000);
+                    
+                    if (!resultLogService.success)
+                    {
+                        if (debugMode) Log("Failed to stop SpacetimeDB logs service. Please check service configuration.", -1);
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (debugMode) Log("Custom SpacetimeDB logs service is not configured. Skipping.", 0);
+                }
+                
                 commandCache.Clear();
                 return true;
             }

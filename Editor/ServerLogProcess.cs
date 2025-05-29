@@ -13,6 +13,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerLogProcess
 {
+    public static bool debugMode = false;
+    
     // Constants
     public const string WslCombinedLogPath = "/tmp/spacetime.log";
     
@@ -41,7 +43,6 @@ public class ServerLogProcess
     private const string PrefsKeyPrefix = "CCCP_"; // Same prefix as ServerWindow
     
     // Settings
-    public static bool debugMode = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
     private string userName = "";
@@ -86,25 +87,34 @@ public class ServerLogProcess
     }
 
     [System.Serializable]
-    private class SpacetimeDbJsonLogFields
-    {
+    private class SpacetimeDbJsonLogFields    {
         public string message;
     }
     
     #region SSH Logging
     
-    // Path for remote server logs
+    // MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
+    // DATABASE LOGS: Read from journalctl for spacetimedb-logs.service (created by external script)
+    //                The service runs "spacetime logs {module} -f" and logs to journalctl
+    
+    // Path for remote server logs (kept for fallback/reference)
     public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
     
-    // SSH process variables
-    private Process sshTailProcess;
-    private Process sshDatabaseLogProcess;
-      // SSH details
+    // SSH details
     private string sshUser = "";
     private string sshHost = "";
     private string sshKeyPath = "";
     private bool isCustomServer = false;
     private string remoteSpacetimePath = "spacetime"; // Default path
+    private DateTime lastModuleLogTimestamp = DateTime.MinValue;
+    private DateTime lastDatabaseLogTimestamp = DateTime.MinValue;
+    private double lastLogReadTime = 0;
+    private const double logReadInterval = 1.0;
+    private bool hasScheduledNextCheck = false;
+
+    // Service names for journalctl
+    private const string SpacetimeServiceName = "spacetimedb.service";
+    private const string SpacetimeDatabaseLogServiceName = "spacetimedb-logs.service"; // Will be created by user's script
     
     // Configure SSH details for custom server log capture
     public void ConfigureSSH(string sshUser, string sshHost, string sshKeyPath, bool isCustomServer)
@@ -140,12 +150,9 @@ public class ServerLogProcess
         };
     }
     
-    // Start SSH-based log tailing for custom server
+    // Start SSH-based log reading for custom server
     public async void StartSSHLogging()
     {
-        // Clean up any leftover tail processes on the remote server before starting new ones
-        KillRemoteTailProcesses();
-        
         // Clear logs if needed
         if (clearModuleLogAtStart)
         {
@@ -156,12 +163,11 @@ public class ServerLogProcess
         {
             ClearSSHDatabaseLog();
         }
-        
-        // Start SSH-based log tailing processes
-        StopSSHTailingLogs(); // Make sure no previous tail process is running
+          // Initialize timestamps to 1 hour ago to avoid getting massive historical logs
+        lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
+        lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
         
         // Ensure we have found the spacetime path
-        // If not previously found, try to find it now
         if (remoteSpacetimePath == "spacetime")
         {
             try
@@ -172,70 +178,10 @@ public class ServerLogProcess
             catch (Exception ex)
             {
                 if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error finding spacetime path: {ex.Message}");
-            }
-        }
-          // Small delay to ensure log files are ready
-        System.Threading.Thread.Sleep(200);
-        
-        // Check if the spacetimedb service is running
-        bool serviceRunning = false;
-        try 
-        {
-            serviceRunning = await CheckSpacetimeDBServiceStatus();
-            if (serviceRunning && debugMode) 
-                logCallback("SpacetimeDB service is running, will use journalctl for logs", 1);
-            else if (debugMode)
-                logCallback("SpacetimeDB service not detected, falling back to log file", 0);
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) 
-                UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking service status: {ex.Message}");
-        }
-        
-        // Try to use journalctl for service logs first if service is running
-        Process serviceLogProcess = serviceRunning ? StartSSHServiceLogProcess() : null;
-        
-        if (serviceLogProcess != null)
-        {
-            // Successfully started service log monitoring
-            sshTailProcess = serviceLogProcess;
-            if (debugMode) logCallback("Using journalctl to monitor spacetimedb.service logs", 1);
-        }
-        else 
-        {
-            // Fall back to log file tailing if journalctl didn't work
-            if (debugMode) logCallback("Falling back to log file tailing", 0);
-            
-            // Start module log tailing
-            sshTailProcess = StartSSHTailingLogFile(CustomServerCombinedLogPath, (line) => {
-                const int maxLogLength = 75000;
-                const int trimToLength = 50000;
-                if (silentServerCombinedLog.Length > maxLogLength)
-                {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {silentServerCombinedLog.Length} chars.");
-                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncated SSH log length: {silentServerCombinedLog.Length}");
-                }
-                
-                string formattedLine = FormatServerLogLine(line);
-                moduleLogAccumulator.Append(formattedLine).Append("\n");
-                
-                // Update SessionState periodically
-                UpdateSessionStateIfNeeded();
-                
-                // Notify of log update
-                onModuleLogUpdated?.Invoke();
-            });
-        }
-        // Start database log tailing
-        StartSSHDatabaseLogProcess();
-        
-        // Service log monitoring was already attempted earlier
-        // No need to call StartSSHServiceLogProcess() again since sshTailProcess is already set
+            }        }
+          if (debugMode) logCallback("Started SSH periodic log reading", 1);
     }
-    
-    // Clear the module log file on the remote server
+      // Clear the module log file on the remote server
     public void ClearSSHModuleLogFile()
     {
         if (debugMode) logCallback("Clearing SSH log file...", 0);
@@ -260,6 +206,9 @@ public class ServerLogProcess
             SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
             SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
             
+            // Reset timestamp to start fresh
+            lastModuleLogTimestamp = DateTime.UtcNow;
+            
             if (debugMode) logCallback("SSH log file cleared successfully", 1);
         }
         catch (Exception ex)
@@ -278,584 +227,276 @@ public class ServerLogProcess
         SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
         SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         
+        // Reset timestamp to start fresh
+        lastDatabaseLogTimestamp = DateTime.UtcNow;
+        
         if (debugMode) logCallback("SSH database log cleared successfully", 1);
     }
     
-    // Start tailing a log file via SSH
-    private Process StartSSHTailingLogFile(string remotePath, Action<string> onNewLine)
+    // Read module logs from journalctl periodically
+    private async Task ReadSSHModuleLogsAsync()
     {
         if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
         {
-            if (debugMode) logCallback("SSH connection details incomplete", -1);
-            return null;
-        }
-        
-        if (debugMode) logCallback($"Starting SSH tail for {remotePath}", 0);
-        
-        try
-        {
-            Process process = new Process();
-            process.StartInfo.FileName = "ssh";
-            // Use sudo to access system logs and tail -F for robustness
-            // Add stdbuf -o0 to disable output buffering for immediate line delivery
-            string tailCommand = $"sudo stdbuf -o0 tail -F -n +1 {remotePath}";
-            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{tailCommand}\"";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.EnableRaisingEvents = true;
-            
-            process.OutputDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Tail Raw Output");
-                    EditorApplication.delayCall += () => {
-                        try {
-                            // Pass data to callback
-                            onNewLine(args.Data);
-                            
-                            // Force immediate UI refresh for SSH logs to avoid delays
-                            onModuleLogUpdated?.Invoke();
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH tail output handler: {ex.Message}");
-                        }
-                    };
-                }
-            };
-            
-            process.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Tail Error: {args.Data}");
-                    EditorApplication.delayCall += () => {
-                        try {
-                            // Format as error and pass to callback
-                            string formattedLine = FormatServerLogLine(args.Data, true);
-                            onNewLine(formattedLine);
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH tail error handler: {ex.Message}");
-                        }
-                    };
-                }
-            };
-            
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            
-            if (debugMode) logCallback("Started SSH log tailing process", 1);
-            return process;
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) logCallback($"Error starting SSH log tailing: {ex.Message}", -1);
-            return null;
-        }
-    }
-      // Stop all SSH tailing processes
-    private void StopSSHTailingLogs()
-    {
-        if (sshTailProcess != null)
-        {
-            if (debugMode) logCallback("Stopping SSH tail process", 0);
-            
-            try
-            {
-                if (!sshTailProcess.HasExited)
-                {
-                    sshTailProcess.Kill();
-                    sshTailProcess.WaitForExit(1000); // Give it time to exit properly
-                    sshTailProcess.Close();
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping SSH tail process: {ex.Message}");
-            }
-            
-            sshTailProcess = null;
-        }
-        
-        // Also kill any leftover remote tail processes to prevent accumulation
-        KillRemoteTailProcesses();
-        
-        if (debugMode) logCallback("SSH tail process stopped", 0);
-    }
-    
-    // Start process to monitor database logs via spacetime logs
-    private void StartSSHDatabaseLogProcess()
-    {
-        try
-        {
-            if (debugMode) logCallback("Starting SSH database logs process...", 0);
-            
-            // Mark state in SessionState
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, true);
-            
-            // Check for required parameters
-            if (string.IsNullOrEmpty(moduleName))
-            {
-                if (debugMode) logCallback($"Module name is not set, cannot start SSH database log", -1);
-                return;
-            }
-
-            // Create a new process to run the spacetime logs command via SSH
-            sshDatabaseLogProcess = new Process();
-            sshDatabaseLogProcess.StartInfo.FileName = "ssh";            
-            
-            // Build the command to run spacetime logs with the module name using discovered path
-            // Wrap in a login shell to ensure proper environment is loaded
-            string logCommand = $"bash -l -c '{remoteSpacetimePath} logs {moduleName} -f'";
-            
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Running remote command: {logCommand}");
-            sshDatabaseLogProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{logCommand}\"";
-            sshDatabaseLogProcess.StartInfo.UseShellExecute = false;
-            sshDatabaseLogProcess.StartInfo.CreateNoWindow = true;
-            sshDatabaseLogProcess.StartInfo.RedirectStandardOutput = true;
-            sshDatabaseLogProcess.StartInfo.RedirectStandardError = true;
-            sshDatabaseLogProcess.EnableRaisingEvents = true;
-            
-            // Clear existing logs when starting new process
-            databaseLogContent = "";
-            cachedDatabaseLogContent = "";
-            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-            
-            sshDatabaseLogProcess.OutputDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Database Log Raw Output");
-                    
-                    // Format the line and add to queue (same as regular database logs)
-                    string formattedLine = FormatDatabaseLogLine(args.Data);
-                    databaseLogQueue.Enqueue(formattedLine);
-                }
-            };
-              sshDatabaseLogProcess.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null && debugMode)
-                {
-                    UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Database Log Error: {args.Data}");
-                    
-                    // Special handling for common error messages
-                    string errorMessage = args.Data;
-                    if (errorMessage.Contains("command not found"))
-                    {
-                        logCallback($"ERROR: spacetime command not found on the remote server. Check that SpacetimeDB is installed and in PATH.", -1);
-                        errorMessage = "spacetime command not found on remote server. Check installation.";
-                    }
-                    else if (errorMessage.Contains("decoding response"))
-                    {
-                        errorMessage = "Error decoding response from remote server. Server is not running.";
-                    }
-                    else if (errorMessage.Contains("Permission denied"))
-                    {
-                        logCallback($"ERROR: Permission denied accessing spacetime on remote server.", -1);
-                    }
-                    
-                    // Format and add error message to queue (consistent with regular logs)
-                    string formattedLine = FormatDatabaseLogLine($"ERROR: {errorMessage}", true);
-                    databaseLogQueue.Enqueue(formattedLine);
-                }
-            };
-            
-            sshDatabaseLogProcess.Start();
-            sshDatabaseLogProcess.BeginOutputReadLine();
-            sshDatabaseLogProcess.BeginErrorReadLine();
-            
-            if (debugMode) logCallback("Started SSH database log process", 1);
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) logCallback($"Error starting SSH database log process: {ex.Message}", -1);
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-        }
-    }
-    
-    // Start process to monitor spacetimedb service logs via journalctl
-    private Process StartSSHServiceLogProcess()
-    {
-        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
-        {
-            if (debugMode) logCallback("SSH connection details incomplete", -1);
-            return null;
-        }
-        
-        if (debugMode) logCallback("Starting SSH service log monitoring via journalctl", 0);
-        
-        try
-        {
-            Process process = new Process();
-            process.StartInfo.FileName = "ssh";            // Use journalctl to get logs since the last service start, then follow new logs
-            // The -f flag follows the log in real-time
-            // The -u flag specifies the service unit name
-            // The --no-pager flag prevents pagination
-            // Use short-iso-precise format for more robust timestamp parsing
-            // Use -n 100 to limit initial output to last 100 lines (since we're filtering for session start)
-            string journalCommand = "sudo journalctl -f -u spacetimedb.service --no-pager -o short-iso-precise -n 100";
-            
-            process.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.EnableRaisingEvents = true;
-            
-            // For tracking the current session
-            bool foundSessionStart = false;
-            string sessionStartMarker = "Started spacetimedb.service";
-            
-            process.OutputDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH Service Log Raw Output: " + args.Data);
-                    EditorApplication.delayCall += () => {
-                        try {
-                            string line = args.Data.Trim();
-                            
-                            // If we have a new session start marker, clear previous log and start fresh
-                            if (line.Contains(sessionStartMarker))
-                            {
-                                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] New spacetimedb service session detected, clearing previous logs");
-                                
-                                // Clear the existing log when we find a session start marker
-                                moduleLogAccumulator.Clear();
-                                silentServerCombinedLog = "";
-                                cachedModuleLogContent = ""; // Also clear cached version
-                                foundSessionStart = true;
-                            }
-                            
-                            // If we're still waiting to find the session start marker, skip this line
-                            if (!foundSessionStart && !line.Contains(sessionStartMarker))
-                            {
-                                // Skip lines until we find a session start message
-                                return;
-                            }
-                            
-                            if (!string.IsNullOrEmpty(line))
-                            {
-                                // Format the log line with the timestamp and message
-                                string formattedLine = FormatServerLogLine(line);
-                                
-                                // Update both the accumulator and the combined log
-                                moduleLogAccumulator.Append(formattedLine).Append("\n");
-                                silentServerCombinedLog += formattedLine + "\n";
-                                cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
-                                
-                                // Manage log size
-                                const int maxLogLength = 75000;
-                                const int trimToLength = 50000;
-                                if (silentServerCombinedLog.Length > maxLogLength)
-                                {
-                                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
-                                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                                    cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
-                                }
-                                
-                                // Update SessionState periodically
-                                UpdateSessionStateIfNeeded();
-                                
-                                // Notify of log update
-                                onModuleLogUpdated?.Invoke();
-                            }
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log output handler: {ex.Message}");
-                        }
-                    };
-                }
-            };
-            
-            process.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null && debugMode) // Testing requiring debug mode since most messages here are not important
-                {                    
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] SSH Service Log Error: {args.Data}");
-                    
-                    // Special handling for common service log errors
-                    string errorMessage = args.Data;
-                    if (errorMessage.Contains("No entries"))
-                    {
-                        if (debugMode) logCallback("No service log entries found. Service may be newly started.", 0);
-                    }
-                    else if (errorMessage.Contains("Failed to") || errorMessage.Contains("error"))
-                    {
-                        logCallback($"Service log error: {errorMessage}", -1);
-                    }
-                    
-                    EditorApplication.delayCall += () => {
-                        try {
-                            // Only process errors if we've already found the session start or if this is about session start
-                            if (foundSessionStart || errorMessage.Contains(sessionStartMarker))
-                            {
-                                // Format as error and pass to module log
-                                string formattedLine = FormatServerLogLine($"[SERVICE ERROR] {errorMessage}", true);
-                                
-                                // Update both the accumulator and the combined log
-                                moduleLogAccumulator.Append(formattedLine).Append("\n");
-                                silentServerCombinedLog += formattedLine + "\n";
-                                cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
-                                
-                                // Update SessionState periodically
-                                UpdateSessionStateIfNeeded();
-                                
-                                // Notify of log update
-                                onModuleLogUpdated?.Invoke();
-                            }
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in SSH service log error handler: {ex.Message}");
-                        }
-                    };
-                }
-            };
-            
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            
-            if (debugMode) logCallback("Started SSH service log monitoring process", 1);
-            return process;
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) logCallback($"Error starting SSH service log monitoring: {ex.Message}", -1);
-            return null;
-        }
-    }
-      // Stop SSH database log process
-    private void StopSSHDatabaseLogProcess()
-    {
-        if (sshDatabaseLogProcess != null)
-        {
-            if (debugMode) logCallback("Stopping SSH database log process", 0);
-            
-            try
-            {
-                if (!sshDatabaseLogProcess.HasExited)
-                {
-                    sshDatabaseLogProcess.Kill();
-                    sshDatabaseLogProcess.WaitForExit(1000); // Give it time to exit properly
-                    sshDatabaseLogProcess.Close();
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping SSH database log process: {ex.Message}");
-            }
-            
-            sshDatabaseLogProcess = null;
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-            
-            // Also try to kill any leftover database log processes on the remote server
-            try
-            {
-                if (!string.IsNullOrEmpty(sshUser) && !string.IsNullOrEmpty(sshHost) && !string.IsNullOrEmpty(sshKeyPath) && !string.IsNullOrEmpty(moduleName))
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Cleaning up remote database log processes");
-                    
-                    Process cleanupProcess = new Process();
-                    cleanupProcess.StartInfo.FileName = "ssh";
-                    // Find and kill all spacetime logs processes for this module
-                    string killCommand = $"sudo pkill -f '{remoteSpacetimePath} logs {moduleName}'";
-                    cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
-                    cleanupProcess.StartInfo.UseShellExecute = false;
-                    cleanupProcess.StartInfo.CreateNoWindow = true;
-                    
-                    cleanupProcess.Start();
-                    cleanupProcess.WaitForExit(2000); // Wait up to 2 seconds
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up remote database log processes: {ex.Message}");
-            }
-            
-            if (debugMode) logCallback("SSH database log process stopped", 0);
-        }
-    }
-    
-    // Method to check SSH log processes and restart if needed
-    public void CheckSSHLogProcesses(double currentTime)
-    {
-        if (currentTime - lastTailCheckTime > tailCheckInterval)
-        {
-            lastTailCheckTime = currentTime;
-            
-            if (serverRunning && isCustomServer)
-            {
-                CheckSSHTailProcess();
-                CheckSSHDatabaseLogProcess();
-            }
-        }
-    }
-    
-    private void CheckSSHTailProcess()
-    {
-        if (sshTailProcess == null && serverRunning && isCustomServer)
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH tail process needs restart");
-            AttemptSSHTailRestartAfterReload();
-        }
-        else if (sshTailProcess != null && (sshTailProcess.HasExited || !serverRunning || !isCustomServer))
-        {
-            if (!serverRunning || !isCustomServer)
-            {
-                StopSSHTailingLogs();
-            }
-            else if (sshTailProcess.HasExited)
-            {
-                AttemptSSHTailRestartAfterReload();
-            }
-        }
-    }
-    
-    private void CheckSSHDatabaseLogProcess()
-    {
-        if (sshDatabaseLogProcess == null && serverRunning && isCustomServer)
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH database log process needs restart");
-            AttemptSSHDatabaseLogRestartAfterReload();
-        }
-        else if (sshDatabaseLogProcess != null && (sshDatabaseLogProcess.HasExited || !serverRunning || !isCustomServer))
-        {
-            if (!serverRunning || !isCustomServer)
-            {
-                StopSSHDatabaseLogProcess();
-            }
-            else if (sshDatabaseLogProcess.HasExited)
-            {
-                AttemptSSHDatabaseLogRestartAfterReload();
-            }
-        }
-    }
-      // Attempt to restart SSH tail process after domain reload
-    public void AttemptSSHTailRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Attempting to restart SSH tail process");
-        
-        if (serverRunning && isCustomServer && sshTailProcess == null)
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Starting SSH tail process after reload");
-            
-            // Clean up any leftover processes first
-            KillRemoteTailProcesses();
-            
-            string remotePath = CustomServerCombinedLogPath;
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using remote path: {remotePath}");
-            
-            sshTailProcess = StartSSHTailingLogFile(remotePath, (line) => {
-                // Logic is same as StartSSHLogging
-                const int maxLogLength = 75000;
-                const int trimToLength = 50000;
-                if (silentServerCombinedLog.Length > maxLogLength)
-                {
-                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                }
-                
-                string formattedLine = FormatServerLogLine(line);
-                moduleLogAccumulator.Append(formattedLine).Append("\n");
-                
-                // Update SessionState periodically
-                UpdateSessionStateIfNeeded();
-                
-                // Notify of log update
-                onModuleLogUpdated?.Invoke();
-            });
-            
-            if (sshTailProcess != null)
-            {
-                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH tail process restarted successfully");
-            }
-            else
-            {
-                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] SSH tail restart FAILED. StartSSHTailingLogFile returned NULL.");
-            }
-        }
-        else
-        {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Not restarting SSH tail. ServerRunning: {serverRunning}, IsCustomServer: {isCustomServer}, TailProcess: {(sshTailProcess != null ? "exists" : "null")}");
-        }
-    }
-      // Attempt to restart SSH database log process after domain reload
-    public void AttemptSSHDatabaseLogRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Attempting to restart SSH database log process");
-        
-        if (serverRunning && isCustomServer && (sshDatabaseLogProcess == null || sshDatabaseLogProcess.HasExited))
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Starting SSH database log process after reload");
-            
-            // First kill any leftover processes
-            if (!string.IsNullOrEmpty(sshUser) && !string.IsNullOrEmpty(sshHost) && !string.IsNullOrEmpty(sshKeyPath) && !string.IsNullOrEmpty(moduleName))
-            {
-                try
-                {
-                    Process cleanupProcess = new Process();
-                    cleanupProcess.StartInfo.FileName = "ssh";
-                    string killCommand = $"sudo pkill -f '{remoteSpacetimePath} logs {moduleName}'";
-                    cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
-                    cleanupProcess.StartInfo.UseShellExecute = false;
-                    cleanupProcess.StartInfo.CreateNoWindow = true;
-                    
-                    cleanupProcess.Start();
-                    cleanupProcess.WaitForExit(2000);
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up before restart: {ex.Message}");
-                }
-            }
-            
-            StartSSHDatabaseLogProcess();
-        }
-    }
-    
-    // Stop all SSH logging processes
-    public void StopSSHLogging()
-    {
-        StopSSHTailingLogs();
-        StopSSHDatabaseLogProcess();
-        // Clean up any leftover tail processes on the remote server
-        KillRemoteTailProcesses();
-    }
-    
-    // Kill all leftover tail processes on the remote server
-    private void KillRemoteTailProcesses()
-    {
-        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH connection details incomplete, cannot kill remote processes");
             return;
         }
         
         try
         {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Cleaning up remote tail processes");
+            // Format timestamp for journalctl --since parameter (correct format)
+            string sinceTimestamp = lastModuleLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+              // Use journalctl to read logs since last timestamp
+            string journalCommand = $"sudo journalctl -u {SpacetimeServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
             
-            // Create a process to kill all tail processes on the remote server
-            Process cleanupProcess = new Process();
-            cleanupProcess.StartInfo.FileName = "ssh";
-            // Find and kill all tail processes related to our log file
-            string killCommand = $"sudo pkill -f 'tail -F -n \\+1 {CustomServerCombinedLogPath}'";
-            cleanupProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{killCommand}\"";
-            cleanupProcess.StartInfo.UseShellExecute = false;
-            cleanupProcess.StartInfo.CreateNoWindow = true;
-            cleanupProcess.StartInfo.RedirectStandardOutput = true;
-            cleanupProcess.StartInfo.RedirectStandardError = true;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading SSH module logs since: {sinceTimestamp}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Full SSH command: ssh -i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"");
             
-            cleanupProcess.Start();
-            cleanupProcess.WaitForExit(3000); // Wait up to 3 seconds
+            Process readProcess = new Process();
+            readProcess.StartInfo.FileName = "ssh";
+            readProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
+            readProcess.StartInfo.UseShellExecute = false;
+            readProcess.StartInfo.CreateNoWindow = true;
+            readProcess.StartInfo.RedirectStandardOutput = true;
+            readProcess.StartInfo.RedirectStandardError = true;
             
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Remote tail processes cleanup completed");
+            readProcess.Start();
+            
+            string output = await readProcess.StandardOutput.ReadToEndAsync();
+            string error = await readProcess.StandardError.ReadToEndAsync();
+            
+            readProcess.WaitForExit(5000);
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH module logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            
+            if (!string.IsNullOrEmpty(output))
+            {
+                var lines = output.Split('\n');
+                bool hasNewLogs = false;
+                int lineCount = 0;
+                  foreach (string line in lines)
+                {
+                    if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
+                    {
+                        string formattedLine = FormatServerLogLine(line.Trim());
+                        moduleLogAccumulator.Append(formattedLine).Append("\n");
+                        silentServerCombinedLog += formattedLine + "\n";
+                        cachedModuleLogContent += formattedLine + "\n";
+                        hasNewLogs = true;
+                        lineCount++;
+                    }
+                }
+                
+                if (hasNewLogs)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH module log lines");
+                    
+                    // Update timestamp for next read
+                    lastModuleLogTimestamp = DateTime.UtcNow;
+                    
+                    // Manage log size
+                    const int maxLogLength = 75000;
+                    const int trimToLength = 50000;
+                    if (silentServerCombinedLog.Length > maxLogLength)
+                    {
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {silentServerCombinedLog.Length} chars.");
+                        silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                        cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
+                    }
+                    
+                    // Update SessionState immediately for SSH logs to ensure they appear
+                    SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+                    SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+                    lastSessionStateUpdateTime = DateTime.Now;
+                    
+                    // Notify of log update
+                    EditorApplication.delayCall += () => onModuleLogUpdated?.Invoke();
+                }
+                else if (debugMode)
+                {
+                    UnityEngine.Debug.Log("[ServerLogProcess] No new SSH module log lines found");
+                }
+            }
+            else if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerLogProcess] SSH module logs - No output received");
+            }
+            
+            if (!string.IsNullOrEmpty(error))
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH module log read error: {error}");
+                
+                // If service doesn't exist, provide helpful message
+                if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
+                }
+            }
         }
         catch (Exception ex)
         {
-            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error cleaning up remote tail processes: {ex.Message}");
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading SSH module logs: {ex.Message}");
         }
     }
     
+    private async Task ReadSSHDatabaseLogsAsync()
+    {
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        {
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(moduleName))
+        {
+            return; // Can't read database logs without module name
+        }
+        
+        try
+        {
+            // Format timestamp for journalctl --since parameter (correct format)
+            string sinceTimestamp = lastDatabaseLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            // Read from the database log service (assuming it will be created by user's script)
+            string journalCommand = $"sudo journalctl -u {SpacetimeDatabaseLogServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading SSH database logs since: {sinceTimestamp}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Full Database SSH command: ssh -i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"");
+            
+            Process readProcess = new Process();
+            readProcess.StartInfo.FileName = "ssh";
+            readProcess.StartInfo.Arguments = $"-i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"";
+            readProcess.StartInfo.UseShellExecute = false;
+            readProcess.StartInfo.CreateNoWindow = true;
+            readProcess.StartInfo.RedirectStandardOutput = true;
+            readProcess.StartInfo.RedirectStandardError = true;
+            
+            readProcess.Start();
+            
+            string output = await readProcess.StandardOutput.ReadToEndAsync();
+            string error = await readProcess.StandardError.ReadToEndAsync();
+            
+            readProcess.WaitForExit(5000);
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH database logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            
+            if (!string.IsNullOrEmpty(output))
+            {
+                var lines = output.Split('\n');
+                bool hasNewLogs = false;
+                int lineCount = 0;
+                  foreach (string line in lines)
+                {
+                    if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
+                    {
+                        string formattedLine = FormatDatabaseLogLine(line.Trim());
+                        databaseLogQueue.Enqueue(formattedLine);
+                        hasNewLogs = true;
+                        lineCount++;
+                    }
+                }
+                
+                if (hasNewLogs)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH database log lines");
+                    
+                    // Update timestamp for next read
+                    lastDatabaseLogTimestamp = DateTime.UtcNow;
+                    
+                    // Notify of log update
+                    EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
+                }
+                else if (debugMode)
+                {
+                    UnityEngine.Debug.Log("[ServerLogProcess] No new SSH database log lines found");
+                }
+            }
+            else if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerLogProcess] SSH database logs - No output received");
+            }
+            
+            if (!string.IsNullOrEmpty(error))
+            {
+                // If service doesn't exist yet, that's expected until user creates it
+                if (error.Contains("Unit " + SpacetimeDatabaseLogServiceName + " could not be found"))
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log service not found yet - this is expected until the service is created");
+                }
+                else if (debugMode)
+                {
+                    UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH database log read error: {error}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading SSH database logs: {ex.Message}");
+        }
+    }    
+    
+    public void CheckSSHLogProcesses(double currentTime)
+    {
+        if (currentTime - lastLogReadTime > logReadInterval)
+        {
+            lastLogReadTime = currentTime;
+            hasScheduledNextCheck = false; // Reset the scheduling flag
+            
+            if (serverRunning && isCustomServer)
+            {
+                EditorApplication.delayCall += async () =>
+                {
+                    try
+                    {
+                        await ReadSSHModuleLogsAsync();
+                        await ReadSSHDatabaseLogsAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in CheckSSHLogProcesses: {ex.Message}");
+                    }
+                };
+            }
+            
+            // Schedule the next check based on logReadInterval
+            ScheduleNextSSHLogCheck();
+        }
+    }
+    
+    private void ScheduleNextSSHLogCheck()
+    {
+        if (!hasScheduledNextCheck && serverRunning && isCustomServer)
+        {
+            hasScheduledNextCheck = true;
+            
+            // Schedule the next check after logReadInterval seconds
+            EditorApplication.delayCall += () =>
+            {
+                System.Threading.Tasks.Task.Delay((int)(logReadInterval * 1000)).ContinueWith(_ =>
+                {
+                    if (serverRunning && isCustomServer)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
+                        };
+                    }
+                });
+            };
+        }
+    }    
+    
+    public void StopSSHLogging()
+    {
+        if (debugMode) logCallback("Stopping SSH periodic log reading", 0);
+        
+        // Reset timestamps to 1 hour ago to avoid massive log dumps on restart
+        lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
+        lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
+        lastLogReadTime = 0;
+        hasScheduledNextCheck = false; // Reset scheduling flag to stop the chain
+        
+        SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+        
+        if (debugMode) logCallback("SSH log reading stopped", 0);
+    }
     #endregion
     
     public ServerLogProcess(
@@ -941,6 +582,33 @@ public class ServerLogProcess
         // Notify callbacks that logs have been updated
         onModuleLogUpdated?.Invoke();
         onDatabaseLogUpdated?.Invoke();
+    }
+    
+    // Force SSH log refresh - triggers new journalctl commands immediately
+    public async void ForceSSHLogRefresh()
+    {
+        if (debugMode) logCallback("Force refreshing SSH logs via journalctl...", 1);
+        
+        if (isCustomServer && serverRunning)
+        {
+            try
+            {
+                // Force immediate SSH log read
+                await ReadSSHModuleLogsAsync();
+                await ReadSSHDatabaseLogsAsync();
+                
+                if (debugMode) logCallback("SSH log force refresh completed", 1);
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in ForceSSHLogRefresh: {ex.Message}");
+                logCallback($"SSH log refresh failed: {ex.Message}", -1);
+            }
+        }
+        else
+        {
+            if (debugMode) logCallback("SSH log refresh skipped - not a custom server or server not running", 0);
+        }
     }
     
     #region Log Methods
@@ -1498,16 +1166,16 @@ public class ServerLogProcess
     {
         logCallback("Editor quitting. Stopping tail process...", 0);
         if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] StopTailProcessExplicitly called.");
-        StopTailingLogs();
-    }
+        StopTailingLogs();    }
     
     // Helper method to update SessionState less frequently
     private void UpdateSessionStateIfNeeded()
     {
-        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
+        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;
+        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
         {
             SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-            SessionState.SetString(SessionKeyCachedModuleLog, silentServerCombinedLog); // Keep cached version in sync
+            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent); // Fix: Use correct cached content
             SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
             SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
             lastSessionStateUpdateTime = DateTime.Now;
@@ -1781,9 +1449,76 @@ public class ServerLogProcess
         if (!string.IsNullOrEmpty(jsonParsedResult))
         {
             return jsonParsedResult;
+        }        
+        
+        // Check if this is a journalctl format line (SSH logs)
+        // Format 1: "May 29 20:16:31 LoreMagic spacetime[51367]: 2025-05-29T20:16:31.212054Z  INFO: src/lib.rs:140: Player 4 reconnected."
+        // Format 2: "2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[74350]: 2025-05-29T20:16:31.212054Z  INFO: src/lib.rs:140: Player 4 reconnected."
+        var journalMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\w+\s+spacetime\[\d+\]:\s*(.*)$");
+        var journalIsoMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+\d{2}:\d{2})\s+\w+\s+spacetime\[\d+\]:\s*(.*)$");
+        
+        if (journalMatch.Success || journalIsoMatch.Success)
+        {
+            // Extract the actual log content after the journalctl prefix
+            string actualLogContent = journalMatch.Success ? journalMatch.Groups[2].Value.Trim() : journalIsoMatch.Groups[2].Value.Trim();
+            
+            // Now look for SpacetimeDB timestamp in the actual content
+            var timestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+            
+            if (timestampMatch.Success)
+            {
+                // Extract the timestamp
+                string originalTimestamp = timestampMatch.Groups[1].Value;
+                
+                // Try to parse it as DateTimeOffset
+                if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
+                {
+                    // Format it as [YYYY-MM-DD HH:MM:SS]
+                    string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                    
+                    // Remove the original timestamp from the content and clean up any extra spaces
+                    string result = actualLogContent.Replace(originalTimestamp, "").Trim();
+                    
+                    // Add error indicator if needed
+                    string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
+                    
+                    // Return formatted output with timestamp at the start
+                    return $"{formattedTimestamp}{errorPrefix} {result}";
+                }
+            }
+            
+            // If no timestamp found in the actual content, use the journalctl timestamp if available
+            if (journalMatch.Success)
+            {
+                string journalTimestamp = journalMatch.Groups[1].Value;
+                // Try to parse journalctl timestamp (format: "May 29 20:16:31")
+                if (DateTime.TryParseExact($"{DateTime.Now.Year} {journalTimestamp}", "yyyy MMM d HH:mm:ss", 
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime parsedJournalTime))
+                {
+                    string formattedTimestamp = $"[{parsedJournalTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                    string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
+                    return $"{formattedTimestamp}{errorPrefix} {actualLogContent}";
+                }
+            }
+            else if (journalIsoMatch.Success)
+            {
+                string journalIsoTimestamp = journalIsoMatch.Groups[1].Value;
+                // Try to parse ISO journalctl timestamp
+                if (DateTimeOffset.TryParse(journalIsoTimestamp, out DateTimeOffset parsedIsoTime))
+                {
+                    string formattedTimestamp = $"[{parsedIsoTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
+                    string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
+                    return $"{formattedTimestamp}{errorPrefix} {actualLogContent}";
+                }
+            }
+            
+            // Fallback for journalctl format
+            string fallbackJournalTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+            string errorJournalSuffix = isError ? " [DATABASE LOG ERROR]" : "";
+            return $"{fallbackJournalTimestamp}{errorJournalSuffix} {actualLogContent}";
         }
 
-        // Fall back to existing timestamp extraction logic
+        // Fall back to existing timestamp extraction logic for non-journalctl format
         var match = System.Text.RegularExpressions.Regex.Match(logLine, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
         
         if (match.Success)
@@ -1809,9 +1544,9 @@ public class ServerLogProcess
         }
         
         // If no timestamp found or parsing failed, use current time
-        string fallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-        string errorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
-        return $"{fallbackTimestamp}{errorSuffix} {logLine}";
+        string finalFallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+        string finalErrorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
+        return $"{finalFallbackTimestamp}{finalErrorSuffix} {logLine}";
     }
 
     private string TryParseJsonDatabaseLog(string jsonLogEntry, bool isError = false)
@@ -2103,7 +1838,7 @@ public class ServerLogProcess
             return false;
         }
     }
-} // Class
+  } // Class
 } // Namespace
 
 // made by Mathias Toivonen at Northern Rogue Games

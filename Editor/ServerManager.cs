@@ -358,6 +358,15 @@ public class ServerManager
         }
     }
     
+    // Force SSH log refresh - triggers new journalctl commands for custom server
+    public void ForceSSHLogRefresh()
+    {
+        if (logProcessor != null && serverMode == ServerMode.CustomServer)
+        {
+            logProcessor.ForceSSHLogRefresh();
+        }
+    }
+    
     public void SetHasDebian(bool value) { hasDebian = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", value); }
     public void SetHasDebianTrixie(bool value) { hasDebianTrixie = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", value); }
     public void SetHasCurl(bool value) { hasCurl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", value); }
@@ -1429,43 +1438,16 @@ public class ServerManager
     public void AttemptTailRestartAfterReload()
     {
         if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting tail restart.");
-        
-        // Handle different server modes
-        if (serverMode == ServerMode.CustomServer)
+          // Handle different server modes
+
+        // Original code for WSL mode - still uses persistent processes that need restarting
+        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
         {
-            // For custom server, use SSH tail restart
-            if (IsServerStarted && SilentMode)
-            {
-                // Extract hostname from CustomServerUrl
-                string sshHost = ExtractHostname(CustomServerUrl);
-                
-                // Configure SSH details for the log processor
-                logProcessor.ConfigureSSH(
-                    SSHUserName,
-                    sshHost,
-                    SSHPrivateKeyPath,
-                    true // isCustomServer = true
-                );
-                
-                logProcessor.AttemptSSHTailRestartAfterReload();
-                if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Attempted SSH tail restart for custom server");
-            }
-            else
-            {
-                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart SSH tail process - custom server not running or not in silent mode");
-            }
+            logProcessor.AttemptTailRestartAfterReload();
         }
         else
         {
-            // Original code for WSL mode
-            if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
-            {
-                logProcessor.AttemptTailRestartAfterReload();
-            }
-            else
-            {
-                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart tail process - server not running or not in silent mode");
-            }
+            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart tail process - server not running or not in silent mode");
         }
     }
 
@@ -1480,38 +1462,15 @@ public class ServerManager
     public void AttemptDatabaseLogRestartAfterReload()
     {
         if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Checking database log process");
-        
-        if (serverMode == ServerMode.CustomServer)
+
+        // Original code for WSL mode - still uses persistent processes that need restarting
+        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
         {
-            // For custom server, use SSH database log restart
-            if (IsServerStarted && SilentMode)
-            {
-                // Extract hostname from CustomServerUrl
-                string sshHost = ExtractHostname(CustomServerUrl);
-                
-                // Configure SSH details for the log processor
-                logProcessor.ConfigureSSH(
-                    SSHUserName,
-                    sshHost,
-                    SSHPrivateKeyPath,
-                    true // isCustomServer = true
-                );
-                
-                logProcessor.AttemptSSHDatabaseLogRestartAfterReload();
-                if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Attempted SSH database log restart for custom server");
-            }
+            logProcessor.AttemptDatabaseLogRestartAfterReload();
         }
         else
         {
-            // Original code for WSL mode
-            if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
-            {
-                logProcessor.AttemptDatabaseLogRestartAfterReload();
-            }
-            else
-            {
-                if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart database log process - server not running or not in silent mode");
-            }
+            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart database log process - server not running or not in silent mode");
         }
     }
 

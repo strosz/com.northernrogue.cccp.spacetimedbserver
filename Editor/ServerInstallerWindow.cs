@@ -69,6 +69,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasCustomSpacetimeDBPath = false;
     private bool hasCustomRust = false;
     private bool hasCustomSpacetimeDBService = false;
+    private bool hasCustomSpacetimeDBLogsService = false;
 
     private bool isConnectedSSH = false;
     
@@ -155,6 +156,7 @@ public class ServerInstallerWindow : EditorWindow
         hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
         hasCustomRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomRust", false);
         hasCustomSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", false);
+        hasCustomSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false);
 
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
@@ -347,10 +349,12 @@ public class ServerInstallerWindow : EditorWindow
             {
                 title = "Install SpacetimeDB Service",
                 description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
-                              "Creates a systemd service file to run SpacetimeDB in the background",
+                              "Creates a systemd service file to run SpacetimeDB in the background\n" +
+                              "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasCustomSpacetimeDBService,
                 isEnabled = customProcess.IsSessionActive() && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomSpacetimeDBService
+                installAction = InstallCustomSpacetimeDBService,
+                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") // Load from prefs or use default
             },
             new InstallerItem
             {
@@ -869,6 +873,25 @@ public class ServerInstallerWindow : EditorWindow
             EditorGUILayout.Space(2);
         }
         
+        // Add module name field for SpacetimeDB Service installer
+        if (item.title == "Install SpacetimeDB Service" && !string.IsNullOrEmpty(item.expectedModuleName))
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Module Name:", GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
+            EditorGUI.BeginDisabledGroup(true);
+            string newModuleName = EditorGUILayout.TextField(item.expectedModuleName, GUILayout.Width(150));
+            if (EditorGUI.EndChangeCheck() && newModuleName != item.expectedModuleName)
+            {
+                item.expectedModuleName = newModuleName;
+                // Save to EditorPrefs for persistence
+                EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", item.expectedModuleName);
+            }
+            EditorGUI.EndDisabledGroup();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(2);
+        }
+        
         // If disabled, add a note about prerequisites
         if (isDisabled && !userNamePrompt)
         {
@@ -967,6 +990,7 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomSpacetimeDBServer = false;
             hasCustomSpacetimeDBPath = false;
             hasCustomSpacetimeDBService = false;
+            hasCustomSpacetimeDBLogsService = false;
             hasCustomRust = false;
             
             // Update UI
@@ -987,6 +1011,8 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomCurl = false;
             hasCustomSpacetimeDBServer = false;
             hasCustomSpacetimeDBPath = false;
+            hasCustomSpacetimeDBService = false;
+            hasCustomSpacetimeDBLogsService = false;
             hasCustomRust = false;
             
             UpdateInstallerItemsStatus();
@@ -1036,6 +1062,12 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Checking SpacetimeDB Service status...", Color.yellow);
         var serviceResult = await customProcess.RunCustomCommandAsync("systemctl is-enabled spacetimedb.service 2>/dev/null || echo 'not-found'");
         hasCustomSpacetimeDBService = serviceResult.success && serviceResult.output.Trim() == "enabled";
+        await Task.Delay(100);
+
+        // Check if SpacetimeDB Database Logs service exists (it may not be enabled until a module is deployed)
+        SetStatus("Checking SpacetimeDB Database Logs Service status...", Color.yellow);
+        var logsServiceResult = await customProcess.RunCustomCommandAsync("systemctl status spacetimedb-logs.service 2>/dev/null | head -n 1");
+        hasCustomSpacetimeDBLogsService = logsServiceResult.success && logsServiceResult.output.Contains("spacetimedb-logs.service");
         
         // Save installation status to EditorPrefs
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianUser", hasCustomDebianUser);
@@ -1045,6 +1077,7 @@ public class ServerInstallerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", hasCustomSpacetimeDBService);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", hasCustomSpacetimeDBLogsService);
         
         // Update SpacetimeDB version for custom installation
         await customProcess.CheckSpacetimeDBVersionCustom();
@@ -2107,6 +2140,23 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Please enter a SSH username first.", Color.red);
             return;
         }
+                
+        // Get the expected module name from the installer item
+        string expectedModuleName = "";
+        foreach (var item in customInstallerItems)
+        {
+            if (item.title == "Install SpacetimeDB Service")
+            {
+                expectedModuleName = item.expectedModuleName;
+                break;
+            }
+        }
+        
+        if (string.IsNullOrEmpty(expectedModuleName))
+        {
+            SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
+            return;
+        }
 
         CheckCustomInstallationStatus();
         await Task.Delay(1000);
@@ -2159,7 +2209,40 @@ public class ServerInstallerWindow : EditorWindow
             "# Check service status\n" +
             "echo \"Checking service status...\"\n" +
             "sudo systemctl status spacetimedb.service\n\n" +
-            "echo \"===== Done! =====\"\n";
+            
+            "# Create the database logs service file\n" +
+            "echo \"Creating SpacetimeDB database logs service...\"\n" +
+            "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
+            "[Unit]\n" +
+            "Description=SpacetimeDB Database Logs\n" +
+            "After=spacetimedb.service\n" +
+            "Requires=spacetimedb.service\n\n" +
+            "[Service]\n" +
+            $"User={sshUserName}\n" +
+            $"Environment=HOME=/home/{sshUserName}\n" +
+            "Type=simple\n" +
+            "Restart=always\n" +
+            "RestartSec=5\n" +
+            $"ExecStart=/home/{sshUserName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
+            $"WorkingDirectory=/home/{sshUserName}\n\n" +
+            "[Install]\n" +
+            "WantedBy=multi-user.target\n" +
+            "EOF\n\n" +
+            
+            "# Reload systemd to recognize the new service\n" +
+            "sudo systemctl daemon-reload\n\n" +
+            
+            "# Enable and start the database logs service\n" +
+            "echo \"Enabling SpacetimeDB database logs service...\"\n" +
+            "sudo systemctl enable spacetimedb-logs.service\n" +
+            "sudo systemctl start spacetimedb-logs.service\n\n" +
+            
+            "# Check database logs service status\n" +
+            "echo \"Checking SpacetimeDB database logs service status...\"\n" +
+            "sudo systemctl status spacetimedb-logs.service\n\n" +
+
+            "echo \"===== Done! =====\"\n" +
+            $"echo \"Database logs service configured for module: {expectedModuleName}\"";
         
         // Use the RunVisibleSSHCommand method which won't block Unity's main thread
         SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
@@ -2175,7 +2258,8 @@ public class ServerInstallerWindow : EditorWindow
             
             if (hasCustomSpacetimeDBService)
             {
-                SetStatus("SpacetimeDB Service installed and started successfully on remote server.", Color.green);
+                string logsServiceStatus = hasCustomSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
+                SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
             }
             else
             {
@@ -2240,6 +2324,7 @@ public class ServerInstallerWindow : EditorWindow
         public Action installAction;
         public bool hasUsernameField = false; // Whether to show a username input field
         public string usernameLabel = "Debian Username:"; // Default label for the username field
+        public string expectedModuleName = ""; // Expected module name for database logs service
     }
     #endregion
 } // Class

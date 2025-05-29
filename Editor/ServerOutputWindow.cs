@@ -11,7 +11,9 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerOutputWindow : EditorWindow
 {
-    public static bool debugMode = false; // Controlled by ServerWindow    // Add EditorPrefs keys
+    public static bool debugMode = false; // Controlled by ServerWindow    
+
+    // Add EditorPrefs keys
     private const string PrefsKeyPrefix = "CCCP_";
     private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
     private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
@@ -122,7 +124,8 @@ public class ServerOutputWindow : EditorWindow
         
         // Subscribe to update
         EditorApplication.update += CheckForLogUpdates;
-          // Load settings from EditorPrefs
+        
+        // Load settings from EditorPrefs
         autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
         echoToConsoleModule = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
         showLocalTime = EditorPrefs.GetBool(PrefsKeyShowLocalTime, false);
@@ -131,8 +134,10 @@ public class ServerOutputWindow : EditorWindow
         if (debugMode)
         {
             TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
-            Debug.Log($"[ServerOutputWindow] OnEnable - Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");        }
-          // Load the log data
+            Debug.Log($"[ServerOutputWindow] OnEnable - Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");
+        }
+
+        // Load the log data
         ReloadLogs();
         
         isWindowEnabled = true;
@@ -176,26 +181,11 @@ public class ServerOutputWindow : EditorWindow
     // Reload logs when the window gets focus
     private void OnFocus()
     {
-        // Simply reload logs when window gets focus - avoid aggressive SSH restart attempts
-        // Try to trigger the same mechanism that ServerReducerWindow uses
-        // Load settings from EditorPrefs like ServerReducerWindow does        LoadServerSettings();
-        
-        // Trigger SessionState refresh if ServerWindow exists
         TriggerSessionStateRefreshIfWindowExists();
         
         ReloadLogs();
         ForceRefreshLogs();
     }
-    
-    // Load server settings from EditorPrefs to potentially trigger SSH log refresh
-    private void LoadServerSettings()
-    {
-        // This mimics what ServerReducerWindow.LoadSettings() does
-        // Maybe accessing these EditorPrefs triggers some internal mechanism
-        string serverURL = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
-        string moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
-        string authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", "");
-        string serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");    }
     
     // Static method to trigger SessionState refresh if ServerWindow already exists
     public static void TriggerSessionStateRefreshIfWindowExists()
@@ -227,46 +217,6 @@ public class ServerOutputWindow : EditorWindow
             {
                 UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to trigger SessionState refresh: {ex.Message}");
             }
-        }
-    }
-    
-    // Simple method to trigger refresh by adding minimal content to SessionState
-    private void TriggerSessionStateUpdate()
-    {
-        try
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Adding minimal trigger to SessionState");
-            
-            // Get current SessionState content
-            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
-            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
-            
-            // If both are empty, add a minimal trigger
-            if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
-            {
-                // Add a minimal marker that will be replaced by real content
-                string triggerContent = "[LOG REFRESH TRIGGER]\n";
-                SessionState.SetString(SessionKeyCombinedLog, triggerContent);
-                
-                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Added trigger content to SessionState");
-                
-                // Force immediate refresh
-                EditorApplication.delayCall += () => {
-                    // Try to get the real content again
-                    TriggerSessionStateRefreshIfWindowExists();
-                    
-                    EditorApplication.delayCall += () => {
-                        ReloadLogs();
-                        Repaint();
-                        
-                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerSessionStateUpdate: Refresh cycle completed");
-                    };
-                };
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] TriggerSessionStateUpdate failed: {ex.Message}");
         }
     }
     
@@ -375,16 +325,10 @@ public class ServerOutputWindow : EditorWindow
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: Starting aggressive refresh sequence.");
         
-        // Step 1: Try to force SessionState refresh from the ServerWindow
+        // Try to force SessionState refresh from the ServerWindow
         TriggerSessionStateRefreshIfWindowExists();
         
-        // Step 2: Simulate new log arrival to trigger the same mechanism that works during normal operation
-        SimulateLogArrival();
-        
-        // Step 3: Try the simple SessionState trigger method
-        TriggerSessionStateUpdate();
-        
-        // Step 4: Multiple attempts with delays to ensure SessionState is properly refreshed
+        // Multiple attempts with delays to ensure SessionState is properly refreshed
         for (int attempt = 0; attempt < 3; attempt++)
         {
             EditorApplication.delayCall += () => {
@@ -418,7 +362,6 @@ public class ServerOutputWindow : EditorWindow
                 }
                 
                 // Always reload and repaint after each attempt
-                LoadServerSettings();
                 ReloadLogs();
                 needsRepaint = true;
                 if (autoScroll) scrollToBottom = true;
@@ -477,7 +420,6 @@ public class ServerOutputWindow : EditorWindow
         {
             if (window != null)
             {
-                window.LoadServerSettings();
                 window.ReloadLogs();
                 window.Repaint();
             }
@@ -594,11 +536,11 @@ public class ServerOutputWindow : EditorWindow
         // If both are empty, show default message
         if (string.IsNullOrEmpty(newOutputLog))
         {
-            newOutputLog = "(No Module Log Found. Start your server to view logs.)";
+            newOutputLog = "(No Module Log Found.)";
         }
-        
-        string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found. Start your server to view logs.)");
-        
+
+        string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found.)");
+
         // Only update and invalidate cache if log content changed
         if (newOutputLog != outputLogFull || newDatabaseLog != databaseLogFull)
         {
@@ -644,6 +586,21 @@ public class ServerOutputWindow : EditorWindow
         if (GUILayout.Button("Refresh", toolbarButtonStyle, GUILayout.Width(60)))
         {
             ForceRefreshAfterCompilation();
+              // For custom servers, also trigger SSH log refresh
+            try
+            {
+                var serverWindow = GetWindow<ServerWindow>();
+                if (serverWindow != null && serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.CustomServer)
+                {
+                    serverWindow.ForceSSHLogRefresh();
+                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered SSH log refresh for custom server");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to trigger SSH log refresh: {ex.Message}");
+            }
+            
             ReloadLogs();
             formattedLogCache.Clear(); // Clear all cached formatted logs
             needsRepaint = true;
@@ -937,7 +894,9 @@ public class ServerOutputWindow : EditorWindow
         }
         
         return logToShow;
-    }    // Efficiently format log content with caching
+    }    
+    
+    // Efficiently format log content with caching
     private string GetFormattedLogForDisplay()
     {
         // Get raw log text for current tab
@@ -1007,23 +966,26 @@ public class ServerOutputWindow : EditorWindow
             .Replace("⣷", "b");
 
         // Replace only the Unicode replacement character (�) with spaces
-        strippedLog = strippedLog.Replace('\uFFFD', ' ');
-          // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
-        strippedLog = Regex.Replace(strippedLog, 
-            @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
-            match => {
-                if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset dt)) {
-                    if (showLocalTime) {
-                        // Convert to local time using DateTimeOffset for proper timezone handling
-                        DateTimeOffset localTime = dt.ToLocalTime();
-                        return $"[{localTime.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
-                    } else {
-                        // Keep UTC time (original behavior)
-                        return $"[{dt.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+        strippedLog = strippedLog.Replace('\uFFFD', ' ');        // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
+        // Only format if the log doesn't already have a [YYYY-MM-DD HH:MM:SS] timestamp at the beginning
+        if (!Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        {
+            strippedLog = Regex.Replace(strippedLog, 
+                @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
+                match => {
+                    if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset dt)) {
+                        if (showLocalTime) {
+                            // Convert to local time using DateTimeOffset for proper timezone handling
+                            DateTimeOffset localTime = dt.ToLocalTime();
+                            return $"[{localTime.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+                        } else {
+                            // Keep UTC time (original behavior)
+                            return $"[{dt.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
+                        }
                     }
-                }
-                return match.Value;
-            });
+                    return match.Value;
+                });
+        }
           // Clean up double timestamps
         strippedLog = Regex.Replace(strippedLog, 
             @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
@@ -1032,12 +994,20 @@ public class ServerOutputWindow : EditorWindow
         // Clean up duplicate timestamps in the format "[date time] [date time]"
         strippedLog = Regex.Replace(strippedLog,
             @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
-            "$1");
-
+            "$1");        
+        
         // Handle journalctl output format - remove middle timestamp and service info
+        // Handle both old format: "[timestamp] May 29 20:16:31 LoreMagic spacetime[pid]: "
+        // And new format: "[timestamp] 2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[pid]: "
         strippedLog = Regex.Replace(strippedLog,
-            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ [A-Za-z]+ spacetime\[\d+\]: ",
+            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ )?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} )?[A-Za-z]+ spacetime\[\d+\]: ",
             "$1 ");
+
+        // Also handle cases where the log already has the correct [timestamp] format from ServerLogProcess
+        // but still has residual journalctl data
+        strippedLog = Regex.Replace(strippedLog,
+            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(\s*)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} [A-Za-z]+ spacetime\[\d+\]:\s*",
+            "$1$2");
         
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");
@@ -1312,99 +1282,7 @@ public class ServerOutputWindow : EditorWindow
             Debug.LogError($"Error saving log: {ex}");
         }
     }
-    #endregion    
-    
-    // Alternative method to force refresh by directly triggering log process refresh
-    private void SimulateLogArrival()
-    {
-        try
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SimulateLogArrival: Simulating new log arrival to trigger display");
-            
-            // First, try to force the ServerLogProcess to refresh its SessionState data
-            ForceLogProcessRefresh();
-            
-            // Then call the same method that gets called when new logs arrive
-            RefreshOpenWindow();
-            
-            // Also force the database log refresh
-            RefreshDatabaseLogs();
-            
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SimulateLogArrival: Simulation completed");
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] SimulateLogArrival failed: {ex.Message}");
-        }
-    }
-    
-    // Force the ServerLogProcess to refresh its SessionState data
-    private void ForceLogProcessRefresh()
-    {
-        try
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceLogProcessRefresh: Attempting to force log process to refresh SessionState");
-            
-            // Get the ServerWindow and access its log process
-            var existingWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
-            if (existingWindows != null && existingWindows.Length > 0)
-            {
-                var serverWindow = existingWindows[0];
-                if (serverWindow != null)
-                {
-                    // First try the existing method
-                    serverWindow.ForceRefreshLogsFromSessionState();
-                    
-                    // Try to access the log process directly through reflection if needed
-                    var logProcessField = serverWindow.GetType().GetField("logProcess", 
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    
-                    if (logProcessField != null)
-                    {
-                        var logProcess = logProcessField.GetValue(serverWindow);
-                        if (logProcess != null)
-                        {
-                            // Try to call ForceRefreshLogsFromSessionState on the log process
-                            var refreshMethod = logProcess.GetType().GetMethod("ForceRefreshLogsFromSessionState");
-                            if (refreshMethod != null)
-                            {
-                                refreshMethod.Invoke(logProcess, null);
-                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceLogProcessRefresh: Called ForceRefreshLogsFromSessionState on log process");
-                            }
-                            
-                            // Also try to trigger a log update by accessing the log content directly
-                            var moduleLogMethod = logProcess.GetType().GetMethod("GetModuleLogContent");
-                            var databaseLogMethod = logProcess.GetType().GetMethod("GetDatabaseLogContent");
-                            
-                            if (moduleLogMethod != null && databaseLogMethod != null)
-                            {
-                                string moduleLogContent = (string)moduleLogMethod.Invoke(logProcess, null);
-                                string databaseLogContent = (string)databaseLogMethod.Invoke(logProcess, null);
-                                
-                                // Force update SessionState with the actual log content
-                                if (!string.IsNullOrEmpty(moduleLogContent))
-                                {
-                                    SessionState.SetString(SessionKeyCombinedLog, moduleLogContent);
-                                    SessionState.SetString(SessionKeyCachedModuleLog, moduleLogContent);
-                                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] ForceLogProcessRefresh: Updated SessionState with {moduleLogContent.Length} chars of module log");
-                                }
-                                
-                                if (!string.IsNullOrEmpty(databaseLogContent))
-                                {
-                                    SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] ForceLogProcessRefresh: Updated SessionState with {databaseLogContent.Length} chars of database log");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] ForceLogProcessRefresh failed: {ex.Message}");
-        }
-    }
+    #endregion
 } // Class
 } // Namespace
 

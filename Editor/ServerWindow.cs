@@ -58,7 +58,7 @@ public class ServerWindow : EditorWindow
    
     // Server status
     private double lastCheckTime = 0;
-    private const double checkInterval = 5.0;
+    private const double checkInterval = 5.0; // Master interval for status checks
 
     // Server Settings
     public bool debugMode = false;
@@ -1989,6 +1989,20 @@ public class ServerWindow : EditorWindow
         if (serverManager != null)
         {
             serverManager.ForceRefreshLogsFromSessionState();
+        }
+    }
+
+    public ServerMode GetCurrentServerMode()
+    {
+        return serverMode;
+    }
+
+    public void ForceSSHLogRefresh()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Force triggering SSH log refresh");
+        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer)
+        {
+            serverManager.ForceSSHLogRefresh();
         }
     }
 
