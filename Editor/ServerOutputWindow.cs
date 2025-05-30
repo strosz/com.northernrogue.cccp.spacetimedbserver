@@ -51,15 +51,21 @@ public class ServerOutputWindow : EditorWindow
     private Vector2 contentSize = Vector2.zero; // Content size for virtualization
     private List<string> visibleLines = new List<string>(); // Only lines currently visible
     private double lastRepaintTime = 0; // For limiting repaints
-    private const double MIN_REPAINT_INTERVAL = 0.1; // Minimum time between repaints in seconds
-    private const int MAX_TEXT_LENGTH = 100000; // Maximum text length to show
-
-    // RefreshOpenWindow rate limiting
+    private const double MIN_REPAINT_INTERVAL = 1.0; // Minimum time between repaints in seconds
+    private const int MAX_TEXT_LENGTH = 100000; // Maximum text length to show    // RefreshOpenWindow rate limiting
     private static double lastRefreshTime = 0;
     private const double REFRESH_INTERVAL = 1.0; // How often it can echo to console, won't affect rate of logs in window
     
     // SSH log refresh optimization
     private const double SSH_REFRESH_INTERVAL = 1.0;
+    
+    // OnFocus rate limiting to prevent rapid SSH refresh triggers
+    private static double lastOnFocusTime = 0;
+    private const double ON_FOCUS_INTERVAL = 2.0; // Prevent rapid OnFocus refreshes
+    
+    // TriggerSessionStateRefreshIfWindowExists rate limiting
+    private static double lastTriggerSessionStateTime = 0;
+    private const double TRIGGER_SESSION_STATE_INTERVAL = 1.0; // Prevent rapid session state refreshes
     
     // Style-related fields
     private GUIStyle logStyle;
@@ -181,6 +187,19 @@ public class ServerOutputWindow : EditorWindow
     // Reload logs when the window gets focus
     private void OnFocus()
     {
+        double currentTime = EditorApplication.timeSinceStartup;
+        
+        // Rate limit OnFocus triggers to prevent rapid SSH refreshes
+        if (currentTime - lastOnFocusTime < ON_FOCUS_INTERVAL)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] OnFocus rate limited - only {currentTime - lastOnFocusTime:F1}s since last focus");
+            return;
+        }
+        
+        lastOnFocusTime = currentTime;
+        
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] OnFocus triggered - refreshing logs");
+        
         TriggerSessionStateRefreshIfWindowExists();
         
         ReloadLogs();
@@ -190,6 +209,17 @@ public class ServerOutputWindow : EditorWindow
     // Static method to trigger SessionState refresh if ServerWindow already exists
     public static void TriggerSessionStateRefreshIfWindowExists()
     {
+        double currentTime = EditorApplication.timeSinceStartup;
+        
+        // Rate limit to prevent rapid session state refreshes
+        if (currentTime - lastTriggerSessionStateTime < TRIGGER_SESSION_STATE_INTERVAL)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] TriggerSessionStateRefreshIfWindowExists rate limited - only {currentTime - lastTriggerSessionStateTime:F1}s since last trigger");
+            return;
+        }
+        
+        lastTriggerSessionStateTime = currentTime;
+        
         try
         {
             // Check if ServerWindow exists without creating it
@@ -245,16 +275,10 @@ public class ServerOutputWindow : EditorWindow
         }
 
         // To debug how often this is called, uncomment the line below
-        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
-          // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
+        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");        // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
         if (echoToConsoleModule)
         {
-            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
-            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
-            
-            // Use the longer log to ensure we don't miss any content
-            string logToEcho = cachedLog.Length > currentLog.Length ? cachedLog : currentLog;
-            
+            string logToEcho = SessionState.GetString(SessionKeyCombinedLog, "");
             EchoLogsToConsole(logToEcho, true);
         }
         
@@ -355,60 +379,12 @@ public class ServerOutputWindow : EditorWindow
                 string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
                 string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
                 
-                if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: Logs still empty, triggering fallback refresh method");
-                    TriggerFallbackLogRefresh();
-                }
-                
                 // Always reload and repaint after each attempt
                 ReloadLogs();
                 needsRepaint = true;
                 if (autoScroll) scrollToBottom = true;
                 Repaint();
             };
-        }
-    }
-    
-    // Fallback method to trigger log display refresh by simulating log activity
-    private void TriggerFallbackLogRefresh()
-    {
-        try
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerFallbackLogRefresh: Implementing fallback trigger method");
-            
-            // Get current SessionState logs
-            string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
-            string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
-            string databaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
-            
-            // If logs are still empty, try to force a minimal update to trigger the display system
-            if (string.IsNullOrEmpty(currentLog) && string.IsNullOrEmpty(cachedLog))
-            {
-                // Add a temporary trigger line and immediately remove it
-                string triggerLine = "\n"; // Just a newline to trigger the system
-                
-                // Temporarily add the trigger to SessionState
-                SessionState.SetString(SessionKeyCombinedLog, triggerLine);
-                
-                // Use delayCall to remove it immediately after
-                EditorApplication.delayCall += () => {
-                    SessionState.SetString(SessionKeyCombinedLog, "");
-                    
-                    // Force one more refresh cycle
-                    EditorApplication.delayCall += () => {
-                        TriggerSessionStateRefreshIfWindowExists();
-                        ReloadLogs();
-                        Repaint();
-                        
-                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] TriggerFallbackLogRefresh: Fallback trigger sequence completed");
-                    };
-                };
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] TriggerFallbackLogRefresh failed: {ex.Message}");
         }
     }
 
@@ -963,12 +939,18 @@ public class ServerOutputWindow : EditorWindow
             .Replace("⠶", "o")
             .Replace("⣀", ".")
             .Replace("⣾", "d")
-            .Replace("⣷", "b");
-
-        // Replace only the Unicode replacement character (�) with spaces
-        strippedLog = strippedLog.Replace('\uFFFD', ' ');        // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
+            .Replace("⣷", "b");        
+            
+        // Replace only the Unicode replacement character with spaces
+        strippedLog = strippedLog.Replace('\uFFFD', ' ');
+        
+        // Check if logs are already formatted (have [YYYY-MM-DD HH:MM:SS] timestamps)
+        // For SSH mode, logs are pre-formatted in ServerLogProcess, so skip redundant formatting
+        bool isAlreadyFormatted = Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]");
+        
+        // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
         // Only format if the log doesn't already have a [YYYY-MM-DD HH:MM:SS] timestamp at the beginning
-        if (!Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        if (!isAlreadyFormatted)
         {
             strippedLog = Regex.Replace(strippedLog, 
                 @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
@@ -986,28 +968,32 @@ public class ServerOutputWindow : EditorWindow
                     return match.Value;
                 });
         }
-          // Clean up double timestamps
-        strippedLog = Regex.Replace(strippedLog, 
-            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
-            "$1");
-            
-        // Clean up duplicate timestamps in the format "[date time] [date time]"
-        strippedLog = Regex.Replace(strippedLog,
-            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
-            "$1");        
         
-        // Handle journalctl output format - remove middle timestamp and service info
-        // Handle both old format: "[timestamp] May 29 20:16:31 LoreMagic spacetime[pid]: "
-        // And new format: "[timestamp] 2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[pid]: "
-        strippedLog = Regex.Replace(strippedLog,
-            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ )?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} )?[A-Za-z]+ spacetime\[\d+\]: ",
-            "$1 ");
+        // Clean up timestamps and journalctl artifacts only if needed
+        if (!isAlreadyFormatted) {
+            // Clean up double timestamps
+            strippedLog = Regex.Replace(strippedLog, 
+                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
+                "$1");
+                
+            // Clean up duplicate timestamps in the format "[date time] [date time]"
+            strippedLog = Regex.Replace(strippedLog,
+                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
+                "$1");        
+            
+            // Handle journalctl output format - remove middle timestamp and service info
+            // Handle both old format: "[timestamp] May 29 20:16:31 LoreMagic spacetime[pid]: "
+            // And new format: "[timestamp] 2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[pid]: "
+            strippedLog = Regex.Replace(strippedLog,
+                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ )?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} )?[A-Za-z]+ spacetime\[\d+\]: ",
+                "$1 ");
 
-        // Also handle cases where the log already has the correct [timestamp] format from ServerLogProcess
-        // but still has residual journalctl data
-        strippedLog = Regex.Replace(strippedLog,
-            @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(\s*)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} [A-Za-z]+ spacetime\[\d+\]:\s*",
-            "$1$2");
+            // Also handle cases where the log already has the correct [timestamp] format from ServerLogProcess
+            // but still has residual journalctl data
+            strippedLog = Regex.Replace(strippedLog,
+                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(\s*)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} [A-Za-z]+ spacetime\[\d+\]:\s*",
+                "$1$2");
+        }
         
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");

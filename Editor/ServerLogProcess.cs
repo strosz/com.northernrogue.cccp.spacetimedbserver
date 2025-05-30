@@ -273,6 +273,7 @@ public class ServerLogProcess
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
                 int lineCount = 0;
+                DateTime latestTimestamp = lastModuleLogTimestamp;
                   foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
@@ -283,6 +284,12 @@ public class ServerLogProcess
                         cachedModuleLogContent += formattedLine + "\n";
                         hasNewLogs = true;
                         lineCount++;
+                          // Extract and track the actual timestamp from this log line
+                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                        {
+                            latestTimestamp = logTimestamp;
+                        }
                     }
                 }
                 
@@ -290,8 +297,24 @@ public class ServerLogProcess
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH module log lines");
                     
-                    // Update timestamp for next read
-                    lastModuleLogTimestamp = DateTime.UtcNow;
+                    // Always advance the timestamp to prevent infinite loops
+                    DateTime timestampToUse;
+                    
+                    if (latestTimestamp > lastModuleLogTimestamp)
+                    {
+                        // Use the actual latest log timestamp if we successfully parsed one
+                        timestampToUse = latestTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    else
+                    {
+                        // Fallback: advance by at least 1 second from the last query time to prevent infinite loops
+                        timestampToUse = lastModuleLogTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    
+                    // Update the timestamp
+                    lastModuleLogTimestamp = timestampToUse;
                     
                     // Manage log size
                     const int maxLogLength = 75000;
@@ -311,9 +334,11 @@ public class ServerLogProcess
                     // Notify of log update
                     EditorApplication.delayCall += () => onModuleLogUpdated?.Invoke();
                 }
-                else if (debugMode)
+                else 
                 {
-                    UnityEngine.Debug.Log("[ServerLogProcess] No new SSH module log lines found");
+                    // Even if no new logs, advance timestamp slightly to prevent infinite queries
+                    lastModuleLogTimestamp = lastModuleLogTimestamp.AddSeconds(0.5);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH module log lines found, advancing timestamp slightly to: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
             else if (debugMode)
@@ -376,12 +401,12 @@ public class ServerLogProcess
             readProcess.WaitForExit(5000);
             
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH database logs - Output length: {output?.Length ?? 0}, Error: {error}");
-            
-            if (!string.IsNullOrEmpty(output))
+              if (!string.IsNullOrEmpty(output))
             {
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
                 int lineCount = 0;
+                DateTime latestTimestamp = lastDatabaseLogTimestamp;
                   foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
@@ -390,22 +415,45 @@ public class ServerLogProcess
                         databaseLogQueue.Enqueue(formattedLine);
                         hasNewLogs = true;
                         lineCount++;
+                          // Extract and track the actual timestamp from this log line
+                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                        {
+                            latestTimestamp = logTimestamp;
+                        }
                     }
                 }
-                
-                if (hasNewLogs)
+                  if (hasNewLogs)
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH database log lines");
                     
-                    // Update timestamp for next read
-                    lastDatabaseLogTimestamp = DateTime.UtcNow;
+                    // Always advance the timestamp to prevent infinite loops
+                    DateTime timestampToUse;
+                    
+                    if (latestTimestamp > lastDatabaseLogTimestamp)
+                    {
+                        // Use the actual latest log timestamp if we successfully parsed one
+                        timestampToUse = latestTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed database timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    else
+                    {
+                        // Fallback: advance by at least 1 second from the last query time to prevent infinite loops
+                        timestampToUse = lastDatabaseLogTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid database timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    
+                    // Update the timestamp
+                    lastDatabaseLogTimestamp = timestampToUse;
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
                 }
-                else if (debugMode)
+                else 
                 {
-                    UnityEngine.Debug.Log("[ServerLogProcess] No new SSH database log lines found");
+                    // Even if no new logs, advance timestamp slightly to prevent infinite queries
+                    lastDatabaseLogTimestamp = lastDatabaseLogTimestamp.AddSeconds(0.5);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH database log lines found, advancing timestamp slightly to: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
             else if (debugMode)
@@ -1077,22 +1125,6 @@ public class ServerLogProcess
             existingPrefixFound = true;
         }
 
-        // Clean messageContent of any ISO-style timestamps regardless of where they appear
-        // Handle pattern "2025-05-21T20:51:40.352732Z"
-        messageContent = System.Text.RegularExpressions.Regex.Replace(
-            messageContent,
-            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b",
-            "");
-            
-        // Handle pattern "2025-05-21T20:22:27.029473+00:00"
-        messageContent = System.Text.RegularExpressions.Regex.Replace(
-            messageContent,
-            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\+|-)\d{2}:\d{2}\b",
-            "");
-            
-        // Trim any resulting extra spaces
-        messageContent = messageContent.Trim();
-
         // If we still don't have a timestamp prefix, try to find one in the original line
         if (!existingPrefixFound)
         {
@@ -1151,6 +1183,23 @@ public class ServerLogProcess
                 }
             }
         }
+
+        // Clean messageContent of any remaining ISO-style timestamps regardless of where they appear
+        // This needs to happen AFTER we've extracted our timestamp prefix, to ensure we clean up SpacetimeDB timestamps in the content
+        // Handle pattern "2025-05-21T20:51:40.352732Z"
+        messageContent = System.Text.RegularExpressions.Regex.Replace(
+            messageContent,
+            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b",
+            "");
+            
+        // Handle pattern "2025-05-21T20:22:27.029473+00:00"
+        messageContent = System.Text.RegularExpressions.Regex.Replace(
+            messageContent,
+            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\+|-)\d{2}:\d{2}\b",
+            "");
+            
+        // Trim any resulting extra spaces
+        messageContent = messageContent.Trim();
 
         // If no timestamp could be determined, use current time as fallback
         if (string.IsNullOrEmpty(timestampPrefix))
@@ -1461,11 +1510,10 @@ public class ServerLogProcess
         {
             // Extract the actual log content after the journalctl prefix
             string actualLogContent = journalMatch.Success ? journalMatch.Groups[2].Value.Trim() : journalIsoMatch.Groups[2].Value.Trim();
-            
-            // Now look for SpacetimeDB timestamp in the actual content
+              // Now look for SpacetimeDB timestamp in the actual content
             var timestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
-            
-            if (timestampMatch.Success)
+            string timestampPrefix = "";
+              if (timestampMatch.Success)
             {
                 // Extract the timestamp
                 string originalTimestamp = timestampMatch.Groups[1].Value;
@@ -1473,18 +1521,22 @@ public class ServerLogProcess
                 // Try to parse it as DateTimeOffset
                 if (DateTimeOffset.TryParse(originalTimestamp, out DateTimeOffset dateTime))
                 {
-                    // Format it as [YYYY-MM-DD HH:MM:SS]
-                    string formattedTimestamp = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
-                    
-                    // Remove the original timestamp from the content and clean up any extra spaces
-                    string result = actualLogContent.Replace(originalTimestamp, "").Trim();
-                    
-                    // Add error indicator if needed
-                    string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
-                    
-                    // Return formatted output with timestamp at the start
-                    return $"{formattedTimestamp}{errorPrefix} {result}";
+                    timestampPrefix = $"[{dateTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
                 }
+            }
+            
+            // If we have a successfully parsed timestampPrefix, use it
+            if (!string.IsNullOrEmpty(timestampPrefix))
+            {
+                // Remove the ISO timestamp from the actual log content
+                string cleanedContent = actualLogContent;
+                if (timestampMatch.Success)
+                {
+                    cleanedContent = actualLogContent.Replace(timestampMatch.Groups[1].Value, "").Trim();
+                }
+                
+                string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
+                return $"{timestampPrefix}{errorPrefix} {cleanedContent}";
             }
             
             // If no timestamp found in the actual content, use the journalctl timestamp if available
@@ -1495,9 +1547,17 @@ public class ServerLogProcess
                 if (DateTime.TryParseExact($"{DateTime.Now.Year} {journalTimestamp}", "yyyy MMM d HH:mm:ss", 
                     System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime parsedJournalTime))
                 {
+                    // Remove any ISO timestamp from the actual content as fallback
+                    string cleanedContent = actualLogContent;
+                    var isoTimestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+                    if (isoTimestampMatch.Success)
+                    {
+                        cleanedContent = actualLogContent.Replace(isoTimestampMatch.Groups[1].Value, "").Trim();
+                    }
+                    
                     string formattedTimestamp = $"[{parsedJournalTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
                     string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
-                    return $"{formattedTimestamp}{errorPrefix} {actualLogContent}";
+                    return $"{formattedTimestamp}{errorPrefix} {cleanedContent}";
                 }
             }
             else if (journalIsoMatch.Success)
@@ -1506,16 +1566,32 @@ public class ServerLogProcess
                 // Try to parse ISO journalctl timestamp
                 if (DateTimeOffset.TryParse(journalIsoTimestamp, out DateTimeOffset parsedIsoTime))
                 {
+                    // Remove any ISO timestamp from the actual content as fallback
+                    string cleanedContent = actualLogContent;
+                    var isoTimestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+                    if (isoTimestampMatch.Success)
+                    {
+                        cleanedContent = actualLogContent.Replace(isoTimestampMatch.Groups[1].Value, "").Trim();
+                    }
+                    
                     string formattedTimestamp = $"[{parsedIsoTime.ToString("yyyy-MM-dd HH:mm:ss")}]";
                     string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
-                    return $"{formattedTimestamp}{errorPrefix} {actualLogContent}";
+                    return $"{formattedTimestamp}{errorPrefix} {cleanedContent}";
                 }
             }
             
             // Fallback for journalctl format
+            // Remove any ISO timestamp from the actual content as final fallback
+            string finalCleanedContent = actualLogContent;
+            var finalIsoTimestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
+            if (finalIsoTimestampMatch.Success)
+            {
+                finalCleanedContent = actualLogContent.Replace(finalIsoTimestampMatch.Groups[1].Value, "").Trim();
+            }
+            
             string fallbackJournalTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
             string errorJournalSuffix = isError ? " [DATABASE LOG ERROR]" : "";
-            return $"{fallbackJournalTimestamp}{errorJournalSuffix} {actualLogContent}";
+            return $"{fallbackJournalTimestamp}{errorJournalSuffix} {finalCleanedContent}";
         }
 
         // Fall back to existing timestamp extraction logic for non-journalctl format
@@ -1673,6 +1749,63 @@ public class ServerLogProcess
         }
     }
     #endregion
+
+    private DateTime ExtractTimestampFromJournalLine(string line)
+    {
+        try
+        {
+            // journalctl -o short-iso-precise format: "2024-01-15T10:30:45.123456+00:00 hostname servicename[pid]: message"
+            var match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})");
+            if (match.Success)
+            {
+                if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
+                {
+                    return parsed.UtcDateTime;
+                }
+            }
+            
+            // Fallback: Try parsing other common journalctl timestamp formats
+            // short-iso format: "2024-01-15T10:30:45+00:00"
+            match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})");
+            if (match.Success)
+            {
+                if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
+                {
+                    return parsed.UtcDateTime;
+                }
+            }
+            
+            // Additional fallback for different possible formats
+            // Look for any ISO 8601 timestamp in the line
+            match = System.Text.RegularExpressions.Regex.Match(line, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))");
+            if (match.Success)
+            {
+                if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
+                {
+                    return parsed.UtcDateTime;
+                }
+            }
+            
+            // Last resort: try to parse any timestamp-like pattern and assume it's recent
+            match = System.Text.RegularExpressions.Regex.Match(line, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})");
+            if (match.Success)
+            {
+                if (DateTime.TryParse(match.Groups[1].Value, out DateTime parsed))
+                {
+                    // Convert to UTC assuming it's in the system timezone
+                    return parsed.ToUniversalTime();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Failed to parse timestamp from line: {line.Substring(0, Math.Min(50, line.Length))}... Error: {ex.Message}");
+        }
+        
+        // If parsing fails, return DateTime.MinValue to indicate failure instead of current time
+        // This prevents the fallback from causing infinite repetition
+        return DateTime.MinValue;
+    }
 
     // Find spacetime binary path on the remote server
     private async Task<string> FindRemoteSpacetimePathAsync()
