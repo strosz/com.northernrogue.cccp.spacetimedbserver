@@ -406,20 +406,24 @@ public class ServerLogProcess
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
                 int lineCount = 0;
-                DateTime latestTimestamp = lastDatabaseLogTimestamp;
-                  foreach (string line in lines)
+                DateTime latestTimestamp = lastDatabaseLogTimestamp;                  
+                
+                foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
                         string formattedLine = FormatDatabaseLogLine(line.Trim());
-                        databaseLogQueue.Enqueue(formattedLine);
-                        hasNewLogs = true;
-                        lineCount++;
-                          // Extract and track the actual timestamp from this log line
-                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
-                        if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                        if (formattedLine != null) // Only process if line wasn't filtered out
                         {
-                            latestTimestamp = logTimestamp;
+                            databaseLogQueue.Enqueue(formattedLine);
+                            hasNewLogs = true;
+                            lineCount++;
+                              // Extract and track the actual timestamp from this log line
+                            DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                            if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                            {
+                                latestTimestamp = logTimestamp;
+                            }
                         }
                     }
                 }
@@ -1106,7 +1110,8 @@ public class ServerLogProcess
             if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] AttemptTailRestartAfterReload called but conditions not met (serverRunning={serverRunning}, tailProcessIsNull={tailProcess == null})");
         }
     }
-      // Helper method to format server log lines with consistent timestamps
+    
+    // Helper method to format server log lines with consistent timestamps
     private string FormatServerLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
@@ -1215,7 +1220,8 @@ public class ServerLogProcess
     {
         logCallback("Editor quitting. Stopping tail process...", 0);
         if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] StopTailProcessExplicitly called.");
-        StopTailingLogs();    }
+        StopTailingLogs();    
+    }
     
     // Helper method to update SessionState less frequently
     private void UpdateSessionStateIfNeeded()
@@ -1234,7 +1240,6 @@ public class ServerLogProcess
             databaseLogAccumulator.Clear();
         }
     }
-    
     #endregion
     
     #region DatabaseLog
@@ -1310,7 +1315,10 @@ public class ServerLogProcess
                 if (args.Data != null)
                 {
                     string line = FormatDatabaseLogLine(args.Data);
-                    databaseLogQueue.Enqueue(line);
+                    if (line != null) // Only enqueue if line wasn't filtered out
+                    {
+                        databaseLogQueue.Enqueue(line);
+                    }
                 }
             };
             
@@ -1414,14 +1422,6 @@ public class ServerLogProcess
                 SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
                 return;
             }
-            
-            // Add initial message to show logs are cleared
-            /*if (clearDatabaseLogAtStart)
-            {
-                string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-                databaseLogContent = $"{timestamp} [DATABASE LOG STARTED - PREVIOUS LOGS CLEARED]\n";
-                SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-            }*/
         }
         catch (Exception ex)
         {
@@ -1492,13 +1492,19 @@ public class ServerLogProcess
     {
         if (string.IsNullOrEmpty(logLine))
             return logLine;
-
-        // First try to parse as JSON (SpacetimeDB format)
-        string jsonParsedResult = TryParseJsonDatabaseLog(logLine, isError);
-        if (!string.IsNullOrEmpty(jsonParsedResult))
+        
+        // Filter out specific error messages when not in debug mode
+        if (!debugMode)
         {
-            return jsonParsedResult;
-        }        
+            // Check for the specific error messages to filter out
+            if (logLine.Contains("Error: error decoding response body") ||
+                logLine.Contains("Caused by:") ||
+                logLine.Contains("error reading a body from connection") ||
+                logLine.Contains("unexpected EOF during chunk size line"))
+            {
+                return null; // Return null to indicate this line should be skipped
+            }
+        }
         
         // Check if this is a journalctl format line (SSH logs)
         // Format 1: "May 29 20:16:31 LoreMagic spacetime[51367]: 2025-05-29T20:16:31.212054Z  INFO: src/lib.rs:140: Player 4 reconnected."
@@ -1623,49 +1629,6 @@ public class ServerLogProcess
         string finalFallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string finalErrorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{finalFallbackTimestamp}{finalErrorSuffix} {logLine}";
-    }
-
-    private string TryParseJsonDatabaseLog(string jsonLogEntry, bool isError = false)
-    {
-        if (string.IsNullOrEmpty(jsonLogEntry) || !jsonLogEntry.Trim().StartsWith("{"))
-            return null; // Not JSON
-
-        try
-        {
-            SpacetimeDbJsonLogEntry entry = JsonUtility.FromJson<SpacetimeDbJsonLogEntry>(jsonLogEntry);
-
-            if (entry == null || string.IsNullOrEmpty(entry.timestamp))
-            {
-                return null; // Not the expected JSON format
-            }
-
-            // Parse timestamp
-            DateTimeOffset dto = DateTimeOffset.Parse(entry.timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
-            string timestampStr = dto.ToString("yyyy-MM-dd HH:mm:ss");
-            
-            // Get log level
-            string levelStr = string.IsNullOrEmpty(entry.level) ? "INFO" : entry.level.ToUpper();
-            
-            // Get message
-            string messageStr = entry.fields?.message ?? jsonLogEntry;
-            
-            // Add target if available and in debug mode
-            if (debugMode && !string.IsNullOrEmpty(entry.target))
-            {
-                messageStr += $" (target: {entry.target})";
-            }
-
-            // Add error indicator if needed
-            string errorPrefix = isError ? " [DATABASE LOG ERROR]" : "";
-            
-            return $"[{timestampStr}]{errorPrefix} [{levelStr}] {messageStr}";
-        }
-        catch (Exception ex)
-        {
-            // JSON parsing failed - this is expected for non-JSON logs
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Failed to parse JSON DB log (this is normal for non-JSON logs): {ex.Message}");
-            return null; // Let the caller fall back to non-JSON parsing
-        }
     }
     #endregion
 

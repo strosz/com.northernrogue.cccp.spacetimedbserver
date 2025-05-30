@@ -97,6 +97,12 @@ public class ServerWindow : EditorWindow
     private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
     
+    // Window toggle states
+    private bool viewLogsWindowOpen = false;
+    private bool browseDbWindowOpen = false;
+    private bool runReducerWindowOpen = false;
+    private Color windowToggleColor = new Color(0.6f, 1.6f, 0.6f);
+    
     // Session state key for domain reload
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
     private const string PrefsKeyPrefix = "CCCP_";
@@ -432,10 +438,13 @@ public class ServerWindow : EditorWindow
 
         maincloudAuthToken = serverManager.MaincloudAuthToken;
     }
-   
+
     private async void EditorUpdateHandler()
     {
         if (serverManager == null) return;
+        
+        // Update window states every frame for responsive toggle buttons
+        UpdateWindowStates();
         
         // Throttle how often we check things to not overload the main thread
         double currentTime = EditorApplication.timeSinceStartup;
@@ -1453,13 +1462,28 @@ public class ServerWindow : EditorWindow
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUILayout.Label(logIcon, GUILayout.Width(20), GUILayout.Height(20));
-        GUILayout.FlexibleSpace();
+        GUILayout.FlexibleSpace();       
         GUILayout.EndHorizontal();
         
+        // Set button color based on window state
+        Color originalColor = GUI.backgroundColor;
+        if (viewLogsWindowOpen)
+            GUI.backgroundColor = windowToggleColor; // Light green tint when active
+
         if (GUILayout.Button(logContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
-            serverManager.ViewServerLogs();
+            if (viewLogsWindowOpen)
+            {
+                CloseWindow<ServerOutputWindow>();
+            }
+            else
+            {
+                serverManager.ViewServerLogs();
+            }
         }
+        
+        // Restore original color
+        GUI.backgroundColor = originalColor;
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
                
@@ -1472,13 +1496,28 @@ public class ServerWindow : EditorWindow
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUILayout.Label(dbIcon, GUILayout.Width(20), GUILayout.Height(20));
-        GUILayout.FlexibleSpace();
+        GUILayout.FlexibleSpace();        
         GUILayout.EndHorizontal();
+        
+        // Set button color based on window state
+        Color originalColor2 = GUI.backgroundColor;
+        if (browseDbWindowOpen)
+            GUI.backgroundColor = windowToggleColor; // Light green tint when active
         
         if (GUILayout.Button(dbContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
-            ServerDataWindow.ShowWindow();
+            if (browseDbWindowOpen)
+            {
+                CloseWindow<ServerDataWindow>();
+            }
+            else
+            {
+                ServerDataWindow.ShowWindow();
+            }
         }
+        
+        // Restore original color
+        GUI.backgroundColor = originalColor2;
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
                 
@@ -1491,13 +1530,28 @@ public class ServerWindow : EditorWindow
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         GUILayout.Label(playIcon, GUILayout.Width(20), GUILayout.Height(20));
-        GUILayout.FlexibleSpace();
+        GUILayout.FlexibleSpace();        
         GUILayout.EndHorizontal();
         
+        // Set button color based on window state
+        Color originalColor3 = GUI.backgroundColor;
+        if (runReducerWindowOpen)
+            GUI.backgroundColor = windowToggleColor; // Light green tint when active
+
         if (GUILayout.Button(reducerContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
-            ServerReducerWindow.ShowWindow();
+            if (runReducerWindowOpen)
+            {
+                CloseWindow<ServerReducerWindow>();
+            }
+            else
+            {
+                ServerReducerWindow.ShowWindow();
+            }
         }
+        
+        // Restore original color
+        GUI.backgroundColor = originalColor3;
         EditorGUILayout.EndVertical();
         EditorGUI.EndDisabledGroup();
                
@@ -2324,6 +2378,32 @@ public class ServerWindow : EditorWindow
             
             // Update last position for next frame
             lastScrollPosition = scrollPosition;
+        }
+    }
+
+    // Helper methods to check if specific windows are open
+    private bool IsWindowOpen<T>() where T : EditorWindow
+    {
+        T[] windows = Resources.FindObjectsOfTypeAll<T>();
+        return windows != null && windows.Length > 0;
+    }
+    
+    private void UpdateWindowStates()
+    {
+        viewLogsWindowOpen = IsWindowOpen<ServerOutputWindow>();
+        browseDbWindowOpen = IsWindowOpen<ServerDataWindow>();
+        runReducerWindowOpen = IsWindowOpen<ServerReducerWindow>();
+    }
+    
+    private void CloseWindow<T>() where T : EditorWindow
+    {
+        T[] windows = Resources.FindObjectsOfTypeAll<T>();
+        if (windows != null && windows.Length > 0)
+        {
+            foreach (T window in windows)
+            {
+                window.Close();
+            }
         }
     }
     
