@@ -12,7 +12,7 @@ namespace NorthernRogue.CCCP.Editor {
 [InitializeOnLoad]
 public class ServerUpdateProcess
 {
-    public static bool debugMode = true; // Set in ServerWindow
+    public static bool debugMode = false; // Set in ServerWindow
 
     /////////////////////////////// Cosmos Github Update Checker ///////////////////////////////
     private const string CosmosGithubUpdateAvailablePrefKey = "CCCP_GithubUpdateAvailable";
