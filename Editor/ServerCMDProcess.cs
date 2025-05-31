@@ -334,16 +334,40 @@ public class ServerCMDProcess
         catch (Exception ex)
         {
             if (debugMode) logCallback($"Error attempting to start WSL: {ex.Message}", -1);
-        }
+        }    
     }
     #endregion
 
-    #region CheckPort
-    
-    public async Task<bool> CheckPortAsync(int port)
+    #region CheckServerProcess
+        
+    public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
     {
         if (isPortCheckRunning)
             return lastPortCheckResult;
+            
+        // If WSL is not running, don't attempt the check to avoid starting WSL
+        if (!isWslRunning)
+        {
+            if (debugMode) logCallback("WSL is not running, skipping process check to avoid starting WSL", 0);
+            lock (statusUpdateLock)
+            {
+                lastPortCheckResult = false;
+            }
+            return false;
+        }
+        
+        // Validate username before proceeding (must be done on main thread)
+        if (!ValidateUserName()) 
+        {
+            lock (statusUpdateLock)
+            {
+                lastPortCheckResult = false;
+            }
+            return false;
+        }
+        
+        // Capture username for use in background thread
+        string currentUserName = userName;
             
         isPortCheckRunning = true;
         
@@ -353,36 +377,36 @@ public class ServerCMDProcess
             {
                 using (Process process = new Process())
                 {
-                    process.StartInfo.FileName = "powershell.exe";
-                    process.StartInfo.Arguments = $"-Command \"Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count\"";
+                    process.StartInfo.FileName = "wsl";
+                    process.StartInfo.Arguments = $"-d Debian -u {currentUserName} -- ps aux | grep spacetimedb-standalone | grep -v grep";
                     process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
                     process.StartInfo.UseShellExecute = false;
                     process.StartInfo.CreateNoWindow = true;
 
                     process.Start();
                     string output = process.StandardOutput.ReadToEnd().Trim();
-                    process.WaitForExit(5000);
+                    string error = process.StandardError.ReadToEnd().Trim();
+                    process.WaitForExit(3000);
                     
                     if (!process.HasExited)
                     {
-                        UnityEngine.Debug.LogWarning($"[ServerCMDProcess] PowerShell command timed out for port {port}.");
+                        if (debugMode) UnityEngine.Debug.LogWarning("[ServerCMDProcess] WSL process check timed out.");
                         try { process.Kill(); } catch {}
                         return false;
                     }
 
-                    if (int.TryParse(output, out int count) && count > 0)
-                    {
-                        return true;
-                    }
+                    bool running = process.ExitCode == 0 && output.Contains("spacetimedb-standalone");
+                    if (debugMode) logCallback($"WSL Process Check: Server process running? {(running ? "Yes" : "No")}. Output: {output}", 0);
+                    
+                    return running;
                 }
-                return false;
             }
             catch (Exception ex)
             {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerCMDProcess] Error checking port {port}: {ex.Message}");
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerCMDProcess] Error checking WSL process: {ex.Message}");
                 return false;
-            }
-        });
+            }        });
         
         lock (statusUpdateLock)
         {

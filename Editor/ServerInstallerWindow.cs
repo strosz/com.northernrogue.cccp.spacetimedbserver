@@ -1442,10 +1442,16 @@ public class ServerInstallerWindow : EditorWindow
         
         if (success)
         {
-            SetStatus("SpacetimeDB Server installation started. This may take some time.", Color.green);
+            SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
 
+            await serverManager.CheckSpacetimeDBVersion(); // Extra check to ensure version is updated
+
+            await Task.Delay(2000);
+            
             CheckInstallationStatus();
+
             await Task.Delay(1000);
+            
             if (hasSpacetimeDBServer)
             {
                 SetStatus("SpacetimeDB Server installed successfully.", Color.green);
@@ -1947,10 +1953,12 @@ public class ServerInstallerWindow : EditorWindow
         if (success)
         {
             SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
+
+            await customProcess.CheckSpacetimeDBVersionCustom(); // Extra check to ensure version is updated
+
             await Task.Delay(2000);
             
             CheckCustomInstallationStatus();
-            showUpdateButton = false; // Hide update button after successful installation
 
             await Task.Delay(1000);
             

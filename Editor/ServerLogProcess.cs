@@ -63,6 +63,10 @@ public class ServerLogProcess
     private string moduleName = "";
     private string serverDirectory = "";
     
+    // Track when server was stopped to filter connection errors
+    private DateTime serverStoppedTime = DateTime.MinValue;
+    private const double serverStopGracePeriod = 10.0; // Ignore connection errors for 10 seconds after server stops
+    
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
 
@@ -592,6 +596,10 @@ public class ServerLogProcess
     public void SetServerRunningState(bool isRunning)
     {
         serverRunning = isRunning;
+        if (!isRunning)
+        {
+            serverStoppedTime = DateTime.Now;
+        }
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
     }
     
@@ -1491,18 +1499,32 @@ public class ServerLogProcess
     private string FormatDatabaseLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
-            return logLine;
-        
-        // Filter out specific error messages when not in debug mode
+            return logLine;        // Filter out specific error messages when not in debug mode
         if (!debugMode)
         {
             // Check for the specific error messages to filter out
             if (logLine.Contains("Error: error decoding response body") ||
                 logLine.Contains("Caused by:") ||
                 logLine.Contains("error reading a body from connection") ||
-                logLine.Contains("unexpected EOF during chunk size line"))
+                logLine.Contains("unexpected EOF during chunk size line") ||
+                logLine.Contains("error sending request for url") ||
+                logLine.Contains("Connection refused") ||
+                logLine.Contains("tcp connect error"))
             {
                 return null; // Return null to indicate this line should be skipped
+            }
+        }
+        
+        // Also filter connection errors that occur within grace period after server stops
+        if (serverStoppedTime != DateTime.MinValue && 
+            (DateTime.Now - serverStoppedTime).TotalSeconds <= serverStopGracePeriod)
+        {
+            if (logLine.Contains("error sending request for url") ||
+                logLine.Contains("Connection refused") ||
+                logLine.Contains("tcp connect error") ||
+                logLine.Contains("client error (Connect)"))
+            {
+                return null; // Filter out connection errors during grace period after server stop
             }
         }
         

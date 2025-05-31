@@ -38,13 +38,13 @@ public class ServerUpdateProcess : EditorWindow
     {
         EditorApplication.delayCall += () => {
             var instance = CreateInstance<ServerUpdateProcess>();
-            instance.CheckForNewCommit();
+            instance.CheckForGithubUpdate();
             instance.CheckForSpacetimeDBUpdate();
         };
     }
 
     #region Github Update
-    public bool CheckForNewCommit()
+    public bool CheckForGithubUpdate()
     {
         string storedSha = EditorPrefs.GetString("CCCP_LastCommitSha", "");
         if (!string.IsNullOrEmpty(storedSha))
@@ -128,7 +128,7 @@ public class ServerUpdateProcess : EditorWindow
     // Display the update available message once in the ServerWindow
     private void DisplayGithubUpdateAvailable()
     {
-        //window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
+        window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
         // The EditorPref is set to false in ProcessCommitResponse() when no new commit is found
         // So this LogMessage will only be displayed once
     }

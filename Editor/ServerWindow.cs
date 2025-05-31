@@ -512,6 +512,7 @@ public class ServerWindow : EditorWindow
     private void OnFocusChanged(bool focused)
     {
         windowFocused = focused;
+        SyncFieldsFromServerManager();
     }
     #endregion
     
@@ -845,7 +846,7 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 string urlTooltip = 
                 "Required for the Server Database Window. The full URL of your SpacetimeDB server including port number.\n" +
-                "Default: http://127.0.0.1:3000/\n" +
+                "Default: http://0.0.0.0:3000/\n" +
                 "Note: The port number is required.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
                 string newUrl = EditorGUILayout.DelayedTextField(serverUrl, GUILayout.Width(150));
@@ -1245,10 +1246,10 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.Space(5);
                 EditorGUILayout.BeginHorizontal();
                 string wslCloseTooltip = 
-                "Close WSL at Server Stop: The server will close the WSL process when it is stopped or Unity is closed. \n"+
+                "Close WSL at Unity Quit: The server will close the WSL process when Unity is closed. \n"+
                 "Saves resources when server is not in use. WSL may otherwise leave several processes running.\n\n"+
-                "Keep Running: The server will keep the WSL process running after it is stopped or Unity is closed.\n\n"+
-                "Recommended: Close WSL at Server Stop";
+                "Keep Running: The server will keep the WSL process running after Unity is closed.\n\n"+
+                "Recommended: Close WSL at Unity Quit";
                 EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
                 GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
                 if (serverManager.AutoCloseWsl)
@@ -1256,7 +1257,7 @@ public class ServerWindow : EditorWindow
                     wslCloseStyle.normal.textColor = warningColor;
                     wslCloseStyle.hover.textColor = warningColor;
                 }
-                if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Server Stop" : "Keep Running", wslCloseStyle))
+                if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
                 {
                     bool newAutoClose = !serverManager.AutoCloseWsl;
                     serverManager.SetAutoCloseWsl(newAutoClose);
@@ -1287,29 +1288,8 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
             }
-
-            // Command Output toggle button
-            EditorGUILayout.Space(5);
-            EditorGUILayout.BeginHorizontal();
-            string commandOutputTooltip = 
-            "Hiding Extra Warnings: Will hide extra SpacetimeDB warning messages in the command output. \n\n"+
-            "Showing All Messages: Will show all messages in the command output.\n\n"+
-            "Recommended: Hide Extra Warnings.";
-            EditorGUILayout.LabelField(new GUIContent("Command Output:", commandOutputTooltip), GUILayout.Width(120));
-            GUIStyle warningToggleStyle = new GUIStyle(GUI.skin.button);
-            if (serverManager.HideWarnings)
-            {
-                warningToggleStyle.normal.textColor = warningColor;
-                warningToggleStyle.hover.textColor = warningColor;
-            }
-            if (GUILayout.Button(serverManager.HideWarnings ? "Hiding Extra Warnings" : "Show All Messages", warningToggleStyle))
-            {
-                bool newHideWarnings = !serverManager.HideWarnings;
-                serverManager.SetHideWarnings(newHideWarnings);
-                hideWarnings = newHideWarnings; // Keep local field in sync
-            }
-            EditorGUILayout.EndHorizontal();
-
+            
+            // Clear Module and Database Log at Start toggle buttons
             if (serverManager.SilentMode && serverMode != ServerMode.MaincloudServer)
             {
                 // Module clear log at start toggle button in Silent Mode
@@ -1752,6 +1732,11 @@ public class ServerWindow : EditorWindow
                     serverManager.RestoreServerData();
                 }
                 EditorGUI.EndDisabledGroup();
+            }
+
+            if (GUILayout.Button("Shutdown WSL", GUILayout.Height(20)))
+            {
+                cmdProcessor.ShutdownWsl();
             }
         }
         

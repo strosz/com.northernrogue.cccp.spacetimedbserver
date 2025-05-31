@@ -669,12 +669,6 @@ public class ServerManager
             
             // Update log processor state
             logProcessor.SetServerRunningState(false);
-            
-            // WSL Shutdown Logic
-            if (AutoCloseWsl)
-            {
-                cmdProcessor.ShutdownWsl();
-            }
 
             RepaintCallback?.Invoke();
         }
@@ -777,7 +771,7 @@ public class ServerManager
                 }
                 else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckPortAsync(ServerPort);
+                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
                 }
 
                 // If running during startup phase, confirm immediately
@@ -864,8 +858,10 @@ public class ServerManager
                 }
                 else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckPortAsync(ServerPort);
-                }                // State Change Detection with Resilience:
+                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                }                
+                
+                // State Change Detection with Resilience:
                 if (serverConfirmedRunning != isActuallyRunning)
                 {
                     if (isActuallyRunning)
@@ -875,7 +871,7 @@ public class ServerManager
                         serverConfirmedRunning = true;
                         justStopped = false;
                         
-                        string msg = $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: open")})";
+                        string msg = $"Server running confirmed ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
                         LogMessage(msg, 1);
 
                         // Update logProcessor state
@@ -889,12 +885,12 @@ public class ServerManager
                         // Server appears to have stopped - increment failure counter
                         consecutiveFailedChecks++;
                         
-                        if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")}", 0);
+                        if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")}", 0);
                         
                         // Only mark as stopped after multiple consecutive failures
                         if (consecutiveFailedChecks >= maxConsecutiveFailuresBeforeStop)
                         {
-                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"WSL Server - Port {ServerPort}: closed")})";
+                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
                             LogMessage(msg, -2);
                             
                             // Update state
@@ -938,7 +934,7 @@ public class ServerManager
                 }
                 else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckPortAsync(ServerPort);
+                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
                 }
 
                 if (isActuallyRunning)
@@ -955,7 +951,7 @@ public class ServerManager
                         if (confirmed)
                         {                            
                             // Detected server running, probably it was already running when Unity started
-                            if (debugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : $"Port {ServerPort}" )})", 1);
+                            if (debugMode) LogMessage($"Detected SpacetimeDB running ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})", 1);
                             serverStarted = true;
                             serverConfirmedRunning = true;
                             isStartingUp = false;
@@ -994,7 +990,6 @@ public class ServerManager
             }
         }
     }
-
     #endregion
 
     #region Server Commands
