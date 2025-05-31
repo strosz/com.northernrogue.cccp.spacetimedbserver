@@ -29,7 +29,8 @@ public class ServerReducerWindow : EditorWindow
     // List of reducers from schema
     private List<ReducerInfo> reducers = new List<ReducerInfo>();
     private bool isRefreshing = false;
-    
+    private bool hasReducersWithParams = false;
+
     // UI
     private Vector2 scrollPosition;
     private string statusMessage = "Ready. Load settings via ServerWindow and Refresh.";
@@ -256,7 +257,6 @@ public class ServerReducerWindow : EditorWindow
         EditorGUILayout.LabelField("   Server Reducers", titleStyle);
 
         // Add helper message about parameters if we have reducers with parameters
-        bool hasReducersWithParams = false;
         foreach (var reducer in reducers)
         {
             if (reducer.GetParameters().Count > 0)
@@ -264,11 +264,11 @@ public class ServerReducerWindow : EditorWindow
                 hasReducersWithParams = true;
                 break;
             }
-        }
-        if (hasReducersWithParams)
-        {
-            EditorGUILayout.LabelField("Fill in parameter values before running a reducer.\n"+
-            "For complex parametres like Ref, enter values in the appropriate format.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+            else
+            {
+                hasReducersWithParams = false;
+                break;
+            }
         }
         
         // Begin the scrollview for the reducers
@@ -276,8 +276,14 @@ public class ServerReducerWindow : EditorWindow
         
         if (reducers.Count == 0)
         {
-            EditorGUILayout.HelpBox("Couldn't fetch reducers. Have you created any?\n" +
-            "Check that your server URL is correct, your module is published and the server is running.", MessageType.Info);
+            if (isRefreshing)
+            {
+                EditorGUILayout.LabelField("Refreshing...", EditorStyles.miniLabel);
+            }
+            else
+            {
+                EditorGUILayout.LabelField("Click 'Refresh' to load reducers from the server.", EditorStyles.miniLabel);
+            }
         }
         else
         {
@@ -299,7 +305,15 @@ public class ServerReducerWindow : EditorWindow
         // Header with name and lifecycle info
         EditorGUILayout.BeginHorizontal();
         string lifecycleInfo = reducer.IsLifecycleReducer() ? $" [{reducer.GetLifecycleType()}]" : "";
-        EditorGUILayout.LabelField($" {reducer.name}{lifecycleInfo}", reducerTitleStyle, GUILayout.ExpandWidth(true));
+        if (hasReducersWithParams)
+        {
+            GUIContent labelContent = new GUIContent($" {reducer.name}{lifecycleInfo}", "This reducer requires parameters. Fill them below before running.");
+            EditorGUILayout.LabelField(labelContent, reducerTitleStyle, GUILayout.ExpandWidth(true));
+        }
+        else
+        {
+            EditorGUILayout.LabelField($" {reducer.name}{lifecycleInfo}", reducerTitleStyle, GUILayout.ExpandWidth(true));
+        }
         
         EditorGUILayout.Space(2);
 

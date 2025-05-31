@@ -67,6 +67,11 @@ public class ServerLogProcess
     private DateTime serverStoppedTime = DateTime.MinValue;
     private const double serverStopGracePeriod = 10.0; // Ignore connection errors for 10 seconds after server stops
     
+    // Database log initial lines tracking (for clearing first 10 lines when clearDatabaseLogAtStart is enabled)
+    private bool waitingForInitialDatabaseLines = false;
+    private int initialDatabaseLinesReceived = 0;
+    private const int INITIAL_DATABASE_LINES_TO_REMOVE = 10;
+    
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
 
@@ -599,6 +604,9 @@ public class ServerLogProcess
         if (!isRunning)
         {
             serverStoppedTime = DateTime.Now;
+            // Reset initial lines tracking when server stops
+            waitingForInitialDatabaseLines = false;
+            initialDatabaseLinesReceived = 0;
         }
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
     }
@@ -1280,6 +1288,15 @@ public class ServerLogProcess
             if (clearDatabaseLogAtStart)
             {
                 ClearDatabaseLog();
+                // Initialize tracking for removing the first 10 lines (historical messages)
+                waitingForInitialDatabaseLines = true;
+                initialDatabaseLinesReceived = 0;
+            }
+            else
+            {
+                // Reset tracking if not clearing
+                waitingForInitialDatabaseLines = false;
+                initialDatabaseLinesReceived = 0;
             }
             
             // Create a new process to run the spacetime logs command
@@ -1355,7 +1372,7 @@ public class ServerLogProcess
                             
                             // Add a message to the log with current time formatted in the same way
                             string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-                            string stopMessage = $"\n{timestamp} [DATABASE LOG STOPPED]\n";
+                            string stopMessage = $"\n{timestamp} [DEBUG - DATABASE LOG STOPPED]\n";
                             
                             // Update both current and cached logs
                             databaseLogContent += stopMessage;
@@ -1460,6 +1477,10 @@ public class ServerLogProcess
             
             databaseLogProcess = null;
             SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+            
+            // Reset initial lines tracking when stopping
+            waitingForInitialDatabaseLines = false;
+            initialDatabaseLinesReceived = 0;
         }
     }
     
@@ -1708,6 +1729,42 @@ public class ServerLogProcess
                 if (!string.IsNullOrEmpty(cachedDatabaseLogContent) && !cachedDatabaseLogContent.EndsWith("\n"))
                     cachedDatabaseLogContent += "\n";
                 cachedDatabaseLogContent += newContent;
+
+                // Handle removal of initial lines if we're waiting for them
+                if (waitingForInitialDatabaseLines)
+                {
+                    // Count the lines in the new content
+                    string[] newLines = newContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    initialDatabaseLinesReceived += newLines.Length;
+                    
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Received {newLines.Length} database log lines, total: {initialDatabaseLinesReceived}");
+                    
+                    // If we've received at least the initial 10 lines, remove them
+                    if (initialDatabaseLinesReceived >= INITIAL_DATABASE_LINES_TO_REMOVE)
+                    {
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Removing first {INITIAL_DATABASE_LINES_TO_REMOVE} historical database log lines");
+                        
+                        // Split content into lines and remove the first 10
+                        string[] allLines = databaseLogContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (allLines.Length >= INITIAL_DATABASE_LINES_TO_REMOVE)
+                        {
+                            string[] remainingLines = new string[allLines.Length - INITIAL_DATABASE_LINES_TO_REMOVE];
+                            Array.Copy(allLines, INITIAL_DATABASE_LINES_TO_REMOVE, remainingLines, 0, remainingLines.Length);
+                            databaseLogContent = string.Join("\n", remainingLines);
+                            if (!string.IsNullOrEmpty(databaseLogContent))
+                                databaseLogContent += "\n";
+                                
+                            // Also update cached content
+                            cachedDatabaseLogContent = databaseLogContent;
+                        }
+                        
+                        // Stop tracking initial lines
+                        waitingForInitialDatabaseLines = false;
+                        initialDatabaseLinesReceived = 0;
+                        
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Finished removing initial database log lines, content length: {databaseLogContent.Length}");
+                    }
+                }
 
                 // Check if we need to truncate
                 if (databaseLogContent.Length > BUFFER_SIZE)

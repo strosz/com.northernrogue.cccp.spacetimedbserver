@@ -348,7 +348,7 @@ public class ServerCMDProcess
         // If WSL is not running, don't attempt the check to avoid starting WSL
         if (!isWslRunning)
         {
-            if (debugMode) logCallback("WSL is not running, skipping process check to avoid starting WSL", 0);
+            //if (debugMode) logCallback("WSL is not running, skipping process check to avoid starting WSL", 0);
             lock (statusUpdateLock)
             {
                 lastPortCheckResult = false;

@@ -231,7 +231,6 @@ public class ServerDataWindow : EditorWindow
         // }
     }
 
-    // --- GUI ---
     private void OnGUI()
     {
         // Initialize styles in OnGUI where GUI.skin is accessible
@@ -359,7 +358,7 @@ public class ServerDataWindow : EditorWindow
              GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
              if (isSelected)
              {
-                 buttonStyle.normal.textColor = Color.cyan;
+                 buttonStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
                  buttonStyle.fontStyle = FontStyle.Bold;
              }
 
