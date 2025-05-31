@@ -10,8 +10,10 @@ using UnityEditor.PackageManager.Requests;
 namespace NorthernRogue.CCCP.Editor {
 
 [InitializeOnLoad]
-public class ServerUpdateProcess : EditorWindow
+public class ServerUpdateProcess
 {
+    public static bool debugMode = true; // Set in ServerWindow
+
     /////////////////////////////// Cosmos Github Update Checker ///////////////////////////////
     private const string CosmosGithubUpdateAvailablePrefKey = "CCCP_GithubUpdateAvailable";
     private const string owner = "strosz";
@@ -23,7 +25,6 @@ public class ServerUpdateProcess : EditorWindow
     private static string latestCommitSha = "";
     private static AddRequest addRequest;
     private static ServerWindow window;
-    public static bool debugMode = false;
 
     /////////////////////// Cosmos Unity Version Update Checker ///////////////////////////
     //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";    /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////
@@ -33,32 +34,34 @@ public class ServerUpdateProcess : EditorWindow
     private const string SpacetimeDBVersionPrefKey = "CCCP_SpacetimeDBVersion";
     private const string SpacetimeDBLatestVersionPrefKey = "CCCP_SpacetimeDBLatestVersion";
     private static string spacetimeDBLatestVersion = "";
-
+    
     static ServerUpdateProcess()
     {
         EditorApplication.delayCall += () => {
-            var instance = CreateInstance<ServerUpdateProcess>();
-            instance.CheckForGithubUpdate();
-            instance.CheckForSpacetimeDBUpdate();
+            Debug.Log("ServerUpdateProcess: DelayCall executed!"); // Always log this too
+            if (debugMode) Debug.Log("ServerUpdateProcess: Starting update checks...");
+            CheckForGithubUpdate();
+            CheckForSpacetimeDBUpdate();
         };
     }
 
     #region Github Update
-    public bool CheckForGithubUpdate()
+    public static bool CheckForGithubUpdate()
     {
         string storedSha = EditorPrefs.GetString("CCCP_LastCommitSha", "");
         if (!string.IsNullOrEmpty(storedSha))
         {
             latestCommitSha = storedSha;
         }
+        if (debugMode) Debug.Log($"Checked for GitHub update - Stored SHA: {latestCommitSha}");
         
         FetchLatestCommitAsync();
         return EditorPrefs.GetBool(CosmosGithubUpdateAvailablePrefKey, false);
     }
 
-    private void FetchLatestCommitAsync()
+    private static void FetchLatestCommitAsync()
     {
-        string url = $"https://api.github.com/packageNames/{owner}/{packageName}/commits/{branch}";
+        string url = $"https://api.github.com/repos/{owner}/{packageName}/commits/{branch}";
 
         UnityWebRequest request = UnityWebRequest.Get(url);
         request.SetRequestHeader("User-Agent", "UnityGitHubChecker");  // GitHub requires this
@@ -73,12 +76,13 @@ public class ServerUpdateProcess : EditorWindow
         else
         {
             ProcessCommitResponse(request.downloadHandler.text);
+            if (debugMode) Debug.Log("GitHub API request succeeded: " + request.downloadHandler.text);
         }
             request.Dispose();
         };
     }
 
-    private void ProcessCommitResponse(string json)
+    private static void ProcessCommitResponse(string json)
     {
         try
         {
@@ -110,10 +114,8 @@ public class ServerUpdateProcess : EditorWindow
         {
             if (debugMode) Debug.LogError("Failed to parse GitHub response: " + e.Message);
         }
-    }
-
-    // Helper to shorten SHA
-    private string latestShaShort(string sha)
+    }    // Helper to shorten SHA
+    private static string latestShaShort(string sha)
     {
         return sha.Length >= 7 ? sha.Substring(0, 7) : sha;
     }
@@ -126,9 +128,10 @@ public class ServerUpdateProcess : EditorWindow
     }
 
     // Display the update available message once in the ServerWindow
-    private void DisplayGithubUpdateAvailable()
+    private static void DisplayGithubUpdateAvailable()
     {
-        window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
+        if (window != null)
+            window.LogMessage("Cosmos Cove Control Panel Update Available - Please update to the latest version in the Package Manager.", 1);
         // The EditorPref is set to false in ProcessCommitResponse() when no new commit is found
         // So this LogMessage will only be displayed once
     }
@@ -209,15 +212,14 @@ public class ServerUpdateProcess : EditorWindow
         
         return currentVersion;
     }
-    
     #region SpacetimeDB Update
-    public bool CheckForSpacetimeDBUpdate()
+    public static bool CheckForSpacetimeDBUpdate()
     {
         FetchSpacetimeDBVersionAsync();
         return EditorPrefs.GetBool(SpacetimeDBUpdateAvailablePrefKey, false);
     }
 
-    private void FetchSpacetimeDBVersionAsync()
+    private static void FetchSpacetimeDBVersionAsync()
     {
         string url = "https://api.github.com/repos/clockworklabs/SpacetimeDB/releases/latest";
 
@@ -238,7 +240,7 @@ public class ServerUpdateProcess : EditorWindow
         };
     }
 
-    private void ProcessSpacetimeDBReleaseResponse(string json)
+    private static void ProcessSpacetimeDBReleaseResponse(string json)
     {
         try
         {
