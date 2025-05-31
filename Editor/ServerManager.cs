@@ -859,7 +859,7 @@ public class ServerManager
                 else // WSL and other modes
                 {
                     isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
-                }                
+                }
                 
                 // State Change Detection with Resilience:
                 if (serverConfirmedRunning != isActuallyRunning)

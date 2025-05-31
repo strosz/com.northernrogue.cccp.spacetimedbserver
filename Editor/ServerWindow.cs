@@ -1288,7 +1288,7 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
             }
-            
+
             // Clear Module and Database Log at Start toggle buttons
             if (serverManager.SilentMode && serverMode != ServerMode.MaincloudServer)
             {
@@ -1736,6 +1736,10 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Shutdown WSL", GUILayout.Height(20)))
             {
+                if (cmdProcessor == null)
+                {
+                    cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                }
                 cmdProcessor.ShutdownWsl();
             }
         }
