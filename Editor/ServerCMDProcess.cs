@@ -391,22 +391,20 @@ public class ServerCMDProcess
                     
                     if (!process.HasExited)
                     {
-                        if (debugMode) UnityEngine.Debug.LogWarning("[ServerCMDProcess] WSL process check timed out.");
                         try { process.Kill(); } catch {}
                         return false;
                     }
 
                     bool running = process.ExitCode == 0 && output.Contains("spacetimedb-standalone");
-                    if (debugMode) logCallback($"WSL Process Check: Server process running? {(running ? "Yes" : "No")}. Output: {output}", 0);
                     
                     return running;
                 }
-            }
-            catch (Exception ex)
+            }            
+            catch (Exception)
             {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerCMDProcess] Error checking WSL process: {ex.Message}");
                 return false;
-            }        });
+            }
+        });
         
         lock (statusUpdateLock)
         {
