@@ -76,6 +76,15 @@ public class ServerOutputWindow : EditorWindow
     private Color cmdBackgroundColor = new Color(0.1f, 0.1f, 0.1f);
     private Color cmdTextColor = new Color(0.8f, 0.8f, 0.8f);
     private Texture2D backgroundTexture;
+
+    // Server log size tracking for custom server mode
+    private float serverLogSizeMB = 0f;
+    private float spacetimeDbModuleLogSizeMB = 0f;
+    private float spacetimeDbDatabaseLogSizeMB = 0f;
+    private bool isLoadingLogSize = false;
+    private double lastLogSizeUpdateTime = 0;
+    private const double LOG_SIZE_UPDATE_INTERVAL = 10.0; // Update log size every 10 seconds
+    private ServerCustomProcess serverCustomProcess;
     
     // Track data changes
     private bool scrollToBottom = false;
@@ -164,6 +173,38 @@ public class ServerOutputWindow : EditorWindow
                 scrollToBottom = true;
             }
             EditorApplication.delayCall += Repaint;
+        }
+        
+        // Initialize ServerCustomProcess only if in custom server mode
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
+        {
+            InitializeServerCustomProcess();
+            // Update log size on window open
+            UpdateLogSizeForCustomServer();
+        }
+    }
+
+    // Simple logging callback for ServerCustomProcess
+    private void LogMessage(string message, int style)
+    {
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] {message}");
+        }
+    }
+
+    private void InitializeServerCustomProcess()
+    {
+        try
+        {
+            serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
+            if (debugMode) 
+                UnityEngine.Debug.Log("[ServerOutputWindow] ServerCustomProcess instance initialized directly");
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to initialize ServerCustomProcess: {ex.Message}");
         }
     }
 
@@ -570,6 +611,9 @@ public class ServerOutputWindow : EditorWindow
                 {
                     serverWindow.ForceSSHLogRefresh();
                     if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered SSH log refresh for custom server");
+                    
+                    // Update log size when refresh button is clicked for custom server
+                    UpdateLogSizeForCustomServer();
                 }
             }
             catch (Exception ex)
@@ -654,8 +698,26 @@ public class ServerOutputWindow : EditorWindow
             {
                 TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow);
                 Debug.Log($"[ServerOutputWindow] Local timezone offset: {offset.Hours} hours, {offset.Minutes} minutes");
-            }
+            }        
         }
+        
+        // Server Log Size label (only for Custom Server mode)
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
+        {
+            GUILayout.FlexibleSpace(); // Push the log size label to the right
+            string logSizeText = isLoadingLogSize ? "Loading..." : $"Server Journal Size: {serverLogSizeMB:F2} MB";
+            GUIContent logSizeContent = new GUIContent(
+                logSizeText,
+                "The size of the complete journalctl folder that keeps all the server logs including os processes and SpacetimeDB. It's normal that it is a few hundred MB, but displayed here to easier keep check of it.\n"+
+                "SpacetimeDB Module Log Size: " + spacetimeDbModuleLogSizeMB + " MB\n" +
+                "SpacetimeDB Database Log Size: " + spacetimeDbDatabaseLogSizeMB + " MB"
+            );
+            
+            // Use EditorGUILayout.LabelField for better tooltip support
+            EditorGUILayout.LabelField(logSizeContent, EditorStyles.miniLabel, GUILayout.Width(170));
+        }
+        
         EditorGUILayout.EndHorizontal();
         
         // Tabs
@@ -1266,6 +1328,66 @@ public class ServerOutputWindow : EditorWindow
         {
             EditorUtility.DisplayDialog("Error", $"Failed to save log: {ex.Message}", "OK");
             Debug.LogError($"Error saving log: {ex}");
+        }
+    }
+    #endregion
+
+    #region Custom Server Log Size    
+    // Update log size for custom server mode
+    private async void UpdateLogSizeForCustomServer()
+    {
+        // Check if we're in custom server mode
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        if (!modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return; // Not custom server mode, skip
+        }
+        
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (isLoadingLogSize || (currentTime - lastLogSizeUpdateTime) < LOG_SIZE_UPDATE_INTERVAL)
+        {
+            return; // Already loading or updated recently
+        }
+        
+        isLoadingLogSize = true;
+        lastLogSizeUpdateTime = currentTime;
+        
+        try
+        {
+            // Use the directly initialized ServerCustomProcess instance
+            if (serverCustomProcess != null)
+            {
+                float logSize = await serverCustomProcess.GetJournalSize();
+                (float spacetimedbModuleLogsSizeMB, float spacetimedbDatabaseLogsSizeMB) = await serverCustomProcess.GetSpacetimeLogSizes();
+                if (logSize >= 0)
+                {
+                    serverLogSizeMB = logSize;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Log size updated: {serverLogSizeMB:F2} MB");
+                    Repaint(); // Update the UI
+                }
+                if (spacetimedbModuleLogsSizeMB >= 0)
+                {
+                    spacetimeDbModuleLogSizeMB = spacetimedbModuleLogsSizeMB;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] SpacetimeDB module logs size updated: {spacetimedbModuleLogsSizeMB:F2} MB");
+                }
+                if (spacetimedbDatabaseLogsSizeMB >= 0)
+                {
+                    spacetimeDbDatabaseLogSizeMB = spacetimedbDatabaseLogsSizeMB;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] SpacetimeDB database logs size updated: {spacetimedbDatabaseLogsSizeMB:F2} MB");
+                }
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerCustomProcess is null, cannot get log size");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update log size: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingLogSize = false;
         }
     }
     #endregion
