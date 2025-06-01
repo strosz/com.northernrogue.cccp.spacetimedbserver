@@ -38,7 +38,7 @@ public class ServerUpdateProcess
     static ServerUpdateProcess()
     {
         EditorApplication.delayCall += () => {
-            Debug.Log("ServerUpdateProcess: DelayCall executed!"); // Always log this too
+            //Debug.Log("ServerUpdateProcess: DelayCall executed!"); // Keep for debugging
             if (debugMode) Debug.Log("ServerUpdateProcess: Starting update checks...");
             CheckForGithubUpdate();
             CheckForSpacetimeDBUpdate();

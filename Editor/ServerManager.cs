@@ -710,7 +710,7 @@ public class ServerManager
         }
     }
 
-    private void StopMaincloudLog()
+    public void StopMaincloudLog()
     {
         // Stop the log processors
         logProcessor.StopLogging();
