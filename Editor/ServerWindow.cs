@@ -91,9 +91,7 @@ public class ServerWindow : EditorWindow
     private Texture2D logoTexture;
     private GUIStyle connectedStyle;
     private GUIStyle buttonStyle;
-    private bool stylesInitialized = false;
-
-    // UI optimization
+    private bool stylesInitialized = false;    // UI optimization
     private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
     
@@ -283,14 +281,7 @@ public class ServerWindow : EditorWindow
                 ServerUpdateProcess.UpdateGithubPackage();
             }
         }
-        
         EditorGUILayout.EndVertical();
-
-        // Register for focus events
-        EditorApplication.focusChanged += OnFocusChanged;
-
-        // Start checking server status and file changes
-        EditorApplication.update += EditorUpdateHandler;
     }
     
     private void InitializeStyles()
@@ -443,16 +434,13 @@ public class ServerWindow : EditorWindow
     {
         if (serverManager == null) return;
         
-        // Update window states every frame for responsive toggle buttons
-        UpdateWindowStates();
-        
-        // Throttle how often we check things to not overload the main thread
         double currentTime = EditorApplication.timeSinceStartup;
         
+        // Throttle how often we check things to not overload the main thread
         if (currentTime - lastCheckTime > checkInterval)
         {
             lastCheckTime = currentTime;
-            
+                        
             // Cancel any previous check that might still be running
             if (statusCheckCTS != null)
             {
@@ -506,7 +494,17 @@ public class ServerWindow : EditorWindow
         // Ensure SessionState reflects the state *just before* disable/reload
         SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
 
+        // Cleanup event handlers
         EditorApplication.update -= EditorUpdateHandler;
+        EditorApplication.focusChanged -= OnFocusChanged;
+        
+        // Cleanup cancellation token source
+        if (statusCheckCTS != null)
+        {
+            statusCheckCTS.Cancel();
+            statusCheckCTS.Dispose();
+            statusCheckCTS = null;
+        }
     }
     
     private void OnFocusChanged(bool focused)
@@ -1407,6 +1405,7 @@ public class ServerWindow : EditorWindow
             {
                 serverManager.ViewServerLogs();
             }
+            UpdateWindowStates();
         }
         
         // Restore original color
@@ -1441,6 +1440,7 @@ public class ServerWindow : EditorWindow
             {
                 ServerDataWindow.ShowWindow();
             }
+            UpdateWindowStates();
         }
         
         // Restore original color
@@ -1475,6 +1475,7 @@ public class ServerWindow : EditorWindow
             {
                 ServerReducerWindow.ShowWindow();
             }
+            UpdateWindowStates();
         }
         
         // Restore original color
@@ -2317,18 +2318,17 @@ public class ServerWindow : EditorWindow
         }
     }
 
-    // Helper methods to check if specific windows are open
-    private bool IsWindowOpen<T>() where T : EditorWindow
-    {
-        T[] windows = Resources.FindObjectsOfTypeAll<T>();
-        return windows != null && windows.Length > 0;
-    }
-    
     private void UpdateWindowStates()
     {
         viewLogsWindowOpen = IsWindowOpen<ServerOutputWindow>();
         browseDbWindowOpen = IsWindowOpen<ServerDataWindow>();
         runReducerWindowOpen = IsWindowOpen<ServerReducerWindow>();
+    }
+
+    private bool IsWindowOpen<T>() where T : EditorWindow
+    {
+        T[] windows = Resources.FindObjectsOfTypeAll<T>();
+        return windows != null && windows.Length > 0;
     }
     
     private void CloseWindow<T>() where T : EditorWindow
