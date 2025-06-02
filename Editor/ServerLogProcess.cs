@@ -747,8 +747,20 @@ public class ServerLogProcess
             StartLogLimiter();
             
             if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task ensured before starting logging");
-        }
-        
+        }        
+
+        // Clear in-memory logs when switching to WSL server mode to prevent duplicates
+        // This fixes the issue where switching from Custom Server to WSL server duplicates log entries
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Clearing in-memory logs before starting WSL logging to prevent duplicates");
+        silentServerCombinedLog = "";
+        cachedModuleLogContent = "";
+        databaseLogContent = "";
+        cachedDatabaseLogContent = "";
+        SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+
         // Clear logs if needed
         if (clearModuleLogAtStart)
         {
@@ -783,7 +795,7 @@ public class ServerLogProcess
             {
                 onModuleLogUpdated();
             }
-        });
+        }, true); // Read from beginning for initial server start
         
         // Start the database log process
         StartDatabaseLogProcess();
@@ -939,18 +951,28 @@ public class ServerLogProcess
             if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] tailProcess was already null.");
         }
     }
-    
-    private Process StartTailingLogFile(string wslLogPath, Action<string> onNewLine)
+    private Process StartTailingLogFile(string wslLogPath, Action<string> onNewLine, bool readFromBeginning = true)
     {
         if (debugMode) logCallback($"Attempting to start tailing {wslLogPath}...", 0);
         try
         {
             Process process = new Process();
             process.StartInfo.FileName = "wsl.exe";
-            // Use tail -F for robustness, start from beginning (-n +1)
-            string tailCommand = $"touch {wslLogPath} && tail -F -n +1 {wslLogPath}";
-            process.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{tailCommand}\"";
-            process.StartInfo.UseShellExecute = false;
+            
+            // Use different tail options based on whether we want to read from beginning or just follow new content
+            string tailCommand;
+            if (readFromBeginning)
+            {
+                // Start from beginning for initial server start or server mode switch
+                tailCommand = $"touch {wslLogPath} && tail -F -n +1 {wslLogPath}";
+            }
+            else
+            {
+                // Start from end for domain reload scenarios to avoid duplication
+                tailCommand = $"touch {wslLogPath} && tail -F --lines=0 {wslLogPath}";
+            }
+            
+            process.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{tailCommand}\"";            process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
@@ -1049,7 +1071,7 @@ public class ServerLogProcess
                         {
                             if (debugMode) logCallback("Attempting to restart tail process...", 0);
                             System.Threading.Thread.Sleep(1000); 
-                            var newTailProcess = StartTailingLogFile(wslLogPath, onNewLine);
+                            var newTailProcess = StartTailingLogFile(wslLogPath, onNewLine, false); // Don't read from beginning on auto-restart
                             
                             if (newTailProcess != null)
                             {
@@ -1090,7 +1112,8 @@ public class ServerLogProcess
             if (debugMode) logCallback("Domain reload detected. Attempting to re-attach tail process...", 0);
             string logPath = WslCombinedLogPath;
             
-            if (debugMode) logCallback($"Re-starting tail for {logPath}...", 0);            tailProcess = StartTailingLogFile(logPath, (line) => {
+            if (debugMode) logCallback($"Re-starting tail for {logPath}...", 0);            
+            tailProcess = StartTailingLogFile(logPath, (line) => {
                 silentServerCombinedLog += line + "\n";
                 cachedModuleLogContent += line + "\n"; // Keep cached version in sync
                 const int maxLogLength = 75000;
@@ -1110,7 +1133,7 @@ public class ServerLogProcess
                 {
                     onModuleLogUpdated();
                 }
-            });
+            }, false); // Don't read from beginning for domain reload - only follow new content
 
             if (tailProcess != null)
             {

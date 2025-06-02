@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -116,10 +117,10 @@ public class ServerWindow : EditorWindow
     [MenuItem("SpacetimeDB/Server Management Panel", priority = -9000)]
     public static void ShowWindow()
     {
-        ServerWindow window = GetWindow<ServerWindow>("Server");
+        ServerWindow window = GetWindow<ServerWindow>("SpacetimeDB");
         window.minSize = new Vector2(270f, 600f);
-    }
-
+    }    
+    
     public enum ServerMode
     {
         WslServer,
@@ -127,6 +128,34 @@ public class ServerWindow : EditorWindow
         MaincloudServer,
     }
 
+    [System.Serializable]
+    public struct ModuleInfo
+    {
+        public string name;
+        public string path;
+        
+        public ModuleInfo(string name, string path)
+        {
+            this.name = name;
+            this.path = path;
+        }
+    }
+
+    // Saved modules list
+    private List<ModuleInfo> savedModules = new List<ModuleInfo>();
+    private int selectedModuleIndex = -1;
+    private string newModuleNameInput = ""; // Input field for new module name
+
+    [System.Serializable]
+    private class SerializableList<T>
+    {
+        public List<T> items;
+        
+        public SerializableList(List<T> items)
+        {
+            this.items = items;
+        }
+    }
     #region OnGUI
 
     private void OnGUI()
@@ -314,10 +343,11 @@ public class ServerWindow : EditorWindow
             serverManager = new ServerManager(LogMessage, Repaint);
 
             // Load server mode from EditorPrefs
-            LoadServerModeFromPrefs();
-
-            // Sync local fields from ServerManager's values (for UI display only)
+            LoadServerModeFromPrefs();            // Sync local fields from ServerManager's values (for UI display only)
             SyncFieldsFromServerManager();
+
+            // Load saved modules list
+            LoadModulesList();
 
             // Load UI preferences
             autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
@@ -628,73 +658,6 @@ public class ServerWindow : EditorWindow
             // Shared settings
             GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
 
-            // Server Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string serverDirectoryTooltip = 
-            "Directory of your SpacetimeDB server module where Cargo.toml is located.\n\n"+
-            "Note: Create a new empty folder if the module has not been created yet.";
-            EditorGUILayout.LabelField(new GUIContent("Server Directory:", serverDirectoryTooltip), GUILayout.Width(110));
-            string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
-            if (GUILayout.Button(new GUIContent("Set Server Directory", serverDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
-            {
-                string path = EditorUtility.OpenFolderPanel("Select Server Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    serverDirectory = path;
-                    serverManager.SetServerDirectory(serverDirectory);
-                    LogMessage($"Server directory set to: {serverDirectory}", 1);
-                    
-                    // Update the detection process with the new directory
-                    if (detectionProcess != null)
-                    {
-                        detectionProcess.Configure(serverDirectory, detectServerChanges);
-                    }
-                }
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-                        
-            // Server Language dropdown
-            EditorGUILayout.BeginHorizontal();
-            string serverLangTooltip = 
-            "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
-            "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
-            "Recommended: Rust which is 2x faster than C#.";
-            EditorGUILayout.LabelField(new GUIContent("Server Language:", serverLangTooltip), GUILayout.Width(110));
-            string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
-            string[] serverLangValues = new string[] { "rust", "csharp" };
-            int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
-            if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
-            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
-            if (newServerLangSelectedIndex != serverLangSelectedIndex)
-            {
-                serverLang = serverLangValues[newServerLangSelectedIndex];
-                serverManager.SetServerLang(serverLang);
-                LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-
-            // Unity Autogenerated files Directory setting
-            EditorGUILayout.BeginHorizontal();
-            string clientDirectoryTooltip = 
-            "Directory where Unity client scripts will be generated.\n\n"+
-            "Note: This should be placed in the Assets folder of your Unity project.";
-            EditorGUILayout.LabelField(new GUIContent("Client Directory:", clientDirectoryTooltip), GUILayout.Width(110));
-            string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
-            if (GUILayout.Button(new GUIContent("Set Client Directory", clientDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
-            {
-                string path = EditorUtility.OpenFolderPanel("Select Client Directory", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    clientDirectory = path;
-                    serverManager.SetClientDirectory(clientDirectory);
-                    LogMessage($"Client directory set to: {clientDirectory}", 1);
-                }
-            }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();
-
             // Unity Autogenerated files Language dropdown
             EditorGUILayout.BeginHorizontal();
             string unityLangTooltip = 
@@ -717,30 +680,191 @@ public class ServerWindow : EditorWindow
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
 
-            // Module Name setting
+            // Unity Autogenerated files Directory setting
             EditorGUILayout.BeginHorizontal();
-            string moduleNameTooltip = 
-            "The name of your existing SpacetimeDB module you used when you created the module.\n"+
-            "OR the name you want your SpacetimeDB module to have when initializing a new one";
-            EditorGUILayout.LabelField(new GUIContent("Module Name:", moduleNameTooltip), GUILayout.Width(110));
-            string newModuleName = EditorGUILayout.TextField(moduleName, GUILayout.Width(150));
-            if (newModuleName != moduleName)
+            string clientDirectoryTooltip = 
+            "Directory where SpacetimeDB Unity client scripts will be automatically generated.\n\n"+
+            "Note: This should be placed in the Assets folder of your Unity project.";
+            EditorGUILayout.LabelField(new GUIContent("Client Path:", clientDirectoryTooltip), GUILayout.Width(110));
+            string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
+            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
             {
-                moduleName = newModuleName;
-                serverManager.SetModuleName(moduleName);
+                string path = EditorUtility.OpenFolderPanel("Select Client Path", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    clientDirectory = path;
+                    serverManager.SetClientDirectory(clientDirectory);
+                    LogMessage($"Client path set to: {clientDirectory}", 1);
+                }
             }
-            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(clientDirectory)), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
 
-            // Init a new module
+            // Module Language dropdown
             EditorGUILayout.BeginHorizontal();
-            string initModuleTooltip = 
-            "Init a new module: Initializes a new SpacetimeDB module in the server directory.";
-            EditorGUILayout.LabelField(new GUIContent("New module:", initModuleTooltip), GUILayout.Width(110));
-            if (GUILayout.Button("Init a new module", GUILayout.Width(150), GUILayout.Height(20)))
+            string serverLangTooltip = 
+            "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
+            "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
+            "Recommended: Rust which is 2x faster than C#.";
+            EditorGUILayout.LabelField(new GUIContent("Module Language:", serverLangTooltip), GUILayout.Width(110));
+            string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
+            string[] serverLangValues = new string[] { "rust", "csharp" };
+            int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
+            if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
+            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
+            if (newServerLangSelectedIndex != serverLangSelectedIndex)
             {
-                InitNewModule();
+                serverLang = serverLangValues[newServerLangSelectedIndex];
+                serverManager.SetServerLang(serverLang);
+                LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
             }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();            
+            
+            // Add New Module Entry
+            EditorGUILayout.BeginHorizontal();
+            string moduleSettingsTooltip = 
+            "Set a new module name and path for your SpacetimeDB module.\n\n"+
+            "Name: The name of your existing SpacetimeDB module you used when you created the module,\n"+
+            "OR the name you want your SpacetimeDB module to have when initializing a new one.\n\n"+
+            "Path: Directory of where Cargo.toml is located or to be created at.\n"+
+            "Note: Create a new empty folder if the module has not been created yet.";            EditorGUILayout.LabelField(new GUIContent("Module New Entry:", moduleSettingsTooltip), GUILayout.Width(110));
+            newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput, GUILayout.Width(100));
+            string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
+            if (GUILayout.Button(new GUIContent("Add", serverDirButtonTooltip), GUILayout.Width(47), GUILayout.Height(20)))
+            {
+                string path = EditorUtility.OpenFolderPanel("Select Module Path", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    serverDirectory = path;
+                    serverManager.SetServerDirectory(serverDirectory);
+
+                    // Update the detection process with the new directory
+                    if (detectionProcess != null)
+                    {
+                        detectionProcess.Configure(serverDirectory, detectServerChanges);
+                    }
+                      // Save module if both name and path are set
+                    if (!string.IsNullOrEmpty(newModuleNameInput) && !string.IsNullOrEmpty(serverDirectory))
+                    {
+                        string moduleNameToAdd = newModuleNameInput; // Store the name before clearing
+                        int moduleIndex = AddModuleToSavedList(moduleNameToAdd, serverDirectory);
+                        serverManager.SetModuleName(moduleNameToAdd);
+                        
+                        // Automatically select the newly added module
+                        if (moduleIndex >= 0)
+                        {
+                            SelectSavedModule(moduleIndex);
+                        }
+                        
+                        // Clear the input field after successful addition
+                        newModuleNameInput = "";
+                        
+                        LogMessage($"Module {moduleNameToAdd} successfully added! Path: {serverDirectory}", 1);
+                    }
+                }
+            }
+            GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverDirectory) && !string.IsNullOrEmpty(moduleName)), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Select Module
+            EditorGUILayout.BeginHorizontal();
+            string savedModulesTooltip = 
+            "Modules Selection: Select from your saved SpacetimeDB modules to be the selected one for publishing and change detection.";
+            EditorGUILayout.LabelField(new GUIContent("Module Selection:", savedModulesTooltip), GUILayout.Width(110));
+            if (savedModules.Count > 0)
+            {
+                // Create display options for the dropdown
+                string[] moduleOptions = new string[savedModules.Count + 1];
+                moduleOptions[0] = "Select a module...";
+                
+                for (int i = 0; i < savedModules.Count; i++)
+                {
+                    var module = savedModules[i];
+                    string lastPathPart = Path.GetFileName(module.path);
+                    if (string.IsNullOrEmpty(lastPathPart))
+                        lastPathPart = Path.GetFileName(Path.GetDirectoryName(module.path));
+
+                    moduleOptions[i + 1] = module.name + "   ∕ " + lastPathPart;
+                }
+                
+                // Adjust selectedModuleIndex for dropdown (add 1 because of "Select..." option)
+                int dropdownIndex = selectedModuleIndex >= 0 ? selectedModuleIndex + 1 : 0;
+                int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, moduleOptions, GUILayout.Width(150));
+                
+                // Handle selection change
+                if (newDropdownIndex != dropdownIndex)
+                {
+                    if (newDropdownIndex == 0)
+                    {
+                        selectedModuleIndex = -1; // No selection
+                    }
+                    else
+                    {
+                        SelectSavedModule(newDropdownIndex - 1); // Subtract 1 for "Select..." option
+                    }
+                }
+            }
+            else
+            {
+                EditorGUI.BeginDisabledGroup(true);
+                EditorGUILayout.Popup(0, new string[] { "No saved modules" }, GUILayout.Width(150));
+                EditorGUI.EndDisabledGroup();
+            }
+            GUILayout.Label(GetStatusIcon(selectedModuleIndex != -1), GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+
+            // Init a new module / Delete Selected Module
+            EditorGUILayout.BeginHorizontal();
+            bool deleteMode = Event.current.control && Event.current.alt;
+            bool hasSelectedModule = selectedModuleIndex >= 0 && selectedModuleIndex < savedModules.Count;
+            string buttonText = deleteMode && hasSelectedModule ? "Delete Selected Module" : "Init New Module";
+            string baseTooltip = deleteMode && hasSelectedModule ? 
+                "Delete Selected Module: Removes the currently selected saved module from the list." :
+                "Init a new module: Initializes a new SpacetimeDB module with the selected name and path.";
+            
+            string fullTooltip = baseTooltip + "\n\nTip: Hold Ctrl + Alt while clicking to delete the selected saved module instead (The path and files remain on the disk).";
+            
+            EditorGUILayout.LabelField(new GUIContent("Module Init or Del:", fullTooltip), GUILayout.Width(110));
+            
+            // Create button style for delete mode
+            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
+            if (deleteMode && hasSelectedModule)
+            {
+                // Orange color for delete warning
+                Color warningColor;
+                ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
+                buttonStyle.normal.textColor = warningColor;
+                buttonStyle.hover.textColor = warningColor;
+                Repaint();
+            }
+            
+            EditorGUI.BeginDisabledGroup(deleteMode && !hasSelectedModule);
+            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Width(150), GUILayout.Height(20)))
+            {
+                if (deleteMode && hasSelectedModule)
+                {
+                    // Delete selected module with confirmation
+                    var moduleToDelete = savedModules[selectedModuleIndex];
+                    if (EditorUtility.DisplayDialog(
+                            "Confirm Module Deletion",
+                            $"Are you sure you want to delete the saved module '{moduleToDelete.name}'?\n\nThis will only remove it from the saved list, not delete any files.",
+                            "Yes, Delete",
+                            "Cancel"))
+                    {
+                        savedModules.RemoveAt(selectedModuleIndex);
+                        selectedModuleIndex = -1; // Clear selection
+                        SaveModulesList();
+                        LogMessage($"Removed saved module: {moduleToDelete.name}", 1);
+                    }
+                }
+                else
+                {
+                    // Normal init new module functionality
+                    InitNewModule();
+                }
+            }
+            EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndHorizontal();
             #endregion
 
@@ -1951,13 +2075,6 @@ public class ServerWindow : EditorWindow
 
     #region Server Methods
 
-    private void InitNewModule()
-    {
-        serverManager.InitNewModule();
-        initializedFirstModule = true;
-        serverManager.SetInitializedFirstModule(true);
-    }
-
     public void ClearModuleLogFile() // Clears the module tmp log file
     {
         serverManager.ClearModuleLogFile();
@@ -2342,7 +2459,93 @@ public class ServerWindow : EditorWindow
             }
         }
     }
-    
+    #endregion
+
+    #region Module Methods
+
+    private void InitNewModule()
+    {
+        serverManager.InitNewModule();
+        initializedFirstModule = true;
+        serverManager.SetInitializedFirstModule(true);
+    }
+
+    private void SaveModulesList()
+    {
+        try
+        {
+            string json = JsonUtility.ToJson(new SerializableList<ModuleInfo>(savedModules));
+            EditorPrefs.SetString(PrefsKeyPrefix + "SavedModules", json);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"Error saving modules list: {ex.Message}");
+        }
+    }
+
+    private void LoadModulesList()
+    {
+        try
+        {
+            string json = EditorPrefs.GetString(PrefsKeyPrefix + "SavedModules", "");
+            if (!string.IsNullOrEmpty(json))
+            {
+                var serializableList = JsonUtility.FromJson<SerializableList<ModuleInfo>>(json);
+                savedModules = serializableList?.items ?? new List<ModuleInfo>();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"Error loading modules list: {ex.Message}");
+            savedModules = new List<ModuleInfo>();
+        }
+    }
+
+    private int AddModuleToSavedList(string name, string path)
+    {
+        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(path)) return -1;
+
+        // Check if module already exists and update it
+        for (int i = 0; i < savedModules.Count; i++)
+        {
+            if (savedModules[i].name == name)
+            {
+                savedModules[i] = new ModuleInfo(name, path);
+                SaveModulesList();
+                return i;
+            }
+        }
+
+        // Add new module
+        savedModules.Add(new ModuleInfo(name, path));
+        SaveModulesList();
+        return savedModules.Count - 1;
+    }
+
+    private void SelectSavedModule(int index)
+    {
+        if (index >= 0 && index < savedModules.Count)
+        {
+            selectedModuleIndex = index;
+            var module = savedModules[index];
+            
+            // Update current settings
+            moduleName = module.name;
+            serverDirectory = module.path;
+            
+            // Update ServerManager
+            serverManager.SetModuleName(moduleName);
+            serverManager.SetServerDirectory(serverDirectory);
+            
+            // Update detection process
+            if (detectionProcess != null)
+            {
+                detectionProcess.Configure(serverDirectory, detectServerChanges);
+            }
+            
+            LogMessage($"Selected module: {module.name} at {module.path}", 1);
+        }
+    }
     #endregion
 
     // Display Cosmos Cove Control Panel title text in the menu bar
