@@ -163,6 +163,19 @@ public class ServerDataWindow : EditorWindow
     private void OnDisable()
     {
         SaveColumnWidths();
+
+        // Use delayCall to update serverwindow states after the window is fully destroyed
+        EditorApplication.delayCall += () => {
+            try 
+            {
+                ServerWindow serverWindow = GetWindow<ServerWindow>();
+                serverWindow.UpdateWindowStates();
+            }
+            catch (System.Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update window states: {ex.Message}");
+            }
+        };
     }
 
     // Helper method to ensure server URL has /v1 suffix if missing

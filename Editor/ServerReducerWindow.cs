@@ -14,7 +14,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerReducerWindow : EditorWindow
 {
-    #region Variables
+    public static bool debugMode = false;
+
     private string serverURL = "http://127.0.0.1:3000/v1"; // Default, should be overridden
     private string moduleName = "magical"; // Default, should be overridden
     private string authToken = ""; // Required for authentication, to be able to run reducers and not just read schema
@@ -156,7 +157,6 @@ public class ServerReducerWindow : EditorWindow
     {
         public string query;
     }
-    #endregion
     
     #region Window Management
     [MenuItem("SpacetimeDB/Server Run Reducer")]
@@ -171,6 +171,22 @@ public class ServerReducerWindow : EditorWindow
     {
         LoadSettings();
         RefreshReducers();
+    }
+
+    private void OnDisable()
+    {
+        // Use delayCall to update serverwindow states after the window is fully destroyed
+        EditorApplication.delayCall += () => {
+            try 
+            {
+                ServerWindow serverWindow = GetWindow<ServerWindow>();
+                serverWindow.UpdateWindowStates();
+            }
+            catch (System.Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update window states: {ex.Message}");
+            }
+        };
     }
     
     private void OnGUI()

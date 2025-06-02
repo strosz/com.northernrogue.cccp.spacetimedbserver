@@ -1432,6 +1432,7 @@ public class ServerWindow : EditorWindow
                 ServerCMDProcess.debugMode = newDebugMode;
                 ServerCustomProcess.debugMode = newDebugMode;
                 ServerDataWindow.debugMode = newDebugMode;
+                ServerReducerWindow.debugMode = newDebugMode;
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -2435,7 +2436,7 @@ public class ServerWindow : EditorWindow
         }
     }
 
-    private void UpdateWindowStates()
+    public void UpdateWindowStates()
     {
         viewLogsWindowOpen = IsWindowOpen<ServerOutputWindow>();
         browseDbWindowOpen = IsWindowOpen<ServerDataWindow>();
@@ -2444,8 +2445,7 @@ public class ServerWindow : EditorWindow
 
     private bool IsWindowOpen<T>() where T : EditorWindow
     {
-        T[] windows = Resources.FindObjectsOfTypeAll<T>();
-        return windows != null && windows.Length > 0;
+        return HasOpenInstances<T>();
     }
     
     private void CloseWindow<T>() where T : EditorWindow

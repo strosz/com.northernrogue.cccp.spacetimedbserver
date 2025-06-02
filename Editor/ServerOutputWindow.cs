@@ -215,14 +215,28 @@ public class ServerOutputWindow : EditorWindow
         isWindowEnabled = false;
         openWindows.Remove(this);
         
+        // Use delayCall to update serverwindow states after the window is fully destroyed
+        EditorApplication.delayCall += () => {
+            try 
+            {
+                ServerWindow serverWindow = GetWindow<ServerWindow>();
+                serverWindow.UpdateWindowStates();
+            }
+            catch (System.Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update window states: {ex.Message}");
+            }
+        };
+
         // Clean up textures
         if (backgroundTexture != null)
         {
             DestroyImmediate(backgroundTexture);
             backgroundTexture = null;
         }
-          // Clear caches to free memory
-        formattedLogCache.Clear();        visibleLines.Clear();
+        // Clear caches to free memory
+        formattedLogCache.Clear();        
+        visibleLines.Clear();
     }
     
     // Reload logs when the window gets focus
