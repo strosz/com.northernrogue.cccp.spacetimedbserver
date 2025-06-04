@@ -652,7 +652,7 @@ public class ServerInstallerWindow : EditorWindow
         // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        GUILayout.Label(currentTab == 0 ? "SpacetimeDB WSL Server Installer" : "SpacetimeDB Custom Server Installer", titleStyle);
+        GUILayout.Label(currentTab == 0 ? "SpacetimeDB Local WSL Server Installer" : "SpacetimeDB Remote Custom Server Installer", titleStyle);
         
         string description = currentTab == 0 ? 
             "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +

@@ -770,7 +770,7 @@ public class ServerWindow : EditorWindow
             // Select Module
             EditorGUILayout.BeginHorizontal();
             string savedModulesTooltip = 
-            "Modules Selection: Select from your saved SpacetimeDB modules to be the selected one for publishing and change detection.";
+            "Modules Selection: Select your saved SpacetimeDB module for editing, publishing and change detection.";
             EditorGUILayout.LabelField(new GUIContent("Module Selection:", savedModulesTooltip), GUILayout.Width(110));
             if (savedModules.Count > 0)
             {
@@ -1847,23 +1847,33 @@ public class ServerWindow : EditorWindow
         }
         
         if (serverManager.PublishAndGenerateMode) {
-
-                if (!serverManager.AutoPublishMode)
-                {
-                    EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.\n" + 
-                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
-                } else {
-                    EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically on detected changes.\n" + 
-                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
-                }
+            if (!serverManager.AutoPublishMode) {
+                EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
+            } else {
+                EditorGUILayout.LabelField("Will Publish then Generate Unity Files automatically on detected changes.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
+            }
         } else {
-            EditorGUILayout.LabelField("First Publish then Generate Unity Files.\n" + 
-                        "Ctrl + Alt + Click to also reset the database.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+            EditorGUILayout.LabelField("First Publish then Generate Unity Files.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
         }
-        
+
         // Add Publish Module button
         EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.ModuleName));
         
+        string editModuleTooltip = "Edit the lib.rs script of the selected module.";
+        if (GUILayout.Button(new GUIContent("Edit Module", editModuleTooltip), GUILayout.Height(20)))
+        {
+            // Open the module script in the default editor
+            string modulePath = Path.Combine(serverDirectory, "src", "lib.rs");
+            if (File.Exists(modulePath))
+            {
+                Process.Start(modulePath);
+            }
+            else
+            {
+                LogMessage($"Module script not found at: {modulePath}", -2);
+            }
+        }
+
         // Check if control key is held
         bool resetDatabase = Event.current.control && Event.current.alt;
         
@@ -1878,6 +1888,11 @@ public class ServerWindow : EditorWindow
             publishButtonStyle.hover.textColor = warningColor;
             Repaint();
         }
+        if (serverManager.ServerChangesDetected)
+        {
+            publishButtonStyle.normal.textColor = Color.green;
+            publishButtonStyle.hover.textColor = Color.green;
+        }
 
         string buttonText;
         if (serverMode == ServerMode.MaincloudServer)
@@ -1885,9 +1900,10 @@ public class ServerWindow : EditorWindow
         else
         buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
 
-        string publishTooltip = "Publish the selected module to the server.";
+        string publishTooltip = "Publish the selected module to the server.\n\n" +
+                                "Ctrl + Alt + Click to also reset the database.";
 
-        if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(37)))
+        if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(30)))
         {
             // Use reset database if control+alt key is held
             if (resetDatabase)
@@ -1911,7 +1927,7 @@ public class ServerWindow : EditorWindow
         // Add Generate Unity Files button
         if (!serverManager.PublishAndGenerateMode)
         {
-            if (GUILayout.Button("Generate Unity Files", GUILayout.Height(37)))
+            if (GUILayout.Button("Generate Unity Files", GUILayout.Height(30)))
             {
                 string outDir = serverManager.GetRelativeClientPath();
                 serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y", "Generating Unity files");
@@ -1940,8 +1956,6 @@ public class ServerWindow : EditorWindow
                 hasSpacetimeDBPath = spacetimePath;
                 hasRust = rust;
                 wslPrerequisitesChecked = true;
-                
-                // No need to directly update ServerManager properties as this is now handled in the ServerManager
                 
                 // Load userName value 
                 userName = serverManager.UserName;
