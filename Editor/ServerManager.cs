@@ -48,6 +48,7 @@ public class ServerManager
     private string clientDirectory;
     private string serverLang;
     private string moduleName;
+    private int selectedModuleIndex;
     private string serverUrl;
     private int serverPort;
     private string authToken;
@@ -98,6 +99,7 @@ public class ServerManager
     public string ClientDirectory => clientDirectory;
     public string ServerLang => serverLang;
     public string ModuleName => moduleName;
+    public int SelectedModuleIndex => selectedModuleIndex;
     public string ServerUrl => serverUrl;
     public int ServerPort => serverPort;
     public string AuthToken => authToken;
@@ -243,6 +245,7 @@ public class ServerManager
         clientDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ClientDirectory", "");
         unityLang = EditorPrefs.GetString(PrefsKeyPrefix + "UnityLang", "csharp");
         moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+        selectedModuleIndex = EditorPrefs.GetInt(PrefsKeyPrefix + "SelectedModuleIndex", -1);
 
         // Load custom server settings
         sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
@@ -292,6 +295,7 @@ public class ServerManager
     public void SetClientDirectory(string value) { clientDirectory = value; EditorPrefs.SetString(PrefsKeyPrefix + "ClientDirectory", value); }
     public void SetServerLang(string value) { serverLang = value; EditorPrefs.SetString(PrefsKeyPrefix + "ServerLang", value); }
     public void SetModuleName(string value) { moduleName = value; EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", value); }
+    public void SetSelectedModuleIndex(int value) { selectedModuleIndex = value; EditorPrefs.SetInt(PrefsKeyPrefix + "SelectedModuleIndex", value); }
     public void SetServerPort(int value) { serverPort = value; EditorPrefs.SetInt(PrefsKeyPrefix + "ServerPort", value); }
     public void SetServerUrl(string value) { serverUrl = value; EditorPrefs.SetString(PrefsKeyPrefix + "ServerURL", value); }
     public void SetAuthToken(string value) { authToken = value; EditorPrefs.SetString(PrefsKeyPrefix + "AuthToken", value); }

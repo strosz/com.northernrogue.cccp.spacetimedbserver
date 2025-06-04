@@ -430,6 +430,7 @@ public class ServerWindow : EditorWindow
         clientDirectory = serverManager.ClientDirectory;
         unityLang = serverManager.UnityLang;
         moduleName = serverManager.ModuleName;
+        selectedModuleIndex = serverManager.SelectedModuleIndex;
 
         sshUserName = serverManager.SSHUserName;
         sshPrivateKeyPath = serverManager.SSHPrivateKeyPath;
@@ -454,7 +455,6 @@ public class ServerWindow : EditorWindow
         spacetimeDBCurrentVersionCustom = serverManager.spacetimeDBCurrentVersionCustom;
         spacetimeDBLatestVersion = serverManager.spacetimeDBLatestVersion;
 
-        // Add this line to initialize WSL status
         isWslRunning = serverManager.IsWslRunning;
 
         maincloudAuthToken = serverManager.MaincloudAuthToken;
@@ -1884,8 +1884,10 @@ public class ServerWindow : EditorWindow
         buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module to Maincloud";
         else
         buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
-        
-        if (GUILayout.Button(buttonText, publishButtonStyle, GUILayout.Height(37)))
+
+        string publishTooltip = "Publish the selected module to the server.";
+
+        if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(37)))
         {
             // Use reset database if control+alt key is held
             if (resetDatabase)
@@ -2536,6 +2538,7 @@ public class ServerWindow : EditorWindow
             // Update ServerManager
             serverManager.SetModuleName(moduleName);
             serverManager.SetServerDirectory(serverDirectory);
+            serverManager.SetSelectedModuleIndex(index); // To remember the place in the list
             
             // Update detection process
             if (detectionProcess != null)
