@@ -486,7 +486,7 @@ public class ServerReducerWindow : EditorWindow
         serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
     }
     
-    private void RefreshReducers()
+    public void RefreshReducers()
     {
         if (isRefreshing) return;
 

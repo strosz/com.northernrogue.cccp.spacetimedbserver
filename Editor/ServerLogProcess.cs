@@ -590,10 +590,12 @@ public class ServerLogProcess
             SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         }
 
-        // Reset the database log timestamp to start fresh for the new module
-        // This ensures that when ReadSSHDatabaseLogsAsync is called next, it fetches logs for the new module from a recent point.
-        lastDatabaseLogTimestamp = DateTime.UtcNow.AddSeconds(-5); // Start a few seconds in the past to catch any immediate logs
-        if (debugMode) logCallback($"SSH database log timestamp reset for module '{newModuleName}'. Next fetch will be from {lastDatabaseLogTimestamp:O}", 1);
+        // Reset initial lines tracking for the new module stream
+        waitingForInitialDatabaseLines = false;
+        initialDatabaseLinesReceived = 0;
+
+        // Brief pause to allow the old process to fully terminate and release resources
+        System.Threading.Thread.Sleep(250); // 250ms delay
 
         // If the server is running, trigger an immediate refresh of SSH logs to pick up the new module's logs.
         if (serverRunning && isCustomServer)
@@ -690,35 +692,34 @@ public class ServerLogProcess
 
         if (debugMode) logCallback($"Switching database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
 
-        // Update the module name
         string oldModuleName = this.moduleName;
         this.moduleName = newModuleName;
 
-        // Stop the current database log process
         StopDatabaseLogProcess();
 
-        // Clear database logs if requested
+        // Reset initial lines tracking for the new module stream
+        waitingForInitialDatabaseLines = false;
+        initialDatabaseLinesReceived = 0;
+
         if (clearDatabaseLogOnSwitch)
         {
-            ClearDatabaseLog(); // This clears in-memory and SessionState
+            ClearDatabaseLog(); 
 
-            // Add a separator message to indicate the switch
             string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
             string switchMessage = $"{timestamp} [MODULE SWITCHED] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
             
-            // Append to current log content (which should be empty after ClearDatabaseLog)
             databaseLogContent += switchMessage;
-            cachedDatabaseLogContent += switchMessage; // Also update cache
+            cachedDatabaseLogContent += switchMessage; 
 
-            // Update SessionState immediately with the switch message
             SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
             SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         }
+        
+        // Brief pause to allow the old process to fully terminate and release resources
+        System.Threading.Thread.Sleep(250); // 250ms delay
 
-        // Restart database log process with new module name if server is running
         if (serverRunning)
         {
-            // Ensure username is available before starting
             if (string.IsNullOrEmpty(userName))
             {
                 logCallback("ERROR: Username is not configured, cannot restart database log process for new module.", -1);
@@ -726,7 +727,7 @@ public class ServerLogProcess
             }
             else
             {
-                StartDatabaseLogProcess(); // This will use the new moduleName
+                StartDatabaseLogProcess(); 
                 if (debugMode) logCallback($"Database log process restarted for module '{newModuleName}'", 1);
             }
         }
@@ -735,7 +736,6 @@ public class ServerLogProcess
             if (debugMode) logCallback($"Server not running, database log process for '{newModuleName}' will start when server starts.", 0);
         }
 
-        // Notify of log update
         onDatabaseLogUpdated?.Invoke();
     }
     
@@ -1417,6 +1417,37 @@ public class ServerLogProcess
         {
             if (debugMode) logCallback("Starting database logs process...", 0);
             
+            // FIRST: Kill any lingering spacetime logs processes as a safeguard
+            try
+            {
+                if (!string.IsNullOrEmpty(userName))
+                {
+                    string killCommand = "pkill -9 -f 'spacetime logs.*-f'"; // Use -9 for forceful kill
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] StartDatabaseLogProcess: Forcefully killing any remaining spacetime logs processes: {killCommand}");
+                    
+                    Process killProcess = new Process();
+                    killProcess.StartInfo.FileName = "wsl.exe";
+                    killProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{killCommand}\"";
+                    killProcess.StartInfo.UseShellExecute = false;
+                    killProcess.StartInfo.CreateNoWindow = true;
+                    killProcess.StartInfo.RedirectStandardOutput = true;
+                    killProcess.StartInfo.RedirectStandardError = true;
+                    
+                    killProcess.Start();
+                    killProcess.WaitForExit(2000);
+                    killProcess.Dispose();
+                    
+                    // Brief wait to ensure cleanup
+                    System.Threading.Thread.Sleep(300);
+                    
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] StartDatabaseLogProcess: Cleanup completed");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] StartDatabaseLogProcess cleanup error: {ex.Message}");
+            }
+            
             // Check for required parameters first
             if (string.IsNullOrEmpty(moduleName))
             {
@@ -1611,10 +1642,57 @@ public class ServerLogProcess
     {
         if (databaseLogProcess != null)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Stopping database log process (PID: {databaseLogProcess.Id}).");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Stopping database log process (PID: {databaseLogProcess.Id}).");            // First, kill ALL existing spacetime logs processes via WSL
+            try
+            {
+                if (!string.IsNullOrEmpty(userName))
+                {
+                    // Try multiple times to ensure all processes are killed
+                    for (int attempt = 0; attempt < 3; attempt++)
+                    {
+                        string killCommand = "pkill -9 -f 'spacetime logs.*-f'"; // Use -9 for forceful kill
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Forcefully killing all spacetime logs processes (attempt {attempt + 1}): {killCommand}");
+                        
+                        Process killProcess = new Process();
+                        killProcess.StartInfo.FileName = "wsl.exe";
+                        killProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{killCommand}\"";
+                        killProcess.StartInfo.UseShellExecute = false;
+                        killProcess.StartInfo.CreateNoWindow = true;
+                        killProcess.StartInfo.RedirectStandardOutput = true;
+                        killProcess.StartInfo.RedirectStandardError = true;
+                        
+                        killProcess.Start();
+                        killProcess.WaitForExit(1000); // Wait up to 1 second per attempt
+                        killProcess.Dispose();
+                        
+                        // Small delay between attempts
+                        if (attempt < 2) System.Threading.Thread.Sleep(200);
+                    }
+                    
+                    // Final delay to ensure processes are fully terminated
+                    System.Threading.Thread.Sleep(500);
+                    
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Killed all spacetime logs processes");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error killing spacetime logs processes: {ex.Message}");
+            }
             
             if (!databaseLogProcess.HasExited)
             {
+                try
+                {
+                    // Stop reading output first
+                    databaseLogProcess.CancelOutputRead();
+                    databaseLogProcess.CancelErrorRead();
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error canceling output read: {ex.Message}");
+                }
+                
                 try
                 {
                     databaseLogProcess.Kill();
@@ -1624,6 +1702,16 @@ public class ServerLogProcess
                 {
                     if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping database log process: {ex}");
                 }
+            }
+            
+            // Dispose the process to clean up resources and event handlers
+            try
+            {
+                databaseLogProcess.Dispose();
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error disposing database log process: {ex.Message}");
             }
             
             databaseLogProcess = null;

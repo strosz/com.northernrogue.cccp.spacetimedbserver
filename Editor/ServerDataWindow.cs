@@ -1007,7 +1007,7 @@ public class ServerDataWindow : EditorWindow
     }
 
     // --- Data Fetching Logic (HTTP API) ---
-    private void RefreshAllData()
+    public void RefreshAllData()
     {
         if (isRefreshing) return;
 

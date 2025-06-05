@@ -2572,7 +2572,19 @@ public class ServerWindow : EditorWindow
 
             // Update log processes
             serverManager.SwitchModule(moduleName, true); // Clear database log
-            
+
+            // Refresh database and reducer windows
+            if (browseDbWindowOpen)
+            {
+                ServerDataWindow window = GetWindow<ServerDataWindow>();
+                window?.RefreshAllData();
+            }
+            if (runReducerWindowOpen)
+            {
+                ServerReducerWindow window = GetWindow<ServerReducerWindow>();
+                window?.RefreshReducers();
+            }
+
             LogMessage($"Selected module: {module.name} at {module.path}", 1);
         }
     }
