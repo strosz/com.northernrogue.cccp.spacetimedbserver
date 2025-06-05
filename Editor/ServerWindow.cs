@@ -84,6 +84,7 @@ public class ServerWindow : EditorWindow
     private string commandOutputLog = "";
     private bool autoscroll = true;
     private bool colorLogo = true;
+    private bool publishing = false;
     
     // Scroll tracking for autoscroll behavior
     private Vector2 lastScrollPosition;
@@ -456,6 +457,7 @@ public class ServerWindow : EditorWindow
         spacetimeDBLatestVersion = serverManager.spacetimeDBLatestVersion;
 
         isWslRunning = serverManager.IsWslRunning;
+        publishing = serverManager.Publishing;
 
         maincloudAuthToken = serverManager.MaincloudAuthToken;
     }
@@ -1900,6 +1902,13 @@ public class ServerWindow : EditorWindow
         else
         buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
 
+        if (publishing) 
+        {
+            buttonText = "Publishing...";
+            publishButtonStyle.normal.textColor = Color.green; // Disable button while publishing
+            publishButtonStyle.hover.textColor = Color.green;
+        }
+
         string publishTooltip = "Publish the selected module to the server.\n\n" +
                                 "Ctrl + Alt + Click to also reset the database.";
 
@@ -1921,6 +1930,7 @@ public class ServerWindow : EditorWindow
             else
             {
                 serverManager.Publish(false);
+                publishing = true; // Set flag to indicate publishing is in progress
             }
         }
         

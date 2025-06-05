@@ -35,6 +35,7 @@ public class ServerManager
     private bool justStopped = false;
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
+    private bool publishing = false; // Flag to track if a publish operation is in progress
     
     // Server status resilience (prevent false positives during compilation/brief hiccups)
     private int consecutiveFailedChecks = 0;
@@ -129,6 +130,7 @@ public class ServerManager
     public bool IsStartingUp => isStartingUp;
     public bool IsServerRunning => serverConfirmedRunning;
     public ServerMode CurrentServerMode => serverMode;
+    public bool Publishing => publishing;
 
     // Prerequisites properties
     public bool HasWSL => hasWSL;
@@ -1060,7 +1062,7 @@ public class ServerManager
                     }
                 }
             }
-            else // WSL mode
+            else // WSL local or Maincloud mode
             {
                 // Execute the command through the command processor
                 var result = await cmdProcessor.RunServerCommandAsync(command, ServerDirectory);
@@ -1089,9 +1091,9 @@ public class ServerManager
                 
                 if (result.success)
                 {
-                    // Reset change detection state after successful publish
                     if (isPublishCommand)
                     {
+                        // Reset change detection state after successful publish
                         if (detectionProcess != null && detectionProcess.IsDetectingChanges())
                         {
                             detectionProcess.ResetTrackingAfterPublish();
@@ -1106,11 +1108,13 @@ public class ServerManager
                             string outDir = GetRelativeClientPath();
                             RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
                         }
+                        publishing = false; // Reset publishing state
                     }
                     else if (isGenerateCommand && description == "Generating Unity files (auto)")
                     {
-                        LogMessage("Publish and generate successful, requesting script compilation...", 1);
+                        LogMessage("Requesting script compilation...", 1);
                         UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                        LogMessage("Generate successful!", 1);
                     }
                 }
             }
