@@ -558,6 +558,55 @@ public class ServerLogProcess
         
         if (debugMode) logCallback("SSH log reading stopped", 0);
     }
+
+    public void SwitchModuleSSH(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    {
+        if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (debugMode) logCallback($"SSH: Module '{newModuleName}' is already active. No switch needed.", 0);
+            return;
+        }
+
+        if (debugMode) logCallback($"Switching SSH database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+
+        // Update the module name
+        string oldModuleName = this.moduleName;
+        this.moduleName = newModuleName;
+
+        // Clear database logs if requested
+        if (clearDatabaseLogOnSwitch)
+        {
+            ClearSSHDatabaseLog(); // This clears in-memory and SessionState for SSH logs
+
+            // Add a separator message to indicate the switch
+            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+            string switchMessage = $"{timestamp} [MODULE SWITCHED - SSH] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
+            
+            databaseLogContent += switchMessage;
+            cachedDatabaseLogContent += switchMessage;
+
+            // Update SessionState immediately
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        }
+
+        // Reset the database log timestamp to start fresh for the new module
+        // This ensures that when ReadSSHDatabaseLogsAsync is called next, it fetches logs for the new module from a recent point.
+        lastDatabaseLogTimestamp = DateTime.UtcNow.AddSeconds(-5); // Start a few seconds in the past to catch any immediate logs
+        if (debugMode) logCallback($"SSH database log timestamp reset for module '{newModuleName}'. Next fetch will be from {lastDatabaseLogTimestamp:O}", 1);
+
+        // If the server is running, trigger an immediate refresh of SSH logs to pick up the new module's logs.
+        if (serverRunning && isCustomServer)
+        {
+            EditorApplication.delayCall += async () => 
+            {
+                await ReadSSHDatabaseLogsAsync();
+            };
+        }
+
+        // Notify of log update
+        onDatabaseLogUpdated?.Invoke();
+    }
     #endregion
     
     public ServerLogProcess(
@@ -589,13 +638,33 @@ public class ServerLogProcess
     
     public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
     {
+        bool moduleChanged = !string.Equals(this.moduleName, moduleName, StringComparison.OrdinalIgnoreCase);
+        string oldModuleName = this.moduleName; // Store old module name for logging
+
         this.moduleName = moduleName;
         this.serverDirectory = serverDirectory;
         this.clearModuleLogAtStart = clearModuleLogAtStart;
         this.clearDatabaseLogAtStart = clearDatabaseLogAtStart;
         this.userName = userName;
         
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}");
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}, serverDirectory: {this.serverDirectory}");
+
+        // If module changed and server is running, switch to the new module
+        if (moduleChanged && serverRunning && !string.IsNullOrEmpty(this.moduleName))
+        {
+            if (debugMode) logCallback($"Module changed from '{oldModuleName}' to '{this.moduleName}' while server running, switching database logs...", 0);
+            
+            if (isCustomServer)
+            {
+                // For SSH, we need a specific method to handle the log source change
+                SwitchModuleSSH(this.moduleName, true); // Clear logs when switching
+            }
+            else
+            {
+                // For local/WSL, use the general SwitchModule method
+                SwitchModule(this.moduleName, true); // Clear logs when switching
+            }
+        }
     }
     
     public void SetServerRunningState(bool isRunning)
@@ -609,6 +678,65 @@ public class ServerLogProcess
             initialDatabaseLinesReceived = 0;
         }
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
+    }
+
+    public void SwitchModule(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    {
+        if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (debugMode) logCallback($"Module '{newModuleName}' is already active. No switch needed.", 0);
+            return;
+        }
+
+        if (debugMode) logCallback($"Switching database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+
+        // Update the module name
+        string oldModuleName = this.moduleName;
+        this.moduleName = newModuleName;
+
+        // Stop the current database log process
+        StopDatabaseLogProcess();
+
+        // Clear database logs if requested
+        if (clearDatabaseLogOnSwitch)
+        {
+            ClearDatabaseLog(); // This clears in-memory and SessionState
+
+            // Add a separator message to indicate the switch
+            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+            string switchMessage = $"{timestamp} [MODULE SWITCHED] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
+            
+            // Append to current log content (which should be empty after ClearDatabaseLog)
+            databaseLogContent += switchMessage;
+            cachedDatabaseLogContent += switchMessage; // Also update cache
+
+            // Update SessionState immediately with the switch message
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        }
+
+        // Restart database log process with new module name if server is running
+        if (serverRunning)
+        {
+            // Ensure username is available before starting
+            if (string.IsNullOrEmpty(userName))
+            {
+                logCallback("ERROR: Username is not configured, cannot restart database log process for new module.", -1);
+                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] SwitchModule failed: userName is null/empty, cannot restart database log process.");
+            }
+            else
+            {
+                StartDatabaseLogProcess(); // This will use the new moduleName
+                if (debugMode) logCallback($"Database log process restarted for module '{newModuleName}'", 1);
+            }
+        }
+        else
+        {
+            if (debugMode) logCallback($"Server not running, database log process for '{newModuleName}' will start when server starts.", 0);
+        }
+
+        // Notify of log update
+        onDatabaseLogUpdated?.Invoke();
     }
     
     // Force refresh in-memory logs from SessionState - used when ServerOutputWindow gets focus

@@ -2569,6 +2569,9 @@ public class ServerWindow : EditorWindow
             {
                 detectionProcess.Configure(serverDirectory, detectServerChanges);
             }
+
+            // Update log processes
+            serverManager.SwitchModule(moduleName, true); // Clear database log
             
             LogMessage($"Selected module: {module.name} at {module.path}", 1);
         }

@@ -1184,6 +1184,25 @@ public class ServerManager
 
     #region Server Methods
 
+    public void SwitchModule(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    {
+        if (string.IsNullOrEmpty(ModuleName))
+        {
+            LogMessage("Please set the module name first.", -1);
+            return;
+        }
+        
+        // Run the switch command
+        else if (serverMode == ServerMode.CustomServer)
+        {
+            logProcessor.SwitchModuleSSH(newModuleName, clearDatabaseLogOnSwitch);
+        }
+        else
+        {
+            logProcessor.SwitchModule(newModuleName, clearDatabaseLogOnSwitch);
+        }
+    }
+
     public void InitNewModule()
     {
         if (string.IsNullOrEmpty(ServerDirectory))
