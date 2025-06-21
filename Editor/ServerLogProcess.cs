@@ -814,20 +814,38 @@ public class ServerLogProcess
                 bool hasNewLogs = false;
                 int lineCount = 0;
                 DateTime latestTimestamp = lastWSLModuleLogTimestamp;
-                
-                foreach (string line in lines)
+                  foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
-                        string formattedLine = FormatServerLogLine(line.Trim());
-                        moduleLogAccumulator.Append(formattedLine).Append("\n");
-                        silentServerCombinedLog += formattedLine + "\n";
-                        cachedModuleLogContent += formattedLine + "\n";
-                        hasNewLogs = true;
-                        lineCount++;
-                        
-                        // Extract and track the actual timestamp from this log line
+                        // Extract timestamp before formatting to ensure we can track progression
                         DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                          string formattedLine = FormatServerLogLine(line.Trim());
+                        
+                        // Only process if line wasn't filtered out (not already formatted)
+                        if (formattedLine != null)
+                        {
+                            // Check if this log was already processed by checking if it's in the current content
+                            if (!silentServerCombinedLog.Contains(formattedLine))
+                            {
+                                moduleLogAccumulator.Append(formattedLine).Append("\n");
+                                silentServerCombinedLog += formattedLine + "\n";
+                                cachedModuleLogContent += formattedLine + "\n";
+                                hasNewLogs = true;
+                                lineCount++;
+                                
+                                if (debugMode && lineCount <= 3) // Show first few lines for debugging
+                                {
+                                    UnityEngine.Debug.Log($"[ServerLogProcess] Added WSL module log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
+                                }
+                            }
+                            else if (debugMode)
+                            {
+                                UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate module log line: {formattedLine.Substring(0, Math.Min(80, formattedLine.Length))}...");
+                            }
+                        }
+                        
+                        // Track the latest timestamp even if the line was a duplicate
                         if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
                         {
                             latestTimestamp = logTimestamp;
@@ -1001,8 +1019,7 @@ public class ServerLogProcess
                     if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error killing WSL database log process: {killEx.Message}");
                 }
             }            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database logs - Output length: {output?.Length ?? 0}, Error: {error}");
-            
-            if (!string.IsNullOrEmpty(output))
+              if (!string.IsNullOrEmpty(output))
             {
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
@@ -1013,30 +1030,54 @@ public class ServerLogProcess
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
+                        // Extract timestamp before formatting to ensure we can track progression
+                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        
                         string formattedLine = FormatDatabaseLogLine(line.Trim());
                         if (formattedLine != null) // Only process if line wasn't filtered out
                         {
-                            databaseLogQueue.Enqueue(formattedLine);
-                            hasNewLogs = true;
-                            lineCount++;
-                            
-                            if (debugMode && lineCount <= 3) // Show first few lines for debugging
+                            // Check if this log was already processed by checking if it's in the current content
+                            if (!databaseLogContent.Contains(formattedLine))
                             {
-                                UnityEngine.Debug.Log($"[ServerLogProcess] Queued WSL database log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
+                                databaseLogContent += formattedLine + "\n";
+                                cachedDatabaseLogContent += formattedLine + "\n";
+                                hasNewLogs = true;
+                                lineCount++;
+                                
+                                if (debugMode && lineCount <= 3) // Show first few lines for debugging
+                                {
+                                    UnityEngine.Debug.Log($"[ServerLogProcess] Added WSL database log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
+                                }
+                            }
+                            else if (debugMode)
+                            {
+                                UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate database log line: {formattedLine.Substring(0, Math.Min(80, formattedLine.Length))}...");
                             }
                             
-                             // Extract and track the actual timestamp from this log line
-                            DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                            // Track the latest timestamp even if the line was a duplicate
                             if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
                             {
                                 latestTimestamp = logTimestamp;
                             }
                         }
                     }
-                }
-                  if (hasNewLogs)
+                }                if (hasNewLogs)
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new WSL database log lines");
+                    
+                    // Manage log size similar to module logs
+                    const int maxLogLength = 75000;
+                    const int trimToLength = 50000;
+                    if (databaseLogContent.Length > maxLogLength)
+                    {
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars.");
+                        databaseLogContent = "[... Log Truncated ...]\n" + databaseLogContent.Substring(databaseLogContent.Length - trimToLength);
+                        cachedDatabaseLogContent = "[... Log Truncated ...]\n" + cachedDatabaseLogContent.Substring(cachedDatabaseLogContent.Length - trimToLength);
+                    }
+                    
+                    // Update SessionState immediately
+                    SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                    SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
                     
                     // Always advance the timestamp to prevent infinite loops
                     DateTime timestampToUse;
@@ -1591,13 +1632,18 @@ public class ServerLogProcess
         }
     }
 
-    #endregion
-
-    // Helper method to format server log lines with consistent timestamps
+    #endregion    // Helper method to format server log lines with consistent timestamps
     private string FormatServerLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
             return logLine;
+            
+        // Check if the line is already formatted with our timestamp prefix
+        if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Module log line already formatted, skipping: {logLine.Substring(0, Math.Min(100, logLine.Length))}");
+            return null; // Return null to indicate this line should be skipped (already processed)
+        }
 
         string timestampPrefix = "";
         string messageContent = logLine;
@@ -1701,12 +1747,11 @@ public class ServerLogProcess
     {
         if (string.IsNullOrEmpty(logLine))
             return logLine;
-            
-        // Check if the line is already formatted with our timestamp prefix
+              // Check if the line is already formatted with our timestamp prefix
         if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
         {
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Log line already formatted, skipping: {logLine.Substring(0, Math.Min(100, logLine.Length))}");
-            return logLine; // Already formatted, return as-is
+            return null; // Return null to indicate this line should be skipped (already processed)
         }// Filter out specific error messages when not in debug mode
         if (!debugMode)
         {
