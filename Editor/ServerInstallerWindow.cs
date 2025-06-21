@@ -57,6 +57,8 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasCurl = false;
     private bool hasSpacetimeDBServer = false;
     private bool hasSpacetimeDBPath = false;
+    private bool hasSpacetimeDBService = false;
+    private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
     private bool hasSpacetimeDBUnitySDK = false;
 
@@ -145,6 +147,8 @@ public class ServerInstallerWindow : EditorWindow
         hasCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCurl", false);
         hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
+        hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
+        hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
 
@@ -273,6 +277,17 @@ public class ServerInstallerWindow : EditorWindow
                 isInstalled = hasSpacetimeDBPath,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallSpacetimeDBPath
+            },
+            new InstallerItem
+            {
+                title = "Install SpacetimeDB Service",
+                description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
+                              "Creates a systemd service file to run SpacetimeDB in the background\n" +
+                              "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
+                isInstalled = hasSpacetimeDBService,
+                isEnabled = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName),
+                installAction = InstallSpacetimeDBService,
+                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") // Load from prefs or use default
             },
             new InstallerItem
             {
@@ -418,6 +433,11 @@ public class ServerInstallerWindow : EditorWindow
                 {
                     newState = hasSpacetimeDBPath;
                     newEnabledState = hasWSL && hasDebian && hasDebianTrixie && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("SpacetimeDB Service"))
+                {
+                    newState = hasSpacetimeDBService;
+                    newEnabledState = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName);
                 }
                 else if (item.title.Contains("Rust"))
                 {
@@ -947,7 +967,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
         });
         
-        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
+        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService) => {
             hasWSL = wsl;
             hasDebian = debian;
             hasDebianTrixie = trixie;
@@ -955,6 +975,8 @@ public class ServerInstallerWindow : EditorWindow
             hasSpacetimeDBServer = spacetime;
             hasSpacetimeDBPath = spacetimePath;
             hasRust = rust;
+            hasSpacetimeDBService = spacetimeService;
+            hasSpacetimeDBLogsService = spacetimeLogsService;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -963,6 +985,8 @@ public class ServerInstallerWindow : EditorWindow
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", hasCurl);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", hasSpacetimeDBServer);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", hasSpacetimeDBService);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", hasSpacetimeDBLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
             EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
         });
@@ -1498,8 +1522,197 @@ public class ServerInstallerWindow : EditorWindow
             {
                 SetStatus("SpacetimeDB PATH installation failed. Please install manually.", Color.red);
             }
+        }    
+    }
+
+    private async void InstallSpacetimeDBService()
+    {
+        // Check prerequisites
+        if (!hasWSL)
+        {
+            SetStatus("WSL is not installed. Please install WSL first.", Color.red);
+            return;
+        }
+
+        if (!hasDebian)
+        {
+            SetStatus("Debian is not installed on WSL. Please install Debian first.", Color.red);
+            return;
+        }
+
+        if (!hasSpacetimeDBServer)
+        {
+            SetStatus("SpacetimeDB Server is not installed. Please install SpacetimeDB Server first.", Color.red);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(userName))
+        {
+            SetStatus("Please enter a username first.", Color.red);
+            return;
+        }
+        
+        // Get the expected module name from the installer item
+        string expectedModuleName = "";
+        foreach (var item in installerItems)
+        {
+            if (item.title == "Install SpacetimeDB Service")
+            {
+                expectedModuleName = item.expectedModuleName;
+                break;
+            }
+        }
+        
+        if (string.IsNullOrEmpty(expectedModuleName))
+        {
+            SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
+            return;
+        }
+
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasSpacetimeDBService && !installIfAlreadyInstalled)
+        {
+            SetStatus("SpacetimeDB Service is already installed.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing SpacetimeDB Service...", Color.yellow);
+        
+        // Create a bash script for SpacetimeDB Service installation via WSL
+        string bashScript = 
+            "#!/bin/bash\n\n" +
+            "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
+            
+            "# Create directory for SpacetimeDB if it doesn't exist\n" +
+            $"sudo mkdir -p /home/{userName}/.local/share/spacetime\n" +
+            $"sudo chown {userName}:{userName} /home/{userName}/.local/share/spacetime\n\n" +
+            
+            "# Create the service file\n" +
+            "echo \"Creating systemd service file...\"\n" +
+            "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
+            "[Unit]\n" +
+            "Description=SpacetimeDB Server\n" +
+            "After=network.target\n\n" +
+            "[Service]\n" +
+            $"User={userName}\n" +
+            $"Environment=HOME=/home/{userName}\n" +
+            $"ExecStart=/home/{userName}/.local/bin/spacetime --root-dir=/home/{userName}/.local/share/spacetime start --listen-addr=0.0.0.0:3000\n" +
+            "Restart=always\n" +
+            $"WorkingDirectory=/home/{userName}\n\n"+
+            "[Install]\n" +
+            "WantedBy=multi-user.target\n" +
+            "EOF\n\n" +
+            
+            "# Reload systemd to recognize the new service\n" +
+            "echo \"Reloading systemd...\"\n" +
+            "sudo systemctl daemon-reload\n\n" +
+            
+            "# Enable and start the service\n" +
+            "echo \"Enabling and starting SpacetimeDB service...\"\n" +
+            "sudo systemctl enable spacetimedb.service\n" +
+            "sudo systemctl start spacetimedb.service\n\n" +
+            
+            "# Check service status\n" +
+            "echo \"Checking service status...\"\n" +
+            "sudo systemctl status spacetimedb.service\n\n" +
+            
+            "# Create the database logs service file\n" +
+            "echo \"Creating SpacetimeDB database logs service...\"\n" +
+            "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
+            "[Unit]\n" +
+            "Description=SpacetimeDB Database Logs\n" +
+            "After=spacetimedb.service\n" +
+            "Requires=spacetimedb.service\n\n" +
+            "[Service]\n" +
+            $"User={userName}\n" +
+            $"Environment=HOME=/home/{userName}\n" +
+            "Type=simple\n" +
+            "Restart=always\n" +
+            "RestartSec=5\n" +
+            $"ExecStart=/home/{userName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
+            $"WorkingDirectory=/home/{userName}\n\n" +
+            "[Install]\n" +
+            "WantedBy=multi-user.target\n" +
+            "EOF\n\n" +
+            
+            "# Reload systemd to recognize the new service\n" +
+            "sudo systemctl daemon-reload\n\n" +
+            
+            "# Enable and start the database logs service\n" +
+            "echo \"Enabling SpacetimeDB database logs service...\"\n" +
+            "sudo systemctl enable spacetimedb-logs.service\n" +
+            "sudo systemctl start spacetimedb-logs.service\n\n" +
+            "# Check database logs service status\n" +
+            "echo \"Checking SpacetimeDB database logs service status...\"\n" +
+            "sudo systemctl status spacetimedb-logs.service\n\n" +
+
+            "echo \"===== Done! =====\"\n" +
+            $"echo \"Database logs service configured for module: {expectedModuleName}\"";
+          // Create a temporary script file and execute it via WSL
+        SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
+        
+        // Create a temporary script file path
+        string tempScriptPath = System.IO.Path.GetTempFileName() + ".sh";
+        
+        try
+        {
+            // Write the bash script to the temporary file
+            await System.IO.File.WriteAllTextAsync(tempScriptPath, bashScript);
+            
+            // Convert Windows path to WSL path for the script
+            string wslScriptPath = tempScriptPath.Replace("\\", "/").Replace("C:", "/mnt/c");
+            
+            // Execute the script via WSL
+            string command = $"wsl -d Debian -u {userName} bash {wslScriptPath}";
+              bool success = await cmdProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+            
+            if (success)
+            {
+                SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
+                await Task.Delay(2000);
+                
+                CheckInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasSpacetimeDBService)
+                {
+                    string logsServiceStatus = hasSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
+                    SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
+                }
+                else
+                {
+                    SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
+                }
+            }
+            else
+            {
+                SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            SetStatus($"Error during SpacetimeDB Service installation: {ex.Message}", Color.red);
+            Debug.LogError($"InstallSpacetimeDBService error: {ex}");
+        }
+        finally
+        {
+            // Clean up the temporary script file
+            try
+            {
+                if (System.IO.File.Exists(tempScriptPath))
+                {
+                    System.IO.File.Delete(tempScriptPath);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"Failed to delete temporary script file: {ex.Message}");
+            }
         }
     }
+
     private async void InstallRust()
     {
         CheckInstallationStatus();
@@ -2244,7 +2457,7 @@ public class ServerInstallerWindow : EditorWindow
             "echo \"Enabling SpacetimeDB database logs service...\"\n" +
             "sudo systemctl enable spacetimedb-logs.service\n" +
             "sudo systemctl start spacetimedb-logs.service\n\n" +
-            
+
             "# Check database logs service status\n" +
             "echo \"Checking SpacetimeDB database logs service status...\"\n" +
             "sudo systemctl status spacetimedb-logs.service\n\n" +
@@ -2280,7 +2493,7 @@ public class ServerInstallerWindow : EditorWindow
         }
     }
     #endregion
-    
+
     #region Log Messages
     private void LogMessage(string message, int type)
     {

@@ -31,6 +31,8 @@ public class ServerWindow : EditorWindow
     private bool hasCurl = false;
     private bool hasSpacetimeDBServer = false;
     private bool hasSpacetimeDBPath = false;
+    private bool hasSpacetimeDBService = false;
+    private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
     private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
@@ -365,7 +367,6 @@ public class ServerWindow : EditorWindow
             if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
             {
                 if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
-                AttemptTailRestartAfterReload();
             }
             else if (!serverManager.IsServerStarted || !serverManager.SilentMode)
             {
@@ -415,6 +416,8 @@ public class ServerWindow : EditorWindow
         hasCurl = serverManager.HasCurl;
         hasSpacetimeDBServer = serverManager.HasSpacetimeDBServer;
         hasSpacetimeDBPath = serverManager.HasSpacetimeDBPath;
+        hasSpacetimeDBService = serverManager.HasSpacetimeDBService;
+        hasSpacetimeDBLogsService = serverManager.HasSpacetimeDBLogsService;
         hasRust = serverManager.HasRust;
         
         initializedFirstModule = serverManager.InitializedFirstModule;
@@ -1955,8 +1958,8 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
-            EditorApplication.delayCall += () => {
+        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService) => {
+            EditorApplication.delayCall += () => {                
                 // Update local state for UI
                 hasWSL = wsl;
                 hasDebian = debian;
@@ -1964,6 +1967,8 @@ public class ServerWindow : EditorWindow
                 hasCurl = curl;
                 hasSpacetimeDBServer = spacetime;
                 hasSpacetimeDBPath = spacetimePath;
+                hasSpacetimeDBService = spacetimeService;
+                hasSpacetimeDBLogsService = spacetimeLogsService;
                 hasRust = rust;
                 wslPrerequisitesChecked = true;
                 
@@ -2141,6 +2146,15 @@ public class ServerWindow : EditorWindow
         }
     }
 
+    public void ForceWSLLogRefresh()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Force triggering WSL log refresh");
+        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+        {
+            serverManager.ForceWSLLogRefresh();
+        }
+    }
+
     public async void LoginMaincloud()
     {
         serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible local login...");
@@ -2302,16 +2316,6 @@ public class ServerWindow : EditorWindow
             // Store silent server state
             SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
         }
-    }
-
-    public void AttemptTailRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log($"[ServerWindow] Attempting tail restart in ServerWindow.");
-        serverManager.AttemptTailRestartAfterReload();
-    }
-
-    public void StopTailProcessExplicitly()    {
-        serverManager.StopTailProcessExplicitly();
     }
 
     private int ExtractPortFromUrl(string url)

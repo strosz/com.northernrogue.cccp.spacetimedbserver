@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 
-// Runs the main server and installation processes and methods ///
+// Runs the local wsl server installation processes and methods ///
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -20,15 +20,21 @@ public class ServerCMDProcess
     public const string WslPidPath = "/tmp/spacetime.pid";
     
     // Async Port Check State
-    private volatile bool lastPortCheckResult = false;
-    private volatile bool isPortCheckRunning = false;
     private readonly object statusUpdateLock = new object();
+    
+    // Server status caching
+    private bool cachedServerRunningStatus = false;
+    private double lastStatusCacheTime = 0;
+    private const double statusCacheTimeout = 10; // Status valid for 10 seconds
     
     // Reference to the server process
     private Process serverProcess;
     
     // Debug logging delegate for verbose output
     private Action<string, int> logCallback;
+    
+    // Public property to access cached server status
+    public bool cachedServerRunningStatus_Public => cachedServerRunningStatus;
     
     public ServerCMDProcess(Action<string, int> logCallback, bool debugMode = false)
     {
@@ -232,9 +238,10 @@ public class ServerCMDProcess
         try {
             // Use absolute path to spacetime with dynamic username
             string spacetimePath = $"/home/{userName}/.local/bin/spacetime";
-            string command = $"{spacetimePath} start &>> \"{logPath}\"";
+            // Create command that captures PID for better process management
+            string command = $"nohup {spacetimePath} start &>> \"{logPath}\" & echo $! > {WslPidPath}";
             
-            if (debugMode) logCallback($"WSL bash -l -c Command (Absolute Path, No CD): {command}", 0);
+            if (debugMode) logCallback($"WSL bash -l -c Command (with PID capture): {command}", 0);
             
             Process process = new Process();
             process.StartInfo.FileName = "wsl.exe"; 
@@ -248,7 +255,7 @@ public class ServerCMDProcess
             if (debugMode) logCallback("Attempting to launch server process via bash -l -c...", 0);
             process.Start();
             
-            if (debugMode) logCallback($"Server process launched (PID: {process.Id}). Relying on log file & port check...", 0);
+            if (debugMode) logCallback($"Server process launched (PID: {process.Id}). Creating PID file for WSL process management...", 0);
             
             serverProcess = process;
             return process;
@@ -339,107 +346,98 @@ public class ServerCMDProcess
     #endregion
 
     #region CheckServerProcess
-        
-    public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
-    {
-        if (isPortCheckRunning)
-            return lastPortCheckResult;
-            
-        // If WSL is not running, don't attempt the check to avoid starting WSL
-        if (!isWslRunning)
-        {
-            //if (debugMode) logCallback("WSL is not running, skipping process check to avoid starting WSL", 0);
-            lock (statusUpdateLock)
-            {
-                lastPortCheckResult = false;
-            }
-            return false;
-        }
-        
+      public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
+    {            
         // Validate username before proceeding (must be done on main thread)
         if (!ValidateUserName()) 
         {
-            lock (statusUpdateLock)
-            {
-                lastPortCheckResult = false;
-            }
             return false;
         }
         
         // Capture username for use in background thread
         string currentUserName = userName;
+          // Variables to capture results from background thread
+        bool processResult = false;
+        string errorMessage = null;
+        string debugMessage = null;
+        bool timedOut = false;
+        int exitCode = 0;
             
-        isPortCheckRunning = true;
-        
-        bool result = await Task.Run(() =>
-        {
-            try
-            {
-                using (Process process = new Process())
-                {
-                    process.StartInfo.FileName = "wsl";
-                    process.StartInfo.Arguments = $"-d Debian -u {currentUserName} -- ps aux | grep spacetimedb-standalone | grep -v grep";
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-
-                    process.Start();
-                    string output = process.StandardOutput.ReadToEnd().Trim();
-                    string error = process.StandardError.ReadToEnd().Trim();
-                    process.WaitForExit(3000);
-                    
-                    if (!process.HasExited)
-                    {
-                        try { process.Kill(); } catch {}
-                        return false;
-                    }
-
-                    bool running = process.ExitCode == 0 && output.Contains("spacetimedb-standalone");
-                    
-                    return running;
-                }
-            }            
-            catch (Exception)
-            {
-                return false;
-            }
-        });
-        
-        lock (statusUpdateLock)
-        {
-            lastPortCheckResult = result;
-        }
-        
-        isPortCheckRunning = false;
-        return result;
-    }
-    
-    public bool IsPortInUse(int port)
-    {
         try
         {
-            Process process = new Process();
-            process.StartInfo.FileName = "powershell.exe";
-            process.StartInfo.Arguments = $"-Command \"Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count\"";
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-
-            if (int.TryParse(output, out int count) && count > 0)
+            var result = await Task.Run(() =>
             {
-                return true;
-            }
+                try
+                {                    using (Process process = new Process())
+                    {
+                        process.StartInfo.FileName = "wsl";
+                        // Suppress "bogus screen size" warning by redirecting stderr to /dev/null for this command
+                        process.StartInfo.Arguments = $"-d Debian -u {currentUserName} -- ps aux 2>/dev/null | grep spacetimedb-standalone | grep -v grep";
+                        process.StartInfo.RedirectStandardOutput = true;
+                        process.StartInfo.RedirectStandardError = true;
+                        process.StartInfo.UseShellExecute = false;
+                        process.StartInfo.CreateNoWindow = true;
 
-            return false;
+                        process.Start();
+                        string output = process.StandardOutput.ReadToEnd().Trim();
+                        string error = process.StandardError.ReadToEnd().Trim();
+                        process.WaitForExit(3000);
+                        
+                        if (!process.HasExited)
+                        {
+                            try { process.Kill(); } catch {}
+                            return new { Success = false, Error = error, Debug = "timed out", TimedOut = true, ExitCode = -1, Exception = (string)null };
+                        }
+
+                        bool running = process.ExitCode == 0 && output.Contains("spacetimedb-standalone");
+                        
+                        return new { Success = running, Error = error, Debug = running ? "running" : "not running", TimedOut = false, ExitCode = process.ExitCode, Exception = (string)null };
+                    }
+                }            
+                catch (Exception ex)
+                {
+                    return new { Success = false, Error = (string)null, Debug = (string)null, TimedOut = false, ExitCode = -1, Exception = ex.Message };
+                }
+            });
+            
+            // Handle results on main thread
+            if (!string.IsNullOrEmpty(result.Exception))
+            {
+                if (debugMode) logCallback($"WSL process check exception: {result.Exception}", -1);
+                return false;
+            }
+            
+            processResult = result.Success;
+            errorMessage = result.Error;
+            debugMessage = result.Debug;
+            timedOut = result.TimedOut;
+            exitCode = result.ExitCode;
+            
+            // Log results on main thread
+            if (timedOut && debugMode)
+            {
+                logCallback("WSL process check timed out", -1);
+                return false;
+            }
+              if (debugMode && !string.IsNullOrEmpty(errorMessage))
+            {
+                // Filter out the common "bogus screen size" warning that's not useful
+                if (!errorMessage.Contains("screen size is bogus"))
+                {
+                    logCallback($"WSL process check stderr: {errorMessage}", 0);
+                }
+            }
+            
+            if (debugMode && !string.IsNullOrEmpty(debugMessage))
+            {
+                logCallback($"WSL process check result: {debugMessage} (exit code: {exitCode})", processResult ? 1 : 0);
+            }
+            
+            return processResult;
         }
         catch (Exception ex)
         {
-            logCallback($"Error checking port {port}: {ex.Message}", -1);
+            if (debugMode) logCallback($"Error during server status check: {ex.Message}", -1);
             return false;
         }
     }
@@ -447,7 +445,7 @@ public class ServerCMDProcess
     
     #region CheckPrereq
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
     {
         logCallback("Checking pre-requisites...", 0);
         
@@ -498,7 +496,17 @@ public class ServerCMDProcess
                 // Rust Check
                 "Write-Host 'Checking rustup...'; " +
                 "$rust = (wsl -d Debian -u "+ userName + " -- bash -l -c '\"which rustup\"' 2>&1); " +
-                "if ($rust -match 'rustup') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }" +
+                "if ($rust -match 'rustup') { Write-Host 'RUST_INSTALLED=TRUE' } else { Write-Host 'RUST_INSTALLED=FALSE' }; " +
+                
+                // SpacetimeDB Service Check
+                "Write-Host 'Checking SpacetimeDB Service...'; " +
+                "$service = (wsl -d Debian -u " + userName + " -- systemctl is-enabled spacetimedb.service 2>&1); " +
+                "if ($service -match 'enabled') { Write-Host 'SPACETIMEDBSERVICE_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBSERVICE_INSTALLED=FALSE' }; " +
+                
+                // SpacetimeDB Logs Service Check
+                "Write-Host 'Checking SpacetimeDB Logs Service...'; " +
+                "$logsService = (wsl -d Debian -u " + userName + " -- systemctl status spacetimedb-logs.service 2>&1); " +
+                "if ($logsService -match 'spacetimedb-logs.service') { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE' }" +
             "} else { " +
                 // Set all dependent checks to FALSE if WSL is not installed
                 "Write-Host 'DEBIAN_INSTALLED=FALSE'; " +
@@ -506,7 +514,9 @@ public class ServerCMDProcess
                 "Write-Host 'CURL_INSTALLED=FALSE'; " +
                 "Write-Host 'SPACETIMEDB_INSTALLED=FALSE'; " +
                 "Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE'; " +
-                "Write-Host 'RUST_INSTALLED=FALSE'" +
+                "Write-Host 'RUST_INSTALLED=FALSE'; " +
+                "Write-Host 'SPACETIMEDBSERVICE_INSTALLED=FALSE'; " +
+                "Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE'" +
             "}\"";
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.UseShellExecute = false;
@@ -527,8 +537,9 @@ public class ServerCMDProcess
         bool hasSpacetimeDB = output.Contains("SPACETIMEDB_INSTALLED=TRUE");
         bool hasSpacetimeDBPath = output.Contains("SPACETIMEDBPATH_INSTALLED=TRUE");
         bool hasRust = output.Contains("RUST_INSTALLED=TRUE");
-
-        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}", 0);
+        bool hasSpacetimeDBService = output.Contains("SPACETIMEDBSERVICE_INSTALLED=TRUE");
+        bool hasSpacetimeDBLogsService = output.Contains("SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE");        
+        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}, Service: {hasSpacetimeDBService}, Logs Service: {hasSpacetimeDBLogsService}", 0);
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDB || !hasSpacetimeDBPath)
         {
             logCallback("Missing pre-requisites or Debian username. Install manually or with the Server Installer Window.", -2);
@@ -536,77 +547,157 @@ public class ServerCMDProcess
         {
             logCallback("Pre-requisites check complete. All required components are installed.", 1);
         }
-        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust);
+        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust, hasSpacetimeDBService, hasSpacetimeDBLogsService);
     }
     #endregion
 
     #region StopServer
-    
-    public bool StopServer(string commandPattern = null)
+    public async Task<bool> StopServer(string commandPattern = null)
     {
         // Validate username before proceeding
         if (!ValidateUserName()) return false;
 
         try
-        {
-            // If commandPattern is null, construct it with current userName
-            if (commandPattern == null)
-            {
-                commandPattern = $"/home/{userName}/.local/bin/spacetime start";
-            }
+        {   
+            // Check if SpacetimeDB service is enabled first
+            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
             
-            // First try graceful termination
-            if (debugMode) logCallback($"Attempting graceful stop (TERM signal) for '{commandPattern}'...", 0);
-            int termExitCode = RunWslCommandSilent($"pkill --signal TERM -f \"{commandPattern}\""); 
-            if (debugMode) logCallback($"TERM signal sent via pkill -f. Exit Code: {termExitCode} (0=killed, 1=not found)", 0);
-            System.Threading.Thread.Sleep(1000); // Wait for graceful shutdown
-
-            // Check if we need force kill
-            if (CheckIfServerRunningWsl())
+            if (hasSpacetimeDBService)
             {
-                if (debugMode) logCallback("Server still running after TERM. Sending KILL signal...", -2);
-                int killExitCode = RunWslCommandSilent($"pkill --signal KILL -f \"{commandPattern}\"");
-                if (debugMode) logCallback($"KILL signal sent via pkill -f. Exit Code: {killExitCode}", 0);
-                System.Threading.Thread.Sleep(500);
+                // Use service-based stopping
+                return await StopSpacetimeDBServices();
             }
             else
             {
-                if (debugMode) logCallback("Server stopped after TERM signal.", 1);
+                // Fallback to process-based stopping for non-service installations
+                logCallback("SpacetimeDB service not configured. Attempting to stop processes manually...", 0);
+                return await StopSpacetimeDBProcesses();
             }
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error stopping server: {ex.Message}", -1);
+            return false;
+        }
+    }
+    
+    private async Task<bool> StopSpacetimeDBProcesses()
+    {
+        try
+        {
+            // Process-based stopping for non-service installations
+            logCallback("Attempting to stop SpacetimeDB processes...", 0);
+            
+            // Try multiple stop strategies to ensure we catch all possible running processes
+            
+            // Strategy 1: Stop using PID file if it exists
+            bool pidFileExists = RunWslCommandSilent($"test -f {WslPidPath}") == 0;
+            if (pidFileExists)
+            {
+                if (debugMode) logCallback("Found PID file, attempting graceful stop via PID...", 0);
+                int termResult = RunWslCommandSilent($"kill -TERM $(cat {WslPidPath}) 2>/dev/null");
+                await Task.Delay(2000); // Give it time to shut down gracefully
+                
+                // Check if it's still running
+                bool stillRunningViaPid = RunWslCommandSilent($"kill -0 $(cat {WslPidPath}) 2>/dev/null") == 0;
+                if (!stillRunningViaPid)
+                {
+                    logCallback("Server stopped successfully via PID file.", 1);
+                    // Clean up PID file
+                    RunWslCommandSilent($"rm -f {WslPidPath}");
+                }
+                else
+                {
+                    // Force kill via PID
+                    if (debugMode) logCallback("Graceful stop failed, forcing stop via PID...", 0);
+                    RunWslCommandSilent($"kill -KILL $(cat {WslPidPath}) 2>/dev/null");
+                    await Task.Delay(1000);
+                    RunWslCommandSilent($"rm -f {WslPidPath}");
+                }
+            }
+            
+            // Strategy 2: Stop spacetimedb-standalone processes (what status check looks for)
+            if (debugMode) logCallback("Stopping spacetimedb-standalone processes...", 0);
+            int termExitCode1 = RunWslCommandSilent("pkill --signal TERM spacetimedb-standalone 2>/dev/null"); 
+            await Task.Delay(1000);
+            
+            // Strategy 3: Stop any spacetime processes
+            if (debugMode) logCallback("Stopping any remaining spacetime processes...", 0);
+            int termExitCode2 = RunWslCommandSilent($"pkill --signal TERM -f \"spacetime start\" 2>/dev/null");
+            await Task.Delay(1000);
+            
+            // Force kill any remaining processes
+            int killExitCode1 = RunWslCommandSilent("pkill --signal KILL spacetimedb-standalone 2>/dev/null");
+            int killExitCode2 = RunWslCommandSilent($"pkill --signal KILL -f \"spacetime start\" 2>/dev/null");
+            await Task.Delay(500);
+            
+            if (debugMode) logCallback($"Process termination results - spacetimedb-standalone TERM: {termExitCode1}, spacetime TERM: {termExitCode2}, spacetimedb-standalone KILL: {killExitCode1}, spacetime KILL: {killExitCode2}", 0);
 
-            // Kill visible process if active
+            // Kill the Windows process if it exists
             try 
             {
                 if (serverProcess != null && !serverProcess.HasExited)
                 {
                     serverProcess.Kill();
-                    logCallback("Killed server process.", 0);
+                    logCallback("Killed Windows server process.", 0);
                 }
             }
             catch (Exception ex) 
             {
-                logCallback($"Error killing server process: {ex.Message}", -1);
+                logCallback($"Error killing Windows server process: {ex.Message}", -1);
             }
             
             // Clear process reference
             serverProcess = null;
             
-            // Final check
-            bool stillRunning = CheckIfServerRunningWsl();
-            if (!stillRunning)
+            // Final verification - check if any spacetime processes are still running
+            await Task.Delay(1000); // Give processes time to fully terminate
+            
+            bool anySpacetimeRunning = await Task.Run(() =>
             {
-                if (debugMode) logCallback("Server stop confirmed via final pgrep check.", 1);
+                try
+                {
+                    using (Process checkProcess = new Process())
+                    {
+                        checkProcess.StartInfo.FileName = "wsl";
+                        checkProcess.StartInfo.Arguments = $"-d Debian -u {userName} -- pgrep -f spacetime";
+                        checkProcess.StartInfo.RedirectStandardOutput = true;
+                        checkProcess.StartInfo.UseShellExecute = false;
+                        checkProcess.StartInfo.CreateNoWindow = true;
+                        
+                        checkProcess.Start();
+                        string output = checkProcess.StandardOutput.ReadToEnd().Trim();
+                        checkProcess.WaitForExit(3000);
+                        
+                        if (!checkProcess.HasExited)
+                        {
+                            try { checkProcess.Kill(); } catch {}
+                            return false;
+                        }
+                        
+                        return checkProcess.ExitCode == 0 && !string.IsNullOrEmpty(output);
+                    }
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+            
+            if (!anySpacetimeRunning)
+            {
+                logCallback("Server stop verified - no spacetime processes detected.", 1);
+                return true;
             }
             else
             {
-                logCallback("WARNING: Server process might still be running after stop attempts! Check port status.", -1);
+                logCallback("WARNING: Some spacetime processes may still be running after stop attempts.", -1);
+                return false;
             }
-            
-            return !stillRunning;
         }
         catch (Exception ex)
         {
-            logCallback($"Error during server stop sequence: {ex.Message}", -1);
+            logCallback($"Error stopping SpacetimeDB processes: {ex.Message}", -1);
             return false;
         }
     }
@@ -954,6 +1045,173 @@ public class ServerCMDProcess
     }
     
     #endregion
+
+    #region Service Management
+    
+    public async Task<bool> StartSpacetimeDBServices()
+    {
+        if (!ValidateUserName()) return false;
+
+        try
+        {
+            // Check if SpacetimeDB service is available
+            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
+            bool hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
+            
+            if (!hasSpacetimeDBService)
+            {
+                logCallback("SpacetimeDB service is not configured. Cannot start services.", -1);
+                return false;
+            }
+
+            // Start the main SpacetimeDB service
+            logCallback("Starting SpacetimeDB service...", 0);
+            var result = await RunServerCommandAsync("sudo systemctl start spacetimedb.service");
+            
+            if (!result.success)
+            {
+                logCallback($"Failed to start SpacetimeDB service: {result.error}", -1);
+                return false;
+            }
+
+            if (debugMode) logCallback("SpacetimeDB service started successfully.", 1);
+
+            // Start the logs service if configured
+            if (hasSpacetimeDBLogsService)
+            {
+                if (debugMode) logCallback("Starting SpacetimeDB logs service...", 0);
+                var resultLogService = await RunServerCommandAsync("sudo systemctl start spacetimedb-logs.service");
+                
+                if (!resultLogService.success)
+                {
+                    logCallback($"Failed to start SpacetimeDB logs service: {resultLogService.error}", -1);
+                    // Don't return false here as the main service started successfully
+                }
+                else
+                {
+                    if (debugMode) logCallback("SpacetimeDB logs service started successfully.", 1);
+                }
+            }
+            else
+            {
+                if (debugMode) logCallback("SpacetimeDB logs service is not configured. Skipping.", 0);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error starting SpacetimeDB services: {ex.Message}", -1);
+            return false;
+        }
+    }
+
+    public async Task<bool> StopSpacetimeDBServices()
+    {
+        if (!ValidateUserName()) return false;
+
+        try
+        {
+            // Check if SpacetimeDB service is available
+            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
+            bool hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
+
+            if (!hasSpacetimeDBService)
+            {
+                logCallback("SpacetimeDB service is not configured. Cannot stop services.", -1);
+                return false;
+            }
+
+            // Stop the logs service first if configured
+            if (hasSpacetimeDBLogsService)
+            {
+                if (debugMode) logCallback("Stopping SpacetimeDB logs service...", 0);
+                var resultLogService = await RunServerCommandAsync("sudo systemctl stop spacetimedb-logs.service");
+
+                if (!resultLogService.success)
+                {
+                    logCallback($"Failed to stop SpacetimeDB logs service: {resultLogService.error}", -1);
+                    // Continue to stop main service even if logs service fails
+                }
+                else
+                {
+                    if (debugMode) logCallback("SpacetimeDB logs service stopped successfully.", 1);
+                }
+            }
+
+            // Stop the main SpacetimeDB service
+            logCallback("Stopping SpacetimeDB service...", 0);
+            var result = await RunServerCommandAsync("sudo systemctl stop spacetimedb.service");
+
+            if (!result.success)
+            {
+                logCallback($"Failed to stop SpacetimeDB service: {result.error}", -1);
+                return false;
+            }
+
+            if (debugMode) logCallback("SpacetimeDB service stopped successfully.", 1);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error stopping SpacetimeDB services: {ex.Message}", -1);
+            return false;
+        }
+    }
+
+    // Method to check if SpacetimeDB service is running with caching
+    public async Task<bool> CheckServerRunning(bool instantCheck = false)
+    {
+        if (!ValidateUserName()) return false;
+
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (!instantCheck)
+        {
+            if (currentTime - lastStatusCacheTime < statusCacheTimeout)
+            {
+                return cachedServerRunningStatus;
+            }
+        }
+
+        // Check SpacetimeDB service status using systemctl
+        bool running = false;
+
+        try
+        {
+            var result = await RunServerCommandAsync("systemctl is-active spacetimedb.service");
+            running = result.success && result.output.Trim() == "active";
+
+            if (debugMode)
+            {
+                logCallback($"Service check result: {(running ? "active" : result.output.Trim())}", running ? 1 : 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error checking service: {ex.Message}", -1);
+            running = false;
+        }
+
+        // Update cache
+        cachedServerRunningStatus = running;
+        lastStatusCacheTime = currentTime;
+
+        return running;
+    }
+
+    // Method to clear the cached status (useful when server state changes)
+    public void ClearStatusCache()
+    {
+        lock (statusUpdateLock)
+        {
+            cachedServerRunningStatus = false;
+            lastStatusCacheTime = 0;
+            if (debugMode) logCallback("Server status cache cleared", 0);
+        }
+    }
+
+    #endregion
+
 } // Class
 } // Namespace
 

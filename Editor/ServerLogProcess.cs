@@ -4,11 +4,12 @@ using System.Diagnostics;
 using System;
 using System.Text;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 // Processes the logs when the server is running in silent mode ///
-
+//ok
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerLogProcess
@@ -54,10 +55,6 @@ public class ServerLogProcess
     private Action onDatabaseLogUpdated;
     private Action onModuleLogUpdated;
     
-    // Timer for tail process check
-    private double lastTailCheckTime = 0;
-    private const double tailCheckInterval = 10.0;
-    
     // Server running info
     private bool serverRunning = false;
     private string moduleName = "";
@@ -68,12 +65,11 @@ public class ServerLogProcess
     private const double serverStopGracePeriod = 10.0; // Ignore connection errors for 10 seconds after server stops
     
     // Database log initial lines tracking (for clearing first 10 lines when clearDatabaseLogAtStart is enabled)
-    private bool waitingForInitialDatabaseLines = false;
-    private int initialDatabaseLinesReceived = 0;
     private const int INITIAL_DATABASE_LINES_TO_REMOVE = 10;
     
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
+    private ServerManager serverManager;
 
     // Thread-safe queue and processing fields
     private readonly ConcurrentQueue<string> databaseLogQueue = new ConcurrentQueue<string>();
@@ -245,7 +241,7 @@ public class ServerLogProcess
     // Read module logs from journalctl periodically
     private async Task ReadSSHModuleLogsAsync()
     {
-        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath))
+        if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath) || !isCustomServer)
         {
             return;
         }
@@ -590,10 +586,6 @@ public class ServerLogProcess
             SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         }
 
-        // Reset initial lines tracking for the new module stream
-        waitingForInitialDatabaseLines = false;
-        initialDatabaseLinesReceived = 0;
-
         // Brief pause to allow the old process to fully terminate and release resources
         System.Threading.Thread.Sleep(250); // 250ms delay
 
@@ -603,6 +595,667 @@ public class ServerLogProcess
             EditorApplication.delayCall += async () => 
             {
                 await ReadSSHDatabaseLogsAsync();
+            };
+        }
+
+        // Notify of log update
+        onDatabaseLogUpdated?.Invoke();
+    }
+    #endregion
+    
+    #region WSL Journalctl Logging
+    
+    // WSL MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
+    // WSL DATABASE LOGS: Read from journalctl for spacetimedb-logs.service
+      private DateTime lastWSLModuleLogTimestamp = DateTime.MinValue;
+    private DateTime lastWSLDatabaseLogTimestamp = DateTime.MinValue;
+    private double lastWSLLogReadTime = 0;
+    private const double wslLogReadInterval = 5.0; // Increased from 1.0 to 5.0 seconds to reduce process spawning
+    private bool hasScheduledNextWSLCheck = false;
+      // Add process protection flags to prevent multiple concurrent processes
+    private bool isReadingWSLModuleLogs = false;
+    private bool isReadingWSLDatabaseLogs = false;
+    
+    public void ConfigureWSL(bool isLocalServer)
+    {
+        // Ensure we're not in custom server mode for WSL
+        this.isCustomServer = false;
+        
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured WSL journalctl: IsLocalServer={isLocalServer}, IsCustomServer={isCustomServer}");
+        
+        // Initialize timestamps to 10 minutes ago to avoid getting massive historical logs but still get recent context
+        DateTime startTime = DateTime.UtcNow.AddMinutes(-10);
+        lastWSLModuleLogTimestamp = startTime;
+        lastWSLDatabaseLogTimestamp = startTime;
+        
+        // Reset process protection flags
+        isReadingWSLModuleLogs = false;
+        isReadingWSLDatabaseLogs = false;
+    }    // Start WSL-based log reading for local server
+    public void StartWSLLogging()
+    {
+        // Clear logs if needed
+        if (clearModuleLogAtStart)
+        {
+            ClearWSLModuleLog();
+        }
+        
+        if (clearDatabaseLogAtStart)
+        {
+            ClearWSLDatabaseLog();
+        }
+        
+        // Initialize timestamps to 10 minutes ago to avoid getting massive historical logs but still get recent context
+        DateTime startTime = DateTime.UtcNow.AddMinutes(-10);
+        lastWSLModuleLogTimestamp = startTime;
+        lastWSLDatabaseLogTimestamp = startTime;
+        
+        // Reset process protection flags
+        isReadingWSLModuleLogs = false;
+        isReadingWSLDatabaseLogs = false;
+        
+        if (debugMode) logCallback("Started WSL periodic log reading", 1);
+        
+        // Trigger initial log check to start the periodic reading
+        EditorApplication.delayCall += () => {
+            CheckWSLLogProcesses(EditorApplication.timeSinceStartup);
+        };
+    }
+      // Clear the module log for WSL
+    public void ClearWSLModuleLog()
+    {
+        if (debugMode) logCallback("Clearing WSL module log...", 0);
+        
+        // Kill any orphaned journalctl processes first
+        try
+        {
+            if (!string.IsNullOrEmpty(userName))
+            {
+                Process cleanupProcess = new Process();
+                cleanupProcess.StartInfo.FileName = "wsl";
+                cleanupProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"pkill -f 'journalctl.*{SpacetimeServiceName}' || true\"";
+                cleanupProcess.StartInfo.UseShellExecute = false;
+                cleanupProcess.StartInfo.CreateNoWindow = true;
+                cleanupProcess.StartInfo.RedirectStandardOutput = true;
+                cleanupProcess.StartInfo.RedirectStandardError = true;
+                
+                cleanupProcess.Start();
+                cleanupProcess.WaitForExit(3000);
+                cleanupProcess.Dispose();
+                
+                if (debugMode) logCallback("Cleaned up any orphaned WSL module log processes", 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
+        }
+          silentServerCombinedLog = "";
+        cachedModuleLogContent = "";
+        SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+        
+        // Reset timestamp to start fresh and reset protection flag
+        lastWSLModuleLogTimestamp = DateTime.UtcNow;
+        isReadingWSLModuleLogs = false;
+        
+        if (debugMode) logCallback("WSL module log cleared successfully", 1);
+    }
+      // Clear the database log for WSL
+    public void ClearWSLDatabaseLog()
+    {
+        if (debugMode) logCallback("Clearing WSL database log...", 0);
+        
+        // Kill any orphaned journalctl processes first
+        try
+        {
+            if (!string.IsNullOrEmpty(userName))
+            {
+                Process cleanupProcess = new Process();
+                cleanupProcess.StartInfo.FileName = "wsl";
+                cleanupProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"pkill -f 'journalctl.*{SpacetimeDatabaseLogServiceName}' || true\"";
+                cleanupProcess.StartInfo.UseShellExecute = false;
+                cleanupProcess.StartInfo.CreateNoWindow = true;
+                cleanupProcess.StartInfo.RedirectStandardOutput = true;
+                cleanupProcess.StartInfo.RedirectStandardError = true;
+                
+                cleanupProcess.Start();
+                cleanupProcess.WaitForExit(3000);
+                cleanupProcess.Dispose();
+                
+                if (debugMode) logCallback("Cleaned up any orphaned WSL database log processes", 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
+        }
+          databaseLogContent = "";
+        cachedDatabaseLogContent = "";
+        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        
+        // Reset timestamp to start fresh and reset protection flag
+        lastWSLDatabaseLogTimestamp = DateTime.UtcNow;
+        isReadingWSLDatabaseLogs = false;
+        
+        if (debugMode) logCallback("WSL database log cleared successfully", 1);
+    }    // Read module logs from journalctl periodically for WSL
+    private async Task ReadWSLModuleLogsAsync()
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            return;
+        }
+        
+        // Prevent multiple concurrent processes
+        if (isReadingWSLModuleLogs)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] WSL module log read already in progress, skipping");
+            return;
+        }
+        
+        isReadingWSLModuleLogs = true;
+        
+        Process readProcess = null;        try
+        {
+            // Ensure we have a valid timestamp - if not, use recent time to avoid massive log dumps
+            if (lastWSLModuleLogTimestamp == DateTime.MinValue || lastWSLModuleLogTimestamp.Year < 2020)
+            {
+                lastWSLModuleLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL module timestamp detected, reset to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            
+            // Format timestamp for journalctl --since parameter
+            string sinceTimestamp = lastWSLModuleLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+              // Use timeout to prevent orphaned processes and ensure cleanup
+            // Try without sudo first - most users can read journalctl logs without sudo if properly configured
+            string journalCommand = $"timeout 10s journalctl -u {SpacetimeServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL module logs since: {sinceTimestamp}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
+            
+            readProcess = new Process();
+            readProcess.StartInfo.FileName = "wsl";
+            readProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"{journalCommand}\"";
+            readProcess.StartInfo.UseShellExecute = false;
+            readProcess.StartInfo.CreateNoWindow = true;
+            readProcess.StartInfo.RedirectStandardOutput = true;
+            readProcess.StartInfo.RedirectStandardError = true;
+            
+            readProcess.Start();
+            
+            string output = await readProcess.StandardOutput.ReadToEndAsync();
+            string error = await readProcess.StandardError.ReadToEndAsync();
+            
+            // Wait for process to complete with shorter timeout since we have timeout in the command
+            if (!readProcess.WaitForExit(12000)) // 12 seconds to allow for the 10s timeout + cleanup
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] WSL module log process timed out, killing process");
+                try
+                {
+                    if (!readProcess.HasExited)
+                    {
+                        readProcess.Kill();
+                        readProcess.WaitForExit(1000);
+                    }
+                }
+                catch (Exception killEx)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error killing WSL module log process: {killEx.Message}");
+                }
+            }
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL module logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            
+            if (!string.IsNullOrEmpty(output))
+            {
+                var lines = output.Split('\n');
+                bool hasNewLogs = false;
+                int lineCount = 0;
+                DateTime latestTimestamp = lastWSLModuleLogTimestamp;
+                
+                foreach (string line in lines)
+                {
+                    if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
+                    {
+                        string formattedLine = FormatServerLogLine(line.Trim());
+                        moduleLogAccumulator.Append(formattedLine).Append("\n");
+                        silentServerCombinedLog += formattedLine + "\n";
+                        cachedModuleLogContent += formattedLine + "\n";
+                        hasNewLogs = true;
+                        lineCount++;
+                        
+                        // Extract and track the actual timestamp from this log line
+                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                        {
+                            latestTimestamp = logTimestamp;
+                        }
+                    }
+                }
+                
+                if (hasNewLogs)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new WSL module log lines");
+                    
+                    // Always advance the timestamp to prevent infinite loops
+                    DateTime timestampToUse;
+                    
+                    if (latestTimestamp > lastWSLModuleLogTimestamp)
+                    {
+                        timestampToUse = latestTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    else
+                    {
+                        timestampToUse = lastWSLModuleLogTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                    }
+                    
+                    // Update the timestamp
+                    lastWSLModuleLogTimestamp = timestampToUse;
+                    
+                    // Manage log size
+                    const int maxLogLength = 75000;
+                    const int trimToLength = 50000;
+                    if (silentServerCombinedLog.Length > maxLogLength)
+                    {
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
+                        silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                        cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
+                    }
+                    
+                    // Update SessionState immediately for WSL logs
+                    SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+                    SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+                    lastSessionStateUpdateTime = DateTime.Now;
+                    
+                    // Notify of log update
+                    EditorApplication.delayCall += () => onModuleLogUpdated?.Invoke();
+                }
+                else 
+                {
+                    // Even if no new logs, advance timestamp slightly to prevent infinite queries
+                    lastWSLModuleLogTimestamp = lastWSLModuleLogTimestamp.AddSeconds(0.5);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL module log lines found, advancing timestamp slightly to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                }
+            }
+            else if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerLogProcess] WSL module logs - No output received");
+            }              if (!string.IsNullOrEmpty(error))
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] WSL module log read error: {error}");
+                
+                // If service doesn't exist, provide helpful message
+                if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
+                }
+                // If permissions issue, provide helpful guidance
+                else if (error.Contains("permission denied") || error.Contains("Permission denied") || error.Contains("access denied"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Permission denied accessing journalctl. User '{userName}' may need to be added to 'systemd-journal' group. Run: sudo usermod -a -G systemd-journal {userName}");
+                }
+                // If sudo password required, provide guidance
+                else if (error.Contains("password is required") || error.Contains("sudo:"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Sudo password required for journalctl. Consider adding user '{userName}' to 'systemd-journal' group to avoid needing sudo: sudo usermod -a -G systemd-journal {userName}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading WSL module logs: {ex.Message}");
+        }        finally
+        {
+            // Reset the protection flag
+            isReadingWSLModuleLogs = false;
+            
+            // Ensure process is always disposed
+            try
+            {
+                if (readProcess != null)
+                {
+                    if (!readProcess.HasExited)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Force killing WSL module log process in finally block");
+                        readProcess.Kill();
+                        readProcess.WaitForExit(1000);
+                    }
+                    readProcess.Dispose();
+                }
+            }
+            catch (Exception disposeEx)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error disposing WSL module log process: {disposeEx.Message}");
+            }
+        }
+    }    private async Task ReadWSLDatabaseLogsAsync()
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(moduleName))
+        {
+            return; // Can't read database logs without module name
+        }
+        
+        // Prevent multiple concurrent processes
+        if (isReadingWSLDatabaseLogs)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] WSL database log read already in progress, skipping");
+            return;
+        }
+        
+        isReadingWSLDatabaseLogs = true;
+        
+        Process readProcess = null;        try
+        {
+            // Ensure we have a valid timestamp - if not, use recent time to avoid massive log dumps
+            if (lastWSLDatabaseLogTimestamp == DateTime.MinValue || lastWSLDatabaseLogTimestamp.Year < 2020)
+            {
+                lastWSLDatabaseLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            
+            // Format timestamp for journalctl --since parameter
+            string sinceTimestamp = lastWSLDatabaseLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+              // Use timeout to prevent orphaned processes and ensure cleanup
+            // Try without sudo first - most users can read journalctl logs without sudo if properly configured
+            string journalCommand = $"timeout 10s journalctl -u {SpacetimeDatabaseLogServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
+            
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL database logs since: {sinceTimestamp}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL Database command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
+            
+            readProcess = new Process();
+            readProcess.StartInfo.FileName = "wsl";
+            readProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"{journalCommand}\"";
+            readProcess.StartInfo.UseShellExecute = false;
+            readProcess.StartInfo.CreateNoWindow = true;
+            readProcess.StartInfo.RedirectStandardOutput = true;
+            readProcess.StartInfo.RedirectStandardError = true;
+            
+            readProcess.Start();
+            
+            string output = await readProcess.StandardOutput.ReadToEndAsync();
+            string error = await readProcess.StandardError.ReadToEndAsync();
+            
+            // Ensure process completes and is cleaned up properly with shorter timeout
+            if (!readProcess.WaitForExit(12000)) // 12 seconds to allow for the 10s timeout + cleanup
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] WSL database log process timed out, killing process");
+                try
+                {
+                    if (!readProcess.HasExited)
+                    {
+                        readProcess.Kill();
+                        readProcess.WaitForExit(1000); // Give it a second to clean up after kill
+                    }
+                }
+                catch (Exception killEx)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error killing WSL database log process: {killEx.Message}");
+                }
+            }            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            
+            if (!string.IsNullOrEmpty(output))
+            {
+                var lines = output.Split('\n');
+                bool hasNewLogs = false;
+                int lineCount = 0;
+                DateTime latestTimestamp = lastWSLDatabaseLogTimestamp;
+                
+                foreach (string line in lines)
+                {
+                    if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
+                    {
+                        string formattedLine = FormatDatabaseLogLine(line.Trim());
+                        if (formattedLine != null) // Only process if line wasn't filtered out
+                        {
+                            databaseLogQueue.Enqueue(formattedLine);
+                            hasNewLogs = true;
+                            lineCount++;
+                            
+                            if (debugMode && lineCount <= 3) // Show first few lines for debugging
+                            {
+                                UnityEngine.Debug.Log($"[ServerLogProcess] Queued WSL database log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
+                            }
+                            
+                             // Extract and track the actual timestamp from this log line
+                            DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                            if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
+                            {
+                                latestTimestamp = logTimestamp;
+                            }
+                        }
+                    }
+                }
+                  if (hasNewLogs)
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new WSL database log lines");
+                    
+                    // Always advance the timestamp to prevent infinite loops
+                    DateTime timestampToUse;
+                    
+                    if (latestTimestamp > lastWSLDatabaseLogTimestamp)
+                    {
+                        // Use the actual latest log timestamp if we successfully parsed one
+                        timestampToUse = latestTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed database timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff} (was: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff})");
+                    }
+                    else
+                    {
+                        // Fallback: advance by at least 1 second from the last query time to prevent infinite loops
+                        timestampToUse = lastWSLDatabaseLogTimestamp.AddSeconds(1);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid database timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff} (was: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff})");
+                    }
+                    
+                    // Update the timestamp
+                    lastWSLDatabaseLogTimestamp = timestampToUse;
+                    
+                    // Notify of log update
+                    EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
+                }
+                else 
+                {
+                    // Even if no new logs, advance timestamp slightly to prevent infinite queries
+                    lastWSLDatabaseLogTimestamp = lastWSLDatabaseLogTimestamp.AddSeconds(0.5);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL database log lines found, advancing timestamp slightly to: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                }
+            }
+            else if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerLogProcess] WSL database logs - No output received");
+            }
+              if (!string.IsNullOrEmpty(error))
+            {
+                // If service doesn't exist yet, that's expected until user creates it
+                if (error.Contains("Unit " + SpacetimeDatabaseLogServiceName + " could not be found"))
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log service not found yet - this is expected until the service is created");
+                }
+                // If permissions issue, provide helpful guidance
+                else if (error.Contains("permission denied") || error.Contains("Permission denied") || error.Contains("access denied"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Permission denied accessing journalctl for database logs. User '{userName}' may need to be added to 'systemd-journal' group. Run: sudo usermod -a -G systemd-journal {userName}");
+                }
+                // If sudo password required, provide guidance
+                else if (error.Contains("password is required") || error.Contains("sudo:"))
+                {
+                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Sudo password required for journalctl database logs. Consider adding user '{userName}' to 'systemd-journal' group to avoid needing sudo: sudo usermod -a -G systemd-journal {userName}");
+                }
+                else if (debugMode)
+                {
+                    UnityEngine.Debug.LogWarning($"[ServerLogProcess] WSL database log read error: {error}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading WSL database logs: {ex.Message}");
+        }        finally
+        {
+            // Reset the protection flag
+            isReadingWSLDatabaseLogs = false;
+            
+            // Ensure process is always disposed
+            try
+            {
+                if (readProcess != null)
+                {
+                    if (!readProcess.HasExited)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Force killing WSL database log process in finally block");
+                        readProcess.Kill();
+                        readProcess.WaitForExit(1000);
+                    }
+                    readProcess.Dispose();
+                }
+            }
+            catch (Exception disposeEx)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error disposing WSL database log process: {disposeEx.Message}");
+            }
+        }
+    }
+    
+    public void CheckWSLLogProcesses(double currentTime)
+    {
+        if (currentTime - lastWSLLogReadTime > wslLogReadInterval)
+        {
+            lastWSLLogReadTime = currentTime;
+            hasScheduledNextWSLCheck = false; // Reset the scheduling flag
+            
+            if (serverRunning && !isCustomServer)
+            {
+                EditorApplication.delayCall += async () =>
+                {
+                    try
+                    {
+                        await ReadWSLModuleLogsAsync();
+                        await ReadWSLDatabaseLogsAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in CheckWSLLogProcesses: {ex.Message}");
+                    }
+                };
+            }
+            
+            // Schedule the next check based on wslLogReadInterval
+            ScheduleNextWSLLogCheck();
+        }
+    }
+    
+    private void ScheduleNextWSLLogCheck()
+    {
+        if (!hasScheduledNextWSLCheck && serverRunning && !isCustomServer)
+        {
+            hasScheduledNextWSLCheck = true;
+            
+            // Schedule the next check after wslLogReadInterval seconds
+            EditorApplication.delayCall += () =>
+            {
+                System.Threading.Tasks.Task.Delay((int)(wslLogReadInterval * 1000)).ContinueWith(_ =>
+                {
+                    if (serverRunning && !isCustomServer)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            CheckWSLLogProcesses(EditorApplication.timeSinceStartup);
+                        };
+                    }
+                });
+            };
+        }
+    }
+      public void StopWSLLogging()
+    {
+        if (debugMode) logCallback("Stopping WSL periodic log reading", 0);
+        
+        // Kill any orphaned journalctl processes
+        try
+        {
+            if (!string.IsNullOrEmpty(userName))
+            {
+                Process cleanupProcess = new Process();
+                cleanupProcess.StartInfo.FileName = "wsl";
+                cleanupProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"pkill -f 'journalctl.*spacetimedb' || true\"";
+                cleanupProcess.StartInfo.UseShellExecute = false;
+                cleanupProcess.StartInfo.CreateNoWindow = true;
+                cleanupProcess.StartInfo.RedirectStandardOutput = true;
+                cleanupProcess.StartInfo.RedirectStandardError = true;
+                
+                cleanupProcess.Start();
+                cleanupProcess.WaitForExit(3000);
+                cleanupProcess.Dispose();
+                
+                if (debugMode) logCallback("Cleaned up orphaned WSL journalctl processes", 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
+        }
+          // Reset timestamps to 10 minutes ago to avoid massive log dumps on restart
+        lastWSLModuleLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
+        lastWSLDatabaseLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
+        lastWSLLogReadTime = 0;
+        hasScheduledNextWSLCheck = false; // Reset scheduling flag to stop the chain
+        
+        // Reset process protection flags
+        isReadingWSLModuleLogs = false;
+        isReadingWSLDatabaseLogs = false;
+        
+        SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
+        
+        if (debugMode) logCallback("WSL log reading stopped", 0);
+    }
+
+    public void SwitchModuleWSL(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    {
+        if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (debugMode) logCallback($"WSL: Module '{newModuleName}' is already active. No switch needed.", 0);
+            return;
+        }
+
+        if (debugMode) logCallback($"Switching WSL database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+
+        // Update the module name
+        string oldModuleName = this.moduleName;
+        this.moduleName = newModuleName;
+
+        // Clear database logs if requested
+        if (clearDatabaseLogOnSwitch)
+        {
+            ClearWSLDatabaseLog(); // This clears in-memory and SessionState for WSL logs
+
+            // Add a separator message to indicate the switch
+            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+            string switchMessage = $"{timestamp} [MODULE SWITCHED - WSL] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
+            
+            databaseLogContent += switchMessage;
+            cachedDatabaseLogContent += switchMessage;
+
+            // Update SessionState immediately
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        }
+
+        // Brief pause to allow the old process to fully terminate and release resources
+        System.Threading.Thread.Sleep(250); // 250ms delay
+
+        // If the server is running, trigger an immediate refresh of WSL logs to pick up the new module's logs.
+        if (serverRunning && !isCustomServer)
+        {
+            EditorApplication.delayCall += async () => 
+            {
+                await ReadWSLDatabaseLogsAsync();
             };
         }
 
@@ -675,9 +1328,6 @@ public class ServerLogProcess
         if (!isRunning)
         {
             serverStoppedTime = DateTime.Now;
-            // Reset initial lines tracking when server stops
-            waitingForInitialDatabaseLines = false;
-            initialDatabaseLinesReceived = 0;
         }
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
     }
@@ -695,48 +1345,15 @@ public class ServerLogProcess
         string oldModuleName = this.moduleName;
         this.moduleName = newModuleName;
 
-        StopDatabaseLogProcess();
-
-        // Reset initial lines tracking for the new module stream
-        waitingForInitialDatabaseLines = false;
-        initialDatabaseLinesReceived = 0;
-
-        if (clearDatabaseLogOnSwitch)
+        // Use appropriate method based on server type
+        if (isCustomServer)
         {
-            ClearDatabaseLog(); 
-
-            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-            string switchMessage = $"{timestamp} [MODULE SWITCHED] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
-            
-            databaseLogContent += switchMessage;
-            cachedDatabaseLogContent += switchMessage; 
-
-            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-        }
-        
-        // Brief pause to allow the old process to fully terminate and release resources
-        System.Threading.Thread.Sleep(250); // 250ms delay
-
-        if (serverRunning)
-        {
-            if (string.IsNullOrEmpty(userName))
-            {
-                logCallback("ERROR: Username is not configured, cannot restart database log process for new module.", -1);
-                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] SwitchModule failed: userName is null/empty, cannot restart database log process.");
-            }
-            else
-            {
-                StartDatabaseLogProcess(); 
-                if (debugMode) logCallback($"Database log process restarted for module '{newModuleName}'", 1);
-            }
+            SwitchModuleSSH(newModuleName, clearDatabaseLogOnSwitch);
         }
         else
         {
-            if (debugMode) logCallback($"Server not running, database log process for '{newModuleName}' will start when server starts.", 0);
+            SwitchModuleWSL(newModuleName, clearDatabaseLogOnSwitch);
         }
-
-        onDatabaseLogUpdated?.Invoke();
     }
     
     // Force refresh in-memory logs from SessionState - used when ServerOutputWindow gets focus
@@ -744,40 +1361,34 @@ public class ServerLogProcess
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Force refreshing logs from SessionState");
         
-        // Load the most current data from SessionState
         string sessionModuleLog = SessionState.GetString(SessionKeyCombinedLog, "");
         string sessionDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
         string sessionCachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         string sessionCachedDatabaseLog = SessionState.GetString(SessionKeyCachedDatabaseLog, "");
         
-        // Update in-memory logs if SessionState has more recent/complete data
         if (!string.IsNullOrEmpty(sessionModuleLog) && sessionModuleLog.Length > silentServerCombinedLog.Length)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing silentServerCombinedLog from SessionState ({sessionModuleLog.Length} chars)");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updating module log from session state: {sessionModuleLog.Length} chars");
             silentServerCombinedLog = sessionModuleLog;
         }
         
         if (!string.IsNullOrEmpty(sessionDatabaseLog) && sessionDatabaseLog.Length > databaseLogContent.Length)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing databaseLogContent from SessionState ({sessionDatabaseLog.Length} chars)");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updating database log from session state: {sessionDatabaseLog.Length} chars");
             databaseLogContent = sessionDatabaseLog;
         }
         
         if (!string.IsNullOrEmpty(sessionCachedModuleLog) && sessionCachedModuleLog.Length > cachedModuleLogContent.Length)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing cachedModuleLogContent from SessionState ({sessionCachedModuleLog.Length} chars)");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updating cached module log from session state: {sessionCachedModuleLog.Length} chars");
             cachedModuleLogContent = sessionCachedModuleLog;
         }
         
         if (!string.IsNullOrEmpty(sessionCachedDatabaseLog) && sessionCachedDatabaseLog.Length > cachedDatabaseLogContent.Length)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Refreshing cachedDatabaseLogContent from SessionState ({sessionCachedDatabaseLog.Length} chars)");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updating cached database log from session state: {sessionCachedDatabaseLog.Length} chars");
             cachedDatabaseLogContent = sessionCachedDatabaseLog;
         }
-        
-        // Notify callbacks that logs have been updated
-        onModuleLogUpdated?.Invoke();
-        onDatabaseLogUpdated?.Invoke();
     }
     
     // Force SSH log refresh - triggers new journalctl commands immediately
@@ -807,477 +1418,181 @@ public class ServerLogProcess
         }
     }
     
-    #region Log Methods
-    
-    public void ClearModuleLogFile()
+    // Force WSL log refresh - triggers new journalctl commands immediately for WSL
+    public void ForceWSLLogRefresh()
     {
-        if (debugMode) logCallback("Clearing log file...", 0);
-        string logPath = WslCombinedLogPath;
-        string clearLogCommand = $"truncate -s 0 {logPath}";
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Force triggering WSL log refresh");
         
-        if (cmdProcessor != null)
+        if (serverRunning && !isCustomServer)
         {
-            cmdProcessor.RunWslCommandSilent(clearLogCommand);
+            EditorApplication.delayCall += async () =>
+            {
+                try
+                {
+                    await ReadWSLModuleLogsAsync();
+                    await ReadWSLDatabaseLogsAsync();
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in ForceWSLLogRefresh: {ex.Message}");
+                }
+            };
         }
-        
-        // Also clear the in-memory log
-        silentServerCombinedLog = "";
-        cachedModuleLogContent = "";
-        SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
-        
-        // Notify that the log has been cleared
-        if (debugMode) logCallback("Log file cleared successfully", 1);
     }
     
-    public void ClearDatabaseLog()
-    {
-        if (debugMode) logCallback("Clearing database log...", 0);
-        
-        // Clear both the in-memory database log content and the cache
-        databaseLogContent = "";
-        cachedDatabaseLogContent = "";
-        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-        
-        // Notify that the log has been cleared
-        if (debugMode) logCallback("Database log cleared successfully", 1);
-    }
-    
-    public string GetModuleLogContent()
-    {
-        // Return cached logs if server is not running, otherwise return current logs
-        return serverRunning ? silentServerCombinedLog : cachedModuleLogContent;
-    }
-    
-    public string GetDatabaseLogContent()
-    {
-        // Return cached logs if server is not running, otherwise return current logs
-        return serverRunning ? databaseLogContent : cachedDatabaseLogContent;
-    }
+    #region Log Methods
     
     public void StartLogging()
     {
-        // Ensure background processing task is running before starting any logging processes
-        if (!isProcessing || processingTask == null || processingTask.IsCompleted)
+        if (isCustomServer)
         {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Ensuring background processing task is running before starting logging...");
-            
-            // Cancel existing task if it exists
-            if (processingCts != null && !processingCts.IsCancellationRequested)
-            {
-                processingCts.Cancel();
-            }
-            
-            // Create new cancellation token and restart the background task
-            processingCts = new CancellationTokenSource();
-            isProcessing = false; // Reset the flag so StartLogLimiter can restart
-            StartLogLimiter();
-            
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task ensured before starting logging");
-        }        
-
-        // Clear in-memory logs when switching to WSL server mode to prevent duplicates
-        // This fixes the issue where switching from Custom Server to WSL server duplicates log entries
-        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Clearing in-memory logs before starting WSL logging to prevent duplicates");
-        silentServerCombinedLog = "";
-        cachedModuleLogContent = "";
-        databaseLogContent = "";
-        cachedDatabaseLogContent = "";
-        SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
-        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-
-        // Clear logs if needed
-        if (clearModuleLogAtStart)
-        {
-            ClearModuleLogFile();
+            StartSSHLogging();
         }
-        
-        if (clearDatabaseLogAtStart)
+        else
         {
-            ClearDatabaseLog();
+            StartWSLLogging();
         }
-        
-        // Start tailing the log file
-        StopTailingLogs(); // Make sure no previous tail process is running
-        string logPath = WslCombinedLogPath;
-        
-        // Give a tiny delay for the file to potentially be created/truncated
-        System.Threading.Thread.Sleep(200);
-        
-        tailProcess = StartTailingLogFile(logPath, (line) => {
-            const int maxLogLength = 75000;
-            const int trimToLength = 50000;
-            if (silentServerCombinedLog.Length > maxLogLength)
-            {
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
-                silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncated log length: {silentServerCombinedLog.Length}");
-            }
-            
-            SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-            
-            if (onModuleLogUpdated != null)
-            {
-                onModuleLogUpdated();
-            }
-        }, true); // Read from beginning for initial server start
-        
-        // Start the database log process
-        StartDatabaseLogProcess();
     }
     
     public void StopLogging()
     {
-        // Cancel and cleanup background processing task
-        if (processingCts != null)
+        if (isCustomServer)
         {
-            processingCts.Cancel();
-            try
-            {
-                processingTask?.Wait(1000);
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error waiting for processing task to complete: {ex.Message}");
-            }
+            StopSSHLogging();
         }
-        
-        // Reset processing state
-        isProcessing = false;
-        
-        // Create new cancellation token for next time
-        processingCts = new CancellationTokenSource();
-        
-        // Stop the actual logging processes
-        StopTailingLogs();
-        StopDatabaseLogProcess();
+        else
+        {
+            StopWSLLogging();
+        }
     }
     
     public void CheckLogProcesses(double currentTime)
     {
-        // Check processes periodically
-        if (currentTime - lastTailCheckTime > tailCheckInterval)
+        if (isCustomServer)
         {
-            lastTailCheckTime = currentTime;
-            
-            // Check tail process
-            CheckTailProcess();
-            
-            // Check database log process
-            CheckDatabaseLogProcess();
+            CheckSSHLogProcesses(currentTime);
+        }
+        else
+        {
+            CheckWSLLogProcesses(currentTime);
         }
     }
     
-    private void CheckTailProcess()
+    public void ClearModuleLogFile()
     {
-        if (tailProcess == null && serverRunning)
+        if (isCustomServer)
         {
-            if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Tail process is NULL while server is supposed to be running!");
-            AttemptTailRestartAfterReload();
+            ClearSSHModuleLogFile();
         }
-        else if (tailProcess != null)
+        else
         {
-            try
-            {
-                if (tailProcess.HasExited)
-                {
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Tail process HAS EXITED (Code: {tailProcess.ExitCode}) while server running!");
-                    if (serverRunning)
-                    {
-                        AttemptTailRestartAfterReload();
-                    }
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Tail process check failed (InvalidOperationException - likely killed or inaccessible).");
-                tailProcess = null;
-                if (serverRunning)
-                {
-                    AttemptTailRestartAfterReload();
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking tail process: {ex.Message}");
-            }
+            ClearWSLModuleLog();
         }
     }
     
-    private void CheckDatabaseLogProcess()
+    public void ClearDatabaseLog()
     {
-        if (databaseLogProcess == null && serverRunning)
+        if (isCustomServer)
         {
-            if (debugMode) logCallback("Database log process not running, attempting to restart...", 0);
-            StartDatabaseLogProcess();
+            ClearSSHDatabaseLog();
         }
-        else if (databaseLogProcess != null)
+        else
         {
-            try
-            {
-                if (databaseLogProcess.HasExited)
-                {
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Database log process HAS EXITED (Code: {databaseLogProcess.ExitCode}) while server running!");
-                    if (serverRunning)
-                    {
-                        StartDatabaseLogProcess();
-                    }
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Database log process check failed (InvalidOperationException - likely killed or inaccessible).");
-                databaseLogProcess = null;
-                if (serverRunning)
-                {
-                    StartDatabaseLogProcess();
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking database log process: {ex.Message}");
-            }
+            ClearWSLDatabaseLog();
         }
     }
-    
     #endregion
     
-    #region Tail Processes
-    
-    private void StopTailingLogs()
+    #region Log Limiter
+
+    private void StartLogLimiter()
     {
-        if (tailProcess != null)
+        processingTask = Task.Run(async () =>
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Attempting to stop tail process (PID: {(tailProcess.Id)}). HasExited={tailProcess.HasExited}");
-            if (!tailProcess.HasExited)
+            while (!processingCts.Token.IsCancellationRequested)
             {
                 try
                 {
-                    if (debugMode) logCallback("Stopping tail process...", 0);
-                    tailProcess.Kill();
-                    if (debugMode) logCallback("Tail process stopped.", 0);
-                    tailProcess.WaitForExit(500); // Give it a moment to exit cleanly
+                    ProcessDatabaseLogQueue();
+                    await Task.Delay(PROCESS_INTERVAL_MS, processingCts.Token);
                 }
-                catch (InvalidOperationException ioEx)
+                catch (OperationCanceledException)
                 {
-                    // Process may have already exited between the check and Kill()
-                    logCallback($"Info stopping tail process: {ioEx.Message}", 0);
+                    break;
                 }
                 catch (Exception ex)
                 {
-                    logCallback($"Error stopping tail process: {ex.Message}", -1);
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error: {ex}");
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in log limiter: {ex.Message}");
                 }
             }
-            tailProcess = null; // Ensure reference is cleared
-        }
-        else
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] tailProcess was already null.");
-        }
+        }, processingCts.Token);
     }
-    private Process StartTailingLogFile(string wslLogPath, Action<string> onNewLine, bool readFromBeginning = true)
+
+    private void ProcessDatabaseLogQueue()
     {
-        if (debugMode) logCallback($"Attempting to start tailing {wslLogPath}...", 0);
+        if (isProcessing) return;
+        
+        lock (logLock)
+        {
+            isProcessing = true;
+        }
+
         try
         {
-            Process process = new Process();
-            process.StartInfo.FileName = "wsl.exe";
-            
-            // Use different tail options based on whether we want to read from beginning or just follow new content
-            string tailCommand;
-            if (readFromBeginning)
-            {
-                // Start from beginning for initial server start or server mode switch
-                tailCommand = $"touch {wslLogPath} && tail -F -n +1 {wslLogPath}";
-            }
-            else
-            {
-                // Start from end for domain reload scenarios to avoid duplication
-                tailCommand = $"touch {wslLogPath} && tail -F --lines=0 {wslLogPath}";
-            }
-            
-            process.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{tailCommand}\"";            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.EnableRaisingEvents = true;
-            
-            // Configure UTF-8 encoding to properly handle special characters from WSL
-            process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-            process.StartInfo.StandardErrorEncoding = Encoding.UTF8;
+            StringBuilder batchBuffer = new StringBuilder();
+            int processedCount = 0;
+            const int maxBatchSize = 50;
 
-            process.OutputDataReceived += (sender, args) => {
-                if (args.Data != null)
+            while (databaseLogQueue.TryDequeue(out string logLine) && processedCount < maxBatchSize)
+            {
+                batchBuffer.AppendLine(logLine);
+                processedCount++;
+            }
+
+            if (processedCount > 0)
+            {
+                string batchContent = batchBuffer.ToString();
+                  // Update logs on main thread
+                EditorApplication.delayCall += () =>
                 {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Tail Raw Output");
-                    EditorApplication.delayCall += () => {
-                        try {
-                            // Format original timestamp if present, otherwise add one
-                            string formattedLine = FormatServerLogLine(args.Data);
-                            
-                            // Update in-memory log immediately
-                            silentServerCombinedLog += formattedLine + "\n";
-                            cachedModuleLogContent += formattedLine + "\n"; // Keep cached version in sync
-                            
-                            // Add to accumulator
-                            moduleLogAccumulator.AppendLine(formattedLine);
-                            
-                            // Manage log size immediately
-                            const int maxLogLength = 75000;
-                            const int trimToLength = 50000;                            if (silentServerCombinedLog.Length > maxLogLength)
-                            {
-                                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
-                                silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                                cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
-                            }
-                            
-                            // Update SessionState less frequently
-                            UpdateSessionStateIfNeeded();
-                            
-                            // Call callback for immediate UI update regardless of SessionState update
-                            onNewLine(formattedLine);
-                            
-                            // Notify subscribers
-                            if (onModuleLogUpdated != null)
-                            {
-                                onModuleLogUpdated();
-                            }
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[Tail Output Handler Error]: {ex}");
-                        }
-                    };
-                }
-            };
-            
-            process.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null) {
-                    if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] Tail Raw Error");
-                    EditorApplication.delayCall += () => {
-                        try {
-                            // Format error lines with timestamp
-                            string formattedLine = FormatServerLogLine(args.Data, true);
-                            
-                            // Special handling for "file truncated" messages - these are normal when log is cleared
-                            if (args.Data.Contains("file truncated"))
-                            {
-                                if (debugMode) logCallback($"{formattedLine} - This is normal after clearing logs", 0);
-                                // Don't add to main log to avoid confusion
-                            }
-                            else
-                            {
-                                // Other errors should still be logged as errors
-                                logCallback($"{formattedLine}", -1); // Log tail errors
-                                onNewLine($"{formattedLine} [TAIL ERROR]"); // Also add to main log
-                                if (onModuleLogUpdated != null)
-                                {
-                                    onModuleLogUpdated();
-                                }
-                            }
-                        }
-                        catch (Exception ex) {
-                            if (debugMode) UnityEngine.Debug.LogError($"[Tail Error Handler Error]: {ex}");
-                        }
-                    };
-                }
-            };
-            
-            process.Exited += (sender, e) => {
-                EditorApplication.delayCall += () => {
-                    try {
-                        int exitCode = -1;
-                        try { exitCode = process.ExitCode; } catch {}
-                        
-                        if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Tailing process exited unexpectedly (Code: {exitCode}). Attempting restart: {serverRunning}");
-                        
-                        // Auto-restart if server is supposed to be running
-                        if (serverRunning)
-                        {
-                            if (debugMode) logCallback("Attempting to restart tail process...", 0);
-                            System.Threading.Thread.Sleep(1000); 
-                            var newTailProcess = StartTailingLogFile(wslLogPath, onNewLine, false); // Don't read from beginning on auto-restart
-                            
-                            if (newTailProcess != null)
-                            {
-                                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Restart successful. New tail PID: {newTailProcess.Id}");
-                            }
-                            else
-                            {
-                                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] Restart FAILED. StartTailingLogFile returned NULL.");
-                            }
-                            tailProcess = newTailProcess;
-                        }
+                    databaseLogContent += batchContent;
+                    cachedDatabaseLogContent += batchContent;
+
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Added {processedCount} database log lines. Total length: {databaseLogContent.Length} chars");
+
+                    // Manage log size
+                    if (databaseLogContent.Length > BUFFER_SIZE)
+                    {
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars");
+                        databaseLogContent = "[... Log Truncated ...]\n" + databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
+                        cachedDatabaseLogContent = "[... Log Truncated ...]\n" + cachedDatabaseLogContent.Substring(cachedDatabaseLogContent.Length - TARGET_SIZE);
                     }
-                    catch (Exception ex) {
-                        if (debugMode) UnityEngine.Debug.LogError($"[Tail Exited Handler Error]: {ex}");
-                    }
+
+                    // Always update SessionState immediately when we have new database log content
+                    SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                    SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+                    
+                    // Update timestamp for periodic updates
+                    DateTime now = DateTime.Now;
+                    lastSessionStateUpdateTime = now;
+
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updated SessionState with database log content. Length: {databaseLogContent.Length}");
+
+                    onDatabaseLogUpdated?.Invoke();
                 };
-            };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            if (debugMode) logCallback($"Tailing process started (PID: {process.Id}).", 0);
-            return process;
-        }
-        catch (Exception ex)
-        {
-            logCallback($"Error starting tail for {wslLogPath}: {ex.Message}", -1);
-            return null;
-        }
-    }
-    
-    public void AttemptTailRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Attempting tail restart. Current state: serverRunning={serverRunning}, tailProcessIsNull={tailProcess == null}");
-
-        if (serverRunning && tailProcess == null)
-        {
-            if (debugMode) logCallback("Domain reload detected. Attempting to re-attach tail process...", 0);
-            string logPath = WslCombinedLogPath;
-            
-            if (debugMode) logCallback($"Re-starting tail for {logPath}...", 0);            
-            tailProcess = StartTailingLogFile(logPath, (line) => {
-                silentServerCombinedLog += line + "\n";
-                cachedModuleLogContent += line + "\n"; // Keep cached version in sync
-                const int maxLogLength = 75000;
-                const int trimToLength = 50000;
-                if (silentServerCombinedLog.Length > maxLogLength)
-                {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess Tail Reload] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
-                    silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
-                    cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess Tail Reload] Truncated log length: {silentServerCombinedLog.Length}");
-                }
-                
-                SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-                SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
-                
-                if (onModuleLogUpdated != null)
-                {
-                    onModuleLogUpdated();
-                }
-            }, false); // Don't read from beginning for domain reload - only follow new content
-
-            if (tailProcess != null)
-            {
-                if (debugMode) logCallback($"Successfully re-attached tail process (PID: {tailProcess.Id}).", 1);
-            }
-            else
-            {
-                logCallback("Failed to re-attach tail process.", -1);
             }
         }
-        else
+        finally
         {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] AttemptTailRestartAfterReload called but conditions not met (serverRunning={serverRunning}, tailProcessIsNull={tailProcess == null})");
+            lock (logLock)
+            {
+                isProcessing = false;
+            }
         }
     }
-    
+
+    #endregion
+
     // Helper method to format server log lines with consistent timestamps
     private string FormatServerLogLine(string logLine, bool isError = false)
     {
@@ -1381,385 +1696,18 @@ public class ServerLogProcess
 
         string errorMarker = isError ? " [ERROR]" : "";
         return $"{timestampPrefix}{errorMarker} {messageContent}".TrimEnd();
-    }
-    
-    public void StopTailProcessExplicitly()
-    {
-        logCallback("Editor quitting. Stopping tail process...", 0);
-        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] StopTailProcessExplicitly called.");
-        StopTailingLogs();    
-    }
-    
-    // Helper method to update SessionState less frequently
-    private void UpdateSessionStateIfNeeded()
-    {
-        TimeSpan timeSinceLastUpdate = DateTime.Now - lastSessionStateUpdateTime;
-        if (timeSinceLastUpdate.TotalSeconds >= sessionStateUpdateInterval)
-        {
-            SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
-            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent); // Fix: Use correct cached content
-            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-            lastSessionStateUpdateTime = DateTime.Now;
-            
-            // Clear accumulators after update
-            moduleLogAccumulator.Clear();
-            databaseLogAccumulator.Clear();
-        }
-    }
-    #endregion
-    
-    #region DatabaseLog
-    
-    private void StartDatabaseLogProcess()
-    {
-        try
-        {
-            if (debugMode) logCallback("Starting database logs process...", 0);
-            
-            // FIRST: Kill any lingering spacetime logs processes as a safeguard
-            try
-            {
-                if (!string.IsNullOrEmpty(userName))
-                {
-                    string killCommand = "pkill -9 -f 'spacetime logs.*-f'"; // Use -9 for forceful kill
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] StartDatabaseLogProcess: Forcefully killing any remaining spacetime logs processes: {killCommand}");
-                    
-                    Process killProcess = new Process();
-                    killProcess.StartInfo.FileName = "wsl.exe";
-                    killProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{killCommand}\"";
-                    killProcess.StartInfo.UseShellExecute = false;
-                    killProcess.StartInfo.CreateNoWindow = true;
-                    killProcess.StartInfo.RedirectStandardOutput = true;
-                    killProcess.StartInfo.RedirectStandardError = true;
-                    
-                    killProcess.Start();
-                    killProcess.WaitForExit(2000);
-                    killProcess.Dispose();
-                    
-                    // Brief wait to ensure cleanup
-                    System.Threading.Thread.Sleep(300);
-                    
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] StartDatabaseLogProcess: Cleanup completed");
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] StartDatabaseLogProcess cleanup error: {ex.Message}");
-            }
-            
-            // Check for required parameters first
-            if (string.IsNullOrEmpty(moduleName))
-            {
-                logCallback("ERROR: Module name is not configured, cannot start database log process", -1);
-                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] StartDatabaseLogProcess failed: moduleName is null/empty");
-                return;
-            }
-            
-            if (string.IsNullOrEmpty(userName))
-            {
-                logCallback("ERROR: Username is not configured, cannot start database log process", -1);
-                if (debugMode) UnityEngine.Debug.LogError("[ServerLogProcess] StartDatabaseLogProcess failed: userName is null/empty");
-                return;
-            }
-            
-            // Mark state in SessionState
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, true);
-            
-            // Always ensure database log content is cleared when starting the process if clearDatabaseLogAtStart is true
-            if (clearDatabaseLogAtStart)
-            {
-                ClearDatabaseLog();
-                // Initialize tracking for removing the first 10 lines (historical messages)
-                waitingForInitialDatabaseLines = true;
-                initialDatabaseLinesReceived = 0;
-            }
-            else
-            {
-                // Reset tracking if not clearing
-                waitingForInitialDatabaseLines = false;
-                initialDatabaseLinesReceived = 0;
-            }
-            
-            // Create a new process to run the spacetime logs command
-            databaseLogProcess = new Process();
-            databaseLogProcess.StartInfo.FileName = "wsl.exe";
-            
-            // Build the command to run spacetime logs with the module name
-            string logCommand = $"spacetime logs {moduleName} -f";
-            
-            // If server directory is specified, change to that directory first
-            if (!string.IsNullOrEmpty(serverDirectory))
-            {
-                if (cmdProcessor != null)
-                {
-                    string wslPath = cmdProcessor.GetWslPath(serverDirectory);
-                    logCommand = $"cd '{wslPath}' && {logCommand}";
-                }
-            }
-            
-            string wslArguments = $"-d Debian -u {userName} --exec bash -l -c \"{logCommand}\"";
-            databaseLogProcess.StartInfo.Arguments = wslArguments;
-            
-            // Log the exact command being executed for debugging
-            if (debugMode) 
-            {
-                logCallback($"Database log WSL command: wsl.exe {wslArguments}", 0);
-                UnityEngine.Debug.Log($"[ServerLogProcess] Starting database log process with command: wsl.exe {wslArguments}");
-            }
-            databaseLogProcess.StartInfo.UseShellExecute = false;
-            databaseLogProcess.StartInfo.CreateNoWindow = true;
-            databaseLogProcess.StartInfo.RedirectStandardOutput = true;
-            databaseLogProcess.StartInfo.RedirectStandardError = true;
-            databaseLogProcess.EnableRaisingEvents = true;
-            
-            // Configure UTF-8 encoding to properly handle special characters from WSL
-            databaseLogProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-            databaseLogProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
-            
-            // Handle output data received
-            databaseLogProcess.OutputDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    string line = FormatDatabaseLogLine(args.Data);
-                    if (line != null) // Only enqueue if line wasn't filtered out
-                    {
-                        databaseLogQueue.Enqueue(line);
-                    }
-                }
-            };
-            
-            // Handle error data received (Always enabled to catch startup errors)
-            databaseLogProcess.ErrorDataReceived += (sender, args) => {
-                if (args.Data != null)
-                {
-                    string formattedLine = FormatDatabaseLogLine(args.Data, true);
-                    if (debugMode) logCallback($"Database Log Error: {args.Data}", -1);
-                    if (debugMode) UnityEngine.Debug.LogError($"[Database Log Error] {args.Data}");
-                    databaseLogQueue.Enqueue(formattedLine);
-                }
-            };
-            
-            // Handle process exit
-            databaseLogProcess.Exited += (sender, e) => {
-                EditorApplication.delayCall += () => {
-                    try
-                    {
-                        int exitCode = -1;
-                        try { exitCode = databaseLogProcess.ExitCode; } catch {}
-                        
-                        if (debugMode) // If we want more information
-                        {
-                            UnityEngine.Debug.Log($"[ServerLogProcess] Database log process exited with code: {exitCode}");
-                            
-                            // Add a message to the log with current time formatted in the same way
-                            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-                            string stopMessage = $"\n{timestamp} [DEBUG - DATABASE LOG STOPPED]\n";
-                            
-                            // Update both current and cached logs
-                            databaseLogContent += stopMessage;
-                            cachedDatabaseLogContent += stopMessage;
-                        }
-                        
-                        // Store in SessionState
-                        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-                        
-                        // Clear the process reference
-                        databaseLogProcess = null;
-                        
-                        // Notify subscribers
-                        if (onDatabaseLogUpdated != null)
-                        {
-                            onDatabaseLogUpdated();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (debugMode) UnityEngine.Debug.LogError($"[Database Log Exit Handler Error]: {ex}");
-                    }
-                };
-            };
-              // Start the process
-            try
-            {
-                databaseLogProcess.Start();
-                databaseLogProcess.BeginOutputReadLine();
-                databaseLogProcess.BeginErrorReadLine();
-                
-                if (debugMode) logCallback($"Database log process started successfully (PID: {databaseLogProcess.Id}).", 1);
-                
-                // Ensure background processing task is running when we start a new database log process
-                // This is critical after Unity domain reloads or WSL restarts
-                if (!isProcessing || processingTask == null || processingTask.IsCompleted)
-                {
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Ensuring background processing task is running for new database log process...");
-                    
-                    // Cancel existing task if it exists
-                    if (processingCts != null && !processingCts.IsCancellationRequested)
-                    {
-                        processingCts.Cancel();
-                    }
-                    
-                    // Create new cancellation token and restart the background task
-                    processingCts = new CancellationTokenSource();
-                    isProcessing = false; // Reset the flag so StartLogLimiter can restart
-                    StartLogLimiter();
-                    
-                    if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task ensured for database logging");
-                }
-                
-                // Check if process exits immediately (common issue)
-                System.Threading.Thread.Sleep(500); // Give it a moment to potentially fail
-                if (databaseLogProcess.HasExited)
-                {
-                    int exitCode = databaseLogProcess.ExitCode;
-                    if (debugMode) logCallback($"ERROR: Database log process exited immediately with code {exitCode}", -1);
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Database log process failed to start - exited with code {exitCode}");
-                    databaseLogProcess = null;
-                    SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-                    return;
-                }
-            }
-            catch (Exception startEx)
-            {
-                logCallback($"ERROR: Failed to start database log process: {startEx.Message}", -1);
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception starting database log process: {startEx}");
-                databaseLogProcess = null;
-                SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            logCallback($"Error starting database log process: {ex.Message}", -1);
-            databaseLogProcess = null;
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-        }
-    }
-    
-    private void StopDatabaseLogProcess()
-    {
-        if (databaseLogProcess != null)
-        {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Stopping database log process (PID: {databaseLogProcess.Id}).");            // First, kill ALL existing spacetime logs processes via WSL
-            try
-            {
-                if (!string.IsNullOrEmpty(userName))
-                {
-                    // Try multiple times to ensure all processes are killed
-                    for (int attempt = 0; attempt < 3; attempt++)
-                    {
-                        string killCommand = "pkill -9 -f 'spacetime logs.*-f'"; // Use -9 for forceful kill
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Forcefully killing all spacetime logs processes (attempt {attempt + 1}): {killCommand}");
-                        
-                        Process killProcess = new Process();
-                        killProcess.StartInfo.FileName = "wsl.exe";
-                        killProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{killCommand}\"";
-                        killProcess.StartInfo.UseShellExecute = false;
-                        killProcess.StartInfo.CreateNoWindow = true;
-                        killProcess.StartInfo.RedirectStandardOutput = true;
-                        killProcess.StartInfo.RedirectStandardError = true;
-                        
-                        killProcess.Start();
-                        killProcess.WaitForExit(1000); // Wait up to 1 second per attempt
-                        killProcess.Dispose();
-                        
-                        // Small delay between attempts
-                        if (attempt < 2) System.Threading.Thread.Sleep(200);
-                    }
-                    
-                    // Final delay to ensure processes are fully terminated
-                    System.Threading.Thread.Sleep(500);
-                    
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Killed all spacetime logs processes");
-                }
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error killing spacetime logs processes: {ex.Message}");
-            }
-            
-            if (!databaseLogProcess.HasExited)
-            {
-                try
-                {
-                    // Stop reading output first
-                    databaseLogProcess.CancelOutputRead();
-                    databaseLogProcess.CancelErrorRead();
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error canceling output read: {ex.Message}");
-                }
-                
-                try
-                {
-                    databaseLogProcess.Kill();
-                    databaseLogProcess.WaitForExit(500);
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error stopping database log process: {ex}");
-                }
-            }
-            
-            // Dispose the process to clean up resources and event handlers
-            try
-            {
-                databaseLogProcess.Dispose();
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Error disposing database log process: {ex.Message}");
-            }
-            
-            databaseLogProcess = null;
-            SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
-            
-            // Reset initial lines tracking when stopping
-            waitingForInitialDatabaseLines = false;
-            initialDatabaseLinesReceived = 0;
-        }
-    }
-    
-    public void AttemptDatabaseLogRestartAfterReload()
-    {
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Checking database log process: running={serverRunning}, process={(databaseLogProcess == null ? "null" : databaseLogProcess.HasExited ? "exited" : "running")}");
-        
-        // Check if we should restart the database logs
-        if (serverRunning && (databaseLogProcess == null || databaseLogProcess.HasExited))
-        {
-            if (debugMode) logCallback("Attempting to restart database log process after domain reload...", 0);
-            StartDatabaseLogProcess();
-        }
-        
-        // Ensure the background processing task is running after domain reload
-        // This is critical for processing the database log queue
-        if (!isProcessing || processingTask == null || processingTask.IsCompleted)
-        {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task not running, restarting...");
-            
-            // Cancel existing task if it exists
-            if (processingCts != null && !processingCts.IsCancellationRequested)
-            {
-                processingCts.Cancel();
-            }
-            
-            // Create new cancellation token and restart the background task
-            processingCts = new CancellationTokenSource();
-            isProcessing = false; // Reset the flag so StartLogLimiter can restart
-            StartLogLimiter();
-            
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Background processing task restarted");
-        }
-    }
-    
-    // Helper method to extract and format timestamps from log lines
+    }    // Helper method to extract and format timestamps from log lines
     private string FormatDatabaseLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
-            return logLine;        // Filter out specific error messages when not in debug mode
+            return logLine;
+            
+        // Check if the line is already formatted with our timestamp prefix
+        if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Log line already formatted, skipping: {logLine.Substring(0, Math.Min(100, logLine.Length))}");
+            return logLine; // Already formatted, return as-is
+        }// Filter out specific error messages when not in debug mode
         if (!debugMode)
         {
             // Check for the specific error messages to filter out
@@ -1911,180 +1859,64 @@ public class ServerLogProcess
         string finalFallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string finalErrorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{finalFallbackTimestamp}{finalErrorSuffix} {logLine}";
-    }
-    #endregion
-
-    #region Log Limiter
-
-    private void StartLogLimiter() // Background log length processor
-    {
-        if (isProcessing) return;
-        
-        isProcessing = true;
-        processingTask = Task.Run(async () => {
-            try
-            {
-                while (!processingCts.Token.IsCancellationRequested)
-                {
-                    ProcessLogQueue();
-                    await Task.Delay(PROCESS_INTERVAL_MS, processingCts.Token);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Normal cancellation
-            }
-            catch (Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Log processor error: {ex}");
-            }
-            finally
-            {
-                isProcessing = false;
-            }
-        }, processingCts.Token);
-    }
-
-    private void ProcessLogQueue()
-    {
-        if (databaseLogQueue.IsEmpty) return;
-
-        StringBuilder batchedLogs = new StringBuilder();
-        while (databaseLogQueue.TryDequeue(out string logLine))
-        {
-            batchedLogs.AppendLine(logLine);
-        }
-
-        if (batchedLogs.Length > 0)
-        {
-            lock (logLock)
-            {
-                // Add a single newline at the end if content exists
-                string newContent = batchedLogs.ToString();
-                if (!string.IsNullOrEmpty(databaseLogContent) && !databaseLogContent.EndsWith("\n"))
-                    databaseLogContent += "\n";
-                databaseLogContent += newContent;
-                
-                if (!string.IsNullOrEmpty(cachedDatabaseLogContent) && !cachedDatabaseLogContent.EndsWith("\n"))
-                    cachedDatabaseLogContent += "\n";
-                cachedDatabaseLogContent += newContent;
-
-                // Handle removal of initial lines if we're waiting for them
-                if (waitingForInitialDatabaseLines)
-                {
-                    // Count the lines in the new content
-                    string[] newLines = newContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    initialDatabaseLinesReceived += newLines.Length;
-                    
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Received {newLines.Length} database log lines, total: {initialDatabaseLinesReceived}");
-                    
-                    // If we've received at least the initial 10 lines, remove them
-                    if (initialDatabaseLinesReceived >= INITIAL_DATABASE_LINES_TO_REMOVE)
-                    {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Removing first {INITIAL_DATABASE_LINES_TO_REMOVE} historical database log lines");
-                        
-                        // Split content into lines and remove the first 10
-                        string[] allLines = databaseLogContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (allLines.Length >= INITIAL_DATABASE_LINES_TO_REMOVE)
-                        {
-                            string[] remainingLines = new string[allLines.Length - INITIAL_DATABASE_LINES_TO_REMOVE];
-                            Array.Copy(allLines, INITIAL_DATABASE_LINES_TO_REMOVE, remainingLines, 0, remainingLines.Length);
-                            databaseLogContent = string.Join("\n", remainingLines);
-                            if (!string.IsNullOrEmpty(databaseLogContent))
-                                databaseLogContent += "\n";
-                                
-                            // Also update cached content
-                            cachedDatabaseLogContent = databaseLogContent;
-                        }
-                        
-                        // Stop tracking initial lines
-                        waitingForInitialDatabaseLines = false;
-                        initialDatabaseLinesReceived = 0;
-                        
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Finished removing initial database log lines, content length: {databaseLogContent.Length}");
-                    }
-                }
-
-                // Check if we need to truncate
-                if (databaseLogContent.Length > BUFFER_SIZE)
-                {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating database log from {databaseLogContent.Length} chars. If this happens frequently, please fix your database error or raise the buffer size.");
-                    string truncatedContent = "[... Log Truncated ...]\n" + 
-                        databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
-                    databaseLogContent = truncatedContent;
-                    cachedDatabaseLogContent = truncatedContent;
-                }
-            }
-
-            // Update UI on main thread
-            EditorApplication.delayCall += () => {
-                // Force immediate SessionState update for database logs (bypass rate limiting)
-                SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-                SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-                
-                if (onDatabaseLogUpdated != null)
-                {
-                    onDatabaseLogUpdated();
-                }
-            };
-        }
-    }
-    #endregion
-
-    private DateTime ExtractTimestampFromJournalLine(string line)
+    }    private DateTime ExtractTimestampFromJournalLine(string line)
     {
         try
         {
-            // journalctl -o short-iso-precise format: "2024-01-15T10:30:45.123456+00:00 hostname servicename[pid]: message"
-            var match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})");
+            // Primary pattern: journalctl -o short-iso-precise format with hostname
+            // "2025-06-21T20:00:52.866169+02:00 hostname servicename[pid]: message"
+            var match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+\S+");
             if (match.Success)
             {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
                 {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 1): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.UtcDateTime;
                 }
             }
             
-            // Fallback: Try parsing other common journalctl timestamp formats
-            // short-iso format: "2024-01-15T10:30:45+00:00"
-            match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})");
+            // Secondary pattern: shorter precision
+            // "2025-06-21T20:00:52+02:00 hostname servicename[pid]: message"
+            match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})\s+\S+");
             if (match.Success)
             {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
                 {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 2): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.UtcDateTime;
                 }
             }
             
-            // Additional fallback for different possible formats
-            // Look for any ISO 8601 timestamp in the line
-            match = System.Text.RegularExpressions.Regex.Match(line, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))");
+            // Third pattern: any ISO 8601 timestamp at the start of the line
+            match = System.Text.RegularExpressions.Regex.Match(line, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))");
             if (match.Success)
             {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
                 {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 3): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.UtcDateTime;
                 }
             }
             
-            // Last resort: try to parse any timestamp-like pattern and assume it's recent
-            match = System.Text.RegularExpressions.Regex.Match(line, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})");
+            // Fourth pattern: formatted timestamps like "[2025-06-21 20:21:08]" (already processed logs)
+            match = System.Text.RegularExpressions.Regex.Match(line, @"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]");
             if (match.Success)
             {
                 if (DateTime.TryParse(match.Groups[1].Value, out DateTime parsed))
                 {
-                    // Convert to UTC assuming it's in the system timezone
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 4): {parsed.ToUniversalTime():yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.ToUniversalTime();
                 }
             }
+            
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] No timestamp pattern matched for line: {line.Substring(0, Math.Min(100, line.Length))}...");
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Failed to parse timestamp from line: {line.Substring(0, Math.Min(50, line.Length))}... Error: {ex.Message}");
         }
         
-        // If parsing fails, return DateTime.MinValue to indicate failure instead of current time
-        // This prevents the fallback from causing infinite repetition
+        // If parsing fails, return DateTime.MinValue to indicate failure
         return DateTime.MinValue;
     }
 
@@ -2252,7 +2084,74 @@ public class ServerLogProcess
             return false;
         }
     }
-  } // Class
+    
+    // Helper method to run journalctl commands with fallback to sudo if needed
+    private async Task<(string output, string error, bool success)> RunJournalctlCommandAsync(string serviceName, string sinceTimestamp)
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            return ("", "Username not configured", false);
+        }
+        
+        // First try without sudo
+        string journalCommand = $"timeout 10s journalctl -u {serviceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
+        
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Trying journalctl without sudo: {journalCommand}");
+        
+        Process readProcess = null;
+        try
+        {
+            readProcess = new Process();
+            readProcess.StartInfo.FileName = "wsl";
+            readProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"{journalCommand}\"";
+            readProcess.StartInfo.UseShellExecute = false;
+            readProcess.StartInfo.CreateNoWindow = true;
+            readProcess.StartInfo.RedirectStandardOutput = true;
+            readProcess.StartInfo.RedirectStandardError = true;
+            
+            readProcess.Start();
+            
+            string output = await readProcess.StandardOutput.ReadToEndAsync();
+            string error = await readProcess.StandardError.ReadToEndAsync();
+            
+            if (!readProcess.WaitForExit(12000))
+            {
+                if (!readProcess.HasExited)
+                {
+                    readProcess.Kill();
+                    readProcess.WaitForExit(1000);
+                }
+                return ("", "Process timed out", false);
+            }
+            
+            // If we get permission denied or similar, it might work with sudo
+            bool needsSudo = !string.IsNullOrEmpty(error) && 
+                           (error.Contains("permission denied") || 
+                            error.Contains("Permission denied") || 
+                            error.Contains("access denied") ||
+                            error.Contains("Operation not permitted"));
+            
+            if (needsSudo && debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerLogProcess] Permission denied without sudo, will try with sudo next time. Consider adding user to systemd-journal group: sudo usermod -a -G systemd-journal {userName}");
+            }
+            
+            readProcess.Dispose();
+            return (output, error, !needsSudo);
+        }
+        catch (Exception ex)
+        {
+            if (readProcess != null && !readProcess.HasExited)
+            {
+                try { readProcess.Kill(); readProcess.WaitForExit(1000); } catch { }
+            }
+            readProcess?.Dispose();
+            
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in journalctl command: {ex.Message}");
+            return ("", ex.Message, false);
+        }
+    }
+} // Class
 } // Namespace
 
 // made by Mathias Toivonen at Northern Rogue Games

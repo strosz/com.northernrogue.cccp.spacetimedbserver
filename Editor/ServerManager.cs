@@ -36,10 +36,9 @@ public class ServerManager
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
     private bool publishing = false; // Flag to track if a publish operation is in progress
-    
-    // Server status resilience (prevent false positives during compilation/brief hiccups)
+      // Server status resilience (prevent false positives during compilation/brief hiccups)
     private int consecutiveFailedChecks = 0;
-    private const int maxConsecutiveFailuresBeforeStop = 2; // Require 2 consecutive failures before marking as stopped
+    private const int maxConsecutiveFailuresBeforeStop = 3; // Require 3 consecutive failures before marking as stopped (increased from 2)
 
     // Configuration properties - accessed directly from EditorPrefs
     private string userName;
@@ -83,6 +82,8 @@ public class ServerManager
     private bool hasCurl;
     private bool hasSpacetimeDBServer;
     private bool hasSpacetimeDBPath;
+    private bool hasSpacetimeDBService;
+    private bool hasSpacetimeDBLogsService;
     private bool hasRust;
     private bool wslPrerequisitesChecked;
     private bool initializedFirstModule;
@@ -139,6 +140,8 @@ public class ServerManager
     public bool HasCurl => hasCurl;
     public bool HasSpacetimeDBServer => hasSpacetimeDBServer;
     public bool HasSpacetimeDBPath => hasSpacetimeDBPath;
+    public bool HasSpacetimeDBService => hasSpacetimeDBService;
+    public bool HasSpacetimeDBLogsService => hasSpacetimeDBLogsService;
     public bool HasRust => hasRust;
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
     public bool InitializedFirstModule => initializedFirstModule;
@@ -225,6 +228,8 @@ public class ServerManager
         hasCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCurl", false);
         hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
         hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
+        hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
+        hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         
         // Load UX state
@@ -364,6 +369,15 @@ public class ServerManager
         }
     }
     
+    // Force WSL log refresh - triggers new journalctl commands for WSL server
+    public void ForceWSLLogRefresh()
+    {
+        if (logProcessor != null && serverMode == ServerMode.WslServer)
+        {
+            logProcessor.ForceWSLLogRefresh();
+        }
+    }
+    
     // Force SSH log refresh - triggers new journalctl commands for custom server
     public void ForceSSHLogRefresh()
     {
@@ -376,8 +390,10 @@ public class ServerManager
     public void SetHasDebian(bool value) { hasDebian = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", value); }
     public void SetHasDebianTrixie(bool value) { hasDebianTrixie = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", value); }
     public void SetHasCurl(bool value) { hasCurl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", value); }
-    public void SetHasSpacetimeDBServer(bool value) { hasSpacetimeDBServer = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", value); }
+    public void SetHasSpacetimeDBServer(bool value) { hasSpacetimeDBServer = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", value); }    
     public void SetHasSpacetimeDBPath(bool value) { hasSpacetimeDBPath = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", value); }
+    public void SetHasSpacetimeDBService(bool value) { hasSpacetimeDBService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", value); }
+    public void SetHasSpacetimeDBLogsService(bool value) { hasSpacetimeDBLogsService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", value); }
     public void SetHasRust(bool value) { hasRust = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", value); }
     public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
     public void SetInitializedFirstModule(bool value) { initializedFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", value); }
@@ -386,6 +402,12 @@ public class ServerManager
     {
         serverMode = mode;
         EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", mode.ToString());
+        
+        // Clear status cache when changing server modes
+        if (cmdProcessor != null)
+        {
+            cmdProcessor.ClearStatusCache();
+        }
     }
 
     public void Configure()
@@ -444,11 +466,11 @@ public class ServerManager
                 LogMessage("Unknown server mode. Cannot start server.", -1);
                 break;
         }
-    }
+    }    
 
     private void StartWslServer()
     {
-        if (!HasWSL || !HasDebian || !HasDebianTrixie || !HasSpacetimeDBServer)
+        if (!HasWSL || !HasDebian || !HasDebianTrixie || !HasSpacetimeDBService)
         {
             LogMessage("Missing required installed items. Will attempt to start server.", -2);
         }
@@ -460,55 +482,61 @@ public class ServerManager
         
         LogMessage("Start sequence initiated for WSL server. Waiting for confirmation...", 0);
         
-        try
+        // Clear the status cache since we're starting the server
+        if (cmdProcessor != null)
         {
-            // Configure log processor with current settings
-            logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, UserName);
-            
-            if (SilentMode)
-            {
-                if (DebugMode) LogMessage($"Starting Spacetime Server (Silent Mode, File Logging to {ServerLogProcess.WslCombinedLogPath})...", 0);
-                
-                // Start the silent server process
-                serverProcess = cmdProcessor.StartSilentServerProcess(ServerLogProcess.WslCombinedLogPath);
-                if (serverProcess == null) throw new Exception("Failed to start silent server process");
-                
-                // Start log monitoring
-                logProcessor.StartLogging();
-            }
-            else
-            {
-                // Start visible CMD server process
-                LogMessage("Starting Spacetime Server (Visible CMD)...", 0);
-                serverProcess = cmdProcessor.StartVisibleServerProcess(ServerDirectory);
-                if (serverProcess == null) throw new Exception("Failed to start visible server process");
-            }
-
-            LogMessage("Server Successfully Started!",1);
+            cmdProcessor.ClearStatusCache();
+        }
         
-            // Mark server as starting up
-            isStartingUp = true;
-            startupTime = (float)EditorApplication.timeSinceStartup;
-            serverStarted = true; // Assume starting, CheckServerStatus will verify
+        EditorApplication.delayCall += async () => {
+            try
+            {
+                // Configure log processor with current settings
+                logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, UserName);
+                
+                // Start SpacetimeDB services using systemctl
+                LogMessage("Starting SpacetimeDB service...", 0);
+                bool serviceStarted = await cmdProcessor.StartSpacetimeDBServices();
+                
+                if (!serviceStarted)
+                {
+                    throw new Exception("Failed to start SpacetimeDB services");
+                }
+
+                LogMessage("Server Successfully Started!", 1);
             
-            // Update log processor state
-            logProcessor.SetServerRunningState(true);
-        }
-        catch (Exception ex)
-        {
-            LogMessage($"Error during server start sequence: {ex.Message}", -1);
-            serverStarted = false;
-            isStartingUp = false;
-            logProcessor.StopLogging();
-            serverProcess = null; 
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(false);
-        }
-        finally
-        {
-            RepaintCallback?.Invoke();
-        }
+                // Mark server as starting up
+                isStartingUp = true;
+                startupTime = (float)EditorApplication.timeSinceStartup;
+                serverStarted = true; // Assume starting, CheckServerStatus will verify
+                  // For service-based approach, configure WSL
+                logProcessor.ConfigureWSL(true); // isLocalServer = true
+                
+                // Start logging if in silent mode
+                if (silentMode)
+                {
+                    logProcessor.StartLogging();
+                    if (debugMode) LogMessage("WSL log processors started successfully.", 1);
+                }
+                
+                // Update log processor state
+                logProcessor.SetServerRunningState(true);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error during server start sequence: {ex.Message}", -1);
+                serverStarted = false;
+                isStartingUp = false;
+                logProcessor.StopLogging();
+                
+                // Update log processor state
+                logProcessor.SetServerRunningState(false);
+            }
+            finally
+            {
+                RepaintCallback?.Invoke();
+            }
+        };
     }
 
     private async Task StartCustomServer()
@@ -634,7 +662,9 @@ public class ServerManager
         }
         else if (serverMode == ServerMode.WslServer)
         {
-            StopWslServer();
+            EditorApplication.delayCall += async () => {
+                await StopWslServer();
+            };
             RepaintCallback?.Invoke();
             return;
         }
@@ -646,16 +676,43 @@ public class ServerManager
         }
     }
 
-    private void StopWslServer()
+    private async Task StopWslServer()
     {
         try
         {
-            // Use the cmdProcessor to stop the server
-            cmdProcessor.StopServer();
+            // Clear the status cache since we're stopping the server
+            if (cmdProcessor != null)
+            {
+                cmdProcessor.ClearStatusCache();
+            }
+            
+            // Use the cmdProcessor to stop the services
+            bool stopSuccessful = await cmdProcessor.StopSpacetimeDBServices();
             
             // Stop the log processors
             logProcessor.StopLogging();
             
+            // Only mark as stopped if we successfully stopped the services
+            if (stopSuccessful)
+            {
+                // Force state update
+                serverStarted = false;
+                isStartingUp = false;
+                serverConfirmedRunning = false;
+                serverProcess = null; 
+                justStopped = true; // Set flag indicating stop was just initiated
+                stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
+
+                LogMessage("Server Successfully Stopped.", 1);
+                
+                // Update log processor state
+                logProcessor.SetServerRunningState(false);
+            }
+            else
+            {
+                LogMessage("Server stop attempted but may not have been fully successful. Check server status.", -1);
+                // Don't change server state flags if stop was not confirmed
+            }
         }
         catch (Exception ex)
         {
@@ -663,19 +720,6 @@ public class ServerManager
         }
         finally
         {
-            // Force state update
-            serverStarted = false;
-            isStartingUp = false;
-            serverConfirmedRunning = false;
-            serverProcess = null; 
-            justStopped = true; // Set flag indicating stop was just initiated
-            stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
-
-            LogMessage("Server Successfully Stopped.", 1);
-            
-            // Update log processor state
-            logProcessor.SetServerRunningState(false);
-
             RepaintCallback?.Invoke();
         }
     }
@@ -767,17 +811,17 @@ public class ServerManager
                         isActuallyRunning = true; // Assume it's running during initial grace period
                         if (DebugMode) LogMessage("Custom server in startup grace period, assuming running", 0);
                     }
-                    else 
+                    else
                     {
                         // After grace period, verify with actual check
                         await serverCustomProcess.CheckServerRunning(true);
                         isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                         if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
-                    }
-                }
+                    }                }
                 else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                    // Use the new cached CheckServerRunning method for better reliability
+                    isActuallyRunning = await cmdProcessor.CheckServerRunning();
                 }
 
                 // If running during startup phase, confirm immediately
@@ -853,18 +897,27 @@ public class ServerManager
                 {
                     await serverCustomProcess.CheckServerRunning(true);
                     isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
-                    
+
                     // If recently started and previously confirmed running, but now reports not running,
                     // this might be a false negative during server initialization
                     if (recentlyStarted && serverConfirmedRunning && !isActuallyRunning)
                     {
                         if (DebugMode) LogMessage("Ignoring possible false negative server status check (server recently started)", 0);
                         return; // Skip this check, maintain current state
-                    }
-                }
-                else // WSL and other modes
+                    }                }                else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                    // Use a combination of service check and HTTP ping for better reliability
+                    bool serviceRunning = await cmdProcessor.CheckServerRunning();
+                    bool pingResponding = await PingServerStatusAsync();
+                    
+                    // Server is considered running if either service is active OR ping responds
+                    // This prevents false negatives when service check fails but server is actually responding
+                    isActuallyRunning = serviceRunning || pingResponding;
+                    
+                    if (DebugMode)
+                    {
+                        LogMessage($"WSL Server status - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                    }
                 }
                 
                 // State Change Detection with Resilience:
@@ -892,11 +945,22 @@ public class ServerManager
                         consecutiveFailedChecks++;
                         
                         if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")}", 0);
-                        
-                        // Only mark as stopped after multiple consecutive failures
+                          // Only mark as stopped after multiple consecutive failures
                         if (consecutiveFailedChecks >= maxConsecutiveFailuresBeforeStop)
                         {
-                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
+                            // Before marking as stopped, do one final ping verification to avoid false positives
+                            bool finalPingCheck = await PingServerStatusAsync();
+                            if (finalPingCheck)
+                            {
+                                // Ping succeeded, server is actually running - reset failure counter
+                                consecutiveFailedChecks = 0;
+                                serverConfirmedRunning = true;
+                                if (DebugMode) LogMessage("Final ping check succeeded - server is actually running, resetting failure counter", 1);
+                                RepaintCallback?.Invoke();
+                                return;
+                            }
+                            
+                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks and final ping verification ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
                             LogMessage(msg, -2);
                             
                             // Update state
@@ -937,10 +1001,28 @@ public class ServerManager
                 {
                     await serverCustomProcess.CheckServerRunning(true);
                     isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
-                }
+                }                
                 else // WSL and other modes
                 {
-                    isActuallyRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                    // Use both process check and ping for external recovery detection
+                    bool processRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                    bool pingResponding = false;
+                      if (processRunning)
+                    {
+                        // If process is running, verify with ping for complete confirmation
+                        pingResponding = await PingServerStatusAsync();
+                        isActuallyRunning = pingResponding; // Only consider it running if both process exists AND ping responds
+                        
+                        if (DebugMode)
+                        {
+                            LogMessage($"External recovery check - Process: {(processRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}", 0);
+                        }
+                    }
+                    else
+                    {
+                        isActuallyRunning = false;
+                        if (DebugMode) LogMessage("External recovery check - No spacetimedb process found", 0);
+                    }
                 }
 
                 if (isActuallyRunning)
@@ -949,10 +1031,10 @@ public class ServerManager
                     if (justStopped)
                     {
                         if (DebugMode) LogMessage($"Server detected running, but in post-stop grace period. Ignoring.", 0);
-                    }
-                    else
+                    }                    else
                     {
-                        bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : PingServerStatus();
+                        // For WSL server, we already verified ping in the check above, so isActuallyRunning is already the final result
+                        bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : isActuallyRunning;
                         
                         if (confirmed)
                         {                            
@@ -1230,9 +1312,8 @@ public class ServerManager
         }
     }
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool> callback)
-    {
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust) => {
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
+    {        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService) => {
             // Save state in ServerManager
             SetHasWSL(wsl);
             SetHasDebian(debian);
@@ -1241,6 +1322,8 @@ public class ServerManager
             SetHasSpacetimeDBServer(spacetime);
             SetHasSpacetimeDBPath(spacetimePath);
             SetHasRust(rust);
+            SetHasSpacetimeDBService(spacetimeService);
+            SetHasSpacetimeDBLogsService(spacetimeLogsService);
             SetWslPrerequisitesChecked(true);
             
             // Save state to EditorPrefs - moved here from ServerWindow
@@ -1251,6 +1334,8 @@ public class ServerManager
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", curl);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", spacetime);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", spacetimePath);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", spacetimeService);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", spacetimeLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", rust);
             
             // Read userName from EditorPrefs - moved here from ServerWindow
@@ -1259,9 +1344,8 @@ public class ServerManager
             {
                 SetUserName(storedUserName);
             }
-            
-            // Then call the original callback
-            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust);
+              // Then call the original callback
+            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService);
         });
     }
 
@@ -1329,6 +1413,47 @@ public class ServerManager
     {
         PingServer(false);
         return pingShowsOnline;
+    }
+
+    // Synchronous ping method for reliable status checking
+    public async Task<bool> PingServerStatusAsync()
+    {
+        string url;
+        if (serverMode == ServerMode.CustomServer)
+        {
+            url = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl : "";
+        }
+        else if (serverMode == ServerMode.MaincloudServer)
+        {
+            url = !string.IsNullOrEmpty(maincloudUrl) ? maincloudUrl : "https://maincloud.spacetimedb.com/";
+        }
+        else
+        {
+            url = !string.IsNullOrEmpty(ServerUrl) ? ServerUrl : "http://127.0.0.1:3000";
+        }
+
+        if (url.EndsWith("/"))
+        {
+            url = url.TrimEnd('/');
+        }
+
+        try
+        {
+            // Use cmdProcessor's synchronous ping method for immediate result
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            cmdProcessor.PingServer(url, (isOnline, message) => {
+                tcs.SetResult(isOnline);
+            });
+            
+            // Wait for the ping result with a timeout
+            bool result = await tcs.Task.ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            if (DebugMode) LogMessage($"Error during async ping: {ex.Message}", -1);
+            return false;
+        }
     }
 
     public void PingServer(bool showLog)
@@ -1455,40 +1580,37 @@ public class ServerManager
         if (DebugMode) LogMessage("Clearing database log...", 0);
         logProcessor.ClearDatabaseLog();
         if (DebugMode) LogMessage("Database log cleared successfully", 1);
-    }
-
-    public void AttemptTailRestartAfterReload()
+    }    public void AttemptTailRestartAfterReload()
     {
-        if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting tail restart.");
-          // Handle different server modes
-
-        // Original code for WSL mode - still uses persistent processes that need restarting
-        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+        if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting log restart after reload.");
+        
+        // For journalctl-based approach, just restart logging
+        if (IsServerStarted && SilentMode)
         {
-            logProcessor.AttemptTailRestartAfterReload();
+            if (serverMode == ServerMode.WslServer)
+            {
+                // Configure WSL and start logging for journalctl-based approach
+                logProcessor.ConfigureWSL(true);
+                logProcessor.StartLogging();
+            }
         }
         else
         {
-            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart tail process - server not running or not in silent mode");
+            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart log process - server not running or not in silent mode");
         }
-    }
-
-    public void StopTailProcessExplicitly()
-    {
-        if (logProcessor != null)
-        {
-            logProcessor.StopTailProcessExplicitly();
-        }
-    }
-
-    public void AttemptDatabaseLogRestartAfterReload()
+    }    public void AttemptDatabaseLogRestartAfterReload()
     {
         if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Checking database log process");
 
-        // Original code for WSL mode - still uses persistent processes that need restarting
-        if (IsServerStarted && SilentMode && cmdProcessor.IsPortInUse(ServerPort))
+        // For journalctl-based approach, database logs are part of the main logging
+        if (IsServerStarted && SilentMode)
         {
-            logProcessor.AttemptDatabaseLogRestartAfterReload();
+            if (serverMode == ServerMode.WslServer)
+            {
+                // Configure WSL and start logging for journalctl-based approach
+                logProcessor.ConfigureWSL(true);
+                logProcessor.StartLogging();
+            }
         }
         else
         {
@@ -1749,7 +1871,7 @@ public class ServerManager
             await CheckWslStatus();
             await CheckServerStatus();
             
-            // Check log processes for WSL mode
+            // Check WSL journalctl log processes
             if (serverStarted && silentMode && logProcessor != null)
             {
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
