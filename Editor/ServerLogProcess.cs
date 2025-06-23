@@ -1742,7 +1742,9 @@ public class ServerLogProcess
 
         string errorMarker = isError ? " [ERROR]" : "";
         return $"{timestampPrefix}{errorMarker} {messageContent}".TrimEnd();
-    }    // Helper method to extract and format timestamps from log lines
+    }
+
+    // Helper method to extract and format timestamps from log lines
     private string FormatDatabaseLogLine(string logLine, bool isError = false)
     {
         if (string.IsNullOrEmpty(logLine))
@@ -1766,6 +1768,20 @@ public class ServerLogProcess
             {
                 return null; // Return null to indicate this line should be skipped
             }
+        }
+
+        // Filter out systemd service messages and repeated connection messages
+        if (logLine.Contains("systemd[1]:") ||
+            logLine.Contains("client error (Connect)") ||
+            logLine.Contains("os error 111") ||
+            logLine.Contains("Error: error sending request") ||
+            logLine.Contains("spacetimedb-logs.service: Deactivated successfully") ||
+            logLine.Contains("spacetimedb-logs.service: Main process exited") ||
+            logLine.Contains("spacetimedb-logs.service: Failed with result") ||
+            logLine.Contains("Stopped spacetimedb-logs.service") ||
+            logLine.Contains("Started spacetimedb-logs.service"))
+        {
+            return null; // Filter out systemd service messages and reconnection spam
         }
         
         // Also filter connection errors that occur within grace period after server stops
@@ -1904,7 +1920,9 @@ public class ServerLogProcess
         string finalFallbackTimestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
         string finalErrorSuffix = debugMode && isError ? " [DATABASE LOG ERROR]" : ""; // No suffix for normal logs
         return $"{finalFallbackTimestamp}{finalErrorSuffix} {logLine}";
-    }    private DateTime ExtractTimestampFromJournalLine(string line)
+    }    
+
+    private DateTime ExtractTimestampFromJournalLine(string line)
     {
         try
         {
@@ -1975,7 +1993,8 @@ public class ServerLogProcess
         }
 
         try
-        {            Process process = new Process();
+        {   
+            Process process = new Process();
             process.StartInfo.FileName = "ssh";
             
             // Use a login shell to ensure PATH is fully loaded, similar to ServerInstallerWindow approach

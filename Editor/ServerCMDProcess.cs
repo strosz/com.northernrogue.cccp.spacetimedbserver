@@ -1,6 +1,8 @@
 using UnityEngine;
 using System.Diagnostics;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -860,7 +862,6 @@ public class ServerCMDProcess
             
             if (string.IsNullOrEmpty(output) && string.IsNullOrEmpty(error))
             {
-                logCallback("Command completed with no output.", 0);
                 commandSuccess = true;
             }
             
@@ -1065,7 +1066,6 @@ public class ServerCMDProcess
             }
 
             // Start the main SpacetimeDB service
-            logCallback("Starting SpacetimeDB service...", 0);
             var result = await RunServerCommandAsync("sudo systemctl start spacetimedb.service");
             
             if (!result.success)
@@ -1104,7 +1104,7 @@ public class ServerCMDProcess
             logCallback($"Error starting SpacetimeDB services: {ex.Message}", -1);
             return false;
         }
-    }
+    }    
 
     public async Task<bool> StopSpacetimeDBServices()
     {
@@ -1116,46 +1116,125 @@ public class ServerCMDProcess
             bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
             bool hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
 
-            if (!hasSpacetimeDBService)
-            {
-                logCallback("SpacetimeDB service is not configured. Cannot stop services.", -1);
-                return false;
-            }
+            bool stopSuccess = false;
 
-            // Stop the logs service first if configured
-            if (hasSpacetimeDBLogsService)
+            // Strategy 1: Try to stop services if they're configured and try a quick stop first
+            if (hasSpacetimeDBService)
             {
-                if (debugMode) logCallback("Stopping SpacetimeDB logs service...", 0);
-                var resultLogService = await RunServerCommandAsync("sudo systemctl stop spacetimedb-logs.service");
-
-                if (!resultLogService.success)
+                if (debugMode) logCallback("Attempting to stop services using systemctl...", 0);
+                
+                // Try stopping services with a shorter timeout to avoid hanging
+                var tasks = new List<Task<(string output, string error, bool success)>>();
+                
+                if (hasSpacetimeDBLogsService)
                 {
-                    logCallback($"Failed to stop SpacetimeDB logs service: {resultLogService.error}", -1);
-                    // Continue to stop main service even if logs service fails
+                    tasks.Add(RunServerCommandWithTimeoutAsync("sudo systemctl stop spacetimedb-logs.service", 10000)); // 10 second timeout
+                }
+                tasks.Add(RunServerCommandWithTimeoutAsync("sudo systemctl stop spacetimedb.service", 10000)); // 10 second timeout
+
+                // Wait for all tasks to complete or timeout
+                var results = await Task.WhenAll(tasks);
+                
+                // Check if any succeeded
+                stopSuccess = results.Any(r => r.success);
+                
+                if (stopSuccess)
+                {
+                    if (debugMode) logCallback("Service stop commands completed successfully.", 1);
                 }
                 else
                 {
-                    if (debugMode) logCallback("SpacetimeDB logs service stopped successfully.", 1);
+                    logCallback("Service stop commands failed or timed out. Trying direct process termination...", -1);
                 }
             }
 
-            // Stop the main SpacetimeDB service
-            logCallback("Stopping SpacetimeDB service...", 0);
-            var result = await RunServerCommandAsync("sudo systemctl stop spacetimedb.service");
+            // Strategy 2: Direct process termination (always try this for reliability)
+            if (debugMode) logCallback("Stopping SpacetimeDB processes directly...", 0);
+            
+            // Kill spacetimedb-standalone processes (the main server)
+            var killResult1 = await RunServerCommandWithTimeoutAsync("pkill -TERM spacetimedb-standalone", 5000);
+            await Task.Delay(2000); // Give graceful termination time
+            
+            // Force kill if still running
+            var killResult2 = await RunServerCommandWithTimeoutAsync("pkill -KILL spacetimedb-standalone", 5000);
+            
+            // Kill any remaining spacetime processes
+            var killResult3 = await RunServerCommandWithTimeoutAsync("pkill -TERM -f 'spacetime'", 5000);
+            await Task.Delay(1000);
+            var killResult4 = await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'spacetime'", 5000);
 
-            if (!result.success)
+            // Strategy 3: Clean up any hanging sudo processes
+            if (debugMode) logCallback("Cleaning up any hanging sudo processes...", 0);
+            await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'sudo systemctl'", 5000);
+
+            // Verify that processes are actually stopped
+            await Task.Delay(2000);
+            var checkResult = await RunServerCommandWithTimeoutAsync("pgrep -f spacetime", 5000);
+            
+            if (string.IsNullOrEmpty(checkResult.output))
             {
-                logCallback($"Failed to stop SpacetimeDB service: {result.error}", -1);
+                logCallback("SpacetimeDB processes stopped successfully.", 1);
+                return true;
+            }
+            else
+            {
+                logCallback("Some SpacetimeDB processes may still be running. Manual cleanup may be required.", -1);
                 return false;
             }
-
-            if (debugMode) logCallback("SpacetimeDB service stopped successfully.", 1);
-            return true;
         }
         catch (Exception ex)
         {
             logCallback($"Error stopping SpacetimeDB services: {ex.Message}", -1);
             return false;
+        }
+    }
+
+    // Helper method for running commands with a specific timeout
+    private async Task<(string output, string error, bool success)> RunServerCommandWithTimeoutAsync(string command, int timeoutMs)
+    {
+        if (!ValidateUserName()) 
+            return (string.Empty, "Error: No Debian username set.", false);
+
+        try
+        {
+            using (var wslProcess = new Process())
+            {
+                wslProcess.StartInfo.FileName = "wsl.exe";
+                wslProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -l -c \"{command.Replace("\"", "\\\"")}\"";
+                wslProcess.StartInfo.UseShellExecute = false;
+                wslProcess.StartInfo.CreateNoWindow = true;
+                wslProcess.StartInfo.RedirectStandardOutput = true;
+                wslProcess.StartInfo.RedirectStandardError = true;
+                wslProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+                wslProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
+
+                wslProcess.Start();
+
+                var outputTask = wslProcess.StandardOutput.ReadToEndAsync();
+                var errorTask = wslProcess.StandardError.ReadToEndAsync();
+
+                bool completed = await Task.Run(() => wslProcess.WaitForExit(timeoutMs));
+
+                if (!completed)
+                {
+                    if (debugMode) logCallback($"Command timed out after {timeoutMs}ms: {command}", -1);
+                    try { wslProcess.Kill(); } catch { }
+                    return (string.Empty, "Command timed out", false);
+                }
+
+                string output = await outputTask;
+                string error = await errorTask;
+
+                // Consider the command successful if it exits with code 0 OR if it's a kill command (which may not find processes)
+                bool success = wslProcess.ExitCode == 0 || command.Contains("pkill");
+
+                return (output, error, success);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error running command with timeout: {ex.Message}", -1);
+            return (string.Empty, ex.Message, false);
         }
     }
 
@@ -1179,7 +1258,7 @@ public class ServerCMDProcess
         try
         {
             var result = await RunServerCommandAsync("systemctl is-active spacetimedb.service");
-            running = result.success && result.output.Trim() == "active";
+            running = result.output.Trim() == "active";
 
             if (debugMode)
             {

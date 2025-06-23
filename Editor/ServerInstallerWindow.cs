@@ -1616,7 +1616,8 @@ public class ServerInstallerWindow : EditorWindow
             
             "# Check service status\n" +
             "echo \"Checking service status...\"\n" +
-            "sudo systemctl status spacetimedb.service\n\n" +
+            "sudo systemctl is-active spacetimedb.service && echo \"SpacetimeDB service is active\" || echo \"SpacetimeDB service is not active\"\n" +
+            "sudo systemctl is-enabled spacetimedb.service && echo \"SpacetimeDB service is enabled\" || echo \"SpacetimeDB service is not enabled\"\n\n" +
             
             "# Create the database logs service file\n" +
             "echo \"Creating SpacetimeDB database logs service...\"\n" +
@@ -1646,10 +1647,23 @@ public class ServerInstallerWindow : EditorWindow
             "sudo systemctl start spacetimedb-logs.service\n\n" +
             "# Check database logs service status\n" +
             "echo \"Checking SpacetimeDB database logs service status...\"\n" +
-            "sudo systemctl status spacetimedb-logs.service\n\n" +
+            "sudo systemctl is-active spacetimedb-logs.service && echo \"SpacetimeDB logs service is active\" || echo \"SpacetimeDB logs service is not active\"\n" +
+            "sudo systemctl is-enabled spacetimedb-logs.service && echo \"SpacetimeDB logs service is enabled\" || echo \"SpacetimeDB logs service is not enabled\"\n\n" +
+            
+            "# Configure sudoers to allow systemctl commands without password\n"+
+            "echo \"Configuring sudoers for passwordless systemctl operations...\"\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl start spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl start spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            "sudo chmod 440 /etc/sudoers.d/spacetimedb\n" +
+            "echo \"Sudoers configuration completed.\"\n\n" +
 
             "echo \"===== Done! =====\"\n" +
-            $"echo \"Database logs service configured for module: {expectedModuleName}\"";
+            $"echo \"Database logs service configured for module: {expectedModuleName}\"\n" +
+            $"echo \"Sudoers configured to allow passwordless systemctl operations for {userName}\"";
           // Create a temporary script file and execute it via WSL
         SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
         

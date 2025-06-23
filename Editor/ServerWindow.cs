@@ -338,74 +338,74 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
-        #region OnEnable
+    #region OnEnable
 
-        private void OnEnable()
+    private void OnEnable()
+    {
+        // Initialize ServerManager with logging callback
+        serverManager = new ServerManager(LogMessage, Repaint);
+
+        // Load server mode from EditorPrefs
+        LoadServerModeFromPrefs();            // Sync local fields from ServerManager's values (for UI display only)
+        SyncFieldsFromServerManager();
+
+        // Load saved modules list
+        LoadModulesList();
+
+        // Load UI preferences
+        autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
+        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", true);
+
+        // Register for focus events
+        EditorApplication.focusChanged += OnFocusChanged;
+
+        // Start checking server status
+        EditorApplication.update += EditorUpdateHandler;
+
+        // Check if we were previously running silently and restore state if needed
+        bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
+        if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
         {
-            // Initialize ServerManager with logging callback
-            serverManager = new ServerManager(LogMessage, Repaint);
-
-            // Load server mode from EditorPrefs
-            LoadServerModeFromPrefs();            // Sync local fields from ServerManager's values (for UI display only)
-            SyncFieldsFromServerManager();
-
-            // Load saved modules list
-            LoadModulesList();
-
-            // Load UI preferences
-            autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
-            colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", true);
-
-            // Register for focus events
-            EditorApplication.focusChanged += OnFocusChanged;
-
-            // Start checking server status
-            EditorApplication.update += EditorUpdateHandler;
-
-            // Check if we were previously running silently and restore state if needed
-            bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
-            if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
-            {
-                if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
-            }
-            else if (!serverManager.IsServerStarted || !serverManager.SilentMode)
-            {
-                // Clear the flag if not running silently on enable
-                SessionState.SetBool(SessionKeyWasRunningSilently, false);
-            }
-
-            // Ensure the flag is correctly set based on current state when enabled
-            SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
-
-            EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
-
-            // Check if we need to restart the database log process
-            bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
-            if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
-            {
-                if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
-                AttemptDatabaseLogRestartAfterReload();
-            }
-
-            // Add this section near the end of OnEnable
-            // Perform an immediate WSL status check if in WSL mode
-            if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
-            {
-                EditorApplication.delayCall += async () =>
-                {
-                    try
-                    {
-                        await serverManager.CheckWslStatus();
-                        isWslRunning = serverManager.IsWslRunning;
-                        Repaint();
-                    }
-                    catch (Exception ex)
-                    {
-                        if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
-                    }
-                };
-            }
+            if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
         }
+        else if (!serverManager.IsServerStarted || !serverManager.SilentMode)
+        {
+            // Clear the flag if not running silently on enable
+            SessionState.SetBool(SessionKeyWasRunningSilently, false);
+        }
+
+        // Ensure the flag is correctly set based on current state when enabled
+        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+
+        EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
+
+        // Check if we need to restart the database log process
+        bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
+        if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
+        {
+            if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
+            AttemptDatabaseLogRestartAfterReload();
+        }
+
+        // Add this section near the end of OnEnable
+        // Perform an immediate WSL status check if in WSL mode
+        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+        {
+            EditorApplication.delayCall += async () =>
+            {
+                try
+                {
+                    await serverManager.CheckWslStatus();
+                    isWslRunning = serverManager.IsWslRunning;
+                    Repaint();
+                }
+                catch (Exception ex)
+                {
+                    if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
+                }
+            };
+        }
+    }
     
     private void SyncFieldsFromServerManager()
     {
@@ -1802,23 +1802,19 @@ public class ServerWindow : EditorWindow
                     serverManager.BackupServerData();
                 }
                 EditorGUI.EndDisabledGroup();
-
-                string restoreTooltip = "Unpacks and copies over the selected backup archive. DELETES the current DATA folder of your SpacetimeDB server. You will asked to backup before if you have not done so.";
-                EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
-                if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
-                {
-                    serverManager.RestoreServerData();
-                }
-                EditorGUI.EndDisabledGroup();
             }
 
-            if (GUILayout.Button("Shutdown WSL", GUILayout.Height(20)))
+            if (debugMode && serverMode == ServerMode.WslServer)
             {
-                if (cmdProcessor == null)
+                if (GUILayout.Button("Test Server Running", GUILayout.Height(20)))
                 {
-                    cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                    if (cmdProcessor == null)
+                    {
+                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                    }
+                    // Run the async check and handle result via continuation
+                    TestServerRunningAsync();
                 }
-                cmdProcessor.ShutdownWsl();
             }
         }
         
@@ -2463,6 +2459,24 @@ public class ServerWindow : EditorWindow
             
             // Update last position for next frame
             lastScrollPosition = scrollPosition;
+        }
+    }
+
+    // Async helper for Test Server Running button
+    private async void TestServerRunningAsync()
+    {
+        if (cmdProcessor == null)
+        {
+            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+        }
+        bool isRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+        if (isRunning)
+        {
+            LogMessage("SpacetimeDB WSL server is running.", 1);
+        }
+        else
+        {
+            LogMessage("SpacetimeDB WSL server is not running.", -1);
         }
     }
 

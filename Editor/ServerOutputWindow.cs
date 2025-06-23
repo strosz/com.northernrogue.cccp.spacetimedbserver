@@ -978,7 +978,9 @@ public class ServerOutputWindow : EditorWindow
     private string FormatLogContent(string logContent)
     {
         if (string.IsNullOrEmpty(logContent))
-            return logContent;        // Strip ANSI Escape Codes with improved pattern
+            return logContent;
+
+        // Strip ANSI Escape Codes with improved pattern
         string strippedLog = Regex.Replace(logContent, @"\x1B\[[0-9;]*[mK]", "");
         
         // Remove only problematic control characters, preserve Unicode art characters
@@ -1022,7 +1024,7 @@ public class ServerOutputWindow : EditorWindow
         
         // Check if logs are already formatted (have [YYYY-MM-DD HH:MM:SS] timestamps)
         // For SSH mode, logs are pre-formatted in ServerLogProcess, so skip redundant formatting
-        bool isAlreadyFormatted = Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]");
+        /*bool isAlreadyFormatted = Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]");
         
         // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
         // Only format if the log doesn't already have a [YYYY-MM-DD HH:MM:SS] timestamp at the beginning
@@ -1069,7 +1071,7 @@ public class ServerOutputWindow : EditorWindow
             strippedLog = Regex.Replace(strippedLog,
                 @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(\s*)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} [A-Za-z]+ spacetime\[\d+\]:\s*",
                 "$1$2");
-        }
+        }*/
         
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");
@@ -1078,7 +1080,10 @@ public class ServerOutputWindow : EditorWindow
         strippedLog = strippedLog.Replace("warning:", "<color=#FFCC66>warning:</color>");
         strippedLog = strippedLog.Replace("INFO", "<color=#66CCFF>INFO</color>");
         strippedLog = strippedLog.Replace("DEBUG", "<color=#66CCFF>DEBUG</color>");
-          // Also convert any existing formatted timestamps if showing local time
+
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+
+        // Also convert any existing formatted timestamps if showing local time
         if (showLocalTime) {
             strippedLog = Regex.Replace(strippedLog, 
                 @"\[(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\]", 
@@ -1095,6 +1100,11 @@ public class ServerOutputWindow : EditorWindow
                         // Create a DateTimeOffset assuming UTC
                         var utcTime = new DateTimeOffset(year, month, day, hour, minute, second, TimeSpan.Zero);
                         
+                        if (modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase) && (selectedTab == 0 || selectedTab == 1)) {
+                            // For WSL server mode module log, we already get local time. Quick fix until later.
+                            utcTime = utcTime.AddHours(-2);
+                        }
+
                         // Convert to local time
                         var localTime = utcTime.ToLocalTime();
                         

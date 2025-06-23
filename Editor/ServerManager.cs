@@ -27,7 +27,7 @@ public class ServerManager
     public bool serverStarted = false;
     private bool isStartingUp = false;
     private float startupTime = 0f;
-    private const float serverStartupGracePeriod = 30f; // Give server 30 seconds to start
+    private const float serverStartupGracePeriod = 10f; // Reduced from 30 to 10 seconds for faster feedback
     
     // Server status
     private const double checkInterval = 5.0;
@@ -36,6 +36,7 @@ public class ServerManager
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
     private bool publishing = false; // Flag to track if a publish operation is in progress
+    private bool isStopping = false; // Flag to prevent multiple concurrent stop attempts
       // Server status resilience (prevent false positives during compilation/brief hiccups)
     private int consecutiveFailedChecks = 0;
     private const int maxConsecutiveFailuresBeforeStop = 3; // Require 3 consecutive failures before marking as stopped (increased from 2)
@@ -130,6 +131,7 @@ public class ServerManager
     public bool IsServerStarted => serverStarted;
     public bool IsStartingUp => isStartingUp;
     public bool IsServerRunning => serverConfirmedRunning;
+    public bool IsStopping => isStopping;
     public ServerMode CurrentServerMode => serverMode;
     public bool Publishing => publishing;
 
@@ -497,30 +499,68 @@ public class ServerManager
                 // Start SpacetimeDB services using systemctl
                 LogMessage("Starting SpacetimeDB service...", 0);
                 bool serviceStarted = await cmdProcessor.StartSpacetimeDBServices();
-                
                 if (!serviceStarted)
                 {
                     throw new Exception("Failed to start SpacetimeDB services");
                 }
 
                 LogMessage("Server Successfully Started!", 1);
-            
-                // Mark server as starting up
-                isStartingUp = true;
-                startupTime = (float)EditorApplication.timeSinceStartup;
-                serverStarted = true; // Assume starting, CheckServerStatus will verify
-                  // For service-based approach, configure WSL
-                logProcessor.ConfigureWSL(true); // isLocalServer = true
                 
-                // Start logging if in silent mode
-                if (silentMode)
+                bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                
+                if (DebugMode)
                 {
-                    logProcessor.StartLogging();
-                    if (debugMode) LogMessage("WSL log processors started successfully.", 1);
+                    LogMessage($"Immediate startup verification - Service: {(serviceRunning ? "active" : "inactive")}", 0);
                 }
                 
-                // Update log processor state
-                logProcessor.SetServerRunningState(true);
+                if (serviceRunning)
+                {
+                    if (DebugMode) LogMessage("Server service confirmed running immediately!", 1);
+                    serverStarted = true;
+                    serverConfirmedRunning = true;
+                    isStartingUp = false; // Skip the startup grace period since we confirmed service is running
+                    
+                    // Configure log processor immediately
+                    logProcessor.ConfigureWSL(true);
+                    logProcessor.SetServerRunningState(true);
+                    
+                    if (silentMode)
+                    {
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("WSL log processors started successfully.", 1);
+                    }
+                    
+                    // Check ping in background for additional confirmation, but don't block on it
+                    _ = Task.Run(async () => {
+                        await Task.Delay(2000); // Give HTTP endpoint time to initialize
+                        bool pingResponding = await PingServerStatusAsync();
+                        if (DebugMode)
+                        {
+                            LogMessage($"Background ping check result: {(pingResponding ? "responding" : "not responding")}", 0);
+                        }
+                    });
+                }
+                else
+                {
+                    LogMessage("Service started, waiting for server to become ready...", 0);
+                    // Mark server as starting up for grace period monitoring
+                    isStartingUp = true;
+                    startupTime = (float)EditorApplication.timeSinceStartup;
+                    serverStarted = true; // Assume starting, CheckServerStatus will verify
+                    
+                    // For service-based approach, configure WSL
+                    logProcessor.ConfigureWSL(true); // isLocalServer = true
+                    
+                    // Start logging if in silent mode
+                    if (silentMode)
+                    {
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("WSL log processors started successfully.", 1);
+                    }
+                    
+                    // Update log processor state
+                    logProcessor.SetServerRunningState(true);
+                }
             }
             catch (Exception ex)
             {
@@ -641,16 +681,25 @@ public class ServerManager
         RepaintCallback?.Invoke();
     }
 
-    #endregion
+    #endregion    
 
     #region Server Stop
 
     public void StopServer()
     {
         if (DebugMode) LogMessage("Stop Server process has been called.", 0);
-        isStartingUp = false; // Ensure startup flag is cleared
-        serverConfirmedRunning = false; // Reset confirmed state
-        consecutiveFailedChecks = 0; // Reset failure counter on explicit stop
+        
+        // Prevent multiple concurrent stop attempts
+        if (isStopping)
+        {
+            LogMessage("Server stop already in progress. Please wait...", 0);
+            return;
+        }
+        
+        // Clear startup and status flags immediately to prevent status conflicts
+        isStartingUp = false;
+        serverConfirmedRunning = false;
+        consecutiveFailedChecks = 0;
 
         if (serverMode == ServerMode.CustomServer)
         {
@@ -674,10 +723,13 @@ public class ServerManager
             RepaintCallback?.Invoke();
             return;
         }
-    }
+    }    
 
     private async Task StopWslServer()
     {
+        // Set the stopping flag to prevent concurrent stops
+        isStopping = true;
+        
         try
         {
             // Clear the status cache since we're stopping the server
@@ -686,32 +738,63 @@ public class ServerManager
                 cmdProcessor.ClearStatusCache();
             }
             
+            LogMessage("Stopping SpacetimeDB services and processes...", 0);
+            
             // Use the cmdProcessor to stop the services
             bool stopSuccessful = await cmdProcessor.StopSpacetimeDBServices();
             
-            // Stop the log processors
-            logProcessor.StopLogging();
-            
-            // Only mark as stopped if we successfully stopped the services
             if (stopSuccessful)
             {
-                // Force state update
-                serverStarted = false;
-                isStartingUp = false;
-                serverConfirmedRunning = false;
-                serverProcess = null; 
-                justStopped = true; // Set flag indicating stop was just initiated
-                stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
-
-                LogMessage("Server Successfully Stopped.", 1);
+                LogMessage("Stop commands completed. Verifying server is fully stopped...", 0);
                 
-                // Update log processor state
-                logProcessor.SetServerRunningState(false);
+                // Clear status cache again and force immediate status check
+                cmdProcessor.ClearStatusCache();
+                
+                // Check if server is actually stopped (with instant check to bypass cache)
+                bool stillRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                bool pingStillResponding = await PingServerStatusAsync();
+                
+                if (!stillRunning && !pingStillResponding)
+                {
+                    // Server confirmed stopped
+                    serverStarted = false;
+                    isStartingUp = false;
+                    serverConfirmedRunning = false;
+                    serverProcess = null; 
+                    justStopped = true;
+                    stopInitiatedTime = EditorApplication.timeSinceStartup;
+                    consecutiveFailedChecks = 0; // Reset failure counter
+
+                    LogMessage("Server Successfully Stopped.", 1);
+                    
+                    // Stop the log processors after confirming server is stopped
+                    logProcessor.StopLogging();
+                    logProcessor.SetServerRunningState(false);
+                }
+                else
+                {
+                    if (stillRunning)
+                        LogMessage("Warning: Some SpacetimeDB processes may still be running.", -1);
+                    if (pingStillResponding)
+                        LogMessage("Warning: Server is still responding to ping requests.", -1);
+                        
+                    // Still mark as stopped since we did our best
+                    serverStarted = false;
+                    isStartingUp = false;
+                    serverConfirmedRunning = false;
+                    serverProcess = null;
+                    justStopped = true;
+                    stopInitiatedTime = EditorApplication.timeSinceStartup;
+                    consecutiveFailedChecks = 0;
+
+                    LogMessage("Stop sequence completed. Check server status manually if needed.", 0);
+                    logProcessor.StopLogging();
+                    logProcessor.SetServerRunningState(false);
+                }
             }
             else
             {
-                LogMessage("Server stop attempted but may not have been fully successful. Check server status.", -1);
-                // Don't change server state flags if stop was not confirmed
+                LogMessage("Stop commands failed or timed out. Server may still be running.", -1);
             }
         }
         catch (Exception ex)
@@ -720,6 +803,8 @@ public class ServerManager
         }
         finally
         {
+            // Always clear the stopping flag
+            isStopping = false;
             RepaintCallback?.Invoke();
         }
     }
@@ -793,9 +878,7 @@ public class ServerManager
         {
             if (DebugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
             justStopped = false;
-        }
-
-        // --- Startup Phase Check ---
+        }        // --- Startup Phase Check ---
         if (isStartingUp)
         {
             float elapsedTime = (float)(EditorApplication.timeSinceStartup - startupTime);
@@ -817,17 +900,49 @@ public class ServerManager
                         await serverCustomProcess.CheckServerRunning(true);
                         isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                         if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
-                    }                }
-                else // WSL and other modes
+                    }                }                else // WSL and other modes
                 {
-                    // Use the new cached CheckServerRunning method for better reliability
-                    isActuallyRunning = await cmdProcessor.CheckServerRunning();
-                }
-
-                // If running during startup phase, confirm immediately
+                    // Use instantCheck=true to bypass cache during startup for immediate status verification
+                    bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                    
+                    // During startup phase, prioritize service status since it's more reliable
+                    // Ping can be slow or fail temporarily even when server is actually running
+                    if (serviceRunning)
+                    {
+                        // Service is running - server is considered running during startup
+                        isActuallyRunning = true;
+                        
+                        // Optionally check ping for additional confirmation, but don't block on it
+                        if (elapsedTime > 3.0f) // Only ping after giving server time to initialize
+                        {
+                            bool pingResponding = await PingServerStatusAsync();
+                            if (DebugMode) 
+                            {
+                                LogMessage($"WSL startup check - Service: active, Ping: {(pingResponding ? "responding" : "not responding")}, Elapsed: {elapsedTime:F1}s, Result: running (service confirmed)", 0);
+                            }
+                        }
+                        else
+                        {
+                            if (DebugMode) 
+                            {
+                                LogMessage($"WSL startup check - Service: active, Elapsed: {elapsedTime:F1}s, Result: running (early startup, ping skipped)", 0);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Service not running - definitely not ready
+                        isActuallyRunning = false;
+                        if (DebugMode) 
+                        {
+                            LogMessage($"WSL startup check - Service: inactive, Elapsed: {elapsedTime:F1}s, Result: not running", 0);
+                        }
+                    }
+                }                // If running during startup phase, confirm immediately
                 if (isActuallyRunning)
                 {
-                    if (DebugMode) LogMessage($"Startup confirmed: Server is now running.", 1);
+                    if (DebugMode) LogMessage($"Startup confirmed: Server service is active and running.", 1);
+                    LogMessage("Server confirmed running!", 1);
                     isStartingUp = false;
                     serverStarted = true; // Explicitly confirm started state
                     serverConfirmedRunning = true;
@@ -849,11 +964,33 @@ public class ServerManager
                         }
                     }
                     RepaintCallback?.Invoke();
-                    return;
-                }                // If grace period expires and still not running, assume failure
+                    return;                }                // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
                 {
-                    LogMessage($"Server failed to start within grace period.", -1);
+                    LogMessage($"Server failed to start within grace period ({serverStartupGracePeriod} seconds).", -1);
+                    
+                    // Before giving up, do one final service check to be absolutely sure
+                    try
+                    {
+                        bool finalServiceCheck = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                        if (finalServiceCheck)
+                        {
+                            LogMessage("Final service check shows server is actually running - recovering!", 1);
+                            isStartingUp = false;
+                            serverStarted = true;
+                            serverConfirmedRunning = true;
+                            justStopped = false;
+                            consecutiveFailedChecks = 0;
+                            logProcessor.SetServerRunningState(true);
+                            RepaintCallback?.Invoke();
+                            return;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (DebugMode) LogMessage($"Final service check failed: {ex.Message}", -1);
+                    }
+                    
                     isStartingUp = false;
                     serverStarted = false;
                     serverConfirmedRunning = false;
@@ -872,6 +1009,10 @@ public class ServerManager
                 else
                 {
                     // Still starting up, update UI and wait
+                    if (DebugMode && elapsedTime % 2.0f < 0.1f) // Log every 2 seconds during startup
+                    {
+                        LogMessage($"Startup in progress... elapsed: {elapsedTime:F1}s / {serverStartupGracePeriod}s", 0);
+                    }
                     RepaintCallback?.Invoke();
                     return;
                 }
@@ -910,13 +1051,31 @@ public class ServerManager
                     bool serviceRunning = await cmdProcessor.CheckServerRunning();
                     bool pingResponding = await PingServerStatusAsync();
                     
-                    // Server is considered running if either service is active OR ping responds
-                    // This prevents false negatives when service check fails but server is actually responding
-                    isActuallyRunning = serviceRunning || pingResponding;
+                    // Special handling for recently stopped servers
+                    double timeSinceStop = EditorApplication.timeSinceStartup - stopInitiatedTime;
+                    bool recentlyStopped = justStopped && timeSinceStop < 10.0; // 10 second grace period after stop
                     
-                    if (DebugMode)
+                    if (recentlyStopped)
                     {
-                        LogMessage($"WSL Server status - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        // If we just stopped the server, require BOTH service AND ping to be down
+                        // to prevent false positives from lingering connections
+                        isActuallyRunning = serviceRunning && pingResponding;
+                        
+                        if (DebugMode)
+                        {
+                            LogMessage($"WSL Server status (recently stopped) - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
+                    }
+                    else
+                    {
+                        // Normal operation: Server is considered running if either service is active OR ping responds
+                        // This prevents false negatives when service check fails but server is actually responding
+                        isActuallyRunning = serviceRunning || pingResponding;
+                        
+                        if (DebugMode)
+                        {
+                            LogMessage($"WSL Server status - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
                     }
                 }
                 
@@ -1413,9 +1572,7 @@ public class ServerManager
     {
         PingServer(false);
         return pingShowsOnline;
-    }
-
-    // Synchronous ping method for reliable status checking
+    }    // Synchronous ping method for reliable status checking
     public async Task<bool> PingServerStatusAsync()
     {
         string url;
@@ -1439,15 +1596,19 @@ public class ServerManager
 
         try
         {
-            // Use cmdProcessor's synchronous ping method for immediate result
+            // Use cmdProcessor's synchronous ping method for immediate result with timeout
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
             cmdProcessor.PingServer(url, (isOnline, message) => {
-                tcs.SetResult(isOnline);
+                tcs.TrySetResult(isOnline); // Use TrySetResult to avoid exceptions if timeout occurs
             });
             
-            // Wait for the ping result with a timeout
-            bool result = await tcs.Task.ConfigureAwait(false);
-            return result;
+            // Wait for the ping result with a 5-second timeout to prevent hanging during startup
+            using (var timeoutCTS = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5)))
+            {
+                timeoutCTS.Token.Register(() => tcs.TrySetResult(false));
+                bool result = await tcs.Task.ConfigureAwait(false);
+                return result;
+            }
         }
         catch (Exception ex)
         {
@@ -1583,9 +1744,8 @@ public class ServerManager
     }    public void AttemptTailRestartAfterReload()
     {
         if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting log restart after reload.");
-        
-        // For journalctl-based approach, just restart logging
-        if (IsServerStarted && SilentMode)
+          // For journalctl-based approach, just restart logging
+        if (serverStarted && silentMode)
         {
             if (serverMode == ServerMode.WslServer)
             {
@@ -1603,7 +1763,7 @@ public class ServerManager
         if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Checking database log process");
 
         // For journalctl-based approach, database logs are part of the main logging
-        if (IsServerStarted && SilentMode)
+        if (serverStarted && silentMode)
         {
             if (serverMode == ServerMode.WslServer)
             {
