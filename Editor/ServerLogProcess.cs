@@ -20,7 +20,8 @@ public class ServerLogProcess
     private string cachedModuleLogContent = ""; // Add cached version of module logs
     private string databaseLogContent = "";
     private string cachedDatabaseLogContent = ""; // Add cached version of database logs
-      // Session state keys
+    
+    // Session state keys
     private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
     private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog"; // Add session key for cached module logs
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
@@ -1450,7 +1451,8 @@ public class ServerLogProcess
         processingCts = new CancellationTokenSource();
         StartLogLimiter();
     }
-      public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
+    
+    public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
     {
         bool moduleChanged = !string.Equals(this.moduleName, moduleName, StringComparison.OrdinalIgnoreCase);
         string oldModuleName = this.moduleName; // Store old module name for logging
@@ -1460,7 +1462,7 @@ public class ServerLogProcess
         this.clearModuleLogAtStart = clearModuleLogAtStart;
         this.clearDatabaseLogAtStart = clearDatabaseLogAtStart;
         this.userName = userName;
-          // Clear old logs from SessionState if requested
+        // Clear old logs from SessionState if requested
         if (clearDatabaseLogAtStart)
         {
             if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, clearing old database logs from SessionState and enabling fresh mode");
@@ -1912,7 +1914,9 @@ public class ServerLogProcess
         {
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Log line already formatted, skipping: {logLine.Substring(0, Math.Min(100, logLine.Length))}");
             return null; // Return null to indicate this line should be skipped (already processed)
-        }// Filter out specific error messages when not in debug mode
+        }
+
+        // Filter out specific error messages when not in debug mode
         if (!debugMode)
         {
             // Check for the specific error messages to filter out
@@ -1968,10 +1972,11 @@ public class ServerLogProcess
         {
             // Extract the actual log content after the journalctl prefix
             string actualLogContent = journalMatch.Success ? journalMatch.Groups[2].Value.Trim() : journalIsoMatch.Groups[2].Value.Trim();
-              // Now look for SpacetimeDB timestamp in the actual content
+            // Now look for SpacetimeDB timestamp in the actual content
             var timestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
             string timestampPrefix = "";
-              if (timestampMatch.Success)
+            
+            if (timestampMatch.Success)
             {
                 // Extract the timestamp
                 string originalTimestamp = timestampMatch.Groups[1].Value;

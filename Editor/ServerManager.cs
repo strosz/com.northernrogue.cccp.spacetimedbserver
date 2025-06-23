@@ -27,7 +27,7 @@ public class ServerManager
     public bool serverStarted = false;
     private bool isStartingUp = false;
     private float startupTime = 0f;
-    private const float serverStartupGracePeriod = 10f; // Reduced from 30 to 10 seconds for faster feedback
+    private const float serverStartupGracePeriod = 10f;
     
     // Server status
     private const double checkInterval = 5.0;
@@ -37,7 +37,8 @@ public class ServerManager
     private double stopInitiatedTime = 0;
     private bool publishing = false; // Flag to track if a publish operation is in progress
     private bool isStopping = false; // Flag to prevent multiple concurrent stop attempts
-      // Server status resilience (prevent false positives during compilation/brief hiccups)
+    
+    // Server status resilience (prevent false positives during compilation/brief hiccups)
     private int consecutiveFailedChecks = 0;
     private const int maxConsecutiveFailuresBeforeStop = 3; // Require 3 consecutive failures before marking as stopped (increased from 2)
 
@@ -1741,24 +1742,9 @@ public class ServerManager
         if (DebugMode) LogMessage("Clearing database log...", 0);
         logProcessor.ClearDatabaseLog();
         if (DebugMode) LogMessage("Database log cleared successfully", 1);
-    }    public void AttemptTailRestartAfterReload()
-    {
-        if (DebugMode) UnityEngine.Debug.Log($"[ServerCommandManager] Attempting log restart after reload.");
-          // For journalctl-based approach, just restart logging
-        if (serverStarted && silentMode)
-        {
-            if (serverMode == ServerMode.WslServer)
-            {
-                // Configure WSL and start logging for journalctl-based approach
-                logProcessor.ConfigureWSL(true);
-                logProcessor.StartLogging();
-            }
-        }
-        else
-        {
-            if (DebugMode) UnityEngine.Debug.LogWarning("[ServerCommandManager] Cannot restart log process - server not running or not in silent mode");
-        }
-    }    public void AttemptDatabaseLogRestartAfterReload()
+    }
+
+    public void AttemptDatabaseLogRestartAfterReload()
     {
         if (DebugMode) UnityEngine.Debug.Log("[ServerCommandManager] Checking database log process");
 

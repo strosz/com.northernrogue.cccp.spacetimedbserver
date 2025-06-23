@@ -246,7 +246,7 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
-                "Note: If it reports as failed, you may have to restart your PC since the first WSL step"+
+                "Note: If it reports as failed, you may have to restart your PC since the first WSL step\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
@@ -281,8 +281,7 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install SpacetimeDB Service",
-                description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
-                              "Creates a systemd service file to run SpacetimeDB in the background\n" +
+                description = "Install SpacetimeDB as a system service that automatically starts on server boot\n" +
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasSpacetimeDBService,
                 isEnabled = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName),
