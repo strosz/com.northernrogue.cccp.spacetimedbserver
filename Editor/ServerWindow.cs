@@ -19,7 +19,6 @@ public class ServerWindow : EditorWindow
     private ServerCMDProcess cmdProcessor;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
-    private Process serverProcess;
     
     // Server mode
     private ServerMode serverMode = ServerMode.WslServer;
@@ -346,9 +345,9 @@ public class ServerWindow : EditorWindow
         serverManager = new ServerManager(LogMessage, Repaint);
 
         // Load server mode from EditorPrefs
-        LoadServerModeFromPrefs();            // Sync local fields from ServerManager's values (for UI display only)
+        LoadServerModeFromPrefs();            
+        // Sync local fields from ServerManager's values (for UI display only)
         SyncFieldsFromServerManager();
-
         // Load saved modules list
         LoadModulesList();
 
@@ -363,12 +362,7 @@ public class ServerWindow : EditorWindow
         EditorApplication.update += EditorUpdateHandler;
 
         // Check if we were previously running silently and restore state if needed
-        bool wasRunningSilently = SessionState.GetBool(SessionKeyWasRunningSilently, false);
-        if (wasRunningSilently && serverManager.IsServerStarted && serverManager.SilentMode)
-        {
-            if (serverManager.DebugMode) UnityEngine.Debug.Log("[ServerWindow OnEnable] Detected potentially lost tail process from previous session. Attempting restart.");
-        }
-        else if (!serverManager.IsServerStarted || !serverManager.SilentMode)
+        if (!serverManager.IsServerStarted || !serverManager.SilentMode)
         {
             // Clear the flag if not running silently on enable
             SessionState.SetBool(SessionKeyWasRunningSilently, false);

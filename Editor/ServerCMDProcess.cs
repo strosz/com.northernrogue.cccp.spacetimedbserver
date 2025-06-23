@@ -1141,45 +1141,49 @@ public class ServerCMDProcess
                 if (stopSuccess)
                 {
                     if (debugMode) logCallback("Service stop commands completed successfully.", 1);
+                    return true;
                 }
                 else
                 {
-                    logCallback("Service stop commands failed or timed out. Trying direct process termination...", -1);
+                    logCallback("Service stop commands failed or timed out.", -1);
+                    return false;
                 }
-            }
-
-            // Strategy 2: Direct process termination (always try this for reliability)
-            if (debugMode) logCallback("Stopping SpacetimeDB processes directly...", 0);
-            
-            // Kill spacetimedb-standalone processes (the main server)
-            var killResult1 = await RunServerCommandWithTimeoutAsync("pkill -TERM spacetimedb-standalone", 5000);
-            await Task.Delay(2000); // Give graceful termination time
-            
-            // Force kill if still running
-            var killResult2 = await RunServerCommandWithTimeoutAsync("pkill -KILL spacetimedb-standalone", 5000);
-            
-            // Kill any remaining spacetime processes
-            var killResult3 = await RunServerCommandWithTimeoutAsync("pkill -TERM -f 'spacetime'", 5000);
-            await Task.Delay(1000);
-            var killResult4 = await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'spacetime'", 5000);
-
-            // Strategy 3: Clean up any hanging sudo processes
-            if (debugMode) logCallback("Cleaning up any hanging sudo processes...", 0);
-            await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'sudo systemctl'", 5000);
-
-            // Verify that processes are actually stopped
-            await Task.Delay(2000);
-            var checkResult = await RunServerCommandWithTimeoutAsync("pgrep -f spacetime", 5000);
-            
-            if (string.IsNullOrEmpty(checkResult.output))
-            {
-                logCallback("SpacetimeDB processes stopped successfully.", 1);
-                return true;
             }
             else
             {
-                logCallback("Some SpacetimeDB processes may still be running. Manual cleanup may be required.", -1);
-                return false;
+                // Strategy 2: Direct process termination (always try this for reliability)
+                if (debugMode) logCallback("Stopping SpacetimeDB processes directly...", 0);
+                
+                // Kill spacetimedb-standalone processes (the main server)
+                var killResult1 = await RunServerCommandWithTimeoutAsync("pkill -TERM spacetimedb-standalone", 5000);
+                await Task.Delay(2000); // Give graceful termination time
+                
+                // Force kill if still running
+                var killResult2 = await RunServerCommandWithTimeoutAsync("pkill -KILL spacetimedb-standalone", 5000);
+                
+                // Kill any remaining spacetime processes
+                var killResult3 = await RunServerCommandWithTimeoutAsync("pkill -TERM -f 'spacetime'", 5000);
+                await Task.Delay(1000);
+                var killResult4 = await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'spacetime'", 5000);
+
+                // Strategy 3: Clean up any hanging sudo processes
+                if (debugMode) logCallback("Cleaning up any hanging sudo processes...", 0);
+                await RunServerCommandWithTimeoutAsync("pkill -KILL -f 'sudo systemctl'", 5000);
+
+                // Verify that processes are actually stopped
+                await Task.Delay(2000);
+                var checkResult = await RunServerCommandWithTimeoutAsync("pgrep -f spacetime", 5000);
+                
+                if (string.IsNullOrEmpty(checkResult.output))
+                {
+                    logCallback("SpacetimeDB processes stopped successfully.", 1);
+                    return true;
+                }
+                else
+                {
+                    logCallback("Some SpacetimeDB processes may still be running. Manual cleanup may be required.", -1);
+                    return false;
+                }
             }
         }
         catch (Exception ex)
