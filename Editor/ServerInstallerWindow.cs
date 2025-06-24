@@ -15,7 +15,7 @@ public class ServerInstallerWindow : EditorWindow
     private ServerCMDProcess cmdProcess;
     private ServerCustomProcess customProcess;
     private ServerManager serverManager;
-        
+
     // UI
     private Vector2 scrollPosition;
     private string statusMessage = "Ready to install components.";
@@ -60,6 +60,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasSpacetimeDBService = false;
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
+    private bool hasBinaryen = false;
     private bool hasSpacetimeDBUnitySDK = false;
 
     // Custom SSH installation states
@@ -70,6 +71,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasCustomSpacetimeDBServer = false;
     private bool hasCustomSpacetimeDBPath = false;
     private bool hasCustomRust = false;
+    private bool hasCustomBinaryen = false;
     private bool hasCustomSpacetimeDBService = false;
     private bool hasCustomSpacetimeDBLogsService = false;
 
@@ -159,6 +161,7 @@ public class ServerInstallerWindow : EditorWindow
         hasCustomSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", false);
         hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
         hasCustomRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomRust", false);
+        hasCustomBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomBinaryen", false);
         hasCustomSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", false);
         hasCustomSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false);
 
@@ -299,6 +302,15 @@ public class ServerInstallerWindow : EditorWindow
             },
             new InstallerItem
             {
+                title = "Install Web Assembly Optimizer Binaryen",
+                description = "Binaryen is a compiler toolkit for WebAssembly\n"+
+                "SpacetimeDB can use wasm-opt optimizer for WebAssembly modules improving performance",
+                isInstalled = hasBinaryen,
+                isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
+                installAction = InstallBinaryen
+            },
+            new InstallerItem
+            {
                 title = "Install SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
@@ -381,6 +393,15 @@ public class ServerInstallerWindow : EditorWindow
             },
             new InstallerItem
             {
+                title = "Install Web Assembly Optimizer Binaryen",
+                description = "Binaryen is a compiler toolkit for WebAssembly\n"+
+                "SpacetimeDB can use wasm-opt optimizer for WebAssembly modules improving performance",
+                isInstalled = hasCustomBinaryen,
+                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
+                installAction = InstallCustomBinaryen
+            },
+            new InstallerItem
+            {
                 title = "Install SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
@@ -443,6 +464,11 @@ public class ServerInstallerWindow : EditorWindow
                     newState = hasRust;
                     newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
                 }
+                else if (item.title.Contains("Web Assembly Optimizer Binaryen"))
+                {
+                    newState = hasBinaryen;
+                    newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
+                }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
                 {
                     newState = hasSpacetimeDBUnitySDK;
@@ -503,6 +529,11 @@ public class ServerInstallerWindow : EditorWindow
                     newState = hasCustomRust;
                     newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
                 }
+                else if (item.title.Contains("Web Assembly Optimizer Binaryen"))
+                {
+                    newState = hasCustomBinaryen;
+                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
+                }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
                 {
                     newState = hasSpacetimeDBUnitySDK;
@@ -552,35 +583,6 @@ public class ServerInstallerWindow : EditorWindow
         }
 
         EditorGUILayout.Space(5);
-        
-        // Show connection status for Custom installer
-        /*if (currentTab == 1)
-        {
-            isConnectedSSH = customProcess.IsSessionActive();
-            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-            
-            if (isConnectedSSH)
-            {
-                EditorGUILayout.LabelField("SSH Connection: ", GUILayout.Width(100));
-                EditorGUILayout.LabelField("✓ Connected", installedStyle);
-            }
-            else
-            {
-                EditorGUILayout.LabelField("SSH Connection: ", GUILayout.Width(100));
-                EditorGUILayout.LabelField("✕ Disconnected", new GUIStyle(EditorStyles.label) { normal = { textColor = Color.red } });
-                
-                if (GUILayout.Button("Connect", GUILayout.Width(100)))
-                {
-                    if (customProcess.StartSession())
-                    {
-                        CheckCustomInstallationStatus();
-                    }
-                }
-            }
-            
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.Space(5);
-        }*/
         
         DrawInstallerItemsList();
         EditorGUILayout.Space(5);
@@ -966,7 +968,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
         });
         
-        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService) => {
+        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen) => {
             hasWSL = wsl;
             hasDebian = debian;
             hasDebianTrixie = trixie;
@@ -976,6 +978,7 @@ public class ServerInstallerWindow : EditorWindow
             hasRust = rust;
             hasSpacetimeDBService = spacetimeService;
             hasSpacetimeDBLogsService = spacetimeLogsService;
+            hasBinaryen = binaryen;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -1015,6 +1018,7 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomSpacetimeDBService = false;
             hasCustomSpacetimeDBLogsService = false;
             hasCustomRust = false;
+            hasCustomBinaryen = false;
             
             // Update UI
             UpdateInstallerItemsStatus();
@@ -1037,6 +1041,7 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomSpacetimeDBService = false;
             hasCustomSpacetimeDBLogsService = false;
             hasCustomRust = false;
+            hasCustomBinaryen = false;
             
             UpdateInstallerItemsStatus();
             isCustomRefreshing = false;
@@ -1081,6 +1086,12 @@ public class ServerInstallerWindow : EditorWindow
         hasCustomRust = rustResult.success && !string.IsNullOrEmpty(rustResult.output) && rustResult.output.Contains("rustc") && rustResult.output.Contains("cargo");
         await Task.Delay(100);
 
+        // Check Binaryen - Check if wasm-opt is installed
+        SetStatus("Checking Binaryen status...", Color.yellow);
+        var binaryenResult = await customProcess.RunCustomCommandAsync("test -f '/usr/local/bin/wasm-opt' && echo 'found' || echo 'not_found'");
+        hasCustomBinaryen = binaryenResult.success && binaryenResult.output.Trim() == "found";
+        await Task.Delay(100);
+
         // Check if SpacetimeDB is installed as a service
         SetStatus("Checking SpacetimeDB Service status...", Color.yellow);
         var serviceResult = await customProcess.RunCustomCommandAsync("systemctl is-enabled spacetimedb.service 2>/dev/null || echo 'not-found'");
@@ -1099,6 +1110,7 @@ public class ServerInstallerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", hasCustomSpacetimeDBServer);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
+        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomBinaryen", hasCustomBinaryen);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", hasCustomSpacetimeDBService);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", hasCustomSpacetimeDBLogsService);
         
@@ -1449,7 +1461,7 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Please enter your Debian username to install SpacetimeDB Server.", Color.red);
             return;
         }
-        if (hasSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersion))
+        if (hasSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersion) && !installIfAlreadyInstalled)
         {
             SetStatus("The latest version of SpacetimeDB Server is already installed.", Color.green);
             return;
@@ -1468,6 +1480,7 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
 
             await serverManager.CheckSpacetimeDBVersion(); // Extra check to ensure version is updated
+            spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
 
             await Task.Delay(2000);
             
@@ -1816,6 +1829,76 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Rust installation failed. Please install manually.", Color.red);
         }
     }
+
+    private async void InstallBinaryen()
+    {
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasBinaryen && !installIfAlreadyInstalled)
+        {
+            SetStatus("Binaryen is already installed.", Color.green);
+            return;
+        }
+
+        if (!hasCurl)
+        {
+            SetStatus("curl is required to install Binaryen. Please install curl first.", Color.red);
+            return;
+        }
+        
+        SetStatus("Installing Web Assembly Optimizer Binaryen...", Color.yellow);
+        
+        try
+        {
+            // Install Binaryen with the specific version and command provided
+            string installCommand = $"wsl -d Debian -u {userName} bash -c \"" +
+                "VERSION=123 && " +
+                "curl -L \\\"https://github.com/WebAssembly/binaryen/releases/download/version_${{VERSION}}/binaryen-version_${{VERSION}}-x86_64-linux.tar.gz\\\" | " +
+                "sudo tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_${{VERSION}}/bin\"";
+            
+            bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+                installCommand, 
+                LogMessage, 
+                visibleInstallProcesses, 
+                keepWindowOpenForDebug
+            );
+            
+            if (!installSuccess)
+            {
+                CheckInstallationStatus();
+                await Task.Delay(2000);
+                if (WSL1Installed && hasBinaryen)
+                {
+                    SetStatus("Binaryen installed successfully. (WSL1)", Color.green);
+                }
+                else
+                {
+                    SetStatus("Failed to install Binaryen. Installation aborted.", Color.red);
+                }
+                return;
+            }
+            
+            // Check installation status
+            CheckInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasBinaryen)
+            {
+                SetStatus("Binaryen (Web Assembly Optimizer) installed successfully.", Color.green);
+            }
+            else
+            {
+                SetStatus("Binaryen installation failed. Please install manually.", Color.red);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Error during Binaryen installation: {ex.Message}", Color.red);
+            LogMessage($"Binaryen installation error: {ex}", -1);
+        }
+    }
+    
     private async void InstallSpacetimeDBUnitySDK()
     {
         CheckInstallationStatus();
@@ -1876,633 +1959,781 @@ public class ServerInstallerWindow : EditorWindow
     #region Custom Installation Methods
     private async void InstallCustomUser()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(tempCreateUserNameInput))
-        {
-            SetStatus("Please enter a username to create.", Color.red);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "")))
-        {
-            SetStatus("Please first generate a SSH private key and enter the path.", Color.red);
-            return;
-        }
-        
-        string newUserName = tempCreateUserNameInput;
-
-        // Check if the username already exists
-        var checkUserResult = await customProcess.RunCustomCommandAsync($"id -u {newUserName} > /dev/null 2>&1 && echo 'exists' || echo 'notexists'");
-        if (checkUserResult.success && checkUserResult.output.Trim() == "exists")
-        {
-            SetStatus($"User '{newUserName}' already exists on the remote server.", Color.yellow);
-            return;
-        }
-
-        // Create commands to be executed in the terminal
-        string commands = 
-            "# Step 0: Install Sudo\n" +
-            $"apt install -y sudo\n\n" +
-            "# Step 1: Create new user (will prompt for password)\n" +
-            $"adduser {newUserName}\n\n" +
-            "# Step 2: Add user to sudo group\n" +
-            $"usermod -aG sudo {newUserName}\n\n" +
-            "# Step 3: Create SSH directory for the new user\n" +
-            $"mkdir -p /home/{newUserName}/.ssh\n" +
-            $"chmod 700 /home/{newUserName}/.ssh\n\n" +
-            "# Step 4: Copy authorized_keys from root to new user (if exists)\n" +
-            "if [ -f /root/.ssh/authorized_keys ]; then\n" +
-            $"  cp /root/.ssh/authorized_keys /home/{newUserName}/.ssh/\n" +
-            "fi\n\n" +
-            "# Step 5: Set correct ownership and permissions\n" +
-            $"chown -R {newUserName}:{newUserName} /home/{newUserName}/.ssh\n" +
-            $"if [ -f /home/{newUserName}/.ssh/authorized_keys ]; then\n" +
-            $"  chmod 600 /home/{newUserName}/.ssh/authorized_keys\n" +
-            "fi\n\n" +
-            "# Step 6: NOPASSWD for sudo - create with cat instead of printf\n" +
-            $"cat > /etc/sudoers.d/{newUserName} << EOF\n" +
-            $"{newUserName} ALL=(ALL) NOPASSWD: ALL\n" +
-            "EOF\n" +
-            $"chmod 0440 /etc/sudoers.d/{newUserName}\n\n" +
-            "# Confirm success\n" +
-            "echo \"\"\n" +
-            "echo \"=======================\"\n" +
-            $"echo \"User {newUserName} has been successfully created and added to the sudo group.\"\n" +
-            "echo \"=======================\"\n";
-
-        SetStatus($"Creating user '{newUserName}' on remote server. Please follow the prompts in the terminal window...", Color.yellow);
-
-        // Use the RunVisibleSSHCommand method from ServerCustomProcess
-        // This is needed since adduser command requires interactive input for password
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            // Update the SSH username if it's not already set
-            if (string.IsNullOrEmpty(sshUserName))
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
             {
-                sshUserName = newUserName;
-                EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(tempCreateUserNameInput))
+            {
+                SetStatus("Please enter a username to create.", Color.red);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "")))
+            {
+                SetStatus("Please first generate a SSH private key and enter the path.", Color.red);
+                return;
             }
             
-            SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
-            
-            // Update UI
-            CheckCustomInstallationStatus();
+            string newUserName = tempCreateUserNameInput;
 
-            EditorUtility.DisplayDialog(
-                "New User Created",
-                $"User '{newUserName}' has been created successfully.\n\n" +
-                $"Please close the installer window and enter '{newUserName}' as your SSH username.\n\n" +
-                "Then press 'Check Pre-Requisites and Connect' and continue installing as your new user.",
-                "OK"
-            );
+            // Check if the username already exists
+            var checkUserResult = await customProcess.RunCustomCommandAsync($"id -u {newUserName} > /dev/null 2>&1 && echo 'exists' || echo 'notexists'");
+            if (checkUserResult.success && checkUserResult.output.Trim() == "exists")
+            {
+                SetStatus($"User '{newUserName}' already exists on the remote server.", Color.yellow);
+                return;
+            }
+
+            // Create commands to be executed in the terminal
+            string commands = 
+                "# Step 0: Install Sudo\n" +
+                $"apt install -y sudo\n\n" +
+                "# Step 1: Create new user (will prompt for password)\n" +
+                $"adduser {newUserName}\n\n" +
+                "# Step 2: Add user to sudo group\n" +
+                $"usermod -aG sudo {newUserName}\n\n" +
+                "# Step 3: Create SSH directory for the new user\n" +
+                $"mkdir -p /home/{newUserName}/.ssh\n" +
+                $"chmod 700 /home/{newUserName}/.ssh\n\n" +
+                "# Step 4: Copy authorized_keys from root to new user (if exists)\n" +
+                "if [ -f /root/.ssh/authorized_keys ]; then\n" +
+                $"  cp /root/.ssh/authorized_keys /home/{newUserName}/.ssh/\n" +
+                "fi\n\n" +
+                "# Step 5: Set correct ownership and permissions\n" +
+                $"chown -R {newUserName}:{newUserName} /home/{newUserName}/.ssh\n" +
+                $"if [ -f /home/{newUserName}/.ssh/authorized_keys ]; then\n" +
+                $"  chmod 600 /home/{newUserName}/.ssh/authorized_keys\n" +
+                "fi\n\n" +
+                "# Step 6: NOPASSWD for sudo - create with cat instead of printf\n" +
+                $"cat > /etc/sudoers.d/{newUserName} << EOF\n" +
+                $"{newUserName} ALL=(ALL) NOPASSWD: ALL\n" +
+                "EOF\n" +
+                $"chmod 0440 /etc/sudoers.d/{newUserName}\n\n" +
+                
+                "# Confirm success\n" +
+                "echo \"\"\n" +
+                "echo \"=======================\"\n" +
+                $"echo \"User {newUserName} has been successfully created and added to the sudo group.\"\n" +
+                "echo \"=======================\"\n";
+
+            SetStatus($"Creating user '{newUserName}' on remote server. Please follow the prompts in the terminal window...", Color.yellow);
+
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            // This is needed since adduser command requires interactive input for password
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                // Update the SSH username if it's not already set
+                if (string.IsNullOrEmpty(sshUserName))
+                {
+                    sshUserName = newUserName;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+                }
+                
+                SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
+                
+                // Update UI
+                CheckCustomInstallationStatus();
+
+                EditorUtility.DisplayDialog(
+                    "New User Created",
+                    $"User '{newUserName}' has been created successfully.\n\n" +
+                    $"Please close the installer window and enter '{newUserName}' as your SSH username.\n\n" +
+                    "Then press 'Check Pre-Requisites and Connect' and continue installing as your new user.",
+                    "OK"
+                );
+            }
+            else
+            {
+                SetStatus($"Failed to create user '{newUserName}' on remote server. Please check terminal output.", Color.red);
+            }
         }
-        else
+        finally
         {
-            SetStatus($"Failed to create user '{newUserName}' on remote server. Please check terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }    
 
     private async void InstallCustomDebianTrixie()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomDebianTrixie && !installIfAlreadyInstalled)
-        {
-            SetStatus("Remote Debian Trixie Update is already installed.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing Debian Trixie Update on remote server...", Color.yellow);
-        
-        // Create a single bash script with all the steps
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Step 1: Updating package lists =====\"\n" +
-            "sudo apt update\n" +
-            "if [ $? -ne 0 ]; then\n" +
-            "  echo \"ERROR: Failed to update package lists\"\n" +
-            "  exit 1\n" +
-            "fi\n\n" +
-            
-            "echo \"===== Step 2: Upgrading packages =====\"\n" +
-            "sudo apt upgrade -y\n" +
-            "# Continue even if this step has issues\n\n" +
-            
-            "echo \"===== Step 3: Installing update-manager-core =====\"\n" +
-            "sudo apt install -y update-manager-core\n" +
-            "# Continue even if this step has issues\n\n" +
-            
-            "echo \"===== Step 4: Updating sources.list to Trixie =====\"\n" +
-            "sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\n" +
-            "if [ $? -ne 0 ]; then\n" +
-            "  echo \"ERROR: Failed to update sources.list\"\n" +
-            "  exit 1\n" +
-            "fi\n\n" +
-            
-            "echo \"===== Step 5: Updating package lists for Trixie =====\"\n" +
-            "sudo apt update\n" +
-            "if [ $? -ne 0 ]; then\n" +
-            "  echo \"ERROR: Failed to update Trixie package lists\"\n" +
-            "  exit 1\n" +
-            "fi\n\n" +
-            
-            "echo \"===== Step 6: Performing full upgrade to Trixie =====\"\n" +
-            "sudo apt full-upgrade -y\n" +
-            "if [ $? -ne 0 ]; then\n" +
-            "  echo \"WARNING: Full upgrade encountered issues. Check system status.\"\n" +
-            "else\n" +
-            "  echo \"===== Trixie upgrade completed successfully! =====\"\n" +
-            "fi\n\n" +
-            
-            "echo \"===== Done! =====\"\n";
-
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Running Debian Trixie upgrade in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("Debian Trixie Update installation completed. Checking installation status...", Color.green);
-            // Wait for changes to apply
-            await Task.Delay(3000);
-            
             CheckCustomInstallationStatus();
             await Task.Delay(1000);
             
-            if (hasCustomDebianTrixie)
+            if (hasCustomDebianTrixie && !installIfAlreadyInstalled)
             {
-                SetStatus("Debian Trixie Update installed successfully on remote server.", Color.green);
+                SetStatus("Remote Debian Trixie Update is already installed.", Color.green);
+                return;
+            }
+            
+            SetStatus("Installing Debian Trixie Update on remote server...", Color.yellow);
+            
+            // Create a single bash script with all the steps
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Step 1: Updating package lists =====\"\n" +
+                "sudo apt update\n" +
+                "if [ $? -ne 0 ]; then\n" +
+                "  echo \"ERROR: Failed to update package lists\"\n" +
+                "  exit 1\n" +
+                "fi\n\n" +
+                
+                "echo \"===== Step 2: Upgrading packages =====\"\n" +
+                "sudo apt upgrade -y\n" +
+                "# Continue even if this step has issues\n\n" +
+                
+                "echo \"===== Step 3: Installing update-manager-core =====\"\n" +
+                "sudo apt install -y update-manager-core\n" +
+                "# Continue even if this step has issues\n\n" +
+                
+                "echo \"===== Step 4: Updating sources.list to Trixie =====\"\n" +
+                "sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\n" +
+                "if [ $? -ne 0 ]; then\n" +
+                "  echo \"ERROR: Failed to update sources.list\"\n" +
+                "  exit 1\n" +
+                "fi\n\n" +
+                
+                "echo \"===== Step 5: Updating package lists for Trixie =====\"\n" +
+                "sudo apt update\n" +
+                "if [ $? -ne 0 ]; then\n" +
+                "  echo \"ERROR: Failed to update Trixie package lists\"\n" +
+                "  exit 1\n" +
+                "fi\n\n" +
+                
+                "echo \"===== Step 6: Performing full upgrade to Trixie =====\"\n" +
+                "sudo apt full-upgrade -y\n" +
+                "if [ $? -ne 0 ]; then\n" +
+                "  echo \"WARNING: Full upgrade encountered issues. Check system status.\"\n" +
+                "else\n" +
+                "  echo \"===== Trixie upgrade completed successfully! =====\"\n" +
+                "fi\n\n" +
+                
+                "echo \"===== Done! =====\"\n";
+
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Running Debian Trixie upgrade in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("Debian Trixie Update installation completed. Checking installation status...", Color.green);
+                
+                // Wait for changes to apply
+                await Task.Delay(3000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomDebianTrixie)
+                {
+                    SetStatus("Debian Trixie Update installed successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("Debian Trixie Update verification failed. The installation might still be successful.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("Debian Trixie Update verification failed. The installation might still be successful.", Color.yellow);
+                SetStatus("Debian Trixie Update installation process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("Debian Trixie Update installation process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
 
     private async void InstallCustomCurl()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
 
-        if (string.IsNullOrEmpty(sshUserName))
-        {
-            SetStatus("Please enter a SSH username first.", Color.red);
-            return;
-        }
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomCurl && !installIfAlreadyInstalled)
-        {
-            SetStatus("cURL is already installed on the remote server.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing cURL on remote server...", Color.yellow);
-        
-        // Create a bash script for curl installation
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Updating package lists =====\"\n" +
-            "sudo apt update\n\n" +
-            "echo \"===== Installing cURL =====\"\n" +
-            "sudo apt install -y curl\n\n" +
-            "# Check if curl was installed successfully\n" +
-            "if command -v curl &> /dev/null; then\n" +
-            "  echo \"===== cURL installed successfully! =====\"\n" +
-            "  curl --version\n" +
-            "else\n" +
-            "  echo \"ERROR: cURL installation failed\"\n" +
-            "  exit 1\n" +
-            "fi\n\n" +
-            "echo \"===== Done! =====\"\n";
-        
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Installing cURL in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("cURL installation completed. Checking installation status...", Color.green);
-            await Task.Delay(2000);
-            
             CheckCustomInstallationStatus();
             await Task.Delay(1000);
             
-            if (hasCustomCurl)
+            if (hasCustomCurl && !installIfAlreadyInstalled)
             {
-                SetStatus("cURL installed successfully on remote server.", Color.green);
+                SetStatus("cURL is already installed on the remote server.", Color.green);
+                return;
+            }
+            
+            SetStatus("Installing cURL on remote server...", Color.yellow);
+            
+            // Create a bash script for curl installation
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Updating package lists =====\"\n" +
+                "sudo apt update\n\n" +
+                "echo \"===== Installing cURL =====\"\n" +
+                "sudo apt install -y curl\n\n" +
+                "# Check if curl was installed successfully\n" +
+                "if command -v curl &> /dev/null; then\n" +
+                "  echo \"===== cURL installed successfully! =====\"\n" +
+                "  curl --version\n" +
+                "else\n" +
+                "  echo \"ERROR: cURL installation failed\"\n" +
+                "  exit 1\n" +
+                "fi\n\n" +
+                "echo \"===== Done! =====\"\n";
+            
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Installing cURL in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("cURL installation completed. Checking installation status...", Color.green);
+                
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomCurl)
+                {
+                    SetStatus("cURL installed successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("cURL installation verification failed. Please check the terminal output.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("cURL installation verification failed. Please check the terminal output.", Color.yellow);
+                SetStatus("cURL installation process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("cURL installation process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
 
     private async void InstallCustomSpacetimeDBServer()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
 
-        if (string.IsNullOrEmpty(sshUserName))
-        {
-            SetStatus("Please enter a SSH username first.", Color.red);
-            return;
-        }
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomSpacetimeDBServer && !installIfAlreadyInstalled)
-        {
-            SetStatus("SpacetimeDB Server is already installed on the remote server.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing SpacetimeDB Server on remote server...", Color.yellow);
-        
-        // Create a bash script for SpacetimeDB Server installation
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Installing SpacetimeDB Server =====\"\n" +
-            $"# As user {sshUserName}\n" +
-            $"curl -sSf https://install.spacetimedb.com/ | sh\n\n" +
-            "# Check if installation was successful\n" +
-            $"if [ -f /home/{sshUserName}/.local/bin/spacetime ]; then\n" +
-            "  echo \"===== SpacetimeDB Server installed successfully! =====\"\n" +
-            $"  sudo -u {sshUserName} /home/{sshUserName}/.local/bin/spacetime --version\n" +
-            "else\n" +
-            "  echo \"WARNING: SpacetimeDB installation verification failed\"\n" +
-            "  echo \"Please verify installation manually\"\n" +
-            "fi\n\n" +
-            "echo \"===== Done! =====\"\n";
-        
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Installing SpacetimeDB Server in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
-
-            await customProcess.CheckSpacetimeDBVersionCustom(); // Extra check to ensure version is updated
-
-            await Task.Delay(2000);
-            
             CheckCustomInstallationStatus();
-
             await Task.Delay(1000);
             
-            if (hasCustomSpacetimeDBServer)
+            if (hasCustomSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersionCustom) && !installIfAlreadyInstalled)
             {
-                SetStatus("SpacetimeDB Server installed successfully on remote server.", Color.green);
+                SetStatus("The latest version of SpacetimeDB Server is already installed on the remote server.", Color.green);
+                return;
+            }
+            
+            SetStatus("Installing SpacetimeDB Server on remote server...", Color.yellow);
+            
+            // Create a bash script for SpacetimeDB Server installation
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Installing SpacetimeDB Server =====\"\n" +
+                $"# As user {sshUserName}\n" +
+                $"curl -sSf https://install.spacetimedb.com/ | sh\n\n" +
+                "# Check if installation was successful\n" +
+                $"if [ -f /home/{sshUserName}/.local/bin/spacetime ]; then\n" +
+                "  echo \"===== SpacetimeDB Server installed successfully! =====\"\n" +
+                $"  sudo -u {sshUserName} /home/{sshUserName}/.local/bin/spacetime --version\n" +
+                "else\n" +
+                "  echo \"WARNING: SpacetimeDB installation verification failed\"\n" +
+                "  echo \"Please verify installation manually\"\n" +
+                "fi\n\n" +
+                "echo \"===== Done! =====\"\n";
+            
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Installing SpacetimeDB Server in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
+
+                await customProcess.CheckSpacetimeDBVersionCustom(); // Extra check to ensure version is updated
+                spacetimeDBCurrentVersionCustom = spacetimeDBLatestVersion;
+
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+
+                await Task.Delay(1000);
+                
+                if (hasCustomSpacetimeDBServer)
+                {
+                    SetStatus("SpacetimeDB Server installed successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("SpacetimeDB Server installation verification failed. Please check the terminal output.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("SpacetimeDB Server installation verification failed. Please check the terminal output.", Color.yellow);
+                SetStatus("SpacetimeDB Server installation process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("SpacetimeDB Server installation process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
 
     private async void InstallCustomSpacetimeDBPath()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
 
-        if (string.IsNullOrEmpty(sshUserName))
-        {
-            SetStatus("Please enter a SSH username first.", Color.red);
-            return;
-        }
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomSpacetimeDBPath && !installIfAlreadyInstalled)
-        {
-            SetStatus("SpacetimeDB PATH is already configured on the remote server.", Color.green);
-            return;
-        }
-        
-        SetStatus("Configuring SpacetimeDB PATH on remote server...", Color.yellow);
-        
-        // Create a bash script for SpacetimeDB PATH configuration
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Configuring SpacetimeDB PATH =====\"\n" +
-            $"# Check if spacetime is already in PATH for user {sshUserName}\n" +
-            $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{sshUserName}/.bashrc; then\n" +
-            "  echo \"Adding SpacetimeDB to PATH in .bashrc file\"\n" +
-            $"  echo 'export PATH=\"$HOME/.spacetime/bin:$HOME/.local/bin:$PATH\"' >> /home/{sshUserName}/.bashrc\n" +
-            $"  chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
-            "  echo \"===== PATH updated successfully! =====\"\n" +
-            "else\n" +
-            "  echo \"===== SpacetimeDB PATH already configured! =====\"\n" +
-            "fi\n\n" +
-            $"# Show the current PATH configuration for user {sshUserName}\n" +
-            $"echo \"Current PATH entries in /home/{sshUserName}/.bashrc:\"\n" +
-            $"grep -i \"PATH\" /home/{sshUserName}/.bashrc | cat\n\n" +
-            "echo \"===== Done! =====\"\n";
-        
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Configuring SpacetimeDB PATH in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("SpacetimeDB PATH configuration completed. Checking status...", Color.green);
-            await Task.Delay(2000);
-            
             CheckCustomInstallationStatus();
             await Task.Delay(1000);
             
-            if (hasCustomSpacetimeDBPath)
+            if (hasCustomSpacetimeDBPath && !installIfAlreadyInstalled)
             {
-                SetStatus("SpacetimeDB PATH configured successfully on remote server.", Color.green);
+                SetStatus("SpacetimeDB PATH is already configured on the remote server.", Color.green);
+                return;
+            }
+            
+            SetStatus("Configuring SpacetimeDB PATH on remote server...", Color.yellow);
+            
+            // Create a bash script for SpacetimeDB PATH configuration
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Configuring SpacetimeDB PATH =====\"\n" +
+                $"# Check if spacetime is already in PATH for user {sshUserName}\n" +
+                $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{sshUserName}/.bashrc; then\n" +
+                "  echo \"Adding SpacetimeDB to PATH in .bashrc file\"\n" +
+                $"  echo 'export PATH=\"$HOME/.spacetime/bin:$HOME/.local/bin:$PATH\"' >> /home/{sshUserName}/.bashrc\n" +
+                $"  chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
+                "  echo \"===== PATH updated successfully! =====\"\n" +
+                "else\n" +
+                "  echo \"===== SpacetimeDB PATH already configured! =====\"\n" +
+                "fi\n\n" +
+                
+                $"# Show the current PATH configuration for user {sshUserName}\n" +
+                $"echo \"Current PATH entries in /home/{sshUserName}/.bashrc:\"\n" +
+                $"grep -i \"PATH\" /home/{sshUserName}/.bashrc | cat\n\n" +
+                "echo \"===== Done! =====\"\n";
+            
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Configuring SpacetimeDB PATH in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("SpacetimeDB PATH configuration completed. Checking status...", Color.green);
+                
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomSpacetimeDBPath)
+                {
+                    SetStatus("SpacetimeDB PATH configured successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("SpacetimeDB PATH configuration verification may need a server restart to take effect.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("SpacetimeDB PATH configuration verification may need a server restart to take effect.", Color.yellow);
+                SetStatus("SpacetimeDB PATH configuration process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("SpacetimeDB PATH configuration process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
 
     private async void InstallCustomRust()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
 
-        if (string.IsNullOrEmpty(sshUserName))
-        {
-            SetStatus("Please enter a SSH username first.", Color.red);
-            return;
-        }
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomRust && !installIfAlreadyInstalled)
-        {
-            SetStatus("Rust is already installed on the remote server.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing Rust on remote server...", Color.yellow);
-        
-        // Create a more structured bash script for Rust installation
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Installing Rust on Remote Server =====\"\n\n" +
-            "echo \"===== Step 1: Installing prerequisites =====\"\n" +
-            "sudo apt update\n" +
-            "sudo apt install -y build-essential curl\n\n" +
-            
-            "echo \"===== Step 2: Downloading Rust installer =====\"\n" +
-            $"cd /home/{sshUserName}\n" +
-            "sudo curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh\n" +
-            "sudo chmod +x rustup.sh\n" +
-            $"sudo chown {sshUserName}:{sshUserName} rustup.sh\n\n" +
-            
-            "echo \"===== Step 3: Installing Rust with automatic -y =====\"\n" +
-            $"sudo -u {sshUserName} bash -c './rustup.sh -y'\n" +
-            "sudo rm rustup.sh\n\n" +
-            
-            "echo \"===== Step 4: Setting up Rust environment =====\"\n" +
-            $"# Add Rust to PATH for user {sshUserName} if not already present\n" +
-            $"if ! grep -q \"HOME/.cargo/env\" /home/{sshUserName}/.bashrc; then\n" +
-            $"  echo 'source \"$HOME/.cargo/env\"' >> /home/{sshUserName}/.bashrc\n" +
-            $"  sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
-            "fi\n\n" +
-            
-            "echo \"===== Step 5: Verifying installation =====\"\n" +
-            "echo \"Checking Rust version:\"\n" +
-            $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && rustc --version'\n\n" +
-            "echo \"Checking Cargo version:\"\n" +
-            $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && cargo --version'\n\n" +
-            
-            "echo \"===== Done! =====\"\n";
-            
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Installing Rust in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("Rust installation completed. Checking installation status...", Color.green);
-            await Task.Delay(2000);
-            
             CheckCustomInstallationStatus();
             await Task.Delay(1000);
             
-            if (hasCustomRust)
+            if (hasCustomRust && !installIfAlreadyInstalled)
             {
-                SetStatus("Rust installed successfully on remote server.", Color.green);
+                SetStatus("Rust is already installed on the remote server.", Color.green);
+                return;
+            }
+            
+            SetStatus("Installing Rust on remote server...", Color.yellow);
+            
+            // Create a more structured bash script for Rust installation
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Installing Rust on Remote Server =====\"\n\n" +
+                "echo \"===== Step 1: Installing prerequisites =====\"\n" +
+                "sudo apt update\n" +
+                "sudo apt install -y build-essential curl\n\n" +
+                
+                "echo \"===== Step 2: Downloading Rust installer =====\"\n" +
+                $"cd /home/{sshUserName}\n" +
+                "sudo curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh\n" +
+                "sudo chmod +x rustup.sh\n" +
+                $"sudo chown {sshUserName}:{sshUserName} rustup.sh\n\n" +
+                
+                "echo \"===== Step 3: Installing Rust with automatic -y =====\"\n" +
+                $"sudo -u {sshUserName} bash -c './rustup.sh -y'\n" +
+                "sudo rm rustup.sh\n\n" +
+                
+                "echo \"===== Step 4: Setting up Rust environment =====\"\n" +
+                $"# Add Rust to PATH for user {sshUserName} if not already present\n" +
+                $"if ! grep -q \"HOME/.cargo/env\" /home/{sshUserName}/.bashrc; then\n" +
+                $"  echo 'source \"$HOME/.cargo/env\"' >> /home/{sshUserName}/.bashrc\n" +
+                $"  sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
+                "fi\n\n" +
+                
+                "echo \"===== Step 5: Verifying installation =====\"\n" +
+                "echo \"Checking Rust version:\"\n" +
+                $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && rustc --version'\n\n" +
+                "echo \"Checking Cargo version:\"\n" +
+                $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && cargo --version'\n\n" +
+                
+                "echo \"===== Done! =====\"\n";
+                
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Installing Rust in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("Rust installation completed. Checking installation status...", Color.green);
+                
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomRust)
+                {
+                    SetStatus("Rust installed successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("Rust installation verification failed. It may take a server restart to take effect.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("Rust installation verification failed. It may take a server restart to take effect.", Color.yellow);
+                SetStatus("Rust installation process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("Rust installation process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
 
     private async void InstallCustomSpacetimeDBService()
     {
-        // Ensure SSH session is active
-        if (!customProcess.IsSessionActive())
+        try
         {
-            SetStatus("SSH connection not active. Please connect first.", Color.red);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(sshUserName))
-        {
-            SetStatus("Please enter a SSH username first.", Color.red);
-            return;
-        }
-                
-        // Get the expected module name from the installer item
-        string expectedModuleName = "";
-        foreach (var item in customInstallerItems)
-        {
-            if (item.title == "Install SpacetimeDB Service")
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
             {
-                expectedModuleName = item.expectedModuleName;
-                break;
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
             }
-        }
-        
-        if (string.IsNullOrEmpty(expectedModuleName))
-        {
-            SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
-            return;
-        }
 
-        CheckCustomInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCustomSpacetimeDBService && !installIfAlreadyInstalled)
-        {
-            SetStatus("SpacetimeDB Service is already installed on the remote server.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing SpacetimeDB Service on remote server...", Color.yellow);
-        
-        // Create a bash script for SpacetimeDB Service installation
-        string commands = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
+                    
+            // Get the expected module name from the installer item
+            string expectedModuleName = "";
+            foreach (var item in customInstallerItems)
+            {
+                if (item.title == "Install SpacetimeDB Service")
+                {
+                    expectedModuleName = item.expectedModuleName;
+                    break;
+                }
+            }
             
-            "# Create directory for SpacetimeDB if it doesn't exist\n" +
-            $"sudo mkdir -p /home/{sshUserName}/.local/share/spacetime\n" +
-            $"sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/share/spacetime\n\n" +
-            
-            "# Create the service file\n" +
-            "echo \"Creating systemd service file...\"\n" +
-            "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
-            "[Unit]\n" +
-            "Description=SpacetimeDB Server\n" +
-            "After=network.target\n\n" +
-            "[Service]\n" +
-            $"User={sshUserName}\n" +
-            $"Environment=HOME=/home/{sshUserName}\n" +
-            $"ExecStart=/home/{sshUserName}/.local/bin/spacetime \\\\\n" +
-            $"    --root-dir=/home/{sshUserName}/.local/share/spacetime \\\\\n" +
-            "    start \\\\\n" +
-            "    --listen-addr=0.0.0.0:3000\n" +
-            "Restart=always\n" +
-            $"WorkingDirectory=/home/{sshUserName}\n\n" +
-            "[Install]\n" +
-            "WantedBy=multi-user.target\n" +
-            "EOF\n\n" +
-            
-            "# Reload systemd to recognize the new service\n" +
-            "echo \"Reloading systemd...\"\n" +
-            "sudo systemctl daemon-reload\n\n" +
-            
-            "# Enable and start the service\n" +
-            "echo \"Enabling and starting SpacetimeDB service...\"\n" +
-            "sudo systemctl enable spacetimedb.service\n" +
-            "sudo systemctl start spacetimedb.service\n\n" +
-            
-            "# Check service status\n" +
-            "echo \"Checking service status...\"\n" +
-            "sudo systemctl status spacetimedb.service\n\n" +
-            
-            "# Create the database logs service file\n" +
-            "echo \"Creating SpacetimeDB database logs service...\"\n" +
-            "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
-            "[Unit]\n" +
-            "Description=SpacetimeDB Database Logs\n" +
-            "After=spacetimedb.service\n" +
-            "Requires=spacetimedb.service\n\n" +
-            "[Service]\n" +
-            $"User={sshUserName}\n" +
-            $"Environment=HOME=/home/{sshUserName}\n" +
-            "Type=simple\n" +
-            "Restart=always\n" +
-            "RestartSec=5\n" +
-            $"ExecStart=/home/{sshUserName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
-            $"WorkingDirectory=/home/{sshUserName}\n\n" +
-            "[Install]\n" +
-            "WantedBy=multi-user.target\n" +
-            "EOF\n\n" +
-            
-            "# Reload systemd to recognize the new service\n" +
-            "sudo systemctl daemon-reload\n\n" +
-            
-            "# Enable and start the database logs service\n" +
-            "echo \"Enabling SpacetimeDB database logs service...\"\n" +
-            "sudo systemctl enable spacetimedb-logs.service\n" +
-            "sudo systemctl start spacetimedb-logs.service\n\n" +
+            if (string.IsNullOrEmpty(expectedModuleName))
+            {
+                SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
+                return;
+            }
 
-            "# Check database logs service status\n" +
-            "echo \"Checking SpacetimeDB database logs service status...\"\n" +
-            "sudo systemctl status spacetimedb-logs.service\n\n" +
-
-            "echo \"===== Done! =====\"\n" +
-            $"echo \"Database logs service configured for module: {expectedModuleName}\"";
-        
-        // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-        SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
-        bool success = await customProcess.RunVisibleSSHCommand(commands);
-        
-        if (success)
-        {
-            SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
-            await Task.Delay(2000);
-            
             CheckCustomInstallationStatus();
             await Task.Delay(1000);
             
-            if (hasCustomSpacetimeDBService)
+            if (hasCustomSpacetimeDBService && !installIfAlreadyInstalled)
             {
-                string logsServiceStatus = hasCustomSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
-                SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
+                SetStatus("SpacetimeDB Service is already installed on the remote server.", Color.green);
+                return;
+            }
+            
+            SetStatus("Installing SpacetimeDB Service on remote server...", Color.yellow);
+            
+            // Create a bash script for SpacetimeDB Service installation
+            string commands = 
+                "#!/bin/bash\n\n" +
+                "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
+                
+                "# Create directory for SpacetimeDB if it doesn't exist\n" +
+                $"sudo mkdir -p /home/{sshUserName}/.local/share/spacetime\n" +
+                $"sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/share/spacetime\n\n" +
+                
+                "# Create the service file\n" +
+                "echo \"Creating systemd service file...\"\n" +
+                "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
+                "[Unit]\n" +
+                "Description=SpacetimeDB Server\n" +
+                "After=network.target\n\n" +
+                "[Service]\n" +
+                $"User={sshUserName}\n" +
+                $"Environment=HOME=/home/{sshUserName}\n" +
+                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime \\\\\n" +
+                $"    --root-dir=/home/{sshUserName}/.local/share/spacetime \\\\\n" +
+                "    start \\\\\n" +
+                "    --listen-addr=0.0.0.0:3000\n" +
+                "Restart=always\n" +
+                $"WorkingDirectory=/home/{sshUserName}\n\n" +
+                "[Install]\n" +
+                "WantedBy=multi-user.target\n" +
+                "EOF\n\n" +
+                
+                "# Reload systemd to recognize the new service\n" +
+                "echo \"Reloading systemd...\"\n" +
+                "sudo systemctl daemon-reload\n\n" +
+                
+                "# Enable and start the service\n" +
+                "echo \"Enabling and starting SpacetimeDB service...\"\n" +
+                "sudo systemctl enable spacetimedb.service\n" +
+                "sudo systemctl start spacetimedb.service\n\n" +
+                
+                "# Check service status\n" +
+                "echo \"Checking service status...\"\n" +
+                "sudo systemctl status spacetimedb.service\n\n" +
+                
+                "# Create the database logs service file\n" +
+                "echo \"Creating SpacetimeDB database logs service...\"\n" +
+                "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
+                "[Unit]\n" +
+                "Description=SpacetimeDB Database Logs\n" +
+                "After=spacetimedb.service\n" +
+                "Requires=spacetimedb.service\n\n" +
+                "[Service]\n" +
+                $"User={sshUserName}\n" +
+                $"Environment=HOME=/home/{sshUserName}\n" +
+                "Type=simple\n" +
+                "Restart=always\n" +
+                "RestartSec=5\n" +
+                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
+                $"WorkingDirectory=/home/{sshUserName}\n\n" +
+                "[Install]\n" +
+                "WantedBy=multi-user.target\n" +
+                "EOF\n\n" +
+                
+                "# Reload systemd to recognize the new service\n" +
+                "sudo systemctl daemon-reload\n\n" +
+                
+                "# Enable and start the database logs service\n" +
+                "echo \"Enabling SpacetimeDB database logs service...\"\n" +
+                "sudo systemctl enable spacetimedb-logs.service\n" +
+                "sudo systemctl start spacetimedb-logs.service\n\n" +
+
+                "# Check database logs service status\n" +
+                "echo \"Checking SpacetimeDB database logs service status...\"\n" +
+                "sudo systemctl status spacetimedb-logs.service\n\n" +
+
+                "echo \"===== Done! =====\"\n" +
+                $"echo \"Database logs service configured for module: {expectedModuleName}\"";
+            
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
+                
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomSpacetimeDBService)
+                {
+                    string logsServiceStatus = hasCustomSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
+                    SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
+                }
+                else
+                {
+                    SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
+                }
             }
             else
             {
-                SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
+                SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
             }
         }
-        else
+        finally
         {
-            SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
+        }
+    }
+
+    private async void InstallCustomBinaryen()
+    {
+        try
+        {
+            // Ensure SSH session is active
+            if (!customProcess.IsSessionActive())
+            {
+                SetStatus("SSH connection not active. Please connect first.", Color.red);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(sshUserName))
+            {
+                SetStatus("Please enter a SSH username first.", Color.red);
+                return;
+            }
+
+            CheckCustomInstallationStatus();
+            await Task.Delay(1000);
+            
+            if (hasCustomBinaryen && !installIfAlreadyInstalled)
+            {
+                SetStatus("Binaryen is already installed on the remote server.", Color.green);
+                return;
+            }
+
+            if (!hasCustomCurl)
+            {
+                SetStatus("curl is required to install Binaryen. Please install curl first.", Color.red);
+                return;
+            }
+
+            SetStatus("Installing Web Assembly Optimizer Binaryen on remote server...", Color.yellow);
+
+            // Use the exact URL that works, with proper error handling
+            string commands = 
+                "echo \"Downloading Binaryen...\" && " +
+                "curl -L \"https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz\" -o /tmp/binaryen.tar.gz && " +
+                "echo \"Extracting Binaryen...\" && " +
+                "sudo tar -xz --strip-components=2 -C /usr/local/bin -f /tmp/binaryen.tar.gz binaryen-version_123/bin && " +
+                "echo \"Cleaning up...\" && " +
+                "rm -f /tmp/binaryen.tar.gz && " +
+                "echo \"Verifying installation...\" && " +
+                "wasm-opt --version 2>/dev/null || echo \"wasm-opt binary installed successfully\"";
+
+            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
+            SetStatus("Installing Binaryen in terminal window. Please follow the progress there...", Color.yellow);
+            bool success = await customProcess.RunVisibleSSHCommand(commands);
+            
+            if (success)
+            {
+                SetStatus("Binaryen installation completed. Checking installation status...", Color.green);
+                
+                await Task.Delay(2000);
+                
+                CheckCustomInstallationStatus();
+                await Task.Delay(1000);
+                
+                if (hasCustomBinaryen)
+                {
+                    SetStatus("Binaryen (Web Assembly Optimizer) installed successfully on remote server.", Color.green);
+                }
+                else
+                {
+                    SetStatus("Binaryen installation verification failed. Please check the terminal output.", Color.yellow);
+                }
+            }
+            else
+            {
+                SetStatus("Binaryen installation process encountered issues. Please check the terminal output.", Color.red);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Error during Binaryen installation: {ex.Message}", Color.red);
+            LogMessage($"Binaryen installation error: {ex}", -1);
+        }
+        finally
+        {
+            // Always refresh session status, regardless of how the method exits
+            await customProcess.RefreshSessionStatus();
         }
     }
     #endregion

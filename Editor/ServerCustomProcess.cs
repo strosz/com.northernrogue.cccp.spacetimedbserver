@@ -38,7 +38,7 @@ public class ServerCustomProcess
     // Session status tracking
     private bool sessionActive = false;
     private double lastSessionCheckTime = 0;
-    private const double sessionCheckInterval = 5;
+    private const double sessionCheckInterval = 2;
     
     // Status cache to avoid repeated SSH calls
     private double lastStatusCacheTime = 0;
@@ -325,6 +325,11 @@ public class ServerCustomProcess
             
             if (success)
             {
+                // Update session state after successful SSH command execution
+                sessionActive = true;
+                isConnected = true;
+                lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
+                
                 if (debugMode) Log($"SSH command '{command}' executed successfully", 1);
             }
             else
@@ -743,15 +748,97 @@ public class ServerCustomProcess
         if (debugMode) Log($"SSH Private Key Path updated to: {sshPrivateKeyPath}", 0);
     }
 
-    // Check if the SSH session is currently active - just return cached value
+    // Check if the SSH session is currently active - with synchronous fallback
     public bool IsSessionActive()
     {
-        // Call UpdateSessionStatusIfNeeded to ensure the session status is up-to-date
-        UpdateSessionStatusIfNeeded();
+        // Quick validation to avoid unnecessary processing
+        if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
+        {
+            sessionActive = false;
+            return false;
+        }
+
+        double currentTime = UnityEditor.EditorApplication.timeSinceStartup;
+        
+        // If we have a recent positive session status, trust it for a short period
+        if (sessionActive && (currentTime - lastSessionCheckTime) < sessionCheckInterval)
+        {
+            if (debugMode) Log("Using cached session active status", 0);
+            return true;
+        }
+        
+        // If the cached value is old or we're not sure about the session, do a synchronous check
+        if (currentTime - lastSessionCheckTime >= sessionCheckInterval || !sessionActive)
+        {
+            // Update the timestamp to prevent multiple simultaneous checks
+            lastSessionCheckTime = currentTime;
+            
+            // Do a synchronous session check for immediate response
+            try
+            {
+                Process pingProcess = new Process();
+                pingProcess.StartInfo.FileName = "ssh";
+                pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
+                pingProcess.StartInfo.UseShellExecute = false;
+                pingProcess.StartInfo.RedirectStandardOutput = true;
+                pingProcess.StartInfo.RedirectStandardError = true;
+                pingProcess.StartInfo.CreateNoWindow = true;
+                
+                pingProcess.Start();
+                string output = pingProcess.StandardOutput.ReadToEnd().Trim();
+                
+                bool exited = pingProcess.WaitForExit(2000); // 2 second timeout
+                
+                if (exited && pingProcess.ExitCode == 0 && output == "ping")
+                {
+                    sessionActive = true;
+                    isConnected = true;
+                    if (debugMode) Log("SSH session verified as active", 0);
+                }
+                else
+                {
+                    sessionActive = false;
+                    isConnected = false;
+                    if (debugMode) Log($"SSH session check failed: ExitCode={pingProcess.ExitCode}, Output='{output}'", 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                sessionActive = false;
+                isConnected = false;
+                if (debugMode) Log($"SSH session check exception: {ex.Message}", 0);
+            }
+        }
+        
         return sessionActive;
     }
 
-    // Only update session status occasionally to avoid lag
+    // Async version of session check for cases where blocking is not desired
+    public async Task<bool> IsSessionActiveAsync()
+    {
+        // Quick validation to avoid unnecessary processing
+        if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
+        {
+            sessionActive = false;
+            return false;
+        }
+
+        try
+        {
+            var result = await RunCustomCommandAsync("echo ping", 2000);
+            bool isActive = result.success && result.output.Trim() == "ping";
+            sessionActive = isActive;
+            lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
+            return isActive;
+        }
+        catch (Exception)
+        {
+            sessionActive = false;
+            return false;
+        }
+    }
+
+    // Background update session status occasionally to keep cache warm
     public void UpdateSessionStatusIfNeeded()
     {
         // Quick validation to avoid unnecessary processing
@@ -762,10 +849,9 @@ public class ServerCustomProcess
         }
         
         double currentTime = UnityEditor.EditorApplication.timeSinceStartup;
-        if (currentTime - lastSessionCheckTime >= sessionCheckInterval)
+        // Only do background updates if we're not already doing frequent checks
+        if (currentTime - lastSessionCheckTime >= sessionCheckInterval * 2) // Wait longer for background updates
         {
-            lastSessionCheckTime = currentTime;
-            
             // Don't run the status check directly - start it in the background
             EditorApplication.delayCall += StartBackgroundSessionCheck;
         }
@@ -957,16 +1043,29 @@ public class ServerCustomProcess
                 if (debugMode) Log($"Failed to delete temp script (non-critical): {ex.Message}", 0);
             }
             
-            Log(process.ExitCode == 0 
+            bool success = process.ExitCode == 0;
+            
+            // Update session state after successful SSH command execution
+            if (success)
+            {
+                sessionActive = true;
+                isConnected = true;
+                lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
+                if (debugMode) Log("Session state updated after successful SSH command execution", 0);
+            }
+            
+            Log(success 
                 ? "SSH command executed successfully" 
                 : "SSH command returned non-zero exit code", 
-                process.ExitCode == 0 ? 1 : -1);
+                success ? 1 : -1);
                 
-            return process.ExitCode == 0;
+            return success;
         }
         catch (Exception ex)
         {
             Log($"Error running SSH command: {ex.Message}", -1);
+            sessionActive = false;
+            isConnected = false;
             return false;
         }
     }
@@ -1117,6 +1216,51 @@ public class ServerCustomProcess
         }
     }
 
+    #endregion
+
+    #region Refresh Session Status
+
+    // Force refresh the session status by performing an immediate check
+    public async Task<bool> RefreshSessionStatus()
+    {
+        if (string.IsNullOrEmpty(sshPrivateKeyPath) || string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(sshUserName))
+        {
+            sessionActive = false;
+            isConnected = false;
+            return false;
+        }
+
+        try
+        {
+            if (debugMode) Log("Refreshing SSH session status...", 0);
+            
+            // Perform a fresh connection test
+            var result = await RunSimpleCommandAsync("echo session_check", 3000);
+            
+            if (result.success && result.output.Trim() == "session_check")
+            {
+                sessionActive = true;
+                isConnected = true;
+                lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
+                if (debugMode) Log("SSH session status refreshed successfully", 1);
+                return true;
+            }
+            else
+            {
+                sessionActive = false;
+                isConnected = false;
+                if (debugMode) Log("SSH session status refresh failed", -1);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            sessionActive = false;
+            isConnected = false;
+            if (debugMode) Log($"SSH session status refresh error: {ex.Message}", -1);
+            return false;
+        }
+    }
     #endregion
 } // Class
 } // Namespace

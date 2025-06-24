@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // Processes the logs when the server is running in silent mode ///
-//test
+
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerLogProcess
@@ -188,6 +188,8 @@ public class ServerLogProcess
             clearProcess.StartInfo.CreateNoWindow = true;
             clearProcess.StartInfo.RedirectStandardOutput = true;
             clearProcess.StartInfo.RedirectStandardError = true;
+            clearProcess.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            clearProcess.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             clearProcess.Start();
             clearProcess.WaitForExit(5000); // Wait up to 5 seconds
@@ -250,6 +252,8 @@ public class ServerLogProcess
             readProcess.StartInfo.CreateNoWindow = true;
             readProcess.StartInfo.RedirectStandardOutput = true;
             readProcess.StartInfo.RedirectStandardError = true;
+            readProcess.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            readProcess.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             readProcess.Start();
             
@@ -382,6 +386,8 @@ public class ServerLogProcess
             readProcess.StartInfo.CreateNoWindow = true;
             readProcess.StartInfo.RedirectStandardOutput = true;
             readProcess.StartInfo.RedirectStandardError = true;
+            readProcess.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            readProcess.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             readProcess.Start();
             
@@ -826,7 +832,8 @@ public class ServerLogProcess
         
         isReadingWSLModuleLogs = true;
         
-        Process readProcess = null;        try
+        Process readProcess = null;        
+        try
         {
             // Ensure we have a valid timestamp - if not, use recent time to avoid massive log dumps
             if (lastWSLModuleLogTimestamp == DateTime.MinValue || lastWSLModuleLogTimestamp.Year < 2020)
@@ -2255,6 +2262,8 @@ public class ServerLogProcess
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             process.Start();
             
@@ -2290,6 +2299,8 @@ public class ServerLogProcess
                 process.StartInfo.CreateNoWindow = true;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+                process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
                 
                 process.Start();
                 string checkOutput = await process.StandardOutput.ReadToEndAsync();
@@ -2333,6 +2344,8 @@ public class ServerLogProcess
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             process.Start();
             
@@ -2378,6 +2391,8 @@ public class ServerLogProcess
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             process.Start();
             

@@ -447,7 +447,7 @@ public class ServerCMDProcess
     
     #region CheckPrereq
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
     {
         logCallback("Checking pre-requisites...", 0);
         
@@ -508,7 +508,12 @@ public class ServerCMDProcess
                 // SpacetimeDB Logs Service Check
                 "Write-Host 'Checking SpacetimeDB Logs Service...'; " +
                 "$logsService = (wsl -d Debian -u " + userName + " -- systemctl status spacetimedb-logs.service 2>&1); " +
-                "if ($logsService -match 'spacetimedb-logs.service') { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE' }" +
+                "if ($logsService -match 'spacetimedb-logs.service') { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE' } else { Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE' }; " +
+                
+                // Binaryen Check
+                "Write-Host 'Checking Binaryen...'; " +
+                "$binaryen = (wsl -d Debian -u " + userName + " -- test -f '/usr/local/bin/wasm-opt' 2>&1); " +
+                "if ($?) { Write-Host 'BINARYEN_INSTALLED=TRUE' } else { Write-Host 'BINARYEN_INSTALLED=FALSE' }" +
             "} else { " +
                 // Set all dependent checks to FALSE if WSL is not installed
                 "Write-Host 'DEBIAN_INSTALLED=FALSE'; " +
@@ -518,7 +523,8 @@ public class ServerCMDProcess
                 "Write-Host 'SPACETIMEDBPATH_INSTALLED=FALSE'; " +
                 "Write-Host 'RUST_INSTALLED=FALSE'; " +
                 "Write-Host 'SPACETIMEDBSERVICE_INSTALLED=FALSE'; " +
-                "Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE'" +
+                "Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE'; " +
+                "Write-Host 'BINARYEN_INSTALLED=FALSE'" +
             "}\"";
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.UseShellExecute = false;
@@ -540,8 +546,9 @@ public class ServerCMDProcess
         bool hasSpacetimeDBPath = output.Contains("SPACETIMEDBPATH_INSTALLED=TRUE");
         bool hasRust = output.Contains("RUST_INSTALLED=TRUE");
         bool hasSpacetimeDBService = output.Contains("SPACETIMEDBSERVICE_INSTALLED=TRUE");
-        bool hasSpacetimeDBLogsService = output.Contains("SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE");        
-        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}, Service: {hasSpacetimeDBService}, Logs Service: {hasSpacetimeDBLogsService}", 0);
+        bool hasSpacetimeDBLogsService = output.Contains("SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE");
+        bool hasBinaryen = output.Contains("BINARYEN_INSTALLED=TRUE");
+        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}, Service: {hasSpacetimeDBService}, Logs Service: {hasSpacetimeDBLogsService}, Binaryen: {hasBinaryen}", 0);
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDB || !hasSpacetimeDBPath)
         {
             logCallback("Missing pre-requisites or Debian username. Install manually or with the Server Installer Window.", -2);
@@ -549,7 +556,7 @@ public class ServerCMDProcess
         {
             logCallback("Pre-requisites check complete. All required components are installed.", 1);
         }
-        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust, hasSpacetimeDBService, hasSpacetimeDBLogsService);
+        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust, hasSpacetimeDBService, hasSpacetimeDBLogsService, hasBinaryen);
     }
     #endregion
 

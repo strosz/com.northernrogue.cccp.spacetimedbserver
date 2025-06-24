@@ -33,6 +33,7 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBService = false;
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
+    private bool hasBinaryen = false;
     private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
     private string userName = "";
@@ -413,6 +414,7 @@ public class ServerWindow : EditorWindow
         hasSpacetimeDBService = serverManager.HasSpacetimeDBService;
         hasSpacetimeDBLogsService = serverManager.HasSpacetimeDBLogsService;
         hasRust = serverManager.HasRust;
+        hasBinaryen = serverManager.HasBinaryen;
         
         initializedFirstModule = serverManager.InitializedFirstModule;
         
@@ -1948,8 +1950,8 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService) => {
-            EditorApplication.delayCall += () => {                
+        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen) => {
+            EditorApplication.delayCall += () => {
                 // Update local state for UI
                 hasWSL = wsl;
                 hasDebian = debian;
@@ -1960,6 +1962,7 @@ public class ServerWindow : EditorWindow
                 hasSpacetimeDBService = spacetimeService;
                 hasSpacetimeDBLogsService = spacetimeLogsService;
                 hasRust = rust;
+                hasBinaryen = binaryen;
                 wslPrerequisitesChecked = true;
                 
                 // Load userName value 
