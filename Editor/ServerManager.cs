@@ -498,7 +498,7 @@ public class ServerManager
                 logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, UserName);
                 
                 // Start SpacetimeDB services using systemctl
-                LogMessage("Starting SpacetimeDB service...", 0);
+                if (DebugMode) LogMessage("Starting SpacetimeDB service...", 0);
                 bool serviceStarted = await cmdProcessor.StartSpacetimeDBServices();
                 if (!serviceStarted)
                 {
@@ -509,10 +509,7 @@ public class ServerManager
                 
                 bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
                 
-                if (DebugMode)
-                {
-                    LogMessage($"Immediate startup verification - Service: {(serviceRunning ? "active" : "inactive")}", 0);
-                }
+                if (DebugMode) LogMessage($"Immediate startup verification - Service: {(serviceRunning ? "active" : "inactive")}", 0);
                 
                 if (serviceRunning)
                 {
@@ -746,7 +743,7 @@ public class ServerManager
             
             if (stopSuccessful)
             {
-                LogMessage("Stop commands completed. Verifying server is fully stopped...", 0);
+                if (debugMode) LogMessage("Stop commands completed. Verifying server is fully stopped...", 0);
                 
                 // Clear status cache again and force immediate status check
                 cmdProcessor.ClearStatusCache();

@@ -851,6 +851,8 @@ public class ServerLogProcess
             readProcess.StartInfo.CreateNoWindow = true;
             readProcess.StartInfo.RedirectStandardOutput = true;
             readProcess.StartInfo.RedirectStandardError = true;
+            readProcess.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            readProcess.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             readProcess.Start();
             
@@ -1060,7 +1062,8 @@ public class ServerLogProcess
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Starting WSL database log read - Fresh mode: {databaseLogStartFresh}, Fresh start time: {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         
         Process readProcess = null;try
-        {            // Ensure we have a valid timestamp - if not, use appropriate fallback based on whether we want fresh logs
+        {   
+            // Ensure we have a valid timestamp - if not, use appropriate fallback based on whether we want fresh logs
             if (lastWSLDatabaseLogTimestamp == DateTime.MinValue || lastWSLDatabaseLogTimestamp.Year < 2020)
             {
                 if (databaseLogStartFresh)
@@ -1075,7 +1078,8 @@ public class ServerLogProcess
                     lastWSLDatabaseLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to 10 minutes ago: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
                 }
-            }            // Format timestamp for journalctl --since parameter
+            }
+            // Format timestamp for journalctl --since parameter
             string sinceTimestamp;
             if (databaseLogStartFresh && databaseLogFreshStartTime != DateTime.MinValue)
             {
@@ -1102,6 +1106,8 @@ public class ServerLogProcess
             readProcess.StartInfo.CreateNoWindow = true;
             readProcess.StartInfo.RedirectStandardOutput = true;
             readProcess.StartInfo.RedirectStandardError = true;
+            readProcess.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            readProcess.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
             
             readProcess.Start();
             
@@ -2316,7 +2322,8 @@ public class ServerLogProcess
             return false;
 
         try
-        {            Process process = new Process();
+        {   
+            Process process = new Process();
             process.StartInfo.FileName = "ssh";
             // Command to test connection and run a simple spacetime command with login shell
             string testCommand = $"echo 'Testing SSH connection' && bash -l -c '{remoteSpacetimePath} --version'";
@@ -2390,73 +2397,6 @@ public class ServerLogProcess
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking service status: {ex.Message}");
             return false;
-        }
-    }
-    
-    // Helper method to run journalctl commands with fallback to sudo if needed
-    private async Task<(string output, string error, bool success)> RunJournalctlCommandAsync(string serviceName, string sinceTimestamp)
-    {
-        if (string.IsNullOrEmpty(userName))
-        {
-            return ("", "Username not configured", false);
-        }
-        
-        // First try without sudo
-        string journalCommand = $"timeout 10s journalctl -u {serviceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
-        
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Trying journalctl without sudo: {journalCommand}");
-        
-        Process readProcess = null;
-        try
-        {
-            readProcess = new Process();
-            readProcess.StartInfo.FileName = "wsl";
-            readProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec bash -c \"{journalCommand}\"";
-            readProcess.StartInfo.UseShellExecute = false;
-            readProcess.StartInfo.CreateNoWindow = true;
-            readProcess.StartInfo.RedirectStandardOutput = true;
-            readProcess.StartInfo.RedirectStandardError = true;
-            
-            readProcess.Start();
-            
-            string output = await readProcess.StandardOutput.ReadToEndAsync();
-            string error = await readProcess.StandardError.ReadToEndAsync();
-            
-            if (!readProcess.WaitForExit(12000))
-            {
-                if (!readProcess.HasExited)
-                {
-                    readProcess.Kill();
-                    readProcess.WaitForExit(1000);
-                }
-                return ("", "Process timed out", false);
-            }
-            
-            // If we get permission denied or similar, it might work with sudo
-            bool needsSudo = !string.IsNullOrEmpty(error) && 
-                           (error.Contains("permission denied") || 
-                            error.Contains("Permission denied") || 
-                            error.Contains("access denied") ||
-                            error.Contains("Operation not permitted"));
-            
-            if (needsSudo && debugMode)
-            {
-                UnityEngine.Debug.Log($"[ServerLogProcess] Permission denied without sudo, will try with sudo next time. Consider adding user to systemd-journal group: sudo usermod -a -G systemd-journal {userName}");
-            }
-            
-            readProcess.Dispose();
-            return (output, error, !needsSudo);
-        }
-        catch (Exception ex)
-        {
-            if (readProcess != null && !readProcess.HasExited)
-            {
-                try { readProcess.Kill(); readProcess.WaitForExit(1000); } catch { }
-            }
-            readProcess?.Dispose();
-            
-            if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Exception in journalctl command: {ex.Message}");
-            return ("", ex.Message, false);
         }
     }
 } // Class
