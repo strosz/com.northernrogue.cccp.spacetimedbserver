@@ -1108,12 +1108,18 @@ public class ServerWindow : EditorWindow
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
-                // Only use cached value, update in background when in Custom Server mode
-                if (serverCustomProcess != null && serverMode == ServerMode.CustomServer)
+                
+                // Update connection status asynchronously to avoid blocking UI
+                if (serverMode == ServerMode.CustomServer)
                 {
-                    serverCustomProcess.UpdateSessionStatusIfNeeded();
+                    serverManager.SSHConnectionStatusAsync();
+                    isConnected = serverManager.IsSSHConnectionActive;
                 }
-                isConnected = serverCustomProcess != null && serverCustomProcess.IsSessionActive();
+                else
+                {
+                    isConnected = false;
+                }
+                
                 Color originalColor = connectedStyle.normal.textColor;
                 connectedStyle.normal.textColor = isConnected ? originalColor : Color.gray;
                 string connectionStatusText = isConnected ? "CONNECTED SSH" : "DISCONNECTED";
@@ -1773,7 +1779,9 @@ public class ServerWindow : EditorWindow
                 if (spacetimeDBCurrentVersionCustom != spacetimeDBLatestVersion)
                 {
                     string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the server is not running.";
-                    EditorGUI.BeginDisabledGroup(serverCustomProcess.IsSessionActive());
+                    // Use cached connection status instead of blocking synchronous check
+                    serverManager.SSHConnectionStatusAsync();
+                    EditorGUI.BeginDisabledGroup(serverManager.IsSSHConnectionActive);
                     if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
                     {
                         ServerInstallerWindow.ShowCustomWindow();

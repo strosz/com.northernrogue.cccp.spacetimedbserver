@@ -40,6 +40,10 @@ public class ServerCustomProcess
     private double lastSessionCheckTime = 0;
     private const double sessionCheckInterval = 2;
     
+    // Thread-safe session status tracking for async operations
+    private DateTime lastSessionCheckTimeAsync = DateTime.MinValue;
+    private readonly TimeSpan sessionCheckIntervalAsync = TimeSpan.FromSeconds(2);
+    
     // Status cache to avoid repeated SSH calls
     private double lastStatusCacheTime = 0;
     private const double statusCacheTimeout = 10; // Status valid for 10 seconds
@@ -813,7 +817,7 @@ public class ServerCustomProcess
         return sessionActive;
     }
 
-    // Async version of session check for cases where blocking is not desired
+    // Async version of session check that mirrors IsSessionActive() behavior
     public async Task<bool> IsSessionActiveAsync()
     {
         // Quick validation to avoid unnecessary processing
@@ -823,19 +827,73 @@ public class ServerCustomProcess
             return false;
         }
 
-        try
+        DateTime currentTime = DateTime.UtcNow;
+        
+        // If we have a recent positive session status, trust it for a short period
+        if (sessionActive && (currentTime - lastSessionCheckTimeAsync) < sessionCheckIntervalAsync)
         {
-            var result = await RunCustomCommandAsync("echo ping", 2000);
-            bool isActive = result.success && result.output.Trim() == "ping";
-            sessionActive = isActive;
-            lastSessionCheckTime = UnityEditor.EditorApplication.timeSinceStartup;
-            return isActive;
+            if (debugMode) Log("Using cached session active status", 0);
+            return true;
         }
-        catch (Exception)
+        
+        // If the cached value is old or we're not sure about the session, do an async check
+        if ((currentTime - lastSessionCheckTimeAsync) >= sessionCheckIntervalAsync || !sessionActive)
         {
-            sessionActive = false;
-            return false;
+            // Update the timestamp to prevent multiple simultaneous checks
+            lastSessionCheckTimeAsync = currentTime;
+            
+            // Do an async session check
+            try
+            {
+                Process pingProcess = new Process();
+                pingProcess.StartInfo.FileName = "ssh";
+                pingProcess.StartInfo.Arguments = $"-i \"{sshPrivateKeyPath}\" -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=no {sshUserName}@{customServerUrl} echo ping";
+                pingProcess.StartInfo.UseShellExecute = false;
+                pingProcess.StartInfo.RedirectStandardOutput = true;
+                pingProcess.StartInfo.RedirectStandardError = true;
+                pingProcess.StartInfo.CreateNoWindow = true;
+                
+                pingProcess.Start();
+                
+                // Read output asynchronously
+                Task<string> outputTask = pingProcess.StandardOutput.ReadToEndAsync();
+                
+                // Wait for process with timeout asynchronously
+                bool exited = await Task.Run(() => pingProcess.WaitForExit(2000)); // 2 second timeout
+                
+                if (!exited)
+                {
+                    try { pingProcess.Kill(); } catch { }
+                    sessionActive = false;
+                    isConnected = false;
+                    if (debugMode) Log("SSH session check timed out", 0);
+                    return false;
+                }
+                
+                string output = (await outputTask).Trim();
+                
+                if (pingProcess.ExitCode == 0 && output == "ping")
+                {
+                    sessionActive = true;
+                    isConnected = true;
+                    if (debugMode) Log("SSH session verified as active", 0);
+                }
+                else
+                {
+                    sessionActive = false;
+                    isConnected = false;
+                    if (debugMode) Log($"SSH session check failed: ExitCode={pingProcess.ExitCode}, Output='{output}'", 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                sessionActive = false;
+                isConnected = false;
+                if (debugMode) Log($"SSH session check exception: {ex.Message}", 0);
+            }
         }
+        
+        return sessionActive;
     }
 
     // Background update session status occasionally to keep cache warm

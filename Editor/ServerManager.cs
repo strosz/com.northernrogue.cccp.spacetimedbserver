@@ -155,21 +155,23 @@ public class ServerManager
     public Action<string, int> LogCallback { get; set; }
     public Action RepaintCallback { get; set; }
 
-    // Near the top of the class, add a new private field for WSL status
+    // WSL Connection Status
+    public bool IsWslRunning => isWslRunning;
     private bool isWslRunning = false;
     private double lastWslCheckTime = 0;
     private const double wslCheckInterval = 5.0;
 
-    // Add property for external access
-    public bool IsWslRunning => isWslRunning;
-
-    // Add these properties near the other connection status properties
+    // Maincloud Connection Status
+    public bool IsMaincloudConnected => isMaincloudConnected;
     private bool isMaincloudConnected = false;
     private double lastMaincloudCheckTime = 0;
-    private const double maincloudCheckInterval = 10.0; // Check less frequently to reduce resource usage
+    private const double maincloudCheckInterval = 10.0;
 
-    // Add this property for external access
-    public bool IsMaincloudConnected => isMaincloudConnected;
+    // SSH Connection Status
+    public bool IsSSHConnectionActive => cachedSSHConnectionStatus;
+    private bool cachedSSHConnectionStatus = false;
+    private double lastSSHConnectionCheck = 0;
+    private const double sshCheckInterval = 1.0;
 
     public enum ServerMode
     {
@@ -902,7 +904,9 @@ public class ServerManager
                         await serverCustomProcess.CheckServerRunning(true);
                         isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                         if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
-                    }                }                else // WSL and other modes
+                    }                
+                }                
+                else // WSL and other modes
                 {
                     // Use instantCheck=true to bypass cache during startup for immediate status verification
                     bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
@@ -1047,7 +1051,9 @@ public class ServerManager
                     {
                         if (DebugMode) LogMessage("Ignoring possible false negative server status check (server recently started)", 0);
                         return; // Skip this check, maintain current state
-                    }                }                else // WSL and other modes
+                    }                
+                }                
+                else // WSL and other modes
                 {
                     // Use a combination of service check and HTTP ping for better reliability
                     bool serviceRunning = await cmdProcessor.CheckServerRunning();
@@ -1122,7 +1128,7 @@ public class ServerManager
                             }
                             
                             string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks and final ping verification ({(serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
-                            LogMessage(msg, -2);
+                            if (DebugMode) LogMessage(msg, -2);
                             
                             // Update state
                             serverConfirmedRunning = false;
@@ -1168,7 +1174,7 @@ public class ServerManager
                     // Use both process check and ping for external recovery detection
                     bool processRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
                     bool pingResponding = false;
-                      if (processRunning)
+                    if (processRunning)
                     {
                         // If process is running, verify with ping for complete confirmation
                         pingResponding = await PingServerStatusAsync();
@@ -1192,7 +1198,8 @@ public class ServerManager
                     if (justStopped)
                     {
                         if (DebugMode) LogMessage($"Server detected running, but in post-stop grace period. Ignoring.", 0);
-                    }                    else
+                    }                    
+                    else
                     {
                         // For WSL server, we already verified ping in the check above, so isActuallyRunning is already the final result
                         bool confirmed = serverMode == ServerMode.CustomServer ? isActuallyRunning : isActuallyRunning;
@@ -1577,7 +1584,8 @@ public class ServerManager
     {
         PingServer(false);
         return pingShowsOnline;
-    }    // Synchronous ping method for reliable status checking
+    }
+    
     public async Task<bool> PingServerStatusAsync()
     {
         string url;
@@ -1850,7 +1858,58 @@ public class ServerManager
         }
     }
 
-    // Add this method in the #region Utility Methods section
+    public void SSHConnectionStatusAsync()
+    {
+        if (serverCustomProcess == null || serverMode != ServerMode.CustomServer)
+        {
+            cachedSSHConnectionStatus = false;
+            return;
+        }
+
+        double currentTime = EditorApplication.timeSinceStartup;
+        
+        // Only check if enough time has passed
+        if (currentTime - lastSSHConnectionCheck >= sshCheckInterval)
+        {
+            lastSSHConnectionCheck = currentTime;
+            
+            // Start async check without blocking UI
+            Task.Run(async () =>
+            {
+                try
+                {
+                    bool status = await serverCustomProcess.IsSessionActiveAsync();
+                    // Update cached status on main thread
+                    EditorApplication.delayCall += () =>
+                    {
+                        cachedSSHConnectionStatus = status;
+                        RepaintCallback?.Invoke();
+                    };
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            LogMessage($"Connection check failed: {ex.Message}", -1);
+                            cachedSSHConnectionStatus = false;
+                            RepaintCallback?.Invoke();
+                        };
+                    }
+                    else
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            cachedSSHConnectionStatus = false;
+                            RepaintCallback?.Invoke();
+                        };
+                    }
+                }
+            });
+        }
+    }
+    
     public async Task CheckMaincloudConnectivity()
     {
         // Only check periodically to avoid excessive resource usage
