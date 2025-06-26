@@ -16,16 +16,16 @@ public class ServerLogProcess
     public static bool debugMode = false;
     
     // Log contents
-    private string silentServerCombinedLog = "";
-    private string cachedModuleLogContent = ""; // Add cached version of module logs
+    private string moduleLogContent = "";
+    private string cachedModuleLogContent = "";
     private string databaseLogContent = "";
-    private string cachedDatabaseLogContent = ""; // Add cached version of database logs
+    private string cachedDatabaseLogContent = "";
     
     // Session state keys
-    private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
-    private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog"; // Add session key for cached module logs
+    private const string SessionKeyModuleLog = "ServerWindow_ModuleLog";
+    private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
-    private const string SessionKeyCachedDatabaseLog = "ServerWindow_CachedDatabaseLog"; // Add session key for cached logs
+    private const string SessionKeyCachedDatabaseLog = "ServerWindow_CachedDatabaseLog";
     private const string SessionKeyDatabaseLogRunning = "ServerWindow_DatabaseLogRunning";
     private const string SessionKeyDatabaseLogStartFresh = "ServerWindow_DatabaseLogStartFresh";
     private const string SessionKeyDatabaseLogFreshStartTime = "ServerWindow_DatabaseLogFreshStartTime";
@@ -49,10 +49,6 @@ public class ServerLogProcess
     private bool serverRunning = false;
     private string moduleName = "";
     private string serverDirectory = "";
-    
-    // Track when server was stopped to filter connection errors
-    private DateTime serverStoppedTime = DateTime.MinValue;
-    private const double serverStopGracePeriod = 10.0; // Ignore connection errors for 10 seconds after server stops
     
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
@@ -195,9 +191,9 @@ public class ServerLogProcess
             clearProcess.WaitForExit(5000); // Wait up to 5 seconds
             
             // Also clear the in-memory log and cached version
-            silentServerCombinedLog = "";
+            moduleLogContent = "";
             cachedModuleLogContent = "";
-            SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+            SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
             SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
             
             // Reset timestamp to start fresh
@@ -275,7 +271,7 @@ public class ServerLogProcess
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
                         string formattedLine = FormatServerLogLine(line.Trim());
-                        silentServerCombinedLog += formattedLine + "\n";
+                        moduleLogContent += formattedLine + "\n";
                         cachedModuleLogContent += formattedLine + "\n";
                         hasNewLogs = true;
                         lineCount++;
@@ -314,15 +310,15 @@ public class ServerLogProcess
                     // Manage log size
                     const int maxLogLength = 75000;
                     const int trimToLength = 50000;
-                    if (silentServerCombinedLog.Length > maxLogLength)
+                    if (moduleLogContent.Length > maxLogLength)
                     {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {silentServerCombinedLog.Length} chars.");
-                        silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {moduleLogContent.Length} chars.");
+                        moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - trimToLength);
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                     }
                     
                     // Update SessionState immediately for SSH logs to ensure they appear
-                    SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+                    SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
                     SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
                     
                     // Notify of log update
@@ -743,9 +739,9 @@ public class ServerLogProcess
             if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
         }
         
-        silentServerCombinedLog = "";
+        moduleLogContent = "";
         cachedModuleLogContent = "";
-        SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+        SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
         SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);        // Reset timestamp to start fresh and reset protection flag
         lastWSLModuleLogTimestamp = DateTime.UtcNow;
         isReadingWSLModuleLogs = false;
@@ -922,9 +918,9 @@ public class ServerLogProcess
                         if (formattedLine != null)
                         {
                             // Check if this log was already processed by checking if it's in the current content
-                            if (!silentServerCombinedLog.Contains(formattedLine))
+                            if (!moduleLogContent.Contains(formattedLine))
                             {
-                                silentServerCombinedLog += formattedLine + "\n";
+                                moduleLogContent += formattedLine + "\n";
                                 cachedModuleLogContent += formattedLine + "\n";
                                 hasNewLogs = true;
                                 lineCount++;
@@ -972,15 +968,15 @@ public class ServerLogProcess
                     // Manage log size
                     const int maxLogLength = 75000;
                     const int trimToLength = 50000;
-                    if (silentServerCombinedLog.Length > maxLogLength)
+                    if (moduleLogContent.Length > maxLogLength)
                     {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {silentServerCombinedLog.Length} chars.");
-                        silentServerCombinedLog = "[... Log Truncated ...]\n" + silentServerCombinedLog.Substring(silentServerCombinedLog.Length - trimToLength);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {moduleLogContent.Length} chars.");
+                        moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - trimToLength);
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                     }
                     
                     // Update SessionState immediately for WSL logs
-                    SessionState.SetString(SessionKeyCombinedLog, silentServerCombinedLog);
+                    SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
                     SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
                     
                     // Notify of log update
@@ -1501,7 +1497,7 @@ public class ServerLogProcess
         this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from EditorPrefs: {this.userName}");
           // Load log content from session state
-        silentServerCombinedLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        moduleLogContent = SessionState.GetString(SessionKeyModuleLog, "");
         cachedModuleLogContent = SessionState.GetString(SessionKeyCachedModuleLog, ""); // Load cached module logs
         databaseLogContent = SessionState.GetString(SessionKeyDatabaseLog, "");
         cachedDatabaseLogContent = SessionState.GetString(SessionKeyCachedDatabaseLog, ""); // Load cached logs        // Load fresh mode state from session state
@@ -1578,9 +1574,9 @@ public class ServerLogProcess
         if (clearModuleLogAtStart)
         {
             if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearModuleLogAtStart is true, clearing old module logs from SessionState");
-            silentServerCombinedLog = "";
+            moduleLogContent = "";
             cachedModuleLogContent = "";
-            SessionState.SetString(SessionKeyCombinedLog, "");
+            SessionState.SetString(SessionKeyModuleLog, "");
             SessionState.SetString(SessionKeyCachedModuleLog, "");
         }
         
@@ -1607,10 +1603,6 @@ public class ServerLogProcess
     public void SetServerRunningState(bool isRunning)
     {
         serverRunning = isRunning;
-        if (!isRunning)
-        {
-            serverStoppedTime = DateTime.Now;
-        }
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
     }
 
@@ -1643,15 +1635,15 @@ public class ServerLogProcess
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Force refreshing logs from SessionState");
         
-        string sessionModuleLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        string sessionModuleLog = SessionState.GetString(SessionKeyModuleLog, "");
         string sessionDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
         string sessionCachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         string sessionCachedDatabaseLog = SessionState.GetString(SessionKeyCachedDatabaseLog, "");
         
-        if (!string.IsNullOrEmpty(sessionModuleLog) && sessionModuleLog.Length > silentServerCombinedLog.Length)
+        if (!string.IsNullOrEmpty(sessionModuleLog) && sessionModuleLog.Length > moduleLogContent.Length)
         {
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Updating module log from session state: {sessionModuleLog.Length} chars");
-            silentServerCombinedLog = sessionModuleLog;
+            moduleLogContent = sessionModuleLog;
         }
         
         if (!string.IsNullOrEmpty(sessionDatabaseLog) && sessionDatabaseLog.Length > databaseLogContent.Length)
@@ -1999,7 +1991,8 @@ public class ServerLogProcess
     {
         if (string.IsNullOrEmpty(logLine))
             return logLine;
-              // Check if the line is already formatted with our timestamp prefix
+
+        // Check if the line is already formatted with our timestamp prefix
         if (System.Text.RegularExpressions.Regex.IsMatch(logLine, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]"))
         {
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Log line already formatted, skipping: {logLine.Substring(0, Math.Min(100, logLine.Length))}");
@@ -2032,24 +2025,14 @@ public class ServerLogProcess
             logLine.Contains("spacetimedb-logs.service: Failed with result") ||
             logLine.Contains("Stopped spacetimedb-logs.service") ||
             logLine.Contains("Started spacetimedb-logs.service") ||
-            logLine.Contains("-- Boot ") ||  // Filter out journalctl boot messages
+            logLine.Contains("-- Boot ") ||
             logLine.Contains("Caused by:") ||
-            logLine.StartsWith("-- Boot "))   // Filter out journalctl boot messages at start of line
+            logLine.Contains("error sending request for url") ||
+            logLine.Contains("tcp connect error") ||
+            logLine.Contains("client error (Connect)") ||
+            logLine.Contains("Connection refused"))
         {
             return null; // Filter out systemd service messages and reconnection spam
-        }
-        
-        // Also filter connection errors that occur within grace period after server stops
-        if (serverStoppedTime != DateTime.MinValue && 
-            (DateTime.Now - serverStoppedTime).TotalSeconds <= serverStopGracePeriod)
-        {
-            if (logLine.Contains("error sending request for url") ||
-                logLine.Contains("Connection refused") ||
-                logLine.Contains("tcp connect error") ||
-                logLine.Contains("client error (Connect)"))
-            {
-                return null; // Filter out connection errors during grace period after server stop
-            }
         }
         
         // Check if this is a journalctl format line (SSH logs)

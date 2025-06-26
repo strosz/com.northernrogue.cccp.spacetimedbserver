@@ -38,7 +38,7 @@ public class ServerOutputWindow : EditorWindow
     public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
     private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
     private bool showLocalTime = false; // Toggle for showing timestamps in local time zone    // Session state keys
-    private const string SessionKeyCombinedLog = "ServerWindow_SilentCombinedLog";
+    private const string SessionKeyModuleLog = "ServerWindow_ModuleLog";
     private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
     
@@ -96,13 +96,13 @@ public class ServerOutputWindow : EditorWindow
     // Track compilation state to force refresh after compilation
     private static bool wasCompiling = false;
 
-    [MenuItem("SpacetimeDB/Server Logs (Silent)")]
+    [MenuItem("SpacetimeDB/Server Logs")]
     public static void ShowWindow()
     {
         // Trigger SessionState refresh before opening window
         TriggerSessionStateRefreshIfWindowExists();
         
-        ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs (Silent)");
+        ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs");
         window.minSize = new Vector2(400, 300);        
         window.Focus(); 
         window.ReloadLogs();
@@ -113,7 +113,7 @@ public class ServerOutputWindow : EditorWindow
         // Trigger SessionState refresh before opening window
         TriggerSessionStateRefreshIfWindowExists();
         
-        ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs (Silent)");
+        ServerOutputWindow window = GetWindow<ServerOutputWindow>("Server Logs");
         window.minSize = new Vector2(400, 300);
         window.selectedTab = Mathf.Clamp(tab, 0, 3); // Ensure tab index is valid
         window.Focus();
@@ -333,7 +333,7 @@ public class ServerOutputWindow : EditorWindow
         //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");        // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
         if (echoToConsoleModule)
         {
-            string logToEcho = SessionState.GetString(SessionKeyCombinedLog, "");
+            string logToEcho = SessionState.GetString(SessionKeyModuleLog, "");
             EchoLogsToConsole(logToEcho, true);
         }
         
@@ -431,7 +431,7 @@ public class ServerOutputWindow : EditorWindow
                 }
                 
                 // Check if we have log content after refresh attempt
-                string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+                string currentLog = SessionState.GetString(SessionKeyModuleLog, "");
                 string cachedLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
                 
                 // Always reload and repaint after each attempt
@@ -554,7 +554,7 @@ public class ServerOutputWindow : EditorWindow
             if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ReloadLogs skipped due to compilation.");
             return;
         }        
-        string newOutputLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        string newOutputLog = SessionState.GetString(SessionKeyModuleLog, "");
         string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         
         // Use the longer log content (current vs cached) to ensure we get the most complete data
@@ -654,7 +654,7 @@ public class ServerOutputWindow : EditorWindow
             
             outputLogFull = "";
             databaseLogFull = "";
-            SessionState.SetString(SessionKeyCombinedLog, "");
+            SessionState.SetString(SessionKeyModuleLog, "");
             SessionState.SetString(SessionKeyDatabaseLog, "");
             ServerOutputWindow.loggedToConsoleModule.Clear();
             formattedLogCache.Clear();
@@ -1162,7 +1162,7 @@ public class ServerOutputWindow : EditorWindow
             return;
 
         lastUpdateTime = Time.realtimeSinceStartup;        // Check main logs (consider both current and cached module logs)
-        string currentLog = SessionState.GetString(SessionKeyCombinedLog, "");
+        string currentLog = SessionState.GetString(SessionKeyModuleLog, "");
         string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         
         // Use the longer log content to ensure we detect changes properly
