@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System;
 using System.Text;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -99,6 +101,10 @@ public class ServerLogProcess
     private const double logReadInterval = 1.0;
     private bool hasScheduledNextCheck = false;
 
+    // Deduplication tracking for SSH logs
+    private HashSet<string> recentModuleLogHashes = new HashSet<string>();
+    private const int MAX_RECENT_LOG_HASHES = 1000;
+
     // Service names for journalctl
     private const string SpacetimeServiceName = "spacetimedb.service";
     private const string SpacetimeDatabaseLogServiceName = "spacetimedb-logs.service";
@@ -150,7 +156,11 @@ public class ServerLogProcess
         {
             ClearSSHDatabaseLog();
         }
-          // Initialize timestamps to 1 hour ago to avoid getting massive historical logs
+        
+        // Clear deduplication cache for fresh start
+        recentModuleLogHashes.Clear();
+        
+        // Initialize timestamps to 1 hour ago to avoid getting massive historical logs
         lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
         lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
         
@@ -265,17 +275,46 @@ public class ServerLogProcess
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
                 int lineCount = 0;
+                int duplicateCount = 0;
                 DateTime latestTimestamp = lastModuleLogTimestamp;
-                  foreach (string line in lines)
+                
+                foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
+                        // Create a hash for deduplication (using raw line to avoid format changes affecting dedup)
+                        string lineHash = GenerateLogLineHash(line.Trim());
+                        
+                        // Check for duplicates
+                        if (recentModuleLogHashes.Contains(lineHash))
+                        {
+                            duplicateCount++;
+                            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate SSH module log line: {line.Trim().Substring(0, Math.Min(80, line.Trim().Length))}");
+                            continue;
+                        }
+                        
+                        // Add to recent logs for deduplication
+                        recentModuleLogHashes.Add(lineHash);
+                        
+                        // Trim the hash set if it gets too large
+                        if (recentModuleLogHashes.Count > MAX_RECENT_LOG_HASHES)
+                        {
+                            // Remove oldest entries (this is a simple approach, could be improved with LRU)
+                            var hashesToKeep = recentModuleLogHashes.Skip(recentModuleLogHashes.Count / 2).ToArray();
+                            recentModuleLogHashes.Clear();
+                            foreach (var hash in hashesToKeep)
+                            {
+                                recentModuleLogHashes.Add(hash);
+                            }
+                        }
+                        
                         string formattedLine = FormatServerLogLine(line.Trim());
                         moduleLogContent += formattedLine + "\n";
                         cachedModuleLogContent += formattedLine + "\n";
                         hasNewLogs = true;
                         lineCount++;
-                          // Extract and track the actual timestamp from this log line
+                        
+                        // Extract and track the actual timestamp from this log line
                         DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
                         if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
                         {
@@ -284,24 +323,29 @@ public class ServerLogProcess
                     }
                 }
                 
+                if (debugMode && duplicateCount > 0)
+                {
+                    UnityEngine.Debug.Log($"[ServerLogProcess] Filtered out {duplicateCount} duplicate SSH module log lines");
+                }
+                
                 if (hasNewLogs)
                 {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH module log lines");
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH module log lines (filtered {duplicateCount} duplicates)");
                     
                     // Always advance the timestamp to prevent infinite loops
                     DateTime timestampToUse;
                     
                     if (latestTimestamp > lastModuleLogTimestamp)
                     {
-                        // Use the actual latest log timestamp if we successfully parsed one
+                        // Use the actual latest log timestamp plus a small buffer
                         timestampToUse = latestTimestamp.AddSeconds(1);
                         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
                     }
                     else
                     {
-                        // Fallback: advance by at least 1 second from the last query time to prevent infinite loops
-                        timestampToUse = lastModuleLogTimestamp.AddSeconds(1);
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                        // Fallback: advance by at least 2 seconds to ensure we skip past any problematic entries
+                        timestampToUse = lastModuleLogTimestamp.AddSeconds(2);
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 2 seconds: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
                     }
                     
                     // Update the timestamp
@@ -315,6 +359,9 @@ public class ServerLogProcess
                         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {moduleLogContent.Length} chars.");
                         moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - trimToLength);
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
+                        
+                        // Clear hash set when truncating to avoid false positives on old logs
+                        recentModuleLogHashes.Clear();
                     }
                     
                     // Update SessionState immediately for SSH logs to ensure they appear
@@ -326,9 +373,11 @@ public class ServerLogProcess
                 }
                 else 
                 {
-                    // Even if no new logs, advance timestamp slightly to prevent infinite queries
-                    lastModuleLogTimestamp = lastModuleLogTimestamp.AddSeconds(0.5);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH module log lines found, advancing timestamp slightly to: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                    // Even if no new logs, advance timestamp to prevent infinite queries
+                    // Use a larger increment if we had duplicates to help break repetition cycles
+                    double advanceSeconds = duplicateCount > 0 ? 3.0 : 1.0;
+                    lastModuleLogTimestamp = lastModuleLogTimestamp.AddSeconds(advanceSeconds);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH module log lines found, advancing timestamp by {advanceSeconds}s to: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
             else if (debugMode)
@@ -536,6 +585,9 @@ public class ServerLogProcess
         lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
         lastLogReadTime = 0;
         hasScheduledNextCheck = false; // Reset scheduling flag to stop the chain
+        
+        // Clear deduplication cache
+        recentModuleLogHashes.Clear();
         
         SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
         
@@ -2395,6 +2447,38 @@ public class ServerLogProcess
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error checking service status: {ex.Message}");
             return false;
+        }
+    }
+    
+    // Generate a simple hash for log line deduplication
+    private string GenerateLogLineHash(string logLine)
+    {
+        try
+        {
+            // Use a simple approach: combine timestamp and message content
+            // This helps detect truly duplicate log entries while allowing legitimate repeated messages
+            
+            // Extract timestamp part (if exists) and message content
+            var timestampMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\s+(.*)$");
+            
+            if (timestampMatch.Success)
+            {
+                string timestamp = timestampMatch.Groups[1].Value;
+                string content = timestampMatch.Groups[2].Value;
+                
+                // Create hash from timestamp + content for exact duplicate detection
+                return $"{timestamp}|{content.GetHashCode()}";
+            }
+            else
+            {
+                // Fallback: use the entire line
+                return logLine.GetHashCode().ToString();
+            }
+        }
+        catch (Exception)
+        {
+            // Safe fallback
+            return logLine.GetHashCode().ToString();
         }
     }
 } // Class
