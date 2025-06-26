@@ -1209,26 +1209,28 @@ public class ServerWindow : EditorWindow
             Color debugColor;
             ColorUtility.TryParseHtmlString("#30C099", out debugColor); // Cyan
         
-            // Server Mode toggle
-            EditorGUILayout.Space(5);
-            EditorGUILayout.BeginHorizontal();
-            string serverModeTooltip = 
-            "Show CMD: Displays the standard CMD process window of the server. \n\n"+
-            "Silent Mode: The server runs silently in the background without any window.";
-            EditorGUILayout.LabelField(new GUIContent("CMD Visiblity:", serverModeTooltip), GUILayout.Width(120));
-            GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
-            if (serverManager.SilentMode)
-            {
-                silentToggleStyle.normal.textColor = hiddenColor;
-                silentToggleStyle.hover.textColor = hiddenColor;
+            if (serverMode == ServerMode.WslServer) {
+                // Server Mode toggle
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginHorizontal();
+                string serverModeTooltip = 
+                "Show CMD: Displays the standard CMD process window of the server. \n\n"+
+                "Silent Mode: The server runs silently in the background without any window.";
+                EditorGUILayout.LabelField(new GUIContent("CMD Visiblity:", serverModeTooltip), GUILayout.Width(120));
+                GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
+                if (serverManager.SilentMode)
+                {
+                    silentToggleStyle.normal.textColor = hiddenColor;
+                    silentToggleStyle.hover.textColor = hiddenColor;
+                }
+                if (GUILayout.Button(serverManager.SilentMode ? "Silent Mode" : "Show CMD", silentToggleStyle))
+                {
+                    bool newSilentMode = !serverManager.SilentMode;
+                    serverManager.SetSilentMode(newSilentMode);
+                    silentMode = newSilentMode; // Keep local field in sync
+                }
+                EditorGUILayout.EndHorizontal();
             }
-            if (GUILayout.Button(serverManager.SilentMode ? "Silent Mode" : "Show CMD", silentToggleStyle))
-            {
-                bool newSilentMode = !serverManager.SilentMode;
-                serverManager.SetSilentMode(newSilentMode);
-                silentMode = newSilentMode; // Keep local field in sync
-            }
-            EditorGUILayout.EndHorizontal();
             
             // Server Change Detection toggle
             EditorGUILayout.Space(5);
@@ -1366,7 +1368,7 @@ public class ServerWindow : EditorWindow
             }
 
             // Clear Module and Database Log at Start toggle buttons
-            if (serverManager.SilentMode && serverMode != ServerMode.MaincloudServer)
+            if ((serverManager.SilentMode && serverMode == ServerMode.WslServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);
@@ -1504,7 +1506,7 @@ public class ServerWindow : EditorWindow
         bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
         bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
         bool customServerActive = serverManager.IsServerStarted && serverMode == ServerMode.CustomServer;
-        bool customServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.CustomServer;
+        bool customServerActiveSilent = serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
 
         // Begin horizontal layout for the three buttons

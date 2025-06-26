@@ -1522,7 +1522,7 @@ public class ServerManager
 
     public void ViewServerLogs()
     {
-        if (SilentMode)
+        if (SilentMode || serverMode == ServerMode.CustomServer)
         {
             if (DebugMode) LogMessage("Opening/focusing silent server output window...", 0);
             if (serverMode == ServerMode.MaincloudServer)
