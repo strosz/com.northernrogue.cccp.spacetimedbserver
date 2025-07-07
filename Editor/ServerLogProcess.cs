@@ -114,6 +114,7 @@ public class ServerLogProcess
 
     // Deduplication tracking for SSH logs
     private HashSet<string> recentModuleLogHashes = new HashSet<string>();
+    private HashSet<string> recentDatabaseLogHashes = new HashSet<string>();
     private const int MAX_RECENT_LOG_HASHES = 1000;
 
     // Service names for journalctl
@@ -175,6 +176,7 @@ public class ServerLogProcess
         
         // Clear deduplication cache for fresh start
         recentModuleLogHashes.Clear();
+        recentDatabaseLogHashes.Clear();
         
         // Initialize timestamps to 1 hour ago to avoid getting massive historical logs
         lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
@@ -242,6 +244,9 @@ public class ServerLogProcess
         cachedDatabaseLogContent = "";
         SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
         SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        
+        // Clear deduplication cache
+        recentDatabaseLogHashes.Clear();
         
         // Reset timestamp to start fresh
         lastDatabaseLogTimestamp = DateTime.UtcNow;
@@ -378,6 +383,7 @@ public class ServerLogProcess
                         
                         // Clear hash set when truncating to avoid false positives on old logs
                         recentModuleLogHashes.Clear();
+                        recentDatabaseLogHashes.Clear();
                     }
                     
                     // Update SessionState immediately for SSH logs to ensure they appear
@@ -463,15 +469,42 @@ public class ServerLogProcess
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
                 int lineCount = 0;
+                int duplicateCount = 0;
                 DateTime latestTimestamp = lastDatabaseLogTimestamp;                  
                 
                 foreach (string line in lines)
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
+                        // Create a hash for deduplication (using raw line to avoid format changes affecting dedup)
+                        string lineHash = GenerateLogLineHash(line.Trim());
+                        
+                        // Check for duplicates
+                        if (recentDatabaseLogHashes.Contains(lineHash))
+                        {
+                            duplicateCount++;
+                            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate SSH database log line: {line.Trim().Substring(0, Math.Min(80, line.Trim().Length))}");
+                            continue;
+                        }
+                        
                         string formattedLine = FormatDatabaseLogLine(line.Trim());
                         if (formattedLine != null) // Only process if line wasn't filtered out
                         {
+                            // Add to recent logs for deduplication after successful formatting
+                            recentDatabaseLogHashes.Add(lineHash);
+                            
+                            // Trim the hash set if it gets too large
+                            if (recentDatabaseLogHashes.Count > MAX_RECENT_LOG_HASHES)
+                            {
+                                // Remove oldest entries (this is a simple approach, could be improved with LRU)
+                                var hashesToKeep = recentDatabaseLogHashes.Skip(recentDatabaseLogHashes.Count / 2).ToArray();
+                                recentDatabaseLogHashes.Clear();
+                                foreach (var hash in hashesToKeep)
+                                {
+                                    recentDatabaseLogHashes.Add(hash);
+                                }
+                            }
+                            
                             databaseLogQueue.Enqueue(formattedLine);
                             hasNewLogs = true;
                             lineCount++;
@@ -484,9 +517,14 @@ public class ServerLogProcess
                         }
                     }
                 }
+                
+                if (debugMode && duplicateCount > 0)
+                {
+                    UnityEngine.Debug.Log($"[ServerLogProcess] Filtered out {duplicateCount} duplicate SSH database log lines");
+                }
                   if (hasNewLogs)
                 {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH database log lines");
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new SSH database log lines (filtered {duplicateCount} duplicates)");
                     
                     // Always advance the timestamp to prevent infinite loops
                     DateTime timestampToUse;
@@ -513,8 +551,10 @@ public class ServerLogProcess
                 else 
                 {
                     // Even if no new logs, advance timestamp slightly to prevent infinite queries
-                    lastDatabaseLogTimestamp = lastDatabaseLogTimestamp.AddSeconds(0.5);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH database log lines found, advancing timestamp slightly to: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                    // Use a larger increment if we had duplicates to help break repetition cycles
+                    double advanceSeconds = duplicateCount > 0 ? 3.0 : 0.5;
+                    lastDatabaseLogTimestamp = lastDatabaseLogTimestamp.AddSeconds(advanceSeconds);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH database log lines found, advancing timestamp by {advanceSeconds}s to: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
             else if (debugMode)
@@ -582,6 +622,7 @@ public class ServerLogProcess
         
         // Clear deduplication cache
         recentModuleLogHashes.Clear();
+        recentDatabaseLogHashes.Clear();
         
         SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
         
