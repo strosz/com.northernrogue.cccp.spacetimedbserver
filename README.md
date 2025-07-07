@@ -8,7 +8,7 @@
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
-SpacetimeDB is a database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is an unofficial Unity integration that streamlines the SpacetimeDB experience within Unity for Windows, allowing anyone to get started within minutes.
+SpacetimeDB is a database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is a Unity integration for SpacetimeDB, allowing anyone to get started creating an online world in a free and highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
 
 Install directly in your Unity Package Manager with this git URL
 
@@ -96,8 +96,9 @@ Install directly in your Unity Package Manager with this git URL
 ## Supported Platforms
 
 *   **Windows®:** Requires WSL (Windows Subsystem for Linux) with Debian.
-    *   Includes setup instructions and an automatic pre-requisite check within Unity®.
-    *   Includes an optional automatic installer for all pre-requisites required to install SpacetimeDB® (alpha version).
+   *   Includes setup instructions and an automatic pre-requisite check within Unity®.
+   *   Includes an optional automatic installer for all pre-requisites required to install SpacetimeDB® (alpha version).
+   *   Custom Remote Mode installs Debian on the remote server and expects a Debian command environment. May work with other manually installed distros that are based on Debian.
 
 ## Getting Started
    - Install the asset using this .git URL in the Package Manager´s + menu.<br>
@@ -108,14 +109,11 @@ Install directly in your Unity Package Manager with this git URL
    **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
 
 ## Upcoming Features
-   - Save and load server profiles.
-   - Backup and restore custom server.
-   - Binaryen Web Assembly Optimizer installer.
    - New command interface with all commands.
+   - Better user experience and tips for how to solve common STDB questions.
 
 ## Community Made
-   - Created by a solo MMO developer.
-   - If you like this asset, please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>.
+   - If you like this asset, please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>. It is much appreciated and allows this asset to improve further.
 
 ## License
 > You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell **products and services** that incorporate or are built with this Unity editor asset.  

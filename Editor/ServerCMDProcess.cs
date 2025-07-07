@@ -348,8 +348,8 @@ public class ServerCMDProcess
     #endregion
 
     #region CheckServerProcess
-      public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
-    {            
+    public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
+    {
         // Validate username before proceeding (must be done on main thread)
         if (!ValidateUserName()) 
         {

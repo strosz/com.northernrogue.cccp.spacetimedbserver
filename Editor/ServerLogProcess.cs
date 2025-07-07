@@ -79,15 +79,27 @@ public class ServerLogProcess
     private class SpacetimeDbJsonLogFields    {
         public string message;
     }
-    
-    #region SSH Logging
-    
-    // MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
-    // DATABASE LOGS: Read from journalctl for spacetimedb-logs.service (created by external script)
-    //                The service runs "spacetime logs {module} -f" and logs to journalctl
-    
-    // Path for remote server logs (kept for fallback/reference)
-    public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
+
+    // WSL Logging Variables
+
+    // WSL MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
+    // WSL DATABASE LOGS: Read from journalctl for spacetimedb-logs.service
+    private DateTime lastWSLModuleLogTimestamp = DateTime.MinValue;
+    private DateTime lastWSLDatabaseLogTimestamp = DateTime.MinValue;
+    private double lastWSLLogReadTime = 0;
+    private const double wslLogReadInterval = 1.0;
+    // Add process protection flags to prevent multiple concurrent processes
+    private bool isReadingWSLModuleLogs = false;
+    private bool isReadingWSLDatabaseLogs = false;
+    private bool databaseLogStartFresh = false; // Track when we want to start fresh (no historical logs)
+    private DateTime databaseLogFreshStartTime = DateTime.MinValue; // Track when fresh mode was initiated
+    private bool moduleLogStartFresh = false; // Track when module logs should start fresh
+    private DateTime moduleLogFreshStartTime = DateTime.MinValue; // Track when module fresh mode was initiated
+
+    // SSH Logging Variables
+
+    // SSH MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
+    // SSH DATABASE LOGS: Read from journalctl for spacetimedb-logs.service
     
     // SSH details
     private string sshUser = "";
@@ -99,7 +111,6 @@ public class ServerLogProcess
     private DateTime lastDatabaseLogTimestamp = DateTime.MinValue;
     private double lastLogReadTime = 0;
     private const double logReadInterval = 1.0;
-    private bool hasScheduledNextCheck = false;
 
     // Deduplication tracking for SSH logs
     private HashSet<string> recentModuleLogHashes = new HashSet<string>();
@@ -108,6 +119,11 @@ public class ServerLogProcess
     // Service names for journalctl
     private const string SpacetimeServiceName = "spacetimedb.service";
     private const string SpacetimeDatabaseLogServiceName = "spacetimedb-logs.service";
+
+    // Path for remote server logs (kept for fallback/reference)
+    public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
+
+    #region SSH Logging
     
     // Configure SSH details for custom server log capture
     public void ConfigureSSH(string sshUser, string sshHost, string sshKeyPath, bool isCustomServer)
@@ -527,10 +543,15 @@ public class ServerLogProcess
     
     public void CheckSSHLogProcesses(double currentTime)
     {
+        // Add protection against rapid successive calls (e.g., when Unity regains focus)
+        if (currentTime - lastLogReadTime < 0.5) // Minimum 500ms between calls
+        {
+            return;
+        }
+        
         if (currentTime - lastLogReadTime > logReadInterval)
         {
             lastLogReadTime = currentTime;
-            hasScheduledNextCheck = false; // Reset the scheduling flag
             
             if (serverRunning && isCustomServer)
             {
@@ -547,34 +568,8 @@ public class ServerLogProcess
                     }
                 };
             }
-            
-            // Schedule the next check based on logReadInterval
-            ScheduleNextSSHLogCheck();
         }
     }
-    
-    private void ScheduleNextSSHLogCheck()
-    {
-        if (!hasScheduledNextCheck && serverRunning && isCustomServer)
-        {
-            hasScheduledNextCheck = true;
-            
-            // Schedule the next check after logReadInterval seconds
-            EditorApplication.delayCall += () =>
-            {
-                System.Threading.Tasks.Task.Delay((int)(logReadInterval * 1000)).ContinueWith(_ =>
-                {
-                    if (serverRunning && isCustomServer)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
-                        };
-                    }
-                });
-            };
-        }
-    }    
     
     public void StopSSHLogging()
     {
@@ -584,7 +579,6 @@ public class ServerLogProcess
         lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
         lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
         lastLogReadTime = 0;
-        hasScheduledNextCheck = false; // Reset scheduling flag to stop the chain
         
         // Clear deduplication cache
         recentModuleLogHashes.Clear();
@@ -643,21 +637,6 @@ public class ServerLogProcess
     #endregion
     
     #region WSL Journalctl Logging
-    
-    // WSL MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
-    // WSL DATABASE LOGS: Read from journalctl for spacetimedb-logs.service
-    private DateTime lastWSLModuleLogTimestamp = DateTime.MinValue;
-    private DateTime lastWSLDatabaseLogTimestamp = DateTime.MinValue;
-    private double lastWSLLogReadTime = 0;
-    private const double wslLogReadInterval = 5.0; // Increased from 1.0 to 5.0 seconds to reduce process spawning
-    private bool hasScheduledNextWSLCheck = false;
-    // Add process protection flags to prevent multiple concurrent processes
-    private bool isReadingWSLModuleLogs = false;
-    private bool isReadingWSLDatabaseLogs = false;
-    private bool databaseLogStartFresh = false; // Track when we want to start fresh (no historical logs)
-    private DateTime databaseLogFreshStartTime = DateTime.MinValue; // Track when fresh mode was initiated
-    private bool moduleLogStartFresh = false; // Track when module logs should start fresh
-    private DateTime moduleLogFreshStartTime = DateTime.MinValue; // Track when module fresh mode was initiated
     
     public void ConfigureWSL(bool isLocalServer)
     {
@@ -1392,10 +1371,15 @@ public class ServerLogProcess
     
     public void CheckWSLLogProcesses(double currentTime)
     {
+        // Add protection against rapid successive calls (e.g., when Unity regains focus)
+        if (currentTime - lastWSLLogReadTime < 0.5) // Minimum 500ms between calls
+        {
+            return;
+        }
+        
         if (currentTime - lastWSLLogReadTime > wslLogReadInterval)
         {
             lastWSLLogReadTime = currentTime;
-            hasScheduledNextWSLCheck = false; // Reset the scheduling flag
             
             if (serverRunning && !isCustomServer)
             {
@@ -1412,32 +1396,6 @@ public class ServerLogProcess
                     }
                 };
             }
-            
-            // Schedule the next check based on wslLogReadInterval
-            ScheduleNextWSLLogCheck();
-        }
-    }
-    
-    private void ScheduleNextWSLLogCheck()
-    {
-        if (!hasScheduledNextWSLCheck && serverRunning && !isCustomServer)
-        {
-            hasScheduledNextWSLCheck = true;
-            
-            // Schedule the next check after wslLogReadInterval seconds
-            EditorApplication.delayCall += () =>
-            {
-                System.Threading.Tasks.Task.Delay((int)(wslLogReadInterval * 1000)).ContinueWith(_ =>
-                {
-                    if (serverRunning && !isCustomServer)
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            CheckWSLLogProcesses(EditorApplication.timeSinceStartup);
-                        };
-                    }
-                });
-            };
         }
     }
     
@@ -1473,7 +1431,6 @@ public class ServerLogProcess
         lastWSLModuleLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
         lastWSLDatabaseLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
         lastWSLLogReadTime = 0;
-        hasScheduledNextWSLCheck = false; // Reset scheduling flag to stop the chain
         
         // Reset process protection flags
         isReadingWSLModuleLogs = false;
