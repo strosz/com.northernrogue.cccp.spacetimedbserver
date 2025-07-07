@@ -2,6 +2,7 @@ using UnityEditor;
 using System.Diagnostics;
 using System;
 using System.Threading.Tasks;
+using UnityEngine;
 
 // Runs the methods related to managing and controlling the WSL server and Maincloud ///
 
@@ -1271,44 +1272,33 @@ public class ServerManager
                     LogMessage(formattedOutput, 0);
                 }
                 
+                // Most results will be output here
                 if (!string.IsNullOrEmpty(result.error))
                 {
                     LogMessage(result.error, -2);
+                    publishing = false;
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
                     LogMessage("Command completed with no output.", 0);
+                    publishing = false;
                 }
 
                 // Handle special cases for publish and generate
                 bool isPublishCommand = command.Contains("spacetime publish");
                 bool isGenerateCommand = command.Contains("spacetime generate");
                 
+                // Marked as success if the command was run, but may yet contain errors
                 if (result.success)
                 {
-                    // Reset change detection state after successful publish
                     if (isPublishCommand)
                     {
-                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-                        {
-                            detectionProcess.ResetTrackingAfterPublish();
-                            ServerChangesDetected = false;
-                            if(DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-                        }
-
-                        // Auto-generate if publish was successful and mode is enabled
-                        if (PublishAndGenerateMode) 
-                        {
-                            LogMessage("Publish successful, automatically generating Unity files...", 0);
-                            string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
-                        }
+                        PublishResult(result.output, result.error);
                     }
                     else if (isGenerateCommand && description == "Generating Unity files (auto)")
                     {
-                        LogMessage("Publish and generate successful! Remember to recompile to activate any client changes.", 1);
-                        //UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+                        GenerateResult(result.output, result.error);
                     }
                 }
             }
@@ -1323,48 +1313,35 @@ public class ServerManager
                     // Check if this is login info output and apply color formatting
                     string formattedOutput = FormatLoginInfoOutput(result.output);
                     LogMessage(formattedOutput, 0);
+                    UnityEngine.Debug.Log("Command output: " + formattedOutput);
                 }
                 
                 if (!string.IsNullOrEmpty(result.error))
                 {
                     LogMessage(result.error, -2);
+                    publishing = false;
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
                     LogMessage("Command completed with no output.", 0);
+                    publishing = false;
                 }
                 
                 // Handle special cases for publish and generate
                 bool isPublishCommand = command.Contains("spacetime publish");
                 bool isGenerateCommand = command.Contains("spacetime generate");
                 
+                // Marked as success if the command was run, but may yet contain errors
                 if (result.success)
                 {
                     if (isPublishCommand)
                     {
-                        // Reset change detection state after successful publish
-                        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-                        {
-                            detectionProcess.ResetTrackingAfterPublish();
-                            ServerChangesDetected = false;
-                            if(DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-                        }
-
-                        // Auto-generate if publish was successful and mode is enabled
-                        if (PublishAndGenerateMode) 
-                        {
-                            LogMessage("Publish successful, automatically generating Unity files...", 0);
-                            string outDir = GetRelativeClientPath();
-                            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
-                        }
-                        publishing = false; // Reset publishing state
+                        PublishResult(result.output, result.error);
                     }
                     else if (isGenerateCommand && description == "Generating Unity files (auto)")
                     {
-                        LogMessage("Requesting script compilation...", 1);
-                        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
-                        LogMessage("Generate successful!", 1);
+                        GenerateResult(result.output, result.error);
                     }
                 }
             }
@@ -1372,6 +1349,7 @@ public class ServerManager
         catch (Exception ex)
         {
             LogMessage($"Error running command: {ex.Message}", -1);
+            publishing = false;
         }
     }
     #endregion
@@ -1430,6 +1408,105 @@ public class ServerManager
 
         // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
     }
+
+    private void PublishResult(string output, string error)
+    {
+        if (debugMode) UnityEngine.Debug.Log("Publish output: " + output);
+        if (debugMode) UnityEngine.Debug.Log("Publish error: " + error);
+        
+        // Reset change detection state after successful publish
+        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
+        {
+            detectionProcess.ResetTrackingAfterPublish();
+            ServerChangesDetected = false;
+            if(DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
+        }
+
+        // Extra information about SpacetimeDB tables and constraints
+        if (error.Contains("migration"))
+        {
+            // Extract the table names from the output
+            var tableNames = new System.Collections.Generic.List<string>();
+            var constraintNames = new System.Collections.Generic.List<string>();
+            string[] lines = error.Split('\n');
+            
+            foreach (string line in lines)
+            {
+                string trimmedLine = line.Trim();
+                
+                // Check for table migrations
+                if (trimmedLine.Contains("table") && trimmedLine.Contains("requires a manual migration"))
+                {
+                    UnityEngine.Debug.Log($"Processing line for table migration: {trimmedLine}");
+                    // Extract table name using regex pattern
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmedLine, @"table\s+(\w+)\s+requires a manual migration");
+                    if (match.Success)
+                    {
+                        string newEntry = match.Groups[1].Value;
+                        if (!tableNames.Contains(newEntry))
+                        {
+                            tableNames.Add(newEntry);
+                        }
+                    }
+                }
+                
+                // Check for unique constraint changes
+                if (trimmedLine.Contains("constraint") && trimmedLine.Contains("requires a manual migration"))
+                {
+                    UnityEngine.Debug.Log($"Processing line for constraint migration: {trimmedLine}");
+                    // Extract constraint name using regex pattern
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmedLine, @"constraint\s+(\w+)\s+requires a manual migration");
+                    if (match.Success)
+                    {
+                        string newEntry = match.Groups[1].Value;
+                        if (!constraintNames.Contains(newEntry))
+                        {
+                            constraintNames.Add(newEntry);
+                        }
+                    }
+                }
+            }
+
+            // Build the message based on what was found
+            var messageParts = new System.Collections.Generic.List<string>();
+            
+            if (tableNames.Count > 0)
+            {
+                messageParts.Add("Tables requiring manual migration:\n" + string.Join(", ", tableNames));
+            }
+            
+            if (constraintNames.Count > 0)
+            {
+                messageParts.Add("Unique constraints requiring manual migration:\n" + string.Join(", ", constraintNames));
+            }
+            
+            string migrationInfo = messageParts.Count > 0 ? string.Join("\n\n", messageParts) : "Unknown migration requirements";
+
+            EditorUtility.DisplayDialog("Migration Required", 
+            "Detected database changes that requires a manual migration or a database reset.\n\n" + 
+            migrationInfo +
+            "\n\nYou will need to either create a new table and manually migrate the old table data by writing and running a reducer for this, OR re-publish with Ctrl+Alt+Click to clear the database. Be sure to make a backup of your database first."
+            ,"OK");
+        }
+
+        // Go on to Auto-Generate if publish was successful and mode is enabled
+        if (PublishAndGenerateMode)
+        {
+            LogMessage("Publish successful, automatically generating Unity files...", 0);
+            string outDir = GetRelativeClientPath();
+            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
+        }
+
+        publishing = false;
+    }
+
+    private void GenerateResult(string output, string error)
+    {
+        LogMessage("Requesting script compilation...", 1);
+        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+        LogMessage("Publish and Generate successful!", 1);
+    }
+
     #endregion
 
     #region Server Methods

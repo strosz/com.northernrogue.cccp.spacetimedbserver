@@ -2190,30 +2190,96 @@ public class ServerWindow : EditorWindow
     
     public void LogMessage(string message, int style)
     {
-        // Skip warning messages if hideWarnings is enabled
-        if (serverManager.HideWarnings && message.Contains("WARNING"))
+        // Skip extra warning messages
+        if (message.Contains("WARNING"))
         {
             return;
         }
         
-        if (style == 1) // Success
+        // Check if message contains "Error:" or "error[E####]:" patterns and color them red
+        string processedMessage = message;
+        System.Text.RegularExpressions.Regex errorCodeRegex = new System.Text.RegularExpressions.Regex(@"error\[[^\]]+\]:", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        
+        // Handle "Error:" pattern first - check if we're already in error state or if this message contains "Error:"
+        int errorIndex = message.IndexOf("Error:", StringComparison.OrdinalIgnoreCase);
+        bool hasErrorCode = errorCodeRegex.IsMatch(message);
+        
+        if (errorIndex != -1)
         {
-            string coloredMessage = $"<color=#00FF00>{message}</color>";
+            // If this message contains "Error:", start error state
+            if (errorIndex != -1)
+            {
+                if (message.Contains("\n"))
+                {
+                    // Multi-line message - handle both error patterns
+                    string[] lines = message.Split('\n');
+                    bool foundErrorLine = false;
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        // Check if this line contains "Error:" to start coloring subsequent lines
+                        if (!foundErrorLine && lines[i].IndexOf("Error:", StringComparison.OrdinalIgnoreCase) != -1)
+                        {
+                            foundErrorLine = true;
+                        }
+                        
+                        // Color line red if it's after "Error:" line OR if it contains error code pattern
+                        if (foundErrorLine || errorCodeRegex.IsMatch(lines[i]))
+                        {
+                            lines[i] = $"<color=#FF0000>{lines[i]}</color>";
+                        }
+                    }
+                    processedMessage = string.Join("\n", lines);
+                }
+                else
+                {
+                    // Single line - color from "Error:" to the end
+                    string beforeError = message.Substring(0, errorIndex);
+                    string errorAndAfter = message.Substring(errorIndex);
+                    processedMessage = beforeError + $"<color=#FF0000>{errorAndAfter}</color>";
+                }
+            }
+        }
+        else if (hasErrorCode)
+        {
+            // Handle "error[E####]:" pattern - color the entire line red if it contains this pattern
+            if (message.Contains("\n"))
+            {
+                // Process line by line
+                string[] lines = message.Split('\n');
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    if (errorCodeRegex.IsMatch(lines[i]))
+                    {
+                        lines[i] = $"<color=#FF0000>{lines[i]}</color>";
+                    }
+                }
+                processedMessage = string.Join("\n", lines);
+            }
+            else
+            {
+                // Single line - color the entire message red
+                processedMessage = $"<color=#FF0000>{message}</color>";
+            }
+        }
+        
+        if (style == 1) // Success Green
+        {
+            string coloredMessage = $"<color=#00FF00>{processedMessage}</color>";
             commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         } 
-        else if (style == -1) // Error
+        else if (style == -1) // Error Red
         {
-            string coloredMessage = $"<color=#FF0000>{message}</color>";
+            string coloredMessage = $"<color=#FF0000>{processedMessage}</color>";
             commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         }
-        else if (style == -2) // Warning
+        else if (style == -2) // Warning Orange
         {
-            string coloredMessage = $"<color=#e0a309>{message}</color>";
+            string coloredMessage = $"<color=#e0a309>{processedMessage}</color>";
             commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {coloredMessage}\n";
         }
-        else // Normal (style == 0) Also catches any other style
+        else // Normal White (style == 0) Also catches any other style
         { 
-            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {message}\n";
+            commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {processedMessage}\n";
         }
         
         // Trim log if it gets too long
