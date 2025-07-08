@@ -96,6 +96,9 @@ public class ServerLogProcess
     private bool moduleLogStartFresh = false; // Track when module logs should start fresh
     private DateTime moduleLogFreshStartTime = DateTime.MinValue; // Track when module fresh mode was initiated
 
+    // Prevention of multiple simultaneous WSL log processing tasks
+    private bool isWSLLogProcessingScheduled = false;
+
     // SSH Logging Variables
 
     // SSH MODULE LOGS: Read from journalctl for spacetimedb.service using --since timestamp
@@ -116,6 +119,9 @@ public class ServerLogProcess
     private HashSet<string> recentModuleLogHashes = new HashSet<string>();
     private HashSet<string> recentDatabaseLogHashes = new HashSet<string>();
     private const int MAX_RECENT_LOG_HASHES = 1000;
+
+    // Prevention of multiple simultaneous SSH log processing tasks
+    private bool isSSHLogProcessingScheduled = false;
 
     // Service names for journalctl
     private const string SpacetimeServiceName = "spacetimedb.service";
@@ -589,12 +595,22 @@ public class ServerLogProcess
             return;
         }
         
+        // Skip if there's already a scheduled SSH log processing task
+        if (isSSHLogProcessingScheduled)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH log processing already scheduled, skipping");
+            return;
+        }
+        
         if (currentTime - lastLogReadTime > logReadInterval)
         {
             lastLogReadTime = currentTime;
             
             if (serverRunning && isCustomServer)
             {
+                // Set flag to prevent multiple simultaneous tasks
+                isSSHLogProcessingScheduled = true;
+                
                 EditorApplication.delayCall += async () =>
                 {
                     try
@@ -605,6 +621,11 @@ public class ServerLogProcess
                     catch (Exception ex)
                     {
                         if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in CheckSSHLogProcesses: {ex.Message}");
+                    }
+                    finally
+                    {
+                        // Clear the flag when processing is complete
+                        isSSHLogProcessingScheduled = false;
                     }
                 };
             }
@@ -623,6 +644,9 @@ public class ServerLogProcess
         // Clear deduplication cache
         recentModuleLogHashes.Clear();
         recentDatabaseLogHashes.Clear();
+        
+        // Clear processing flag
+        isSSHLogProcessingScheduled = false;
         
         SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
         
@@ -1418,12 +1442,22 @@ public class ServerLogProcess
             return;
         }
         
+        // Skip if there's already a scheduled WSL log processing task
+        if (isWSLLogProcessingScheduled)
+        {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] WSL log processing already scheduled, skipping");
+            return;
+        }
+        
         if (currentTime - lastWSLLogReadTime > wslLogReadInterval)
         {
             lastWSLLogReadTime = currentTime;
             
             if (serverRunning && !isCustomServer)
             {
+                // Set flag to prevent multiple simultaneous tasks
+                isWSLLogProcessingScheduled = true;
+                
                 EditorApplication.delayCall += async () =>
                 {
                     try
@@ -1434,6 +1468,11 @@ public class ServerLogProcess
                     catch (Exception ex)
                     {
                         if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in CheckWSLLogProcesses: {ex.Message}");
+                    }
+                    finally
+                    {
+                        // Clear the flag when processing is complete
+                        isWSLLogProcessingScheduled = false;
                     }
                 };
             }
@@ -1476,6 +1515,9 @@ public class ServerLogProcess
         // Reset process protection flags
         isReadingWSLModuleLogs = false;
         isReadingWSLDatabaseLogs = false;
+        
+        // Clear processing flag
+        isWSLLogProcessingScheduled = false;
         
         SessionState.SetBool(SessionKeyDatabaseLogRunning, false);
         

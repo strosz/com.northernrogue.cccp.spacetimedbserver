@@ -36,12 +36,12 @@ public class ServerManager
     private bool justStopped = false;
     private bool pingShowsOnline = true;
     private double stopInitiatedTime = 0;
-    private bool publishing = false; // Flag to track if a publish operation is in progress
-    private bool isStopping = false; // Flag to prevent multiple concurrent stop attempts
+    private bool publishing = false;
+    private bool isStopping = false;
     
     // Server status resilience (prevent false positives during compilation/brief hiccups)
     private int consecutiveFailedChecks = 0;
-    private const int maxConsecutiveFailuresBeforeStop = 3; // Require 3 consecutive failures before marking as stopped (increased from 2)
+    private const int maxConsecutiveFailuresBeforeStop = 3;
 
     // Configuration properties - accessed directly from EditorPrefs
     private string userName;
@@ -173,6 +173,9 @@ public class ServerManager
     private bool cachedSSHConnectionStatus = false;
     private double lastSSHConnectionCheck = 0;
     private const double sshCheckInterval = 1.0;
+
+    // Editor Focus Status - to prevent background processing accumulation
+    private bool hasEditorFocus = true; // Default to true
 
     public enum ServerMode
     {
@@ -366,6 +369,9 @@ public class ServerManager
     public void SetAutoCloseWsl(bool value) { autoCloseWsl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "AutoCloseWsl", value); }
     public void SetClearModuleLogAtStart(bool value) { clearModuleLogAtStart = value; EditorPrefs.SetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", value); }
     public void SetClearDatabaseLogAtStart(bool value) { clearDatabaseLogAtStart = value; EditorPrefs.SetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", value); }
+    
+    // Set editor focus state to prevent background log processing accumulation
+    public void SetEditorFocus(bool hasFocus) { hasEditorFocus = hasFocus; }
     
     public void SetHasWSL(bool value) { hasWSL = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", value); }
     
@@ -2148,7 +2154,7 @@ public class ServerManager
 
     #region Check All Status
 
-    // Add WSL status check to the existing EditorUpdateHandler/CheckServerStatus cycle
+    // Only checks if editor has focus
     public async Task CheckAllStatus()
     {
         // Check appropriate status based on server mode
@@ -2157,8 +2163,8 @@ public class ServerManager
             await CheckWslStatus();
             await CheckServerStatus();
             
-            // Check WSL journalctl log processes
-            if (serverStarted && silentMode && logProcessor != null)
+            // Check WSL journalctl log processes only if editor has focus
+            if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
             {
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
             }
@@ -2167,8 +2173,8 @@ public class ServerManager
         {
             await CheckServerStatus();
             
-            // Check SSH log processes for custom server mode
-            if (serverStarted && silentMode && logProcessor != null)
+            // Check SSH log processes for custom server mode only if editor has focus
+            if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
             {
                 logProcessor.CheckSSHLogProcesses(EditorApplication.timeSinceStartup);
             }
@@ -2177,8 +2183,8 @@ public class ServerManager
         {
             await CheckMaincloudConnectivity();
             
-            // Check log processes for Maincloud mode
-            if (serverStarted && silentMode && logProcessor != null)
+            // Check log processes for Maincloud mode only if editor has focus
+            if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
             {
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
             }

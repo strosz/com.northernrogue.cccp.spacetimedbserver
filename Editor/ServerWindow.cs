@@ -465,6 +465,12 @@ public class ServerWindow : EditorWindow
     {
         if (serverManager == null) return;
         
+        // Skip processing if Unity Editor doesn't have focus to prevent accumulating delayed calls
+        if (!windowFocused)
+        {
+            return;
+        }
+        
         double currentTime = EditorApplication.timeSinceStartup;
         
         // Throttle how often we check things to not overload the main thread
@@ -541,6 +547,23 @@ public class ServerWindow : EditorWindow
     private void OnFocusChanged(bool focused)
     {
         windowFocused = focused;
+        
+        // Update ServerManager with focus state
+        if (serverManager != null)
+        {
+            serverManager.SetEditorFocus(focused);
+        }
+        
+        // When regaining focus, reset the timing to prevent accumulated backlog
+        if (focused)
+        {
+            lastCheckTime = EditorApplication.timeSinceStartup;
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
+            }
+        }
+        
         SyncFieldsFromServerManager();
     }
     #endregion
