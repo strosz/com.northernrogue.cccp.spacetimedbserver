@@ -87,7 +87,7 @@ public class ServerLogProcess
     private DateTime lastWSLModuleLogTimestamp = DateTime.MinValue;
     private DateTime lastWSLDatabaseLogTimestamp = DateTime.MinValue;
     private double lastWSLLogReadTime = 0;
-    private const double wslLogReadInterval = 1.0;
+    private double wslLogReadInterval = 1.0;
     // Add process protection flags to prevent multiple concurrent processes
     private bool isReadingWSLModuleLogs = false;
     private bool isReadingWSLDatabaseLogs = false;
@@ -113,7 +113,7 @@ public class ServerLogProcess
     private DateTime lastModuleLogTimestamp = DateTime.MinValue;
     private DateTime lastDatabaseLogTimestamp = DateTime.MinValue;
     private double lastLogReadTime = 0;
-    private const double logReadInterval = 1.0;
+    private double sshLogReadInterval = 1.0;
 
     // Deduplication tracking for SSH logs
     private HashSet<string> recentModuleLogHashes = new HashSet<string>();
@@ -602,7 +602,7 @@ public class ServerLogProcess
             return;
         }
         
-        if (currentTime - lastLogReadTime > logReadInterval)
+        if (currentTime - lastLogReadTime > sshLogReadInterval)
         {
             lastLogReadTime = currentTime;
             
