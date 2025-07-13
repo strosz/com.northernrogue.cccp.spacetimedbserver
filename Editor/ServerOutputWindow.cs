@@ -35,8 +35,9 @@ public class ServerOutputWindow : EditorWindow
     public static string logHashDatabase; // For echo to console
 
     // Echo Logs to Console
-    public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
+    public static bool echoToConsole = false; // Whether to echo module logs to Unity Console
     private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
+    private static HashSet<string> loggedToConsoleDatabase = new HashSet<string>(); // Track database logs already sent to console
     private bool showLocalTime = false; // Toggle for showing timestamps in local time zone
     private float logUpdateFrequency = 1f; // User-configurable log update frequency (1-10)    // Session state keys
     private const string SessionKeyModuleLog = "ServerWindow_ModuleLog";
@@ -146,7 +147,7 @@ public class ServerOutputWindow : EditorWindow
         
         // Load settings from EditorPrefs
         autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
-        echoToConsoleModule = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
+        echoToConsole = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
         showLocalTime = EditorPrefs.GetBool(PrefsKeyShowLocalTime, false);
         logUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyLogUpdateFrequency, 1f);
         
@@ -367,11 +368,13 @@ public class ServerOutputWindow : EditorWindow
         }
 
         // To debug how often this is called, uncomment the line below
-        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");        // If echoToConsoleModule is enabled, check for errors/warnings to send to Unity Console
-        if (echoToConsoleModule)
+        //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
+        if (echoToConsole)
         {
-            string logToEcho = SessionState.GetString(SessionKeyModuleLog, "");
-            EchoLogsToConsole(logToEcho, true);
+            string moduleLog = SessionState.GetString(SessionKeyModuleLog, "");
+            string databaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
+            EchoLogsToConsole(moduleLog, "Module");
+            EchoLogsToConsole(databaseLog, "Database");
         }
         
         // Mark windows for update without immediate repaint (or with immediate repaint for SSH)
@@ -695,6 +698,7 @@ public class ServerOutputWindow : EditorWindow
             SessionState.SetString(SessionKeyModuleLog, "");
             SessionState.SetString(SessionKeyDatabaseLog, "");
             ServerOutputWindow.loggedToConsoleModule.Clear();
+            ServerOutputWindow.loggedToConsoleDatabase.Clear();
             formattedLogCache.Clear();
             scrollPosition = Vector2.zero;
             autoScroll = true;
@@ -724,16 +728,17 @@ public class ServerOutputWindow : EditorWindow
         }
 
         // Echo to Console toggle
-        string echoToConsoleTooltip = "Echo module logs to Unity Console for easier debugging.";
-        bool newEchoToConsole = GUILayout.Toggle(echoToConsoleModule, new GUIContent("Echo to Console", echoToConsoleTooltip), GUILayout.Width(120));
-        if (newEchoToConsole != echoToConsoleModule)
+        string echoToConsoleTooltip = "Echo module and database errors to Unity Console for easier debugging.";
+        bool newEchoToConsole = GUILayout.Toggle(echoToConsole, new GUIContent("Echo to Console", echoToConsoleTooltip), GUILayout.Width(120));
+        if (newEchoToConsole != echoToConsole)
         {
-            echoToConsoleModule = newEchoToConsole;
-            EditorPrefs.SetBool(PrefsKeyEchoToConsole, echoToConsoleModule);
+            echoToConsole = newEchoToConsole;
+            EditorPrefs.SetBool(PrefsKeyEchoToConsole, echoToConsole);
             
-            if (echoToConsoleModule)
+            if (echoToConsole)
             {
                 loggedToConsoleModule.Clear();
+                loggedToConsoleDatabase.Clear();
             }
         }
 
@@ -1263,9 +1268,24 @@ public class ServerOutputWindow : EditorWindow
     #endregion
 
     #region Echo Logs
-    private static void EchoLogsToConsole(string log, bool isModule) // Is database if false
+    private static void EchoLogsToConsole(string log, string logType)
     {
         if (string.IsNullOrEmpty(log)) return;
+        
+        // Select the appropriate tracking collection and hash variable based on log type
+        HashSet<string> loggedToConsole;
+        if (logType == "Module")
+        {
+            loggedToConsole = loggedToConsoleModule;
+        }
+        else if (logType == "Database")
+        {
+            loggedToConsole = loggedToConsoleDatabase;
+        }
+        else
+        {
+            return; // Unknown log type
+        }
         
         // Split the log into lines
         string[] lines = log.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1278,27 +1298,27 @@ public class ServerOutputWindow : EditorWindow
             
             // Create a hash of the line to track what we've logged
             // Strip timestamps or other variable data to avoid re-logging the same error
-            logHashModule = GetLogHash(trimmedLine);
+            string logHash = GetLogHash(trimmedLine);
             
-            if (!string.IsNullOrEmpty(logHashModule) && !loggedToConsoleModule.Contains(logHashModule))
+            if (!string.IsNullOrEmpty(logHash) && !loggedToConsole.Contains(logHash))
             {
                 // Check for errors or warnings (adjust patterns as needed)
                 if (trimmedLine.Contains("ERROR") || trimmedLine.Contains("error:") || 
                     trimmedLine.ToLower().Contains("exception"))
                 {
-                    UnityEngine.Debug.LogError($"[SpacetimeDB Module] {trimmedLine}");
-                    loggedToConsoleModule.Add(logHashModule);
+                    UnityEngine.Debug.LogError($"[SpacetimeDB {logType}] {trimmedLine}");
+                    loggedToConsole.Add(logHash);
                 }
                 else if (trimmedLine.Contains("WARNING") || trimmedLine.Contains("warning:"))
                 {
-                    UnityEngine.Debug.LogWarning($"[SpacetimeDB Module] {trimmedLine}");
-                    loggedToConsoleModule.Add(logHashModule);
+                    UnityEngine.Debug.LogWarning($"[SpacetimeDB {logType}] {trimmedLine}");
+                    loggedToConsole.Add(logHash);
                 }
                 
                 // Limit tracked messages to prevent memory issues
-                if (loggedToConsoleModule.Count > 1000)
+                if (loggedToConsole.Count > 1000)
                 {
-                    loggedToConsoleModule.Clear(); // Just reset if we hit the limit
+                    loggedToConsole.Clear(); // Just reset if we hit the limit
                 }
             }
         }
