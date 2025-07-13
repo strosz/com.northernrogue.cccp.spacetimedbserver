@@ -74,7 +74,6 @@ public class ServerWindow : EditorWindow
     private bool autoCloseWsl = false;
     private bool clearModuleLogAtStart = false;
     private bool clearDatabaseLogAtStart = false;
-    private bool serviceMode = false;
 
     // Update SpacetimeDB
     private string spacetimeDBCurrentVersion = "";
@@ -1395,29 +1394,6 @@ public class ServerWindow : EditorWindow
                 }
                 EditorGUILayout.EndHorizontal();
             }
-            else if (serverMode == ServerMode.CustomServer && debugMode)
-            {
-                // Service Mode toggle for Custom Server
-                EditorGUILayout.Space(5);
-                EditorGUILayout.BeginHorizontal();
-                string serviceModeTooltip = 
-                "Service Mode: Uses the SystemD service to run SpacetimeDB in the background (requires installation via Server Installer). \n\n"+
-                "Foreground Process: Runs SpacetimeDB as a foreground process directly over SSH.";
-                EditorGUILayout.LabelField(new GUIContent("Service Mode:", serviceModeTooltip), GUILayout.Width(120));
-                GUIStyle serviceModeStyle = new GUIStyle(GUI.skin.button);
-                if (serviceMode)
-                {
-                    serviceModeStyle.normal.textColor = recommendedColor;
-                    serviceModeStyle.hover.textColor = recommendedColor;
-                }
-                if (GUILayout.Button(serviceMode ? "Service" : "Foreground Process", serviceModeStyle))
-                {
-                    bool newServiceMode = !serviceMode;
-                    serviceMode = newServiceMode;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "ServiceMode", serviceMode);
-                }
-                EditorGUILayout.EndHorizontal();
-            }
 
             // Clear Module and Database Log at Start toggle buttons
             if ((serverManager.SilentMode && serverMode == ServerMode.WslServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
@@ -2523,9 +2499,6 @@ public class ServerWindow : EditorWindow
             // Update to new string format
             EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
         }
-        
-        // Load service mode setting for Custom Server
-        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", true);
         
         UpdateServerModeState();
     }        

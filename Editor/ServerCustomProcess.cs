@@ -32,8 +32,8 @@ public class ServerCustomProcess
     // SSH connection status
     private bool isConnected = false;
     
-    // Service mode flag
-    private bool serviceMode = false;
+    // Service mode - was selectable before but kept if needed in the future
+    private bool serviceMode;
     
     // Session status tracking
     private bool sessionActive = false;
