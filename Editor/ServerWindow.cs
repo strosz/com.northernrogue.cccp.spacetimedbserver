@@ -2704,6 +2704,12 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
+    // Public method to get ServerManager for external access
+    public ServerManager GetServerManager()
+    {
+        return serverManager;
+    }
+
     // Display Cosmos Cove Control Panel title text in the menu bar
     [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", priority = -11000)]
     private static void CosmosCoveControlPanel(){}

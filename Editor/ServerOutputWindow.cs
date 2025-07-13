@@ -18,6 +18,7 @@ public class ServerOutputWindow : EditorWindow
     private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
     private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
     private const string PrefsKeyShowLocalTime = PrefsKeyPrefix + "ShowLocalTime";
+    private const string PrefsKeyLogUpdateFrequency = PrefsKeyPrefix + "LogUpdateFrequency";
 
     // Logs
     private string outputLogFull = ""; // Module logs
@@ -30,14 +31,15 @@ public class ServerOutputWindow : EditorWindow
     private int lastKnownLogHash; // For detecting changes
     private int lastKnownDbLogHash; // For detecting database log changes
     private float lastUpdateTime; // For throttling updates
-    private const float UPDATE_INTERVAL = 1f; // Log update interval
+    private float updateInterval = 1f; // Log update interval (configurable)
     public static string logHashModule; // For echo to console
     public static string logHashDatabase; // For echo to console
 
     // Echo Logs to Console
     public static bool echoToConsoleModule = false; // Whether to echo module logs to Unity Console
     private static HashSet<string> loggedToConsoleModule = new HashSet<string>(); // Track logs already sent to console
-    private bool showLocalTime = false; // Toggle for showing timestamps in local time zone    // Session state keys
+    private bool showLocalTime = false; // Toggle for showing timestamps in local time zone
+    private float logUpdateFrequency = 1f; // User-configurable log update frequency (1-10)    // Session state keys
     private const string SessionKeyModuleLog = "ServerWindow_ModuleLog";
     private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
@@ -54,10 +56,10 @@ public class ServerOutputWindow : EditorWindow
     private const double MIN_REPAINT_INTERVAL = 1.0; // Minimum time between repaints in seconds
     private const int MAX_TEXT_LENGTH = 100000; // Maximum text length to show    // RefreshOpenWindow rate limiting
     private static double lastRefreshTime = 0;
-    private const double REFRESH_INTERVAL = 1.0; // How often it can echo to console, won't affect rate of logs in window
+    private static double refreshInterval = 1.0; // How often it can echo to console, won't affect rate of logs in window
     
     // SSH log refresh optimization
-    private const double SSH_REFRESH_INTERVAL = 1.0;
+    private static double sshRefreshInterval = 1.0;
     
     // OnFocus rate limiting to prevent rapid SSH refresh triggers
     private static double lastOnFocusTime = 0;
@@ -144,6 +146,10 @@ public class ServerOutputWindow : EditorWindow
         autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
         echoToConsoleModule = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
         showLocalTime = EditorPrefs.GetBool(PrefsKeyShowLocalTime, false);
+        logUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyLogUpdateFrequency, 1f);
+        
+        // Apply log update frequency to intervals
+        UpdateLogIntervals(logUpdateFrequency);
         
         // Debug timezone info on startup if debug mode is on
         if (debugMode)
@@ -314,9 +320,9 @@ public class ServerOutputWindow : EditorWindow
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
         // Check if this might be an SSH log update (faster refresh needed)
         bool isSSHLogUpdate = modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase);
-        double refreshInterval = isSSHLogUpdate ? SSH_REFRESH_INTERVAL : REFRESH_INTERVAL;
+        double currentRefreshInterval = isSSHLogUpdate ? sshRefreshInterval : refreshInterval;
         
-        if (currentTime - lastRefreshTime < refreshInterval)
+        if (currentTime - lastRefreshTime < currentRefreshInterval)
         {
             return;
         }
@@ -617,7 +623,8 @@ public class ServerOutputWindow : EditorWindow
         if (GUILayout.Button("Refresh", toolbarButtonStyle, GUILayout.Width(60)))
         {
             ForceRefreshAfterCompilation();
-              // For custom servers, also trigger SSH log refresh
+
+            // For custom servers, also trigger SSH log refresh
             try
             {
                 var serverWindow = GetWindow<ServerWindow>();
@@ -671,7 +678,8 @@ public class ServerOutputWindow : EditorWindow
         }
         
         // Auto Scroll toggle
-        bool newAutoScroll = GUILayout.Toggle(autoScroll, "Auto Scroll", GUILayout.Width(100));
+        string autoScrollTooltip = "Automatically scroll to the bottom when new logs arrive.";
+        bool newAutoScroll = GUILayout.Toggle(autoScroll, new GUIContent("Auto Scroll", autoScrollTooltip), GUILayout.Width(90));
         if (newAutoScroll != autoScroll)
         {
             autoScroll = newAutoScroll;
@@ -683,8 +691,10 @@ public class ServerOutputWindow : EditorWindow
                 needsRepaint = true;
             }
         }
-          // Echo to Console toggle
-        bool newEchoToConsole = GUILayout.Toggle(echoToConsoleModule, "Echo to Console", GUILayout.Width(120));
+
+        // Echo to Console toggle
+        string echoToConsoleTooltip = "Echo module logs to Unity Console for easier debugging.";
+        bool newEchoToConsole = GUILayout.Toggle(echoToConsoleModule, new GUIContent("Echo to Console", echoToConsoleTooltip), GUILayout.Width(120));
         if (newEchoToConsole != echoToConsoleModule)
         {
             echoToConsoleModule = newEchoToConsole;
@@ -695,8 +705,10 @@ public class ServerOutputWindow : EditorWindow
                 loggedToConsoleModule.Clear();
             }
         }
-          // Local Time toggle
-        bool newShowLocalTime = GUILayout.Toggle(showLocalTime, "Show Local Time", GUILayout.Width(120));
+
+        // Local Time toggle
+        string localTimeTooltip = "Show timestamps in local time zone instead of UTC.";
+        bool newShowLocalTime = GUILayout.Toggle(showLocalTime, new GUIContent("Local Time", localTimeTooltip), GUILayout.Width(90));
         if (newShowLocalTime != showLocalTime)
         {
             showLocalTime = newShowLocalTime;
@@ -715,15 +727,31 @@ public class ServerOutputWindow : EditorWindow
             }        
         }
         
+        // Log Update Frequency control
+        string logUpdateFrequencyTooltip = "Adjust the frequency of log updates requested from the server (1-10 seconds).";
+        GUILayout.Label(new GUIContent($"Update Frequency:", logUpdateFrequencyTooltip), GUILayout.Width(110));
+        float newLogUpdateFrequency = EditorGUILayout.Slider(logUpdateFrequency, 10f, 1f, GUILayout.Width(110));
+        if (Math.Abs(newLogUpdateFrequency - logUpdateFrequency) > 0.01f)
+        {
+            logUpdateFrequency = newLogUpdateFrequency;
+            EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, logUpdateFrequency);
+            UpdateLogIntervals(logUpdateFrequency);
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerOutputWindow] Log update frequency changed to {logUpdateFrequency:F1}s");
+            }
+        }
+        
         // Server Log Size label (only for Custom Server mode)
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
         if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
         {
             GUILayout.FlexibleSpace(); // Push the log size label to the right
-            string logSizeText = isLoadingLogSize ? "Loading..." : $"Server Journal Size: {serverLogSizeMB:F2} MB";
+            string logSizeText = isLoadingLogSize ? "Loading..." : $"Journal Size: {serverLogSizeMB:F2} MB";
             GUIContent logSizeContent = new GUIContent(
                 logSizeText,
-                "The size of the complete journalctl folder that keeps all the server logs including os processes and SpacetimeDB. It's normal that it is a few hundred MB, but displayed here to easier keep check of it.\n"+
+                "The size of the complete server journalctl folder that keeps all the server logs including os processes and SpacetimeDB. It's normal that it is a few hundred MB, but displayed here to easier keep check of it.\n"+
                 "SpacetimeDB Module Log Size: " + spacetimeDbModuleLogSizeMB + " MB\n" +
                 "SpacetimeDB Database Log Size: " + spacetimeDbDatabaseLogSizeMB + " MB"
             );
@@ -800,6 +828,75 @@ public class ServerOutputWindow : EditorWindow
             lastRepaintTime = EditorApplication.timeSinceStartup;
             needsRepaint = false;
             Repaint();
+        }
+    }
+
+    // Update log intervals based on user preference
+    private void UpdateLogIntervals(float frequency)
+    {
+        // Clamp frequency between 1 and 10
+        frequency = Mathf.Clamp(frequency, 1f, 10f);
+        
+        // Calculate intervals (lower frequency = higher interval)
+        updateInterval = frequency;
+        refreshInterval = frequency;
+        sshRefreshInterval = frequency;
+        
+        // Update ServerLogProcess intervals if we can access them
+        UpdateServerLogProcessIntervals(frequency);
+    }
+    
+    // Update ServerLogProcess intervals through ServerManager
+    private void UpdateServerLogProcessIntervals(float frequency)
+    {
+        try
+        {
+            // Try to get ServerWindow to access ServerManager
+            ServerWindow[] serverWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (serverWindows != null && serverWindows.Length > 0)
+            {
+                ServerWindow serverWindow = serverWindows[0];
+                ServerManager serverManager = serverWindow.GetServerManager();
+                
+                if (serverManager != null)
+                {
+                    // Update the intervals in ServerLogProcess
+                    serverManager.UpdateLogReadIntervals(frequency);
+                    
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.Log($"[ServerOutputWindow] Updated ServerLogProcess intervals to {frequency}s");
+                    }
+                }
+                else
+                {
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerManager is null, cannot update intervals");
+                    }
+                }
+                
+                // Always save the preference regardless
+                EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
+            }
+            else
+            {
+                if (debugMode)
+                {
+                    UnityEngine.Debug.LogWarning("[ServerOutputWindow] No ServerWindow found, saving preference only");
+                }
+                // Save preference even if no ServerWindow is found
+                EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerOutputWindow] Failed to update ServerLogProcess intervals: {ex.Message}");
+            }
+            // Ensure preference is saved even if there's an error
+            EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
         }
     }
 
@@ -1157,7 +1254,7 @@ public class ServerOutputWindow : EditorWindow
             return;
 
         // Throttle updates to avoid excessive checks, but check more frequently during play mode
-        float checkInterval = EditorApplication.isPlaying ? 0.2f : UPDATE_INTERVAL;
+        float checkInterval = EditorApplication.isPlaying ? 0.2f : updateInterval;
         if (Time.realtimeSinceStartup - lastUpdateTime < checkInterval)
             return;
 

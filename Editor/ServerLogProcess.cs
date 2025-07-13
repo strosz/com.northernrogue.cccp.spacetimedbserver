@@ -1572,6 +1572,33 @@ public class ServerLogProcess
     }
     #endregion
     
+    // Public method to update log read intervals
+    public void UpdateLogReadIntervals(double interval)
+    {
+        // Clamp interval between 1 and 10 seconds
+        interval = Math.Max(1.0, Math.Min(10.0, interval));
+        
+        wslLogReadInterval = interval;
+        sshLogReadInterval = interval;
+        
+        if (debugMode)
+        {
+            logCallback?.Invoke($"Log read intervals updated to {interval:F1}s", 1);
+        }
+    }
+    
+    // Public method to get current WSL log read interval
+    public double GetWSLLogReadInterval()
+    {
+        return wslLogReadInterval;
+    }
+    
+    // Public method to get current SSH log read interval
+    public double GetSSHLogReadInterval()
+    {
+        return sshLogReadInterval;
+    }
+    
     public ServerLogProcess(
         Action<string, int> logCallback, 
         Action onModuleLogUpdated,
@@ -1588,6 +1615,11 @@ public class ServerLogProcess
         // Load username from EditorPrefs
         this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from EditorPrefs: {this.userName}");
+        
+        // Load log update frequency from EditorPrefs and apply it
+        float savedLogUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyPrefix + "LogUpdateFrequency", 1.0f);
+        UpdateLogReadIntervals(savedLogUpdateFrequency);
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Applied saved log update frequency: {savedLogUpdateFrequency}s");
           // Load log content from session state
         moduleLogContent = SessionState.GetString(SessionKeyModuleLog, "");
         cachedModuleLogContent = SessionState.GetString(SessionKeyCachedModuleLog, ""); // Load cached module logs

@@ -2246,6 +2246,26 @@ public class ServerManager
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
         }
     }
+    
+    // Public method to update log read intervals in ServerLogProcess
+    public void UpdateLogReadIntervals(double interval)
+    {
+        if (logProcessor != null)
+        {
+            logProcessor.UpdateLogReadIntervals(interval);
+        }
+    }
+    
+    // Public method to get current log read intervals
+    public double GetCurrentLogReadInterval()
+    {
+        if (logProcessor != null)
+        {
+            // Return WSL interval as default, both should be the same
+            return logProcessor.GetWSLLogReadInterval();
+        }
+        return 1.0; // Default fallback
+    }
     #endregion
 } // Class
 } // Namespace
