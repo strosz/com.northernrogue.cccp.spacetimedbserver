@@ -31,7 +31,6 @@ public class ServerOutputWindow : EditorWindow
     private int lastKnownLogHash; // For detecting changes
     private int lastKnownDbLogHash; // For detecting database log changes
     private float lastUpdateTime; // For throttling updates
-    private float updateInterval = 1f; // Log update interval (configurable)
     public static string logHashModule; // For echo to console
     public static string logHashDatabase; // For echo to console
 
@@ -87,6 +86,7 @@ public class ServerOutputWindow : EditorWindow
     private double lastLogSizeUpdateTime = 0;
     private const double LOG_SIZE_UPDATE_INTERVAL = 10.0; // Update log size every 10 seconds
     private ServerCustomProcess serverCustomProcess;
+    private ServerManager serverManager;
     
     // Track data changes
     private bool scrollToBottom = false;
@@ -139,6 +139,8 @@ public class ServerOutputWindow : EditorWindow
             openWindows.Add(this);
         }
         
+        CacheServerManager();
+        
         // Subscribe to update
         EditorApplication.update += CheckForLogUpdates;
         
@@ -149,7 +151,7 @@ public class ServerOutputWindow : EditorWindow
         logUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyLogUpdateFrequency, 1f);
         
         // Apply log update frequency to intervals
-        UpdateLogIntervals(logUpdateFrequency);
+        UpdateRefreshIntervals(logUpdateFrequency);
         
         // Debug timezone info on startup if debug mode is on
         if (debugMode)
@@ -188,6 +190,35 @@ public class ServerOutputWindow : EditorWindow
             InitializeServerCustomProcess();
             // Update log size on window open
             UpdateLogSizeForCustomServer();
+        }
+    }
+
+    private void CacheServerManager()
+    {
+        try
+        {
+            ServerWindow[] serverWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (serverWindows != null && serverWindows.Length > 0)
+            {
+                ServerWindow serverWindow = serverWindows[0];
+                serverManager = serverWindow.GetServerManager();
+                if (debugMode && serverManager != null)
+                {
+                    UnityEngine.Debug.Log($"[ServerOutputWindow] Cached ServerManager for {serverManager.CurrentServerMode} mode");
+                }
+            }
+            else
+            {
+                serverManager = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            serverManager = null;
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerOutputWindow] Failed to cache ServerManager: {ex.Message}");
+            }
         }
     }
 
@@ -735,7 +766,9 @@ public class ServerOutputWindow : EditorWindow
         {
             logUpdateFrequency = newLogUpdateFrequency;
             EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, logUpdateFrequency);
-            UpdateLogIntervals(logUpdateFrequency);
+            
+            // Update the refresh intervals for RefreshOpenWindow rate limiting
+            UpdateRefreshIntervals(logUpdateFrequency);
             
             if (debugMode)
             {
@@ -831,73 +864,15 @@ public class ServerOutputWindow : EditorWindow
         }
     }
 
-    // Update log intervals based on user preference
-    private void UpdateLogIntervals(float frequency)
+    // Update refresh intervals for RefreshOpenWindow rate limiting
+    private void UpdateRefreshIntervals(float frequency)
     {
         // Clamp frequency between 1 and 10
         frequency = Mathf.Clamp(frequency, 1f, 10f);
         
-        // The updateInterval is no longer needed since we directly use logUpdateFrequency in CheckForLogUpdates
-        // Keep these for legacy compatibility
+        // Update the intervals used by RefreshOpenWindow for rate limiting
         refreshInterval = frequency;
         sshRefreshInterval = frequency;
-        
-        // Update ServerLogProcess intervals if we can access them
-        UpdateServerLogProcessIntervals(frequency);
-    }
-    
-    // Update ServerLogProcess intervals through ServerManager
-    private void UpdateServerLogProcessIntervals(float frequency)
-    {
-        try
-        {
-            // Try to get ServerWindow to access ServerManager
-            ServerWindow[] serverWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
-            if (serverWindows != null && serverWindows.Length > 0)
-            {
-                ServerWindow serverWindow = serverWindows[0];
-                ServerManager serverManager = serverWindow.GetServerManager();
-                
-                if (serverManager != null)
-                {
-                    // Update the intervals in ServerLogProcess
-                    serverManager.UpdateLogReadIntervals(frequency);
-                    
-                    if (debugMode)
-                    {
-                        UnityEngine.Debug.Log($"[ServerOutputWindow] Updated ServerLogProcess intervals to {frequency}s");
-                    }
-                }
-                else
-                {
-                    if (debugMode)
-                    {
-                        UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerManager is null, cannot update intervals");
-                    }
-                }
-                
-                // Always save the preference regardless
-                EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
-            }
-            else
-            {
-                if (debugMode)
-                {
-                    UnityEngine.Debug.LogWarning("[ServerOutputWindow] No ServerWindow found, saving preference only");
-                }
-                // Save preference even if no ServerWindow is found
-                EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode)
-            {
-                UnityEngine.Debug.LogError($"[ServerOutputWindow] Failed to update ServerLogProcess intervals: {ex.Message}");
-            }
-            // Ensure preference is saved even if there's an error
-            EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, frequency);
-        }
     }
 
     // Calculate content width based on longest line
@@ -1118,58 +1093,7 @@ public class ServerOutputWindow : EditorWindow
             
         // Replace only the Unicode replacement character with spaces
         strippedLog = strippedLog.Replace('\uFFFD', ' ');
-        
-        // Check if logs are already formatted (have [YYYY-MM-DD HH:MM:SS] timestamps)
-        // For SSH mode, logs are pre-formatted in ServerLogProcess, so skip redundant formatting
-        /*bool isAlreadyFormatted = Regex.IsMatch(strippedLog, @"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]");
-        
-        // Format timestamps (ISO -> [YYYY-MM-DD HH:MM:SS]) with optional local time
-        // Only format if the log doesn't already have a [YYYY-MM-DD HH:MM:SS] timestamp at the beginning
-        if (!isAlreadyFormatted)
-        {
-            strippedLog = Regex.Replace(strippedLog, 
-                @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)(\s*)([A-Z]+:)?", 
-                match => {
-                    if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset dt)) {
-                        if (showLocalTime) {
-                            // Convert to local time using DateTimeOffset for proper timezone handling
-                            DateTimeOffset localTime = dt.ToLocalTime();
-                            return $"[{localTime.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
-                        } else {
-                            // Keep UTC time (original behavior)
-                            return $"[{dt.ToString("yyyy-MM-dd HH:mm:ss")}]{match.Groups[2].Value}{match.Groups[3].Value}";
-                        }
-                    }
-                    return match.Value;
-                });
-        }
-        
-        // Clean up timestamps and journalctl artifacts only if needed
-        if (!isAlreadyFormatted) {
-            // Clean up double timestamps
-            strippedLog = Regex.Replace(strippedLog, 
-                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", 
-                "$1");
                 
-            // Clean up duplicate timestamps in the format "[date time] [date time]"
-            strippedLog = Regex.Replace(strippedLog,
-                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]",
-                "$1");        
-            
-            // Handle journalctl output format - remove middle timestamp and service info
-            // Handle both old format: "[timestamp] May 29 20:16:31 LoreMagic spacetime[pid]: "
-            // And new format: "[timestamp] 2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[pid]: "
-            strippedLog = Regex.Replace(strippedLog,
-                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]) ([A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}\.\d+ )?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} )?[A-Za-z]+ spacetime\[\d+\]: ",
-                "$1 ");
-
-            // Also handle cases where the log already has the correct [timestamp] format from ServerLogProcess
-            // but still has residual journalctl data
-            strippedLog = Regex.Replace(strippedLog,
-                @"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])(\s*)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[\+\-]\d{2}:\d{2} [A-Za-z]+ spacetime\[\d+\]:\s*",
-                "$1$2");
-        }*/
-        
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");
         strippedLog = strippedLog.Replace("error:", "<color=#FF6666>error:</color>");
@@ -1306,22 +1230,14 @@ public class ServerOutputWindow : EditorWindow
     {
         try
         {
-            // Try to get ServerWindow to access ServerManager
-            ServerWindow[] serverWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
-            if (serverWindows != null && serverWindows.Length > 0)
+            if (serverManager != null)
             {
-                ServerWindow serverWindow = serverWindows[0];
-                ServerManager serverManager = serverWindow.GetServerManager();
+                // Use the new TriggerLogProcessing method in ServerManager
+                serverManager.TriggerLogProcessing();
                 
-                if (serverManager != null)
+                if (debugMode)
                 {
-                    // Use the new TriggerLogProcessing method in ServerManager
-                    serverManager.TriggerLogProcessing();
-                    
-                    if (debugMode)
-                    {
-                        UnityEngine.Debug.Log($"[ServerOutputWindow] Triggered log processing for {serverManager.CurrentServerMode} mode");
-                    }
+                    UnityEngine.Debug.Log($"[ServerOutputWindow] Triggered log processing for {serverManager.CurrentServerMode} mode");
                 }
             }
         }

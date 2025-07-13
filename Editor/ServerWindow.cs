@@ -1525,6 +1525,7 @@ public class ServerWindow : EditorWindow
                 }
             }
         }
+        
         // Activation of Server Windows
         bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
         bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
