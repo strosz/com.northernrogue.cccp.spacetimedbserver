@@ -728,7 +728,7 @@ public class ServerOutputWindow : EditorWindow
         }
         
         // Log Update Frequency control
-        string logUpdateFrequencyTooltip = "Adjust the frequency of log updates requested from the server (1-10 seconds).";
+        string logUpdateFrequencyTooltip = "Adjust the frequency of log updates requested from the server (every 10-1 seconds).";
         GUILayout.Label(new GUIContent($"Update Frequency:", logUpdateFrequencyTooltip), GUILayout.Width(110));
         float newLogUpdateFrequency = EditorGUILayout.Slider(logUpdateFrequency, 10f, 1f, GUILayout.Width(110));
         if (Math.Abs(newLogUpdateFrequency - logUpdateFrequency) > 0.01f)
@@ -837,8 +837,8 @@ public class ServerOutputWindow : EditorWindow
         // Clamp frequency between 1 and 10
         frequency = Mathf.Clamp(frequency, 1f, 10f);
         
-        // Calculate intervals (lower frequency = higher interval)
-        updateInterval = frequency;
+        // The updateInterval is no longer needed since we directly use logUpdateFrequency in CheckForLogUpdates
+        // Keep these for legacy compatibility
         refreshInterval = frequency;
         sshRefreshInterval = frequency;
         
@@ -1254,11 +1254,14 @@ public class ServerOutputWindow : EditorWindow
             return;
 
         // Throttle updates to avoid excessive checks, but check more frequently during play mode
-        float checkInterval = EditorApplication.isPlaying ? 0.2f : updateInterval;
+        float checkInterval = EditorApplication.isPlaying ? 0.2f : logUpdateFrequency;
         if (Time.realtimeSinceStartup - lastUpdateTime < checkInterval)
             return;
 
-        lastUpdateTime = Time.realtimeSinceStartup;        // Check main logs (consider both current and cached module logs)
+        lastUpdateTime = Time.realtimeSinceStartup;
+        
+        // Trigger log processing directly based on logUpdateFrequency instead of waiting for ServerManager's CheckAllStatus
+        TriggerLogProcessing();        // Check main logs (consider both current and cached module logs)
         string currentLog = SessionState.GetString(SessionKeyModuleLog, "");
         string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         
@@ -1295,6 +1298,39 @@ public class ServerOutputWindow : EditorWindow
             
             lastKnownLogHash = currentHash;
             lastKnownDbLogHash = currentDbHash;
+        }
+    }
+
+    // Trigger log processing directly based on logUpdateFrequency instead of waiting for ServerManager
+    private void TriggerLogProcessing()
+    {
+        try
+        {
+            // Try to get ServerWindow to access ServerManager
+            ServerWindow[] serverWindows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (serverWindows != null && serverWindows.Length > 0)
+            {
+                ServerWindow serverWindow = serverWindows[0];
+                ServerManager serverManager = serverWindow.GetServerManager();
+                
+                if (serverManager != null)
+                {
+                    // Use the new TriggerLogProcessing method in ServerManager
+                    serverManager.TriggerLogProcessing();
+                    
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.Log($"[ServerOutputWindow] Triggered log processing for {serverManager.CurrentServerMode} mode");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerOutputWindow] Failed to trigger log processing: {ex.Message}");
+            }
         }
     }
 

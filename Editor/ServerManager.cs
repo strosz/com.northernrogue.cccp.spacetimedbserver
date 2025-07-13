@@ -2256,6 +2256,24 @@ public class ServerManager
         }
     }
     
+    // Public method to trigger log processing directly (for ServerOutputWindow)
+    public void TriggerLogProcessing()
+    {
+        if (logProcessor != null && serverStarted && silentMode && hasEditorFocus)
+        {
+            double currentTime = EditorApplication.timeSinceStartup;
+            
+            if (serverMode == ServerMode.WslServer || serverMode == ServerMode.MaincloudServer)
+            {
+                logProcessor.CheckLogProcesses(currentTime);
+            }
+            else if (serverMode == ServerMode.CustomServer)
+            {
+                logProcessor.CheckSSHLogProcesses(currentTime);
+            }
+        }
+    }
+    
     // Public method to get current log read intervals
     public double GetCurrentLogReadInterval()
     {
