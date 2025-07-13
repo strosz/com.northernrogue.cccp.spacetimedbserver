@@ -88,6 +88,7 @@ public class ServerWindow : EditorWindow
     private bool colorLogo = true;
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
+    private double cccpUpdateStartTime = 0;
     
     // Scroll tracking for autoscroll behavior
     private Vector2 lastScrollPosition;
@@ -309,17 +310,36 @@ public class ServerWindow : EditorWindow
         // Github Update Button
         if (ServerUpdateProcess.IsGithubUpdateAvailable())
         {
+            // Check if we need to reset the updating state after 10 seconds
+            if (isUpdatingCCCP && EditorApplication.timeSinceStartup - cccpUpdateStartTime > 10.0)
+            {
+                isUpdatingCCCP = false;
+            }
+            
             string buttonText = isUpdatingCCCP ? "Updating CCCP Package..." : "New CCCP Update Available";
-            if (GUILayout.Button(buttonText))
+            
+            // Create a custom style for the button based on the state
+            GUIStyle updateButtonStyle = new GUIStyle(GUI.skin.button);
+            if (isUpdatingCCCP)
+            {
+                updateButtonStyle.normal.textColor = Color.green;
+                updateButtonStyle.hover.textColor = Color.green;
+                updateButtonStyle.active.textColor = Color.green;
+                updateButtonStyle.focused.textColor = Color.green;
+            }
+            else
+            {
+                updateButtonStyle.normal.textColor = Color.white;
+                updateButtonStyle.hover.textColor = Color.white;
+                updateButtonStyle.active.textColor = Color.white;
+                updateButtonStyle.focused.textColor = Color.white;
+            }
+            
+            if (GUILayout.Button(buttonText, updateButtonStyle))
             {
                 isUpdatingCCCP = true;
+                cccpUpdateStartTime = EditorApplication.timeSinceStartup;
                 ServerUpdateProcess.UpdateGithubPackage();
-                // Reset the flag after a delay to restore the original text
-                EditorApplication.delayCall += () =>
-                {
-                    isUpdatingCCCP = false;
-                    Repaint();
-                };
             }
         }
         EditorGUILayout.EndVertical();
