@@ -96,7 +96,10 @@ public class ServerManager
     public string spacetimeDBCurrentVersion;
     public string spacetimeDBCurrentVersionCustom;
     public string spacetimeDBLatestVersion;
-    
+
+    // Server output window settings
+    private bool echoToConsole;
+
     // Properties for external access
     public string UserName => userName;
     public string BackupDirectory => backupDirectory;
@@ -283,6 +286,9 @@ public class ServerManager
         clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
         clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
+
+        // Server output window settings
+        echoToConsole = EditorPrefs.GetBool(PrefsKeyPrefix + "EchoToConsole", true);
 
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
@@ -2193,6 +2199,12 @@ public class ServerManager
         if (detectServerChanges && detectionProcess != null)
         {
             detectionProcess.CheckForChanges();
+        }
+
+        if (echoToConsole)
+        {
+            ServerOutputWindow.EchoLogsToConsole();
+            echoToConsole = EditorPrefs.GetBool(PrefsKeyPrefix + "EchoToConsole", true); // Update the value
         }
     }
     #endregion

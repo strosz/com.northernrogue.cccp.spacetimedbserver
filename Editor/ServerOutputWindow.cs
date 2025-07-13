@@ -369,13 +369,6 @@ public class ServerOutputWindow : EditorWindow
 
         // To debug how often this is called, uncomment the line below
         //if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] RefreshOpenWindow() called. Updating logs in background to be able to echo to console.");
-        if (echoToConsole)
-        {
-            string moduleLog = SessionState.GetString(SessionKeyModuleLog, "");
-            string databaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
-            EchoLogsToConsole(moduleLog, "Module");
-            EchoLogsToConsole(databaseLog, "Database");
-        }
         
         // Mark windows for update without immediate repaint (or with immediate repaint for SSH)
         var windowsToRefresh = openWindows.ToList(); 
@@ -1335,6 +1328,39 @@ public class ServerOutputWindow : EditorWindow
             return line.Substring(contentStart + 1).Trim();
         }
         return line.Trim();
+    }
+
+    public static void EchoLogsToConsole()
+    {
+        //Debug.Log("[ServerOutputWindow] Echoing logs to console...");
+        try
+        {
+            string moduleLog = SessionState.GetString(SessionKeyModuleLog, "");
+            string databaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
+            
+            if (!string.IsNullOrEmpty(moduleLog))
+            {
+                EchoLogsToConsole(moduleLog, "Module");
+            }
+            
+            if (!string.IsNullOrEmpty(databaseLog))
+            {
+                EchoLogsToConsole(databaseLog, "Database");
+            }
+            
+            if (debugMode && (!string.IsNullOrEmpty(moduleLog) || !string.IsNullOrEmpty(databaseLog)))
+            {
+                string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+                UnityEngine.Debug.Log($"[ServerOutputWindow] Standalone echo completed for {modeName} mode");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerOutputWindow] Error in EchoLogsToConsoleStandalone: {ex.Message}");
+            }
+        }
     }
     #endregion
 
