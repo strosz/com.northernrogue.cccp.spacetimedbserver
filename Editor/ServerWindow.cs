@@ -87,6 +87,7 @@ public class ServerWindow : EditorWindow
     private bool autoscroll = true;
     private bool colorLogo = true;
     private bool publishing = false;
+    private bool isUpdatingCCCP = false;
     
     // Scroll tracking for autoscroll behavior
     private Vector2 lastScrollPosition;
@@ -308,9 +309,17 @@ public class ServerWindow : EditorWindow
         // Github Update Button
         if (ServerUpdateProcess.IsGithubUpdateAvailable())
         {
-            if (GUILayout.Button("New Update for CCCP Available"))
+            string buttonText = isUpdatingCCCP ? "Updating CCCP Package..." : "New CCCP Update Available";
+            if (GUILayout.Button(buttonText))
             {
+                isUpdatingCCCP = true;
                 ServerUpdateProcess.UpdateGithubPackage();
+                // Reset the flag after a delay to restore the original text
+                EditorApplication.delayCall += () =>
+                {
+                    isUpdatingCCCP = false;
+                    Repaint();
+                };
             }
         }
         EditorGUILayout.EndVertical();
@@ -1525,7 +1534,7 @@ public class ServerWindow : EditorWindow
                 }
             }
         }
-        
+
         // Activation of Server Windows
         bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
         bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
