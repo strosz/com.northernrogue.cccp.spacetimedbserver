@@ -26,12 +26,10 @@ namespace NorthernRogue.CCCP.Editor
         private string serverDirectory;
         private bool detectServerChanges;
         private bool debugMode;
-        private double lastChangeCheckTime;
-        private const double changeCheckInterval = 3.0;
         
-        // File tracking state
-        private Dictionary<string, long> originalFileSizes = new Dictionary<string, long>();
-        private Dictionary<string, long> currentFileSizes = new Dictionary<string, long>();
+        // File tracking state - using both size and last write time for better change detection
+        private Dictionary<string, (long size, DateTime lastWrite)> originalFileInfo = new Dictionary<string, (long, DateTime)>();
+        private Dictionary<string, (long size, DateTime lastWrite)> currentFileInfo = new Dictionary<string, (long, DateTime)>();
         private bool serverChangesDetected = false;
         
         // Session flags
@@ -98,8 +96,8 @@ namespace NorthernRogue.CCCP.Editor
         public void ResetTracking()
         {
             if (debugMode) Debug.Log("[ServerDetectionProcess] Resetting file tracking state");
-            originalFileSizes.Clear();
-            currentFileSizes.Clear();
+            originalFileInfo.Clear();
+            currentFileInfo.Clear();
             serverChangesDetected = false;
             initialScanPerformed = false;
             SaveTrackingState();
@@ -130,14 +128,9 @@ namespace NorthernRogue.CCCP.Editor
 
         public void CheckForChanges()
         {
-            if (detectServerChanges && !string.IsNullOrEmpty(serverDirectory))
+            if (detectServerChanges)
             {
-                double currentTime = EditorApplication.timeSinceStartup;
-                if (currentTime - lastChangeCheckTime > changeCheckInterval)
-                {
-                    lastChangeCheckTime = currentTime;
-                    DetectServerChanges();
-                }
+                DetectServerChanges();
             }
         }
 
@@ -152,37 +145,38 @@ namespace NorthernRogue.CCCP.Editor
                 string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
                 
                 // Initialize dictionaries if empty
-                var newSizes = new Dictionary<string, long>();
+                var newFileInfo = new Dictionary<string, (long size, DateTime lastWrite)>();
                 
                 // Check for Cargo.toml existence and add it to tracking
                 if (File.Exists(cargoTomlPath))
                 {
                     try 
                     {
-                        newSizes[cargoTomlPath] = new FileInfo(cargoTomlPath).Length;
+                        var fileInfo = new FileInfo(cargoTomlPath);
+                        newFileInfo[cargoTomlPath] = (fileInfo.Length, fileInfo.LastWriteTime);
                     }
                     catch (IOException ex)
                     {
-                        if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get size for Cargo.toml: {ex.Message}");
+                        if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for Cargo.toml: {ex.Message}");
                     }
                 }
                 
                 // No src directory means we're only tracking Cargo.toml
                 if (!Directory.Exists(srcDirectory))
                 {
-                    if (originalFileSizes.Count > 0 || currentFileSizes.Count > 0 || newSizes.Count > 0) 
+                    if (originalFileInfo.Count > 0 || currentFileInfo.Count > 0 || newFileInfo.Count > 0) 
                     {
                         // If src dir disappeared but we were tracking files or have Cargo.toml, that's a change
-                        originalFileSizes.Clear();
-                        currentFileSizes.Clear();
-                        if (newSizes.Count > 0) 
+                        originalFileInfo.Clear();
+                        currentFileInfo.Clear();
+                        if (newFileInfo.Count > 0) 
                         {
-                            originalFileSizes = new Dictionary<string, long>(newSizes);
-                            currentFileSizes = new Dictionary<string, long>(newSizes);
+                            originalFileInfo = new Dictionary<string, (long, DateTime)>(newFileInfo);
+                            currentFileInfo = new Dictionary<string, (long, DateTime)>(newFileInfo);
                         }
                         
                         // Only mark as changed if we lost everything
-                        SetChangesDetected(newSizes.Count == 0);
+                        SetChangesDetected(newFileInfo.Count == 0);
                         initialScanPerformed = true;
                         SaveTrackingState();
                     }
@@ -216,11 +210,12 @@ namespace NorthernRogue.CCCP.Editor
                     string file = scriptFiles[i];
                     try
                     {
-                        newSizes[file] = new FileInfo(file).Length;
+                        var fileInfo = new FileInfo(file);
+                        newFileInfo[file] = (fileInfo.Length, fileInfo.LastWriteTime);
                     }
                     catch (IOException ex)
                     {
-                        if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get size for file {file}: {ex.Message}");
+                        if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for file {file}: {ex.Message}");
                     }
                 }
                 
@@ -232,11 +227,13 @@ namespace NorthernRogue.CCCP.Editor
                 }
                         
                 // Check for changed/new files
-                foreach (var kvp in newSizes)
+                foreach (var kvp in newFileInfo)
                 {
-                    if (!currentFileSizes.TryGetValue(kvp.Key, out long currentSize) || currentSize != kvp.Value)
+                    if (!currentFileInfo.TryGetValue(kvp.Key, out var currentInfo) || 
+                        currentInfo.size != kvp.Value.size || 
+                        currentInfo.lastWrite != kvp.Value.lastWrite)
                     {
-                        currentFileSizes[kvp.Key] = kvp.Value;
+                        currentFileInfo[kvp.Key] = kvp.Value;
                     }
                 }
                 
@@ -244,22 +241,22 @@ namespace NorthernRogue.CCCP.Editor
                 if (filesToProcess >= scriptFiles.Count)
                 {
                     // Check for deleted files only on complete scans
-                    var filesToRemove = currentFileSizes.Keys.Where(k => 
-                        k != cargoTomlPath && !newSizes.ContainsKey(k)).ToList();
+                    var filesToRemove = currentFileInfo.Keys.Where(k => 
+                        k != cargoTomlPath && !newFileInfo.ContainsKey(k)).ToList();
                         
                     foreach (var fileToRemove in filesToRemove)
                     {
-                        currentFileSizes.Remove(fileToRemove);
+                        currentFileInfo.Remove(fileToRemove);
                     }
                 }
 
                 // Check initial scan 
                 if (!initialScanPerformed)
                 {
-                    if (originalFileSizes.Count == 0)
+                    if (originalFileInfo.Count == 0)
                     {
                         // First scan, so set original = current
-                        originalFileSizes = new Dictionary<string, long>(currentFileSizes);
+                        originalFileInfo = new Dictionary<string, (long, DateTime)>(currentFileInfo);
                         initialScanPerformed = true;
                         SetChangesDetected(false);
                         SaveTrackingState();
@@ -271,7 +268,7 @@ namespace NorthernRogue.CCCP.Editor
                 bool differenceFromOriginal = false;
                 
                 // First check if counts are different
-                if (currentFileSizes.Count != originalFileSizes.Count)
+                if (currentFileInfo.Count != originalFileInfo.Count)
                 {
                     differenceFromOriginal = true;
                 }
@@ -279,11 +276,13 @@ namespace NorthernRogue.CCCP.Editor
                 {
                     // Only check a sample of files to avoid blocking for too long
                     int checkedFiles = 0;
-                    foreach (var kvp in currentFileSizes)
+                    foreach (var kvp in currentFileInfo)
                     {
                         if (checkedFiles++ > MaxFilesPerScan) break; // Limit number of checks
                         
-                        if (!originalFileSizes.TryGetValue(kvp.Key, out long originalSize) || originalSize != kvp.Value)
+                        if (!originalFileInfo.TryGetValue(kvp.Key, out var originalInfo) || 
+                            originalInfo.size != kvp.Value.size || 
+                            originalInfo.lastWrite != kvp.Value.lastWrite)
                         {
                             differenceFromOriginal = true;
                             break;
@@ -314,10 +313,10 @@ namespace NorthernRogue.CCCP.Editor
         {
             if (detectServerChanges)
             {
-                // Keep current file sizes as the new baseline
-                if (currentFileSizes.Count > 0)
+                // Keep current file info as the new baseline
+                if (currentFileInfo.Count > 0)
                 {
-                    originalFileSizes = new Dictionary<string, long>(currentFileSizes);
+                    originalFileInfo = new Dictionary<string, (long, DateTime)>(currentFileInfo);
                     SetChangesDetected(false);
                     SaveTrackingState();
                     
@@ -325,7 +324,7 @@ namespace NorthernRogue.CCCP.Editor
                 }
                 else
                 {
-                    // If we don't have current sizes, reset completely
+                    // If we don't have current info, reset completely
                     ResetTracking();
                 }
             }
@@ -353,36 +352,36 @@ namespace NorthernRogue.CCCP.Editor
             detectServerChanges = EditorPrefs.GetBool(PrefsKeyPrefix + "DetectServerChanges", true);
             serverChangesDetected = EditorPrefs.GetBool(PrefsKeyPrefix + "ServerChangesDetected", false);
             
-            // Also load file tracking data from SessionState if exists
-            string originalSizesJson = EditorPrefs.GetString(PrefsKeyPrefix + "OriginalFileSizes", "");
-            string currentSizesJson = EditorPrefs.GetString(PrefsKeyPrefix + "CurrentFileSizes", "");
+            // Also load file tracking data from EditorPrefs if exists
+            string originalInfoJson = EditorPrefs.GetString(PrefsKeyPrefix + "OriginalFileInfo", "");
+            string currentInfoJson = EditorPrefs.GetString(PrefsKeyPrefix + "CurrentFileInfo", "");
             
-            if (!string.IsNullOrEmpty(originalSizesJson))
+            if (!string.IsNullOrEmpty(originalInfoJson))
             {
                 try
                 {
                     // Deserialize file tracking data
-                    originalFileSizes = JsonUtility.FromJson<SerializableDictionary>(originalSizesJson).ToDictionary();
-                    initialScanPerformed = originalFileSizes.Count > 0;
+                    originalFileInfo = JsonUtility.FromJson<SerializableFileInfoDictionary>(originalInfoJson).ToDictionary();
+                    initialScanPerformed = originalFileInfo.Count > 0;
                 }
                 catch (Exception ex)
                 {
-                    if (debugMode) Debug.LogError($"[ServerDetectionProcess] Error loading original file sizes: {ex.Message}");
-                    originalFileSizes.Clear();
+                    if (debugMode) Debug.LogError($"[ServerDetectionProcess] Error loading original file info: {ex.Message}");
+                    originalFileInfo.Clear();
                 }
             }
             
-            if (!string.IsNullOrEmpty(currentSizesJson))
+            if (!string.IsNullOrEmpty(currentInfoJson))
             {
                 try
                 {
                     // Deserialize file tracking data
-                    currentFileSizes = JsonUtility.FromJson<SerializableDictionary>(currentSizesJson).ToDictionary();
+                    currentFileInfo = JsonUtility.FromJson<SerializableFileInfoDictionary>(currentInfoJson).ToDictionary();
                 }
                 catch (Exception ex)
                 {
-                    if (debugMode) Debug.LogError($"[ServerDetectionProcess] Error loading current file sizes: {ex.Message}");
-                    currentFileSizes.Clear();
+                    if (debugMode) Debug.LogError($"[ServerDetectionProcess] Error loading current file info: {ex.Message}");
+                    currentFileInfo.Clear();
                 }
             }
         }
@@ -393,12 +392,12 @@ namespace NorthernRogue.CCCP.Editor
             try
             {
                 // Serialize dictionaries to JSON
-                string originalSizesJson = JsonUtility.ToJson(new SerializableDictionary(originalFileSizes));
-                string currentSizesJson = JsonUtility.ToJson(new SerializableDictionary(currentFileSizes));
+                string originalInfoJson = JsonUtility.ToJson(new SerializableFileInfoDictionary(originalFileInfo));
+                string currentInfoJson = JsonUtility.ToJson(new SerializableFileInfoDictionary(currentFileInfo));
                 
                 // Save to EditorPrefs
-                EditorPrefs.SetString(PrefsKeyPrefix + "OriginalFileSizes", originalSizesJson);
-                EditorPrefs.SetString(PrefsKeyPrefix + "CurrentFileSizes", currentSizesJson);
+                EditorPrefs.SetString(PrefsKeyPrefix + "OriginalFileInfo", originalInfoJson);
+                EditorPrefs.SetString(PrefsKeyPrefix + "CurrentFileInfo", currentInfoJson);
                 EditorPrefs.SetBool(PrefsKeyPrefix + "ServerChangesDetected", serverChangesDetected);
             }
             catch (Exception ex)
@@ -407,35 +406,51 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
         
-        // Helper class for serializing Dictionary<string, long>
+        // Helper class for serializing Dictionary<string, (long, DateTime)>
         [Serializable]
-        private class SerializableDictionary
+        private class SerializableFileInfoDictionary
         {
             [Serializable]
             public struct KeyValuePair
             {
                 public string key;
-                public long value;
+                public long size;
+                public string lastWrite; // DateTime as string
             }
             
             public List<KeyValuePair> entries = new List<KeyValuePair>();
             
-            public SerializableDictionary() { }
+            public SerializableFileInfoDictionary() { }
             
-            public SerializableDictionary(Dictionary<string, long> dictionary)
+            public SerializableFileInfoDictionary(Dictionary<string, (long size, DateTime lastWrite)> dictionary)
             {
                 foreach (var kvp in dictionary)
                 {
-                    entries.Add(new KeyValuePair { key = kvp.Key, value = kvp.Value });
+                    entries.Add(new KeyValuePair 
+                    { 
+                        key = kvp.Key, 
+                        size = kvp.Value.size,
+                        lastWrite = kvp.Value.lastWrite.ToBinary().ToString()
+                    });
                 }
             }
             
-            public Dictionary<string, long> ToDictionary()
+            public Dictionary<string, (long size, DateTime lastWrite)> ToDictionary()
             {
-                Dictionary<string, long> result = new Dictionary<string, long>();
+                Dictionary<string, (long, DateTime)> result = new Dictionary<string, (long, DateTime)>();
                 foreach (var entry in entries)
                 {
-                    result[entry.key] = entry.value;
+                    try
+                    {
+                        long binaryTime = Convert.ToInt64(entry.lastWrite);
+                        DateTime dateTime = DateTime.FromBinary(binaryTime);
+                        result[entry.key] = (entry.size, dateTime);
+                    }
+                    catch (Exception)
+                    {
+                        // Skip corrupted entries
+                        continue;
+                    }
                 }
                 return result;
             }
