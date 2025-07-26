@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+// Detects file changes in the server directory to be able to notify and auto compile ///
+
 namespace NorthernRogue.CCCP.Editor
 {
     public class ServerDetectionProcess
@@ -16,6 +18,9 @@ namespace NorthernRogue.CCCP.Editor
         // Constants
         private const string PrefsKeyPrefix = "CCCP_";
         private const int MaxFilesPerScan = 100;
+        
+        // File extensions to monitor for script changes
+        private static readonly string[] ScriptExtensions = { ".rs", ".cs", ".toml", ".sql", ".json", ".yaml", ".yml", ".md" };
         
         // Member variables
         private string serverDirectory;
@@ -32,11 +37,15 @@ namespace NorthernRogue.CCCP.Editor
         // Session flags
         private bool initialScanPerformed = false;
         private int pendingFileScanCount = 0;
+        private bool hadFocus = true; // Track focus state
 
         public ServerDetectionProcess(bool debugMode)
         {
             this.debugMode = debugMode;
             LoadState();
+            
+            // Subscribe to focus change events
+            EditorApplication.focusChanged += OnEditorFocusChanged;
         }
 
         public void Configure(string serverDirectory, bool detectServerChanges)
@@ -102,6 +111,23 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
 
+        public void Dispose()
+        {
+            // Unsubscribe from events
+            EditorApplication.focusChanged -= OnEditorFocusChanged;
+        }
+
+        private void OnEditorFocusChanged(bool hasFocus)
+        {
+            // If Unity just gained focus, check for changes immediately
+            if (hasFocus && !hadFocus && detectServerChanges)
+            {
+                if (debugMode) Debug.Log("[ServerDetectionProcess] Unity regained focus, checking for server changes");
+                DetectServerChanges();
+            }
+            hadFocus = hasFocus;
+        }
+
         public void CheckForChanges()
         {
             if (detectServerChanges && !string.IsNullOrEmpty(serverDirectory))
@@ -164,17 +190,30 @@ namespace NorthernRogue.CCCP.Editor
                 }
 
                 // Scan files in a way that's safe for the main thread, but limit number of files checked per frame
-                // Get all files but limit how many we process at once
-                string[] allFiles = Directory.GetFiles(srcDirectory, "*.*", SearchOption.AllDirectories);
-                int filesToProcess = Math.Min(allFiles.Length, MaxFilesPerScan);
+                // Get all script files (filtered by extensions) from src directory and subdirectories
+                var scriptFiles = new List<string>();
+                foreach (string extension in ScriptExtensions)
+                {
+                    try
+                    {
+                        string[] filesWithExtension = Directory.GetFiles(srcDirectory, "*" + extension, SearchOption.AllDirectories);
+                        scriptFiles.AddRange(filesWithExtension);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Error scanning for {extension} files: {ex.Message}");
+                    }
+                }
+                
+                int filesToProcess = Math.Min(scriptFiles.Count, MaxFilesPerScan);
                 
                 // Update pending file count for multi-frame processing
-                pendingFileScanCount = allFiles.Length - filesToProcess;
+                pendingFileScanCount = scriptFiles.Count - filesToProcess;
                 
-                // Process a subset of files
+                // Process a subset of script files
                 for (int i = 0; i < filesToProcess; i++)
                 {
-                    string file = allFiles[i];
+                    string file = scriptFiles[i];
                     try
                     {
                         newSizes[file] = new FileInfo(file).Length;
@@ -186,9 +225,9 @@ namespace NorthernRogue.CCCP.Editor
                 }
                 
                 // If we've only processed a partial list, we'll process more next time
-                if (filesToProcess < allFiles.Length)
+                if (filesToProcess < scriptFiles.Count)
                 {
-                    if (debugMode) Debug.Log($"[ServerDetectionProcess] Partially scanned server directory: {filesToProcess}/{allFiles.Length} files");
+                    if (debugMode) Debug.Log($"[ServerDetectionProcess] Partially scanned server directory: {filesToProcess}/{scriptFiles.Count} files");
                     // Process the changes we do have to see if we need to update
                 }
                         
@@ -202,7 +241,7 @@ namespace NorthernRogue.CCCP.Editor
                 }
                 
                 // Skip checking for deleted files if we're only doing a partial scan
-                if (filesToProcess >= allFiles.Length)
+                if (filesToProcess >= scriptFiles.Count)
                 {
                     // Check for deleted files only on complete scans
                     var filesToRemove = currentFileSizes.Keys.Where(k => 

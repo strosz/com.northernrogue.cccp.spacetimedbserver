@@ -1271,7 +1271,7 @@ public class ServerManager
             if (!string.IsNullOrWhiteSpace(description))
             LogMessage($"{description}...", 0);
 
-            // Publish and Generate requires the local CLI below and is not run on SSH
+            // Publish and Generate uses the local CLI and is not run on SSH
             if (serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate"))
             {
                 var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command); // SSH command
@@ -1512,8 +1512,10 @@ public class ServerManager
         publishing = false;
     }
 
-    private void GenerateResult(string output, string error)
+    private async void GenerateResult(string output, string error)
     {
+        LogMessage("Waiting for generated files to be fully written...", 1);
+        await Task.Delay(3000); // Wait 3 seconds for files to be fully generated
         LogMessage("Requesting script compilation...", 1);
         UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
         LogMessage("Publish and Generate successful!", 1);

@@ -29,6 +29,7 @@ Install directly in your Unity Package Manager with this git URL
 🔄 **Automatic Workflow**
    - Detects changes in your server code as you develop.
    - Auto Publish/Generate mode keeps your server up-to-date.
+   - Create new server modules and switch between them.
 
 🌱 **Automatic Installer**
    - Server Installer Window which installs everything necessary from the ground up.
@@ -37,12 +38,12 @@ Install directly in your Unity Package Manager with this git URL
    - Get notified of new SpacetimeDB server updates and update it in the Server Installer Window.
 
 📊 **Real-time Monitoring**
-   - Monitor server status and port availability directly in Unity.
-   - View real-time server logs within the editor and save them.
-   - Server errors are mirrored in the Unity console for easy debugging.
+   - Monitor server status directly in Unity and send utility commands.
+   - Server logs can be viewed in real-time within the editor and saved.
+   - Server log errors are mirrored in the Unity console for easy debugging.
 
 💾 **Backup and Restore**
-   - Create and restore highly compressed backups of your entire SpacetimeDB within WSL.
+   - Create and restore highly compressed backups of your entire SpacetimeDB within WSL Local.
    - Restore previous states in seconds.
 
 🔍 **Database Browser**
