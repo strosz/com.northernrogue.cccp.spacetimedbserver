@@ -283,8 +283,8 @@ public class ServerManager
         publishAndGenerateMode = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishAndGenerateMode", true);
         silentMode = EditorPrefs.GetBool(PrefsKeyPrefix + "SilentMode", true);
         debugMode = EditorPrefs.GetBool(PrefsKeyPrefix + "DebugMode", false);
-        clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", false);
-        clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", false);
+        clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", true);
+        clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", true);
         autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", true);
 
         // Server output window settings
@@ -1287,8 +1287,15 @@ public class ServerManager
                 // Most results will be output here
                 if (!string.IsNullOrEmpty(result.error))
                 {
-                    LogMessage(result.error, -2);
-                    publishing = false;
+                    // Filter out formatting errors for generate commands that don't affect functionality
+                    bool isGenerateCmd = command.Contains("spacetime generate");
+                    string filteredError = isGenerateCmd ? FilterGenerateErrors(result.error) : result.error;
+                    
+                    if (!string.IsNullOrEmpty(filteredError))
+                    {
+                        LogMessage(filteredError, -2);
+                        publishing = false;
+                    }
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
@@ -1330,8 +1337,15 @@ public class ServerManager
                 
                 if (!string.IsNullOrEmpty(result.error))
                 {
-                    LogMessage(result.error, -2);
-                    publishing = false;
+                    // Filter out formatting errors for generate commands that don't affect functionality
+                    bool isGenerateCmd = command.Contains("spacetime generate");
+                    string filteredError = isGenerateCmd ? FilterGenerateErrors(result.error) : result.error;
+                    
+                    if (!string.IsNullOrEmpty(filteredError))
+                    {
+                        LogMessage(filteredError, -2);
+                        publishing = false;
+                    }
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
@@ -1759,6 +1773,38 @@ public class ServerManager
                 RepaintCallback?.Invoke();
             };
         });
+    }
+
+    private string FilterGenerateErrors(string error)
+    {
+        if (string.IsNullOrEmpty(error))
+            return error;
+
+        // Filter out the formatting error that doesn't affect functionality
+        var lines = error.Split('\n');
+        var filteredLines = new System.Collections.Generic.List<string>();
+        
+        foreach (string line in lines)
+        {
+            string trimmedLine = line.Trim();
+            // Skip the specific formatting error that confuses users but doesn't affect functionality
+            if (trimmedLine.Contains("Could not format generated files: No such file or directory (os error 2)"))
+            {
+                if (DebugMode)
+                {
+                    LogMessage("Filtered out formatting warning: " + trimmedLine, 0);
+                }
+                continue;
+            }
+            
+            // Keep all other error lines
+            if (!string.IsNullOrWhiteSpace(trimmedLine))
+            {
+                filteredLines.Add(line);
+            }
+        }
+        
+        return string.Join("\n", filteredLines).Trim();
     }
 
     private string GetWslPath(string windowsPath)
@@ -2217,8 +2263,15 @@ public class ServerManager
     {
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
         
-        // Use RunServerCommandAsync to run the spacetime --version command
-        var result = await cmdProcessor.RunServerCommandAsync("spacetime --version", serverDirectory);
+        // Only proceed if prerequisites are met
+        if (!WslPrerequisitesChecked || !HasWSL || !HasDebian || !HasDebianTrixie || string.IsNullOrEmpty(UserName))
+        {
+            if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met or username not set", 0);
+            return;
+        }
+        
+        // Use RunServerCommandAsync to run the spacetime --version command (mark as status check for silent mode)
+        var result = await cmdProcessor.RunServerCommandAsync("spacetime --version", serverDirectory, true);
         
         if (string.IsNullOrEmpty(result.output))
         {

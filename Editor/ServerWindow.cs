@@ -72,8 +72,8 @@ public class ServerWindow : EditorWindow
     private bool publishAndGenerateMode = false;
     private bool silentMode = false;
     private bool autoCloseWsl = false;
-    private bool clearModuleLogAtStart = false;
-    private bool clearDatabaseLogAtStart = false;
+    private bool clearModuleLogAtStart = true;
+    private bool clearDatabaseLogAtStart = true;
 
     // Update SpacetimeDB
     private string spacetimeDBCurrentVersion = "";

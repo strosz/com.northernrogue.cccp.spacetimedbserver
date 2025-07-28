@@ -188,12 +188,15 @@ public class ServerCMDProcess
     
     #region Process Execution Methods
     
-    private bool ValidateUserName()
+    private bool ValidateUserName(bool silentMode = false)
     {
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         if (string.IsNullOrEmpty(userName))
         {
-            logCallback("[ServerCMDProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
+            if (!silentMode)
+            {
+                logCallback("[ServerCMDProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
+            }
             return false;
         }
         return true;
@@ -350,8 +353,8 @@ public class ServerCMDProcess
     #region CheckServerProcess
     public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
     {
-        // Validate username before proceeding (must be done on main thread)
-        if (!ValidateUserName()) 
+        // Validate username before proceeding (must be done on main thread) - use silent mode for status checks
+        if (!ValidateUserName(true)) 
         {
             return false;
         }
@@ -733,8 +736,8 @@ public class ServerCMDProcess
 
     public int RunWslCommandSilent(string bashCommand)
     {
-        // Validate username before proceeding
-        if (!ValidateUserName()) return -1;
+        // Validate username before proceeding - silent mode since this is used for status checks
+        if (!ValidateUserName(true)) return -1;
 
         try
         {
@@ -772,11 +775,13 @@ public class ServerCMDProcess
     
     #region RunServerCommand
 
-    public async Task<(string output, string error, bool success)> RunServerCommandAsync(string command, string serverDirectory = null)
+    public async Task<(string output, string error, bool success)> RunServerCommandAsync(string command, string serverDirectory = null, bool isStatusCheck = false)
     {
-        // Validate username before proceeding
-        if (!ValidateUserName()) 
+        // Validate username before proceeding - use silent mode for automated status checks, while manual actions will show errors
+        if (!ValidateUserName(isStatusCheck))
+        {
             return (string.Empty, "Error: No Debian username set. Please set a valid username in the Server Window.", false);
+        }
 
         try
         {
@@ -1252,7 +1257,7 @@ public class ServerCMDProcess
     // Method to check if SpacetimeDB service is running with caching
     public async Task<bool> CheckServerRunning(bool instantCheck = false)
     {
-        if (!ValidateUserName()) return false;
+        if (!ValidateUserName(true)) return false;
 
         double currentTime = EditorApplication.timeSinceStartup;
         if (!instantCheck)
@@ -1268,7 +1273,7 @@ public class ServerCMDProcess
 
         try
         {
-            var result = await RunServerCommandAsync("systemctl is-active spacetimedb.service");
+            var result = await RunServerCommandAsync("systemctl is-active spacetimedb.service", null, true);
             running = result.output.Trim() == "active";
 
             if (debugMode)
