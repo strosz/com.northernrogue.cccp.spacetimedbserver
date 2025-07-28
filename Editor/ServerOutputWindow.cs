@@ -99,7 +99,7 @@ public class ServerOutputWindow : EditorWindow
     // Track compilation state to force refresh after compilation
     private static bool wasCompiling = false;
 
-    [MenuItem("SpacetimeDB/Server Logs")]
+    [MenuItem("SpacetimeDB/View Logs")]
     public static void ShowWindow()
     {
         // Trigger SessionState refresh before opening window

@@ -78,8 +78,8 @@ public class ServerWelcomeWindow : EditorWindow
         "Cosmos Cove Control Panel is a Windows WSL integration of SpacetimeDB within Unity, allowing you to develop MMO experiences in Unity faster and easier than ever.\n\n" +
         "The menu item SpacetimeDB has been added to your toolbar.\n" +
         "There you will find all the main windows of Cosmos Cove Control Panel.\n\n" +
-        "Please begin by opening the Server Installer Window to check if you have the pre-requisites installed and there you can also install them directly (alpha).\n\n" +
-        "The main window is the Server Manager Panel. From there you can start your server and launch all other functionality by entering your server information in the pre-requisites.";
+        "First open the main Server Manager Window. There you can enter the essential shared settings and launch all other functionality.\n\n" +
+        "Then launch the Server Installer Window. It will check for the necessary Pre-requisites and you can install all necessary items to get your local WSL SpacetimeDB server running.";
         
         EditorGUILayout.LabelField(welcomeText, textStyle);
         
@@ -88,9 +88,9 @@ public class ServerWelcomeWindow : EditorWindow
         // Buttons
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Server Installer Window", GUILayout.Height(30), GUILayout.Width(200)))
+        if (GUILayout.Button("Main Window", GUILayout.Height(30), GUILayout.Width(200)))
         {
-            ServerInstallerWindow.ShowWindow();
+            ServerWindow.ShowWindow();
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
@@ -99,9 +99,9 @@ public class ServerWelcomeWindow : EditorWindow
         
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Server Manager Panel", GUILayout.Height(30), GUILayout.Width(200)))
+        if (GUILayout.Button("Installer Window", GUILayout.Height(30), GUILayout.Width(200)))
         {
-            ServerWindow.ShowWindow();
+            ServerInstallerWindow.ShowWindow();
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();

@@ -97,8 +97,7 @@ Install directly in your Unity Package Manager with this git URL
 ## Supported Platforms
 
 *   **Windows®:** Requires WSL (Windows Subsystem for Linux) with Debian.
-   *   Includes setup instructions and an automatic pre-requisite check within Unity®.
-   *   Includes an optional automatic installer for all pre-requisites required to install SpacetimeDB® (alpha version).
+   *   Includes an optional automatic installer for all pre-requisites required to use SpacetimeDB® within Unity®.
    *   Custom Remote Mode installs Debian on the remote server and expects a Debian command environment. May work with other manually installed distros that are based on Debian.
 
 ## Getting Started

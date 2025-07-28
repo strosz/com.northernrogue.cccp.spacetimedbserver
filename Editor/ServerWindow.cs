@@ -84,7 +84,7 @@ public class ServerWindow : EditorWindow
     private Vector2 scrollPosition;
     private string commandOutputLog = "";
     private bool autoscroll = true;
-    private bool colorLogo = true;
+    private bool colorLogo = false;
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
@@ -118,7 +118,7 @@ public class ServerWindow : EditorWindow
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
-    [MenuItem("SpacetimeDB/Server Management Panel", priority = -9000)]
+    [MenuItem("SpacetimeDB/Main Window", priority = -9000)]
     public static void ShowWindow()
     {
         ServerWindow window = GetWindow<ServerWindow>("SpacetimeDB");
@@ -382,7 +382,7 @@ public class ServerWindow : EditorWindow
 
         // Load UI preferences
         autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
-        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", true);
+        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", false);
 
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;

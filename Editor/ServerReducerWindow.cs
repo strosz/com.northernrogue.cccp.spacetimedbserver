@@ -159,7 +159,7 @@ public class ServerReducerWindow : EditorWindow
     }
     
     #region Window Management
-    [MenuItem("SpacetimeDB/Server Run Reducer")]
+    [MenuItem("SpacetimeDB/Run Reducer")]
     public static void ShowWindow()
     {
         ServerReducerWindow window = GetWindow<ServerReducerWindow>("Run Server Reducer");

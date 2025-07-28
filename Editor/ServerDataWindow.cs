@@ -93,7 +93,7 @@ public class ServerDataWindow : EditorWindow
     string reducerEndpoint;
 
     // --- Window Setup ---
-    [MenuItem("SpacetimeDB/Server Database")]
+    [MenuItem("SpacetimeDB/Browse Database")]
     public static void ShowWindow()
     {
         ServerDataWindow window = GetWindow<ServerDataWindow>("Database");
