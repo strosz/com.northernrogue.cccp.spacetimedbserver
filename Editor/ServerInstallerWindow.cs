@@ -128,10 +128,10 @@ public class ServerInstallerWindow : EditorWindow
             EditorApplication.delayCall += () => {
                 bool continuePressed = EditorUtility.DisplayDialog(
                     "SpacetimeDB Automatic Installer",
-                    "Welcome to the automatic installer window that can check and install everything needed for your Windows PC to run SpacetimeDB from the ground up.\n" +
-                    "Start from the top and click the install commands. The installer will gray out the steps that you can't yet complete, before the previous steps are installed.\n\n" +
-                    "All named software in this window is official and publicly available software that belongs to the respective parties and is provided by them for free.\n" +
-                    "The installer window works by entering the same commands as in the manual installation process for the purpose of ease of use.",
+                    "Welcome to the automatic installer window that checks and installs everything needed for your Windows PC to run SpacetimeDB from the ground up.\n" +
+                    "Start from the top and click the install on each item.\n\n" +
+                    "All named software in this window is official and publicly available free software that belongs to the respective parties.\n" +
+                    "For a manual installation process, check the documentation.",
                     "Continue", "Documentation");
                 
                 if (!continuePressed) {
@@ -1212,33 +1212,23 @@ public class ServerInstallerWindow : EditorWindow
             if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
-                installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                if (installedSuccessfully)
+                await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                await Task.Delay(5000);
+                CheckInstallationStatus();
+                if (hasWSL && hasDebian)
                 {
-                    await Task.Delay(5000);
-                    CheckInstallationStatus();
-                    if (hasWSL && hasDebian)
-                    {
-                        SetStatus("WSL2 with Debian installed successfully.", Color.green);
+                    SetStatus("WSL2 with Debian installed successfully.", Color.green);
 
-                        // Display dialog informing user about Debian first-time setup
-                        EditorUtility.DisplayDialog(
-                            "Debian First-Time Setup",
-                            "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
-                            "OK"
-                        );
-                        // Launch visible Debian window without username required
-                        bool userNameReq = false;
-                        cmdProcess.OpenDebianWindow(userNameReq);
-                    } else {
-                        EditorUtility.DisplayDialog(
-                            "Restart and Try Again",
-                            "Sometimes the WSL install process requires a system restart.\n\n" +
-                            "Please restart your PC and Unity and try to install WSL2 with Debian again.",
-                            "OK"
-                        );
-                        SetStatus("WSL2 with Debian installation failed or requires a restart.", Color.red);
-                    }
+                    // Display dialog informing user about Debian first-time setup
+                    EditorUtility.DisplayDialog(
+                        "Debian First-Time Setup",
+                        "Starting Debian for the first time so that you are asked to create your user credentials. You can close the Debian window afterwards.\n\n" +
+                        "In some WSL versions the credentials were already created and you may close the window in that case.",
+                        "OK"
+                    );
+                    // Launch visible Debian window without username required
+                    bool userNameReq = false;
+                    cmdProcess.OpenDebianWindow(userNameReq);
                 } else {
                     EditorUtility.DisplayDialog(
                         "Restart and Try Again",
@@ -1248,6 +1238,7 @@ public class ServerInstallerWindow : EditorWindow
                     );
                     SetStatus("WSL2 with Debian installation failed or requires a restart.", Color.red);
                 }
+
             } else {
                 SetStatus("WSL2 with Debian installation cancelled.", Color.yellow);
             }
@@ -1269,6 +1260,14 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Debian Trixie Update is already installed.", Color.green);
             return;
         }
+
+        EditorUtility.DisplayDialog(
+            "Debian Trixie Upgrade",
+            "Installer windows will appear during this installation which requires user input.\n\n" +
+            "Please press any key when asked and create and write down your new credentials when asked.\n\n" +
+            "There may be a window titled >Configuring libc6< and there you can press Yes.",
+            "OK"
+        );
         
         SetStatus("Installing Debian Trixie Update - Step 1: apt update", Color.yellow);
         

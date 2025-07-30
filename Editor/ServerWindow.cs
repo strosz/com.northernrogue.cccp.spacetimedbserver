@@ -2219,6 +2219,13 @@ public class ServerWindow : EditorWindow
     
     public void LogMessage(string message, int style)
     {
+        // Filter out messages that are too short (prevents "T" messages and other truncated output)
+        if (string.IsNullOrWhiteSpace(message) || message.Trim().Length < 3)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[LogMessage] Filtered out short message: '{message}' (length: {message?.Length ?? 0})");
+            return;
+        }
+        
         // Skip extra warning messages
         if (message.Contains("WARNING"))
         {
