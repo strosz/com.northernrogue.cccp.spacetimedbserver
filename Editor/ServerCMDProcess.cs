@@ -515,8 +515,8 @@ public class ServerCMDProcess
                 
                 // Binaryen Check
                 "Write-Host 'Checking Binaryen...'; " +
-                "$binaryen = (wsl -d Debian -u " + userName + " -- test -f '/usr/local/bin/wasm-opt' 2>&1); " +
-                "if ($?) { Write-Host 'BINARYEN_INSTALLED=TRUE' } else { Write-Host 'BINARYEN_INSTALLED=FALSE' }" +
+                "$binaryen = (wsl -d Debian -u " + userName + " -- bash -c 'test -f /usr/local/bin/wasm-opt && echo \"wasm-opt found\" || echo \"not found\"' 2>&1); " +
+                "if ($binaryen -match 'wasm-opt found') { Write-Host 'BINARYEN_INSTALLED=TRUE' } else { Write-Host 'BINARYEN_INSTALLED=FALSE' }" +
             "} else { " +
                 // Set all dependent checks to FALSE if WSL is not installed
                 "Write-Host 'DEBIAN_INSTALLED=FALSE'; " +

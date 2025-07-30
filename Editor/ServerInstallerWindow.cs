@@ -152,6 +152,7 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
         hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
+        hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
 
         // Load Custom SSH installation status from EditorPrefs
@@ -677,12 +678,13 @@ public class ServerInstallerWindow : EditorWindow
         
         string description = currentTab == 0 ? 
             "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +
-            "This will give you a local CLI for spacetime commands. Required for all modes to be able to publish." :
+            "You get a local CLI for spacetime commands.\n" +
+            "Required for all server modes to be able to publish your server." :
             "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.\n" +
-            "This has been tested to work on a fresh Debian 12 server, VM or VPS instance from the ground up.";
+            "Works on a fresh Debian 12 server, VM or VPS instance from the ground up.";
 
         EditorGUILayout.LabelField(description,
-            EditorStyles.centeredGreyMiniLabel, GUILayout.Height(30));
+            EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
 
         // Show usernameprompt for clarity before SpacetimeDB install
         bool showUsernamePrompt = String.IsNullOrEmpty(userName) && 
@@ -990,6 +992,7 @@ public class ServerInstallerWindow : EditorWindow
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", hasSpacetimeDBService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", hasSpacetimeDBLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", hasBinaryen);
             EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
         });
 
@@ -1850,11 +1853,10 @@ public class ServerInstallerWindow : EditorWindow
         
         try
         {
-            // Install Binaryen with the specific version and command provided
+            // Install Binaryen with the specific version directly in the URL
             string installCommand = $"wsl -d Debian -u {userName} bash -c \"" +
-                "VERSION=123 && " +
-                "curl -L \\\"https://github.com/WebAssembly/binaryen/releases/download/version_${{VERSION}}/binaryen-version_${{VERSION}}-x86_64-linux.tar.gz\\\" | " +
-                "sudo tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_${{VERSION}}/bin\"";
+                "curl -L \\\"https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz\\\" | " +
+                "sudo tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_123/bin\"";
             
             bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
                 installCommand, 
