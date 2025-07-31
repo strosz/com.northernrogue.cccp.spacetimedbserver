@@ -155,6 +155,9 @@ public class ServerManager
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
     public bool InitializedFirstModule => initializedFirstModule;
 
+    // Process getters
+    public ServerCMDProcess GetCmdProcessor() => cmdProcessor;
+
     // Callbacks
     public Action<string, int> LogCallback { get; set; }
     public Action RepaintCallback { get; set; }
@@ -1095,7 +1098,7 @@ public class ServerManager
                         
                         if (DebugMode)
                         {
-                            LogMessage($"WSL Server status - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                            //LogMessage($"WSL Server status - Service: {(serviceRunning ? "active" : "inactive")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
                         }
                     }
                 }

@@ -842,6 +842,7 @@ public class ServerCMDProcess
             bool commandSuccess = false;
             bool isPublishCommand = command.Contains("spacetime publish");
             bool isGenerateCommand = command.Contains("spacetime generate");
+            bool isLogSizeCommand = command.Contains("du -s") || command.Contains("journalctl") && command.Contains("wc -c");
             
             if (!string.IsNullOrEmpty(error) && error.Contains("Finished"))
             {
@@ -871,8 +872,18 @@ public class ServerCMDProcess
                 logCallback($"Error: The command (likely 'spacetime') was not found in the WSL environment for user '{userName}'. Ensure SpacetimeDB is correctly installed and in the PATH for that user.", -1);
                 commandSuccess = false;
             }
-            
-            if (string.IsNullOrEmpty(output) && string.IsNullOrEmpty(error))
+            else if (isLogSizeCommand && !string.IsNullOrEmpty(output) && output.Trim().All(char.IsDigit))
+            {
+                // Log size commands are successful if they return numeric output
+                commandSuccess = true;
+                if (debugMode) logCallback($"Log size command successful with output: {output.Trim()}", 1);
+            }
+            else if (wslProcess.ExitCode == 0)
+            {
+                // Command succeeded based on exit code
+                commandSuccess = true;
+            }
+            else if (string.IsNullOrEmpty(output) && string.IsNullOrEmpty(error))
             {
                 commandSuccess = true;
             }
@@ -975,7 +986,7 @@ public class ServerCMDProcess
             // Combine output and error for parsing
             string fullOutput = output + error;
             
-            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Ping result: {fullOutput}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Ping result: {fullOutput}");
             
             // Check if server is online by looking for "Server is online" in the output
             bool isOnline = fullOutput.Contains("Server is online");
@@ -1302,6 +1313,157 @@ public class ServerCMDProcess
             cachedServerRunningStatus = false;
             lastStatusCacheTime = 0;
             if (debugMode) logCallback("Server status cache cleared", 0);
+        }
+    }
+
+    #endregion
+
+    #region WSL Log Management
+
+    // Get the size of /var/log/journal/ directory in MB for WSL
+    public async Task<float> GetWSLJournalSize()
+    {
+        if (!ValidateUserName(true))
+        {
+            if (debugMode) logCallback("Username not configured. Cannot get WSL log size.", -1);
+            return -1f;
+        }
+
+        if (debugMode) logCallback($"WSL GetWSLJournalSize: Using username '{userName}'", 0);
+
+        try
+        {
+            // Use du command to get directory size in KB, then convert to MB
+            // -s = summarize (don't show subdirectories)
+            // -k = show size in KB
+            var result = await RunServerCommandAsync("du -sk /var/log/journal/ 2>/dev/null | head -1", null, true);
+            
+            if (debugMode) logCallback($"WSL GetWSLJournalSize: Command result - Success: {result.success}, Output: '{result.output}', Error: '{result.error}'", 0);
+            
+            if (!result.success)
+            {
+                if (debugMode) logCallback($"Failed to get WSL log directory size. Error: {result.error}", -1);
+                return -1f;
+            }
+            
+            // Parse the output - du returns format like "12345  /var/log/journal/"
+            string output = result.output.Trim();
+            if (string.IsNullOrEmpty(output))
+            {
+                if (debugMode) logCallback("Empty output when checking WSL log size", -1);
+                return -1f;
+            }
+            
+            if (debugMode) logCallback($"WSL raw du output: '{output}'", 0);
+            
+            // Extract the size (first part before whitespace)
+            string[] parts = output.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                if (debugMode) logCallback("Unable to parse WSL log size output - no parts found", -1);
+                return -1f;
+            }
+            
+            string sizeString = parts[0];
+            if (debugMode) logCallback($"Attempting to parse WSL size string: '{sizeString}'", 0);
+            
+            if (long.TryParse(sizeString, out long sizeInKB))
+            {
+                // Convert KB to MB (1 MB = 1024 KB)
+                float sizeInMB = sizeInKB / 1024.0f;
+                
+                if (debugMode) logCallback($"WSL log directory size: {sizeInKB} KB ({sizeInMB:F2} MB)", 0);
+                
+                return sizeInMB;
+            }
+            else
+            {
+                if (debugMode) logCallback($"Failed to parse WSL size value: '{sizeString}' from output: '{output}'", -1);
+                return -1f;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error getting WSL log size: {ex.Message}", -1);
+            return -1f;
+        }
+    }
+
+    // Get the size of spacetimedb and spacetimedb-logs service logs in MB for WSL
+    public async Task<(float spacetimedbSizeMB, float spacetimedbLogsSizeMB)> GetWSLSpacetimeLogSizes()
+    {
+        if (!ValidateUserName(true))
+        {
+            if (debugMode) logCallback("Username not configured. Cannot get WSL service log sizes.", -1);
+            return (-1f, -1f);
+        }
+
+        if (debugMode) logCallback($"WSL GetWSLSpacetimeLogSizes: Using username '{userName}'", 0);
+
+        try
+        {
+            // Get spacetimedb.service log size
+            var spacetimedbResult = await RunServerCommandAsync("journalctl -u spacetimedb.service --output=short-iso -q | wc -c", null, true);
+            float spacetimedbSizeMB = -1f;
+            
+            if (debugMode) logCallback($"WSL GetWSLSpacetimeLogSizes (spacetimedb): Command result - Success: {spacetimedbResult.success}, Output: '{spacetimedbResult.output}', Error: '{spacetimedbResult.error}'", 0);
+            
+            if (spacetimedbResult.success)
+            {
+                string spacetimedbOutput = spacetimedbResult.output.Trim();
+                if (debugMode) logCallback($"WSL spacetimedb.service log size output: '{spacetimedbOutput}'", 0);
+                
+                if (long.TryParse(spacetimedbOutput, out long spacetimedbSizeBytes))
+                {
+                    // Convert bytes to MB (1 MB = 1024 * 1024 bytes)
+                    spacetimedbSizeMB = spacetimedbSizeBytes / (1024.0f * 1024.0f);
+                    if (debugMode) logCallback($"WSL spacetimedb.service log size: {spacetimedbSizeBytes} bytes ({spacetimedbSizeMB:F2} MB)", 0);
+                }
+                else
+                {
+                    if (debugMode) logCallback($"Failed to parse WSL spacetimedb.service log size: '{spacetimedbOutput}'", -1);
+                }
+            }
+            else
+            {
+                if (debugMode) logCallback($"Failed to get WSL spacetimedb.service log size. Error: {spacetimedbResult.error}", -1);
+            }
+            
+            // Get spacetimedb-logs.service log size
+            var spacetimedbLogsResult = await RunServerCommandAsync("journalctl -u spacetimedb-logs.service --output=short-iso -q | wc -c", null, true);
+            float spacetimedbLogsSizeMB = -1f;
+            
+            if (debugMode) logCallback($"WSL GetWSLSpacetimeLogSizes (spacetimedb-logs): Command result - Success: {spacetimedbLogsResult.success}, Output: '{spacetimedbLogsResult.output}', Error: '{spacetimedbLogsResult.error}'", 0);
+            
+            if (spacetimedbLogsResult.success)
+            {
+                string spacetimedbLogsOutput = spacetimedbLogsResult.output.Trim();
+                if (debugMode) logCallback($"WSL spacetimedb-logs.service log size output: '{spacetimedbLogsOutput}'", 0);
+                
+                if (long.TryParse(spacetimedbLogsOutput, out long spacetimedbLogsSizeBytes))
+                {
+                    // Convert bytes to MB (1 MB = 1024 * 1024 bytes)
+                    spacetimedbLogsSizeMB = spacetimedbLogsSizeBytes / (1024.0f * 1024.0f);
+                    if (debugMode) logCallback($"WSL spacetimedb-logs.service log size: {spacetimedbLogsSizeBytes} bytes ({spacetimedbLogsSizeMB:F2} MB)", 0);
+                }
+                else
+                {
+                    if (debugMode) logCallback($"Failed to parse WSL spacetimedb-logs.service log size: '{spacetimedbLogsOutput}'", -1);
+                }
+            }
+            else
+            {
+                if (debugMode) logCallback($"Failed to get WSL spacetimedb-logs.service log size. Error: {spacetimedbLogsResult.error}", -1);
+            }
+            
+            if (debugMode) logCallback($"WSL service log sizes - spacetimedb: {spacetimedbSizeMB:F2} MB, spacetimedb-logs: {spacetimedbLogsSizeMB:F2} MB", 0);
+            
+            return (spacetimedbSizeMB, spacetimedbLogsSizeMB);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error getting WSL service log sizes: {ex.Message}", -1);
+            return (-1f, -1f);
         }
     }
 

@@ -588,7 +588,7 @@ public class ServerWindow : EditorWindow
             lastCheckTime = EditorApplication.timeSinceStartup;
             if (debugMode)
             {
-                UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
+                //UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
             }
         }
         

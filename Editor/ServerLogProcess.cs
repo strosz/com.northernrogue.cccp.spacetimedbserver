@@ -931,7 +931,7 @@ public class ServerLogProcess
             if (lastWSLModuleLogTimestamp == DateTime.MinValue || lastWSLModuleLogTimestamp.Year < 2020)
             {
                 lastWSLModuleLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL module timestamp detected, reset to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+                //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL module timestamp detected, reset to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss}");
             }
             
             // Format timestamp for journalctl --since parameter
@@ -940,8 +940,8 @@ public class ServerLogProcess
             // Try without sudo first - most users can read journalctl logs without sudo if properly configured
             string journalCommand = $"timeout 10s journalctl -u {SpacetimeServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
             
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL module logs since: {sinceTimestamp}");
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL module logs since: {sinceTimestamp}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
             
             readProcess = new Process();
             readProcess.StartInfo.FileName = "wsl";
@@ -976,7 +976,7 @@ public class ServerLogProcess
                 }
             }
             
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL module logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL module logs - Output length: {output?.Length ?? 0}, Error: {error}");
             
             if (!string.IsNullOrEmpty(output))
             {
@@ -997,7 +997,7 @@ public class ServerLogProcess
                         {
                             if (debugMode && lineCount < 3) // Only log first few rejections to avoid spam
                             {
-                                UnityEngine.Debug.Log($"[ServerLogProcess] Rejecting module log from {logTimestamp:yyyy-MM-dd HH:mm:ss} (before fresh start time {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss})");
+                                //UnityEngine.Debug.Log($"[ServerLogProcess] Rejecting module log from {logTimestamp:yyyy-MM-dd HH:mm:ss} (before fresh start time {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss})");
                             }
                             
                             // Still track the timestamp progression even if we skip the log content
@@ -1023,12 +1023,12 @@ public class ServerLogProcess
                                 
                                 if (debugMode && lineCount <= 3) // Show first few lines for debugging
                                 {
-                                    UnityEngine.Debug.Log($"[ServerLogProcess] Added WSL module log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
+                                    //UnityEngine.Debug.Log($"[ServerLogProcess] Added WSL module log line {lineCount}: {formattedLine.Substring(0, Math.Min(100, formattedLine.Length))}...");
                                 }
                             }
                             else if (debugMode)
                             {
-                                UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate module log line: {formattedLine.Substring(0, Math.Min(80, formattedLine.Length))}...");
+                                //UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate module log line: {formattedLine.Substring(0, Math.Min(80, formattedLine.Length))}...");
                             }
                         }
                         
@@ -1042,7 +1042,7 @@ public class ServerLogProcess
                 
                 if (hasNewLogs)
                 {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new WSL module log lines");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Read {lineCount} new WSL module log lines");
                     
                     // Always advance the timestamp to prevent infinite loops
                     DateTime timestampToUse;
@@ -1050,12 +1050,12 @@ public class ServerLogProcess
                     if (latestTimestamp > lastWSLModuleLogTimestamp)
                     {
                         timestampToUse = latestTimestamp.AddSeconds(1);
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using parsed timestamp: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
                     }
                     else
                     {
                         timestampToUse = lastWSLModuleLogTimestamp.AddSeconds(1);
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
+                        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No valid timestamps found, advancing by 1 second: {timestampToUse:yyyy-MM-dd HH:mm:ss.fff}");
                     }
                     
                     // Update the timestamp
@@ -1066,7 +1066,7 @@ public class ServerLogProcess
                     const int trimToLength = 50000;
                     if (moduleLogContent.Length > maxLogLength)
                     {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {moduleLogContent.Length} chars.");
+                        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent log from {moduleLogContent.Length} chars.");
                         moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - trimToLength);
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                     }
@@ -1082,7 +1082,7 @@ public class ServerLogProcess
                 {
                     // Even if no new logs, advance timestamp slightly to prevent infinite queries
                     lastWSLModuleLogTimestamp = lastWSLModuleLogTimestamp.AddSeconds(0.5);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL module log lines found, advancing timestamp slightly to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL module log lines found, advancing timestamp slightly to: {lastWSLModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
             else if (debugMode)
@@ -1156,9 +1156,10 @@ public class ServerLogProcess
             if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] WSL database log read already in progress, skipping");
             return;
         }
-          isReadingWSLDatabaseLogs = true;
         
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Starting WSL database log read - Fresh mode: {databaseLogStartFresh}, Fresh start time: {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+        isReadingWSLDatabaseLogs = true;
+        
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Starting WSL database log read - Fresh mode: {databaseLogStartFresh}, Fresh start time: {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         
         Process readProcess = null;try
         {   
@@ -1169,13 +1170,13 @@ public class ServerLogProcess
                 {
                     // If we want fresh logs only, start from current time
                     lastWSLDatabaseLogTimestamp = DateTime.UtcNow;
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to current time for fresh logs: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to current time for fresh logs: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
                 }
                 else
                 {
                     // Otherwise use 10 minutes ago for recent context
                     lastWSLDatabaseLogTimestamp = DateTime.UtcNow.AddMinutes(-10);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to 10 minutes ago: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Invalid WSL database timestamp detected, reset to 10 minutes ago: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
                 }
             }
             // Format timestamp for journalctl --since parameter
@@ -1184,19 +1185,19 @@ public class ServerLogProcess
             {
                 // For fresh logs, use the exact fresh start time and rely on application filtering
                 sinceTimestamp = databaseLogFreshStartTime.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using fresh start timestamp for journalctl: {sinceTimestamp} (fresh start time: {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss})");
+                //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using fresh start timestamp for journalctl: {sinceTimestamp} (fresh start time: {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss})");
             }
             else
             {
                 sinceTimestamp = lastWSLDatabaseLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using last timestamp for journalctl: {sinceTimestamp}");
+                //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Using last timestamp for journalctl: {sinceTimestamp}");
             }
               // Use timeout to prevent orphaned processes and ensure cleanup
             // Try without sudo first - most users can read journalctl logs without sudo if properly configured
             string journalCommand = $"timeout 10s journalctl -u {SpacetimeDatabaseLogServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
             
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL database logs since: {sinceTimestamp}");
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL Database command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading WSL database logs since: {sinceTimestamp}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL Database command: wsl -d Debian -u {userName} --exec bash -c \"{journalCommand}\"");
             
             readProcess = new Process();
             readProcess.StartInfo.FileName = "wsl";
@@ -1231,11 +1232,11 @@ public class ServerLogProcess
                 }
             }
 
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database logs - Output length: {output?.Length ?? 0}, Error: {error}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database logs - Output length: {output?.Length ?? 0}, Error: {error}");
             
             if (!string.IsNullOrEmpty(output))
             {
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database raw output: {output.Substring(0, Math.Min(500, output.Length))}...");
+                //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] WSL database raw output: {output.Substring(0, Math.Min(500, output.Length))}...");
                 
                 var lines = output.Split('\n');
                 bool hasNewLogs = false;
@@ -1247,13 +1248,13 @@ public class ServerLogProcess
                 {   
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Processing database log line: {line.Trim().Substring(0, Math.Min(150, line.Trim().Length))}...");
+                        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Processing database log line: {line.Trim().Substring(0, Math.Min(150, line.Trim().Length))}...");
                         
                         // Extract timestamp before formatting to ensure we can track progression
                         DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
                           string formattedLine = FormatDatabaseLogLine(line.Trim());
                         
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] After formatting - formattedLine is null: {formattedLine == null}, timestamp: {logTimestamp:yyyy-MM-dd HH:mm:ss}");
+                        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] After formatting - formattedLine is null: {formattedLine == null}, timestamp: {logTimestamp:yyyy-MM-dd HH:mm:ss}");
                         
                         if (formattedLine != null) // Only process if line wasn't filtered out
                         {                            // Additional check for fresh logs: if we're in fresh mode, reject any logs older than fresh start time
@@ -1365,11 +1366,11 @@ public class ServerLogProcess
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
-                }                else 
+                } else 
                 {
                     // Even if no new logs, advance timestamp slightly to prevent infinite queries
                     lastWSLDatabaseLogTimestamp = lastWSLDatabaseLogTimestamp.AddSeconds(0.5);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL database log lines found, rejected {rejectedCount} old lines (fresh mode: {databaseLogStartFresh}), advancing timestamp slightly to: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new WSL database log lines found, rejected {rejectedCount} old lines (fresh mode: {databaseLogStartFresh}), advancing timestamp slightly to: {lastWSLDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                     
                     // Keep fresh mode active - don't disable it just because we filtered out old logs
                     // Fresh mode should persist until the next server start with clearDatabaseLogAtStart=true
@@ -1614,12 +1615,12 @@ public class ServerLogProcess
         
         // Load username from EditorPrefs
         this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from EditorPrefs: {this.userName}");
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from EditorPrefs: {this.userName}");
         
         // Load log update frequency from EditorPrefs and apply it
         float savedLogUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyPrefix + "LogUpdateFrequency", 1.0f);
         UpdateLogReadIntervals(savedLogUpdateFrequency);
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Applied saved log update frequency: {savedLogUpdateFrequency}s");
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Applied saved log update frequency: {savedLogUpdateFrequency}s");
           // Load log content from session state
         moduleLogContent = SessionState.GetString(SessionKeyModuleLog, "");
         cachedModuleLogContent = SessionState.GetString(SessionKeyCachedModuleLog, ""); // Load cached module logs
@@ -1650,12 +1651,12 @@ public class ServerLogProcess
         
         if (debugMode && databaseLogStartFresh)
         {
-            UnityEngine.Debug.Log($"[ServerLogProcess] Restored database fresh mode from SessionState - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            //UnityEngine.Debug.Log($"[ServerLogProcess] Restored database fresh mode from SessionState - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         }
         
         if (debugMode && moduleLogStartFresh)
         {
-            UnityEngine.Debug.Log($"[ServerLogProcess] Restored module fresh mode from SessionState - will reject logs before {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            //UnityEngine.Debug.Log($"[ServerLogProcess] Restored module fresh mode from SessionState - will reject logs before {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         }
 
         processingCts = new CancellationTokenSource();
@@ -1675,7 +1676,7 @@ public class ServerLogProcess
         // Clear old logs from SessionState if requested
         if (clearDatabaseLogAtStart)
         {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, clearing old database logs from SessionState and enabling fresh mode");
+            //if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, clearing old database logs from SessionState and enabling fresh mode");
             databaseLogContent = "";
             cachedDatabaseLogContent = "";
             SessionState.SetString(SessionKeyDatabaseLog, "");
@@ -1687,7 +1688,7 @@ public class ServerLogProcess
             SessionState.SetBool(SessionKeyDatabaseLogStartFresh, databaseLogStartFresh);
             SessionState.SetString(SessionKeyDatabaseLogFreshStartTime, databaseLogFreshStartTime.ToString("O"));
             
-            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Fresh mode enabled in Configure - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Fresh mode enabled in Configure - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         }
         else if (debugMode && databaseLogStartFresh)
         {
@@ -1704,7 +1705,7 @@ public class ServerLogProcess
             SessionState.SetString(SessionKeyCachedModuleLog, "");
         }
         
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}, serverDirectory: {this.serverDirectory}");
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}, serverDirectory: {this.serverDirectory}");
 
         // If module changed and server is running, switch to the new module
         if (moduleChanged && serverRunning && !string.IsNullOrEmpty(this.moduleName))
@@ -1727,7 +1728,7 @@ public class ServerLogProcess
     public void SetServerRunningState(bool isRunning)
     {
         serverRunning = isRunning;
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server running state set to: {isRunning}");
     }
 
     public void SwitchModule(string newModuleName, bool clearDatabaseLogOnSwitch = true)
@@ -2296,7 +2297,7 @@ public class ServerLogProcess
             {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
                 {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 1): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 1): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.UtcDateTime;
                 }
             }
@@ -2308,7 +2309,7 @@ public class ServerLogProcess
             {
                 if (DateTimeOffset.TryParse(match.Groups[1].Value, out DateTimeOffset parsed))
                 {
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 2): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
+                    //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Extracted timestamp (pattern 2): {parsed.UtcDateTime:yyyy-MM-dd HH:mm:ss.fff} from line: {line.Substring(0, Math.Min(80, line.Length))}");
                     return parsed.UtcDateTime;
                 }
             }
@@ -2336,7 +2337,7 @@ public class ServerLogProcess
                 }
             }
             
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] No timestamp pattern matched for line: {line.Substring(0, Math.Min(100, line.Length))}...");
+            //if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] No timestamp pattern matched for line: {line.Substring(0, Math.Min(100, line.Length))}...");
         }
         catch (Exception ex)
         {

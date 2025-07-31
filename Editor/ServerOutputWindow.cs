@@ -87,6 +87,7 @@ public class ServerOutputWindow : EditorWindow
     private double lastLogSizeUpdateTime = 0;
     private const double LOG_SIZE_UPDATE_INTERVAL = 10.0; // Update log size every 10 seconds
     private ServerCustomProcess serverCustomProcess;
+    private ServerCMDProcess serverCMDProcess;
     private ServerManager serverManager;
     
     // Track data changes
@@ -184,13 +185,19 @@ public class ServerOutputWindow : EditorWindow
             EditorApplication.delayCall += Repaint;
         }
         
-        // Initialize ServerCustomProcess only if in custom server mode
+        // Initialize server processes based on mode
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
         if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
         {
             InitializeServerCustomProcess();
             // Update log size on window open
             UpdateLogSizeForCustomServer();
+        }
+        else if (modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
+        {
+            InitializeServerCMDProcess();
+            // Update log size on window open
+            UpdateLogSizeForWSLServer();
         }
     }
 
@@ -243,6 +250,28 @@ public class ServerOutputWindow : EditorWindow
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to initialize ServerCustomProcess: {ex.Message}");
+        }
+    }
+
+    private void InitializeServerCMDProcess()
+    {
+        try
+        {
+            // Get ServerCMDProcess from ServerManager if available
+            if (serverManager != null)
+            {
+                serverCMDProcess = serverManager.GetCmdProcessor();
+                if (debugMode && serverCMDProcess != null) 
+                    UnityEngine.Debug.Log("[ServerOutputWindow] ServerCMDProcess instance obtained from ServerManager");
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerManager not available, cannot get ServerCMDProcess");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to initialize ServerCMDProcess: {ex.Message}");
         }
     }
 
@@ -651,22 +680,33 @@ public class ServerOutputWindow : EditorWindow
         {
             ForceRefreshAfterCompilation();
 
-            // For custom servers, also trigger SSH log refresh
+            // Handle server-specific refresh based on mode
             try
             {
                 var serverWindow = GetWindow<ServerWindow>();
-                if (serverWindow != null && serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.CustomServer)
+                if (serverWindow != null)
                 {
-                    serverWindow.ForceSSHLogRefresh();
-                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered SSH log refresh for custom server");
-                    
-                    // Update log size when refresh button is clicked for custom server
-                    UpdateLogSizeForCustomServer();
+                    if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.CustomServer)
+                    {
+                        serverWindow.ForceSSHLogRefresh();
+                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered SSH log refresh for custom server");
+                        
+                        // Update log size when refresh button is clicked for custom server
+                        UpdateLogSizeForCustomServer();
+                    }
+                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WslServer)
+                    {
+                        serverWindow.ForceWSLLogRefresh();
+                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered WSL log refresh for WSL server");
+                        
+                        // Update log size when refresh button is clicked for WSL server
+                        UpdateLogSizeForWSLServer();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to trigger SSH log refresh: {ex.Message}");
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to trigger server-specific log refresh: {ex.Message}");
             }
             
             ReloadLogs();
@@ -774,15 +814,16 @@ public class ServerOutputWindow : EditorWindow
             }
         }
         
-        // Server Log Size label (only for Custom Server mode)
+        // Server Log Size label (for Custom Server and WSL Server modes)
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
-        if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
+        if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase) || modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
         {
             GUILayout.FlexibleSpace(); // Push the log size label to the right
             string logSizeText = isLoadingLogSize ? "Loading..." : $"Journal Size: {serverLogSizeMB:F2} MB";
+            string serverTypeText = modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase) ? "Custom Server" : "WSL";
             GUIContent logSizeContent = new GUIContent(
                 logSizeText,
-                "The size of the complete server journalctl folder that keeps all the server logs including os processes and SpacetimeDB. It's normal that it is a few hundred MB, but displayed here to easier keep check of it.\n"+
+                $"The size of the complete {serverTypeText.ToLower()} server journalctl folder that keeps all the server logs including OS processes and SpacetimeDB. It's normal that it is a few hundred MB, but displayed here to easier keep check of it.\n"+
                 "SpacetimeDB Module Log Size: " + spacetimeDbModuleLogSizeMB + " MB\n" +
                 "SpacetimeDB Database Log Size: " + spacetimeDbDatabaseLogSizeMB + " MB"
             );
@@ -1351,7 +1392,7 @@ public class ServerOutputWindow : EditorWindow
             if (debugMode && (!string.IsNullOrEmpty(moduleLog) || !string.IsNullOrEmpty(databaseLog)))
             {
                 string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
-                UnityEngine.Debug.Log($"[ServerOutputWindow] Standalone echo completed for {modeName} mode");
+                //UnityEngine.Debug.Log($"[ServerOutputWindow] Standalone echo completed for {modeName} mode");
             }
         }
         catch (Exception ex)
@@ -1503,6 +1544,71 @@ public class ServerOutputWindow : EditorWindow
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update log size: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingLogSize = false;
+        }
+    }
+    #endregion
+
+    #region WSL Server Log Size    
+    // Update log size for WSL server mode
+    private async void UpdateLogSizeForWSLServer()
+    {
+        // Check if we're in WSL server mode
+        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        if (!modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return; // Not WSL server mode, skip
+        }
+        
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (isLoadingLogSize || (currentTime - lastLogSizeUpdateTime) < LOG_SIZE_UPDATE_INTERVAL)
+        {
+            return; // Already loading or updated recently
+        }
+        
+        isLoadingLogSize = true;
+        lastLogSizeUpdateTime = currentTime;
+        
+        try
+        {
+            // Use the ServerCMDProcess instance from ServerManager
+            if (serverCMDProcess != null)
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Calling WSL log size methods...");
+                
+                float logSize = await serverCMDProcess.GetWSLJournalSize();
+                (float spacetimedbModuleLogsSizeMB, float spacetimedbDatabaseLogsSizeMB) = await serverCMDProcess.GetWSLSpacetimeLogSizes();
+                
+                if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] WSL log size results: Journal={logSize:F2}MB, Module={spacetimedbModuleLogsSizeMB:F2}MB, Database={spacetimedbDatabaseLogsSizeMB:F2}MB");
+                
+                if (logSize >= 0)
+                {
+                    serverLogSizeMB = logSize;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] WSL log size updated: {serverLogSizeMB:F2} MB");
+                    Repaint(); // Update the UI
+                }
+                if (spacetimedbModuleLogsSizeMB >= 0)
+                {
+                    spacetimeDbModuleLogSizeMB = spacetimedbModuleLogsSizeMB;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] WSL SpacetimeDB module logs size updated: {spacetimedbModuleLogsSizeMB:F2} MB");
+                }
+                if (spacetimedbDatabaseLogsSizeMB >= 0)
+                {
+                    spacetimeDbDatabaseLogSizeMB = spacetimedbDatabaseLogsSizeMB;
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] WSL SpacetimeDB database logs size updated: {spacetimedbDatabaseLogsSizeMB:F2} MB");
+                }
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerCMDProcess is null, cannot get WSL log size");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update WSL log size: {ex.Message}");
         }
         finally
         {
