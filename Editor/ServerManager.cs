@@ -1307,7 +1307,7 @@ public class ServerManager
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
-                    LogMessage("Command completed with no output.", 0);
+                    if (debugMode) LogMessage("Command completed with no output.", 0);
                     publishing = false;
                 }
 
@@ -1357,7 +1357,7 @@ public class ServerManager
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
-                    LogMessage("Command completed with no output.", 0);
+                    if (debugMode) LogMessage("Command completed with no output.", 0);
                     publishing = false;
                 }
                 
