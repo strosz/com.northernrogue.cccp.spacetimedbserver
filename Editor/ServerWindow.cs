@@ -2035,17 +2035,15 @@ public class ServerWindow : EditorWindow
                 List<string> missingComponents = new List<string>();
                 if (!wsl) missingComponents.Add("- WSL");
                 if (!debian) missingComponents.Add("- Debian");
-                if (!trixie) missingComponents.Add("- Debian Trixie");
-                if (!curl) missingComponents.Add("- curl");
-                if (!spacetime) missingComponents.Add("- SpacetimeDB CLI");
+                if (!trixie) missingComponents.Add("- Debian Trixie Update");
+                if (!spacetime) missingComponents.Add("- SpacetimeDB Server");
                 if (!spacetimePath) missingComponents.Add("- SpacetimeDB Path");
-                if (!rust) missingComponents.Add("- Rust (with cargo)");
-                if (!binaryen) missingComponents.Add("- Binaryen (optional, for WebAssembly support)");
+                if (!spacetimeService) missingComponents.Add("- SpacetimeDB Service");
 
                 List<string> missingUserSettings = new List<string>();
                 if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
                 if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
-                if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Module Name");
+                if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
                 if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
 
                 if (!essentialSoftware || !essentialUserSettings)
