@@ -2043,7 +2043,7 @@ public class ServerWindow : EditorWindow
                 if (!binaryen) missingComponents.Add("- Binaryen (optional, for WebAssembly support)");
 
                 List<string> missingUserSettings = new List<string>();
-                if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- SSH Username");
+                if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
                 if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
                 if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Module Name");
                 if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
@@ -2055,7 +2055,7 @@ public class ServerWindow : EditorWindow
                         "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
                         "Please install or set the following:\n" +
                         string.Join("\n", missingComponents) +
-                        string.Join("\n", missingUserSettings),
+                        string.Join("\n", "\n" + missingUserSettings),
                         "Server Installer Window", "Cancel"
                     );
                     if (needsInstallation) ServerInstallerWindow.ShowWindow();
