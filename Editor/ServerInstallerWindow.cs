@@ -250,7 +250,7 @@ public class ServerInstallerWindow : EditorWindow
                 title = "Install Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
-                "Note: If it reports as failed, you may have to restart your PC since the first WSL step\n"+
+                "Note: Is now included by default in the WSL with Debian installer\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
@@ -897,13 +897,16 @@ public class ServerInstallerWindow : EditorWindow
         }
         
         // Add module name field for SpacetimeDB Service installer
-        if (item.title == "Install SpacetimeDB Service" && !string.IsNullOrEmpty(item.expectedModuleName))
+        if (item.title == "Install SpacetimeDB Service")
         {
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Module Name:", GUILayout.Width(120));
             EditorGUI.BeginChangeCheck();
             EditorGUI.BeginDisabledGroup(true);
-            string newModuleName = EditorGUILayout.TextField(item.expectedModuleName, GUILayout.Width(150));
+            string currentModuleName = string.IsNullOrEmpty(item.expectedModuleName) ? 
+                EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") : 
+                item.expectedModuleName;
+            string newModuleName = EditorGUILayout.TextField(currentModuleName, GUILayout.Width(150));
             if (EditorGUI.EndChangeCheck() && newModuleName != item.expectedModuleName)
             {
                 item.expectedModuleName = newModuleName;
@@ -1216,22 +1219,26 @@ public class ServerInstallerWindow : EditorWindow
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
                 await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                await Task.Delay(5000);
+                await Task.Delay(3000);
                 CheckInstallationStatus();
                 if (hasWSL && hasDebian)
                 {
-                    SetStatus("WSL2 with Debian installed successfully.", Color.green);
-
                     // Display dialog informing user about Debian first-time setup
-                    EditorUtility.DisplayDialog(
+                    bool createDebianCredentials = EditorUtility.DisplayDialog(
                         "Debian First-Time Setup",
                         "Starting Debian for the first time so that you are asked to create your user credentials. You can close the Debian window afterwards.\n\n" +
-                        "In some WSL versions the credentials were already created and you may close the window in that case.",
-                        "OK"
+                        "Note! In some WSL versions the credentials were already created and you may skip.",
+                        "Create Credentials", "Skip"
                     );
-                    // Launch visible Debian window without username required
-                    bool userNameReq = false;
-                    cmdProcess.OpenDebianWindow(userNameReq);
+
+                    if (createDebianCredentials)
+                    {
+                        // If the user proceeds, we will open Debian without username required
+                        bool userNameReq = false;
+                        cmdProcess.OpenDebianWindow(userNameReq);
+                    }
+
+                    SetStatus("WSL2 with Debian installed successfully.", Color.green);
                 } else {
                     EditorUtility.DisplayDialog(
                         "Restart and Try Again",
@@ -1483,8 +1490,6 @@ public class ServerInstallerWindow : EditorWindow
 
             await serverManager.CheckSpacetimeDBVersion(); // Extra check to ensure version is updated
             spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
-
-            await Task.Delay(2000);
             
             CheckInstallationStatus();
 
