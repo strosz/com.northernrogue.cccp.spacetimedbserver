@@ -2054,8 +2054,8 @@ public class ServerWindow : EditorWindow
                         "Missing Software", 
                         "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
                         "Please install or set the following:\n" +
-                        string.Join("\n", missingComponents) +
-                        string.Join("\n", "\n" + missingUserSettings),
+                        string.Join("\n", missingComponents) + "\n" +
+                        string.Join("\n", missingUserSettings),
                         "Server Installer Window", "Cancel"
                     );
                     if (needsInstallation) ServerInstallerWindow.ShowWindow();
