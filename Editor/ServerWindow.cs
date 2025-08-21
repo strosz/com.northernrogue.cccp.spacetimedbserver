@@ -1490,7 +1490,7 @@ public class ServerWindow : EditorWindow
             bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
             if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
             {
-                if (GUILayout.Button("Check Prerequisites to Start SpacetimeDB", GUILayout.Height(30)))
+                if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
                 {
                     CheckPrerequisites();
                 }

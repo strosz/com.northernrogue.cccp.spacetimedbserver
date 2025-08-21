@@ -1574,7 +1574,7 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        // Get the expected module name from the installer item
+        // Get the expected module name from the installer item or EditorPrefs
         string expectedModuleName = "";
         foreach (var item in installerItems)
         {
@@ -1583,6 +1583,12 @@ public class ServerInstallerWindow : EditorWindow
                 expectedModuleName = item.expectedModuleName;
                 break;
             }
+        }
+        
+        // If expectedModuleName is empty, try to get it from EditorPrefs
+        if (string.IsNullOrEmpty(expectedModuleName))
+        {
+            expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
         }
         
         if (string.IsNullOrEmpty(expectedModuleName))
@@ -2527,7 +2533,7 @@ public class ServerInstallerWindow : EditorWindow
                 return;
             }
                     
-            // Get the expected module name from the installer item
+            // Get the expected module name from the installer item or EditorPrefs
             string expectedModuleName = "";
             foreach (var item in customInstallerItems)
             {
@@ -2538,9 +2544,18 @@ public class ServerInstallerWindow : EditorWindow
                 }
             }
             
+            // If expectedModuleName is empty, try to get it from EditorPrefs
             if (string.IsNullOrEmpty(expectedModuleName))
             {
-                SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
+                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+            }
+            
+            if (string.IsNullOrEmpty(expectedModuleName))
+            {
+                EditorUtility.DisplayDialog("Module Name Required",
+                "You haven't added any module in Pre-Requisites. It is required to install the SpacetimeDB Service.",
+                "OK");
+                SetStatus("Module name is not set. Please add one in Pre-Requisites.", Color.yellow);
                 return;
             }
 
