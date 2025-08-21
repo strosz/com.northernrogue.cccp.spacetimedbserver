@@ -188,24 +188,30 @@ public class ServerCMDProcess
     
     #region Process Execution Methods
     
-    private bool ValidateUserName(bool silentMode = false)
+    // Validates that a debian username is configured for WSL operations. Automatically suppresses errors on first run (before prerequisites checked).
+    private bool ValidateUserName(bool silentMode, out bool shouldSuppressErrors)
     {
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
         if (string.IsNullOrEmpty(userName))
         {
-            if (!silentMode)
+            // Auto-enable silent mode on first run (when prerequisites haven't been checked yet)
+            bool isFirstRun = !EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
+            shouldSuppressErrors = silentMode || isFirstRun;
+            
+            if (!shouldSuppressErrors)
             {
                 logCallback("[ServerCMDProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
             }
             return false;
         }
+        shouldSuppressErrors = false;
         return true;
     }
 
     public Process StartVisibleServerProcess(string serverDirectory)
     {
         // Validate username before proceeding
-        if (!ValidateUserName()) return null;
+        if (!ValidateUserName(false, out _)) return null;
 
         try {
             Process process = new Process();
@@ -238,7 +244,7 @@ public class ServerCMDProcess
     public Process StartSilentServerProcess(string logPath)
     {
         // Validate username before proceeding
-        if (!ValidateUserName()) return null;
+        if (!ValidateUserName(false, out _)) return null;
 
         try {
             // Use absolute path to spacetime with dynamic username
@@ -276,7 +282,7 @@ public class ServerCMDProcess
         // Validate username before proceeding
         if (userNameReq)
         {
-            if (!ValidateUserName()) return;
+            if (!ValidateUserName(false, out _)) return;
             try
             {
                 Process process = new Process();
@@ -353,8 +359,8 @@ public class ServerCMDProcess
     #region CheckServerProcess
     public async Task<bool> CheckWslProcessAsync(bool isWslRunning)
     {
-        // Validate username before proceeding (must be done on main thread) - use silent mode for status checks
-        if (!ValidateUserName(true)) 
+        // Validate username before proceeding - silent mode suppresses errors on first run
+        if (!ValidateUserName(true, out _)) 
         {
             return false;
         }
@@ -567,7 +573,7 @@ public class ServerCMDProcess
     public async Task<bool> StopServer(string commandPattern = null)
     {
         // Validate username before proceeding
-        if (!ValidateUserName()) return false;
+        if (!ValidateUserName(false, out _)) return false;
 
         try
         {   
@@ -736,8 +742,8 @@ public class ServerCMDProcess
 
     public int RunWslCommandSilent(string bashCommand)
     {
-        // Validate username before proceeding - silent mode since this is used for status checks
-        if (!ValidateUserName(true)) return -1;
+        // Validate username before proceeding - silent mode suppresses errors on first run
+        if (!ValidateUserName(true, out _)) return -1;
 
         try
         {
@@ -777,10 +783,12 @@ public class ServerCMDProcess
 
     public async Task<(string output, string error, bool success)> RunServerCommandAsync(string command, string serverDirectory = null, bool isStatusCheck = false)
     {
-        // Validate username before proceeding - use silent mode for automated status checks, while manual actions will show errors
-        if (!ValidateUserName(isStatusCheck))
+        // Validate username before proceeding - silent mode for status checks, non-silent for user actions
+        if (!ValidateUserName(isStatusCheck, out bool shouldSuppressErrors))
         {
-            return (string.Empty, "Error: No Debian username set. Please set a valid username in the Server Window.", false);
+            // Return appropriate error message based on suppression setting
+            string errorMessage = shouldSuppressErrors ? string.Empty : "Error: No Debian username set. Please set a valid username in the Server Window.";
+            return (string.Empty, errorMessage, false);
         }
 
         try
@@ -957,9 +965,11 @@ public class ServerCMDProcess
     public void PingServer(string serverUrl, Action<bool, string> callback)
     {
         // Validate username before proceeding
-        if (!ValidateUserName())
+        if (!ValidateUserName(false, out bool shouldSuppressErrors))
         {
-            callback(false, "Error: No Debian username set. Please set a valid username in the Server Window.");
+            // Return appropriate error message based on suppression setting
+            string errorMessage = shouldSuppressErrors ? string.Empty : "Error: No Debian username set. Please set a valid username in the Server Window.";
+            callback(false, errorMessage);
             return;
         }
 
@@ -1074,7 +1084,7 @@ public class ServerCMDProcess
     
     public async Task<bool> StartSpacetimeDBServices()
     {
-        if (!ValidateUserName()) return false;
+        if (!ValidateUserName(false, out _)) return false;
 
         try
         {
@@ -1131,7 +1141,7 @@ public class ServerCMDProcess
 
     public async Task<bool> StopSpacetimeDBServices()
     {
-        if (!ValidateUserName()) return false;
+        if (!ValidateUserName(false, out _)) return false;
 
         try
         {
@@ -1219,8 +1229,12 @@ public class ServerCMDProcess
     // Helper method for running commands with a specific timeout
     private async Task<(string output, string error, bool success)> RunServerCommandWithTimeoutAsync(string command, int timeoutMs)
     {
-        if (!ValidateUserName()) 
-            return (string.Empty, "Error: No Debian username set.", false);
+        if (!ValidateUserName(true, out bool shouldSuppressErrors)) // Silent mode for internal operations
+        {
+            // Return appropriate error message based on suppression setting
+            string errorMessage = shouldSuppressErrors ? string.Empty : "Error: No Debian username set.";
+            return (string.Empty, errorMessage, false);
+        }
 
         try
         {
@@ -1268,7 +1282,7 @@ public class ServerCMDProcess
     // Method to check if SpacetimeDB service is running with caching
     public async Task<bool> CheckServerRunning(bool instantCheck = false)
     {
-        if (!ValidateUserName(true)) return false;
+        if (!ValidateUserName(true, out _)) return false;
 
         double currentTime = EditorApplication.timeSinceStartup;
         if (!instantCheck)
@@ -1323,7 +1337,7 @@ public class ServerCMDProcess
     // Get the size of /var/log/journal/ directory in MB for WSL
     public async Task<float> GetWSLJournalSize()
     {
-        if (!ValidateUserName(true))
+        if (!ValidateUserName(true, out _))
         {
             if (debugMode) logCallback("Username not configured. Cannot get WSL log size.", -1);
             return -1f;
@@ -1392,7 +1406,7 @@ public class ServerCMDProcess
     // Get the size of spacetimedb and spacetimedb-logs service logs in MB for WSL
     public async Task<(float spacetimedbSizeMB, float spacetimedbLogsSizeMB)> GetWSLSpacetimeLogSizes()
     {
-        if (!ValidateUserName(true))
+        if (!ValidateUserName(true, out _))
         {
             if (debugMode) logCallback("Username not configured. Cannot get WSL service log sizes.", -1);
             return (-1f, -1f);

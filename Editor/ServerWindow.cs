@@ -2263,10 +2263,12 @@ public class ServerWindow : EditorWindow
     
     public void LogMessage(string message, int style)
     {
+        if (debugMode) UnityEngine.Debug.Log($"[LogMessage] Received message: '{message}' (length: {message?.Length ?? 0}, trimmed length: {message?.Trim()?.Length ?? 0}, style: {style})");
+        
         // Filter out messages that are too short (prevents "T" messages and other truncated output)
         if (string.IsNullOrWhiteSpace(message) || message.Trim().Length < 3)
         {
-            if (debugMode) UnityEngine.Debug.Log($"[LogMessage] Filtered out short message: '{message}' (length: {message?.Length ?? 0})");
+            if (debugMode) UnityEngine.Debug.Log($"[LogMessage] Filtered out short message: '{message}' (length: {message?.Length ?? 0}, style: {style})");
             return;
         }
         
@@ -2362,10 +2364,22 @@ public class ServerWindow : EditorWindow
             commandOutputLog += $"<color=#575757>{DateTime.Now.ToString("HH:mm:ss")}</color> {processedMessage}\n";
         }
         
-        // Trim log if it gets too long
+        // Trim log if it gets too long, but preserve message boundaries
         if (commandOutputLog.Length > 10000)
         {
-            commandOutputLog = commandOutputLog.Substring(commandOutputLog.Length - 10000);
+            string truncated = commandOutputLog.Substring(commandOutputLog.Length - 10000);
+            
+            // Find the first complete line (after the first newline) to avoid partial messages
+            int firstNewlineIndex = truncated.IndexOf('\n');
+            if (firstNewlineIndex >= 0 && firstNewlineIndex < truncated.Length - 1)
+            {
+                commandOutputLog = truncated.Substring(firstNewlineIndex + 1);
+            }
+            else
+            {
+                // Fallback to original behavior if no newline found
+                commandOutputLog = truncated;
+            }
         }
         
         // Set flag to scroll to bottom if autoscroll is enabled
