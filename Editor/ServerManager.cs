@@ -91,6 +91,7 @@ public class ServerManager
     private bool hasBinaryen;
     private bool wslPrerequisitesChecked;
     private bool initializedFirstModule;
+    private bool publishFirstModule;
 
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion;
@@ -154,6 +155,7 @@ public class ServerManager
     public bool HasBinaryen => hasBinaryen;
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
     public bool InitializedFirstModule => initializedFirstModule;
+    public bool PublishFirstModule => publishFirstModule;
 
     // Process getters
     public ServerCMDProcess GetCmdProcessor() => cmdProcessor;
@@ -252,6 +254,7 @@ public class ServerManager
         
         // Load UX state
         initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
+        publishFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishFirstModule", false);
         
         // Load prerequisites settings
         wslPrerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
@@ -422,6 +425,7 @@ public class ServerManager
     public void SetHasBinaryen(bool value) { hasBinaryen = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", value); }
     public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
     public void SetInitializedFirstModule(bool value) { initializedFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", value); }
+    public void SetPublishFirstModule(bool value) { publishFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "PublishFirstModule", value); }
     
     public void SetServerMode(ServerMode mode)
     {
@@ -1435,6 +1439,12 @@ public class ServerManager
             ServerChangesDetected = false;
         }
 
+        if (publishFirstModule)
+        {
+            RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
+            LogMessage("Please paste your token into the Pre-Requisites section.", 0);
+        }
+
         // publishAndGenerateMode will run generate after publish has been run successfully in RunServerCommand().
     }
 
@@ -1448,7 +1458,7 @@ public class ServerManager
         {
             detectionProcess.ResetTrackingAfterPublish();
             ServerChangesDetected = false;
-            if(DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
+            if (DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
         }
 
         // Extra information about SpacetimeDB tables and constraints

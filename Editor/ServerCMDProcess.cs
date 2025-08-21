@@ -538,7 +538,7 @@ public class ServerCMDProcess
         string output = process.StandardOutput.ReadToEnd();
         process.WaitForExit();
         
-        logCallback(output, 0);
+        if (debugMode) logCallback(output, 0);
         
         // Parse output
         bool hasWSL = output.Contains("WSL_INSTALLED=TRUE");

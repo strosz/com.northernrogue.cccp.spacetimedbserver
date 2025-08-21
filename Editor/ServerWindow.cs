@@ -36,6 +36,7 @@ public class ServerWindow : EditorWindow
     private bool hasBinaryen = false;
     private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
+    private bool publishFirstModule = false;
     private string userName = "";
     private string backupDirectory = "";
     private string serverDirectory = "";
@@ -445,6 +446,7 @@ public class ServerWindow : EditorWindow
         hasBinaryen = serverManager.HasBinaryen;
         
         initializedFirstModule = serverManager.InitializedFirstModule;
+        publishFirstModule = serverManager.PublishFirstModule;
         
         wslPrerequisitesChecked = serverManager.WslPrerequisitesChecked;
         userName = serverManager.UserName;
@@ -912,7 +914,7 @@ public class ServerWindow : EditorWindow
                 }
                 else
                 {
-                    // Normal init new module functionality
+                    // initFirstModule is set to true in InitNewModule
                     InitNewModule();
                 }
             }
@@ -1858,8 +1860,6 @@ public class ServerWindow : EditorWindow
         {
             GUIStyle updateStyle = new GUIStyle(EditorStyles.boldLabel);
             updateStyle.normal.textColor = Color.green;
-            
-            // Make it more visibly clickable by adding hover effects and underline
             updateStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
             updateStyle.fontStyle = FontStyle.Bold;
             
@@ -1881,7 +1881,18 @@ public class ServerWindow : EditorWindow
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }
+
+        if (publishFirstModule)
+        {
+            GUIStyle firstModuleStyle = new GUIStyle(EditorStyles.boldLabel);
+            firstModuleStyle.normal.textColor = Color.green;
+            firstModuleStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
+            firstModuleStyle.fontStyle = FontStyle.Bold;
+
+            EditorGUILayout.LabelField("Ready to Publish First Module! Will take longer than a regular publish because of initial compiling.", firstModuleStyle);
+        }
         
+        // Centered Grey Mini Label for Publish/Generate instructions
         if (serverManager.PublishAndGenerateMode) {
             if (!serverManager.AutoPublishMode) {
                 EditorGUILayout.LabelField("Will Publish then Generate client code automatically.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
@@ -1924,7 +1935,7 @@ public class ServerWindow : EditorWindow
             publishButtonStyle.hover.textColor = warningColor;
             Repaint();
         }
-        if (serverManager.ServerChangesDetected)
+        if (serverManager.ServerChangesDetected || publishFirstModule)
         {
             publishButtonStyle.normal.textColor = Color.green;
             publishButtonStyle.hover.textColor = Color.green;
@@ -1939,7 +1950,7 @@ public class ServerWindow : EditorWindow
         if (publishing) 
         {
             buttonText = "Publishing...";
-            publishButtonStyle.normal.textColor = Color.green; // Disable button while publishing
+            publishButtonStyle.normal.textColor = Color.green;
             publishButtonStyle.hover.textColor = Color.green;
         }
 
@@ -1965,6 +1976,8 @@ public class ServerWindow : EditorWindow
             {
                 serverManager.Publish(false);
                 publishing = true; // Set flag to indicate publishing is in progress
+                publishFirstModule = false;
+                serverManager.SetPublishFirstModule(false);
             }
         }
         
@@ -2018,30 +2031,61 @@ public class ServerWindow : EditorWindow
                     !string.IsNullOrEmpty(serverDirectory) && 
                     !string.IsNullOrEmpty(moduleName) && 
                     !string.IsNullOrEmpty(serverLang);
-                
-                if (!essentialSoftware)
+
+                List<string> missingComponents = new List<string>();
+                if (!wsl) missingComponents.Add("- WSL");
+                if (!debian) missingComponents.Add("- Debian");
+                if (!trixie) missingComponents.Add("- Debian Trixie");
+                if (!curl) missingComponents.Add("- curl");
+                if (!spacetime) missingComponents.Add("- SpacetimeDB CLI");
+                if (!spacetimePath) missingComponents.Add("- SpacetimeDB Path");
+                if (!rust) missingComponents.Add("- Rust (with cargo)");
+                if (!binaryen) missingComponents.Add("- Binaryen (optional, for WebAssembly support)");
+
+                List<string> missingUserSettings = new List<string>();
+                if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- SSH Username");
+                if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Module Name");
+                if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+
+                if (!essentialSoftware || !essentialUserSettings)
                 {
-                    LogMessage("Please check that you have everything necessary installed. Launching Server Installer Window.",-2);
-                    ServerInstallerWindow.ShowWindow();
+                    bool needsInstallation = EditorUtility.DisplayDialog(
+                        "Missing Software", 
+                        "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
+                        "Please install or set the following:\n" +
+                        string.Join("\n", missingComponents) +
+                        string.Join("\n", missingUserSettings),
+                        "Server Installer Window", "Cancel"
+                    );
+                    if (needsInstallation) ServerInstallerWindow.ShowWindow();
                 }
+                else if (essentialSoftware)
+                {
+                    EditorUtility.DisplayDialog(
+                        "All Software Installed", 
+                        "You have all the necessary software installed to run SpacetimeDB.\n",
+                        "OK"
+                    );
+                }
+                // After writing module name this will appear (when essential software and user settings)
                 else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
                 {
-                    bool result = EditorUtility.DisplayDialog(
+                    EditorUtility.DisplayDialog(
                         "Initialize First Module",
-                        "All requirements met to initialize a server module. Do you wish to do this now?\n" +
-                        "When you publish your successfully initialized module it will automatically create the database for your module and all the necessary files so you can start developing!",
-                        "OK",
-                        "Cancel"
+                        "All requirements met to Initialize new server module. Please do this now and then Publish Module.\n" +
+                        "You can do this in Pre-Requisites > Shared Settings of the Main Window",
+                        "OK"
                     );
-
-                    // Set the flag so the Initialize First Module dialog doesn't show again
-                    initializedFirstModule = true;
-                    serverManager.SetInitializedFirstModule(true);
-                    
-                    if (result)
-                    {
-                        InitNewModule();
-                    }
+                }
+                else if (essentialSoftware && essentialUserSettings && initializedFirstModule && publishFirstModule)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Ready to Publish", 
+                        "You are now ready to publish and start SpacetimeDB for the first time.\n" +
+                        "Please copy your token to the Pre-Requisites section to enable all functionality after your first publish.",
+                        "OK"
+                    );
                 }
             };
         });
@@ -2618,6 +2662,8 @@ public class ServerWindow : EditorWindow
         serverManager.InitNewModule();
         initializedFirstModule = true;
         serverManager.SetInitializedFirstModule(true);
+        publishFirstModule = true;
+        serverManager.SetPublishFirstModule(publishFirstModule);
     }
 
     private void SaveModulesList()
