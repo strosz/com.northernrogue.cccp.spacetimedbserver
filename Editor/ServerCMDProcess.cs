@@ -158,13 +158,24 @@ public class ServerCMDProcess
             }
             else
             {
-                statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console/window for details.", -1);
-                if (!visibleProcess && !string.IsNullOrEmpty(errorLog)) {
-                     UnityEngine.Debug.LogError($"[ServerCMDProcess] Hidden command failed. Error stream: {errorLog}");
-                } else if (!visibleProcess && !string.IsNullOrEmpty(outputLog)) {
-                     UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Hidden command failed. Output stream: {outputLog}");
+                // For visible processes, don't report manual window closure as an error
+                // The calling code should check actual installation status instead of relying on exit codes
+                if (visibleProcess)
+                {
+                    if (debugMode) statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' window was closed. Check installation status to verify success.", 0);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Visible process exited with code {exitCode} - likely manual window closure");
+                    return true; // Return true to avoid error messages, let the caller verify actual installation status
                 }
-                return false;
+                else
+                {
+                    if (debugMode) statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console/window for details.", -1);
+                    if (!string.IsNullOrEmpty(errorLog)) {
+                         UnityEngine.Debug.LogError($"[ServerCMDProcess] Hidden command failed. Error stream: {errorLog}");
+                    } else if (!string.IsNullOrEmpty(outputLog)) {
+                         UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Hidden command failed. Output stream: {outputLog}");
+                    }
+                    return false;
+                }
             }
         }
         catch (Exception ex)

@@ -906,7 +906,11 @@ public class ServerInstallerWindow : EditorWindow
             string currentModuleName = string.IsNullOrEmpty(item.expectedModuleName) ? 
                 EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") : 
                 item.expectedModuleName;
-            string newModuleName = EditorGUILayout.TextField(currentModuleName, GUILayout.Width(150));
+            
+            // Display "No module found." if currentModuleName is empty
+            string displayText = string.IsNullOrEmpty(currentModuleName) ? "No module found" : currentModuleName;
+            
+            string newModuleName = EditorGUILayout.TextField(displayText, GUILayout.Width(150));
             if (EditorGUI.EndChangeCheck() && newModuleName != item.expectedModuleName)
             {
                 item.expectedModuleName = newModuleName;
@@ -1219,7 +1223,6 @@ public class ServerInstallerWindow : EditorWindow
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
                 await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                await Task.Delay(3000);
                 CheckInstallationStatus();
                 if (hasWSL && hasDebian)
                 {
@@ -1584,7 +1587,10 @@ public class ServerInstallerWindow : EditorWindow
         
         if (string.IsNullOrEmpty(expectedModuleName))
         {
-            SetStatus("Expected module name for SpacetimeDB Service is not set. Please check the installer item configuration.", Color.red);
+            EditorUtility.DisplayDialog("Module Name Required",
+            "You haven't added any module in Pre-Requisites. It is required to install the SpacetimeDB Service.",
+            "OK");
+            SetStatus("Module name is not set. Please add one in Pre-Requisites.", Color.yellow);
             return;
         }
 
