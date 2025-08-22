@@ -1755,7 +1755,7 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
-            if (GUILayout.Button("Show Login Info", GUILayout.Height(20)))
+            if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
@@ -2038,12 +2038,13 @@ public class ServerWindow : EditorWindow
                 
                 bool essentialSoftware = 
                     wsl && debian && trixie && curl && 
-                    spacetime && spacetimePath && rust;
+                    spacetime && spacetimePath && spacetimeService;
 
                 bool essentialUserSettings = 
-                    !string.IsNullOrEmpty(userName) && 
-                    !string.IsNullOrEmpty(serverDirectory) && 
-                    !string.IsNullOrEmpty(moduleName) && 
+                    !string.IsNullOrEmpty(userName) &&
+                    !string.IsNullOrEmpty(serverDirectory) &&
+                    !string.IsNullOrEmpty(clientDirectory) &&
+                    !string.IsNullOrEmpty(moduleName) &&
                     !string.IsNullOrEmpty(serverLang);
 
                 List<string> missingComponents = new List<string>();
@@ -2057,6 +2058,7 @@ public class ServerWindow : EditorWindow
                 List<string> missingUserSettings = new List<string>();
                 if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
                 if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
                 if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
                 if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
                 if (string.IsNullOrEmpty(authToken)) missingUserSettings.Add("- Auth Token");
@@ -2072,6 +2074,7 @@ public class ServerWindow : EditorWindow
                         "Server Installer Window", "Cancel"
                     );
                     if (needsInstallation) ServerInstallerWindow.ShowWindow();
+
                     hasAllPrerequisites = false;
                     serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
                 }

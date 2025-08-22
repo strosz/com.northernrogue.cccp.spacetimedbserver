@@ -335,10 +335,8 @@ public class ServerDataWindow : EditorWindow
     {
         GUILayout.BeginHorizontal();
 
-        // --- Sidebar with table names ---
         DrawTableList();
 
-        // --- Main content area for selected table data ---
         DrawDataTable();
 
         GUILayout.EndHorizontal();
@@ -346,67 +344,67 @@ public class ServerDataWindow : EditorWindow
 
     private void DrawTableList()
     {
-         GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(150), GUILayout.ExpandHeight(true));
-         EditorGUILayout.LabelField("         List of All Tables", titleStyle);
-         EditorGUILayout.Separator();
-         scrollPositionTables = EditorGUILayout.BeginScrollView(scrollPositionTables);
+        GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(150), GUILayout.ExpandHeight(true));
+        EditorGUILayout.LabelField("            Public Tables", titleStyle);
+        EditorGUILayout.Separator();
+        scrollPositionTables = EditorGUILayout.BeginScrollView(scrollPositionTables);
 
-         if (!tableNames.Any() && !isRefreshing)
-         {
-             EditorGUILayout.LabelField("No tables loaded.", EditorStyles.centeredGreyMiniLabel);
-              if (GUILayout.Button("Refresh Schema"))
-              {
-                  RefreshAllData();
-              }
-         }
+        if (!tableNames.Any() && !isRefreshing)
+        {
+        EditorGUILayout.LabelField("No tables loaded.", EditorStyles.centeredGreyMiniLabel);
+        if (GUILayout.Button("Refresh Schema"))
+        {
+            RefreshAllData();
+        }
+        }
 
-         string tableToSelect = selectedTable;
-         // Use tableNames list fetched from schema
-         foreach (var tableName in tableNames)
-         {
-             // Create a horizontal layout for each table row to add the CLR button
-             EditorGUILayout.BeginHorizontal();
-             
-             bool isSelected = tableName == selectedTable;
-             GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
-             if (isSelected)
-             {
-                 buttonStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
-                 buttonStyle.fontStyle = FontStyle.Bold;
-             }
+        string tableToSelect = selectedTable;
+        // Use tableNames list fetched from schema
+        foreach (var tableName in tableNames)
+        {
+            // Create a horizontal layout for each table row to add the CLR button
+            EditorGUILayout.BeginHorizontal();
+            
+            bool isSelected = tableName == selectedTable;
+            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
+            if (isSelected)
+            {
+                buttonStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
+                buttonStyle.fontStyle = FontStyle.Bold;
+            }
 
-             // Table name button (primary button)
-             if (GUILayout.Button(tableName, buttonStyle, GUILayout.ExpandWidth(true)))
-             {
-                 tableToSelect = tableName;
-                 // Save selected table to EditorPrefs
-                 EditorPrefs.SetString(LastSelectedTableKey, tableName);
-             }
-             
-             // Add clear button with the custom style
-             EditorGUI.BeginDisabledGroup(isRefreshing || isImporting);
-             if (GUILayout.Button("CLR", cmdButtonStyle, GUILayout.Width(30)))
-             {
-                 if (EditorUtility.DisplayDialog(
-                     "Clear Table", 
-                     $"Are you sure you want to delete ALL rows from the '{tableName}' table?\n\nThis action cannot be undone!", 
-                     "Yes, Clear Table", "Cancel"))
-                 {
-                     ClearTable(tableName);
-                 }
-             }
-             EditorGUI.EndDisabledGroup();
-             
-             EditorGUILayout.EndHorizontal();
-         }
-         if (tableToSelect != selectedTable)
-         {
-             selectedTable = tableToSelect;
-             scrollPositionData = Vector2.zero;
-         }
+            // Table name button (primary button)
+            if (GUILayout.Button(tableName, buttonStyle, GUILayout.ExpandWidth(true)))
+            {
+                tableToSelect = tableName;
+                // Save selected table to EditorPrefs
+                EditorPrefs.SetString(LastSelectedTableKey, tableName);
+            }
+            
+            // Add clear button with the custom style
+            EditorGUI.BeginDisabledGroup(isRefreshing || isImporting);
+            if (GUILayout.Button("CLR", cmdButtonStyle, GUILayout.Width(30)))
+            {
+                if (EditorUtility.DisplayDialog(
+                    "Clear Table", 
+                    $"Are you sure you want to delete ALL rows from the '{tableName}' table?\n\nThis action cannot be undone!", 
+                    "Yes, Clear Table", "Cancel"))
+                {
+                    ClearTable(tableName);
+                }
+            }
+            EditorGUI.EndDisabledGroup();
+            
+            EditorGUILayout.EndHorizontal();
+        }
+        if (tableToSelect != selectedTable)
+        {
+            selectedTable = tableToSelect;
+            scrollPositionData = Vector2.zero;
+        }
 
-         EditorGUILayout.EndScrollView();
-         GUILayout.EndVertical();
+        EditorGUILayout.EndScrollView();
+        GUILayout.EndVertical();
     }
 
     private void DrawDataTable()
@@ -703,7 +701,9 @@ public class ServerDataWindow : EditorWindow
                 try { GUILayout.EndVertical(); } catch { /* Ignore */ }
             }
         }
-    }    // Helper method to determine primary key information for a row
+    }
+    
+    // Helper method to determine primary key information for a row
     private bool TryGetPrimaryKeyInfo(List<string> columns, List<JToken> rowValues, out string pkColumn, out string pkValue)
     {
         // Initialize out parameters
@@ -1295,16 +1295,16 @@ public class ServerDataWindow : EditorWindow
     // --- Export Logic ---
     private void ExportToJson()
     {
-         if (isRefreshing)
-         {
-              SetStatus("Cannot export while refreshing.", Color.yellow);
-              return;
-         }
-         if (!tableData.Any())
-         {
-             SetStatus("No data loaded to export. Please Refresh first.", Color.yellow);
-             return;
-         }
+        if (isRefreshing)
+        {
+            SetStatus("Cannot export while refreshing.", Color.yellow);
+            return;
+        }
+        if (!tableData.Any())
+        {
+            SetStatus("No data loaded to export. Please Refresh first.", Color.yellow);
+            return;
+        }
 
         // Ensure backup directory is set
         LoadSettings(); // Reload just in case

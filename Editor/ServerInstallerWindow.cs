@@ -3,6 +3,7 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using UnityEngine.Rendering;
 
 // Check and install everything necessary to run SpacetimeDB with this window ///
 
@@ -681,7 +682,7 @@ public class ServerInstallerWindow : EditorWindow
             "You get a local CLI for spacetime commands.\n" +
             "Required for all server modes to be able to publish your server." :
             "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.\n" +
-            "Works on a fresh Debian 12 server, VM or VPS instance from the ground up.";
+            "Works on a fresh Debian 12 or 13 server, VM or VPS instance from the ground up.";
 
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
@@ -743,7 +744,6 @@ public class ServerInstallerWindow : EditorWindow
                 EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
                 foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
-                UnityEngine.Debug.Log("Username submitted via button: " + userName);
 
                 if (currentTab == 0) {
                     CheckInstallationStatus();

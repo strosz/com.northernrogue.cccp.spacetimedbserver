@@ -867,12 +867,12 @@ public class ServerCMDProcess
             {
                 if (isPublishCommand)
                 {
-                    logCallback("Successfully published module!", 1);
+                    //logCallback("Successfully published module!", 1);
                     commandSuccess = true;
                 }
                 else if (isGenerateCommand)
                 {
-                    logCallback("Successfully generated files!", 1);
+                    //logCallback("Successfully generated files!", 1);
                     commandSuccess = true;
                 }
                 else

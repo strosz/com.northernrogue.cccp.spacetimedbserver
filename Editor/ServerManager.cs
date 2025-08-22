@@ -900,13 +900,15 @@ public class ServerManager
     public async Task CheckServerStatus()
     {
         //UnityEngine.Debug.Log("CheckServerStatus called");
-        // --- Reset justStopped flag after 5 seconds if grace period expired ---
+
         const double stopGracePeriod = 5.0;
         if (justStopped && (EditorApplication.timeSinceStartup - stopInitiatedTime >= stopGracePeriod))
         {
             if (DebugMode) LogMessage("Stop grace period expired, allowing normal status checks to resume.", 0);
             justStopped = false;
-        }        // --- Startup Phase Check ---
+        }        
+        
+        // Startup Phase Check
         if (isStartingUp)
         {
             float elapsedTime = (float)(EditorApplication.timeSinceStartup - startupTime);
@@ -1054,7 +1056,7 @@ public class ServerManager
             }
         }
 
-        // --- Standard Running Check (Only if not starting up) ---
+        // Standard Running Check (Only if not starting up)
         if (serverStarted)
         {
             bool isActuallyRunning = false;
@@ -1181,7 +1183,8 @@ public class ServerManager
                 if (DebugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
             }
         }
-        // --- Check for External Start/Recovery ---
+
+        // Check for External Start/Recovery
         // Only check if not already started, not starting up, and server is running
         else if (!serverStarted && !isStartingUp)
         {
@@ -1276,6 +1279,12 @@ public class ServerManager
 
     public async void RunServerCommand(string command, string description)
     {
+        if (!hasAllPrerequisites)
+        {
+            if (debugMode) LogMessage("Server command <" + command + "> tried to run without pre-requisites met.", -2);
+            return;
+        }
+
         try
         {
             // Run the command silently and capture the output
@@ -1454,16 +1463,10 @@ public class ServerManager
 
     private void PublishResult(string output, string error)
     {
+        bool successfulPublish = true;
+
         if (debugMode) UnityEngine.Debug.Log("Publish output: " + output);
         if (debugMode) UnityEngine.Debug.Log("Publish error: " + error);
-        
-        // Reset change detection state after successful publish
-        if (detectionProcess != null && detectionProcess.IsDetectingChanges())
-        {
-            detectionProcess.ResetTrackingAfterPublish();
-            ServerChangesDetected = false;
-            if (DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
-        }
 
         // Extra information about SpacetimeDB tables and constraints
         if (error.Contains("migration"))
@@ -1530,9 +1533,16 @@ public class ServerManager
             migrationInfo +
             "\n\nYou will need to either create a new table and manually migrate the old table data by writing and running a reducer for this, OR re-publish with Ctrl+Alt+Click to clear the database. Be sure to make a backup of your database first."
             ,"OK");
+
+            successfulPublish = false; // Mark as unsuccessful due to migration requirement
         }
 
-        // Go on to Auto-Generate if publish was successful and mode is enabled
+        if (!string.IsNullOrEmpty(error) && error.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            successfulPublish = false; // Mark as unsuccessful due to error
+        }
+
+        // Go on to Auto-Generate if mode is enabled (continues even if unsuccessful to get all logs)
         if (PublishAndGenerateMode)
         {
             LogMessage("Publish successful, automatically generating Unity files...", 0);
@@ -1540,16 +1550,40 @@ public class ServerManager
             RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
         }
 
+        // Reset change detection state after successful publish
+        if (detectionProcess != null && detectionProcess.IsDetectingChanges() && successfulPublish)
+        {
+            detectionProcess.ResetTrackingAfterPublish();
+            ServerChangesDetected = false;
+            if (DebugMode) LogMessage("Cleared file size tracking after successful publish.", 0);
+        }
+
+        if (!successfulPublish)
+        {
+            LogMessage("Publish failed!", -1);
+        }
+        else
+        {
+            LogMessage("Publish successful!", 1);
+        }
+
         publishing = false;
     }
 
     private async void GenerateResult(string output, string error)
     {
-        LogMessage("Waiting for generated files to be fully written...", 1);
+        LogMessage("Waiting for generated files to be fully written...", 0);
         await Task.Delay(3000); // Wait 3 seconds for files to be fully generated
-        LogMessage("Requesting script compilation...", 1);
+        LogMessage("Requesting script compilation...", 0);
         UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
-        LogMessage("Publish and Generate successful!", 1);
+        if (!string.IsNullOrEmpty(error) && error.Contains("Error"))
+        {
+            LogMessage("Publish and Generate failed!", -1);
+        }
+        else
+        {
+            LogMessage("Publish and Generate successful!", 1);
+        }
     }
 
     #endregion

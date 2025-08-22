@@ -403,7 +403,7 @@ public class ServerCustomProcess
 
         if (string.IsNullOrEmpty(sshUserName))
         {
-            Log("SSH User Name is not configured. Cannot run SpacetimeDB command.", -1); // Log level -1 for error
+            if (debugMode) Log("SSH User Name is not configured. Cannot run SpacetimeDB command.", -1); // Log level -1 for error
             return (false, "", "SSH User Name not configured. Please set it in the server settings.");
         }
 

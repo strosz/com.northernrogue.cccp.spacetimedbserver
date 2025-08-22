@@ -73,14 +73,16 @@ public class ServerWelcomeWindow : EditorWindow
         GUIStyle textStyle = new GUIStyle(EditorStyles.wordWrappedLabel);
         textStyle.alignment = TextAnchor.MiddleCenter;
         textStyle.fontSize = 12;
-        
+        textStyle.richText = true;
+
         string welcomeText = 
-        "Cosmos Cove Control Panel is a Windows WSL integration of SpacetimeDB within Unity, allowing you to develop MMO experiences in Unity faster and easier than ever.\n\n" +
-        "The menu item SpacetimeDB has been added to your toolbar.\n" +
-        "There you will find all the main windows of Cosmos Cove Control Panel.\n\n" +
-        "First open the main Server Manager Window. There you can enter the essential shared settings and launch all other functionality.\n\n" +
-        "Then launch the Server Installer Window. It will check for the necessary Pre-requisites and you can install all necessary items to get your local WSL SpacetimeDB server running.";
-        
+        "This is a Windows WSL integration of SpacetimeDB within Unity.\n" +
+        "SpacetimeDB has been added to your editor toolbar.\n\n" +
+        "<b>Quick Start</b>\n" +
+        "1. Open the Main Window. \n Enter the essential Pre-Requisites.\n\n" +
+        "2. Open the Installer Window. \n Check and install all essential software.\n\n" +
+        "3. You can now publish and start the server! \n\n (If you try to start it before you will be guided to the necessary steps)";
+
         EditorGUILayout.LabelField(welcomeText, textStyle);
         
         EditorGUILayout.Space(20);
