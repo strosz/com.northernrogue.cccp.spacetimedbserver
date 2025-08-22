@@ -62,6 +62,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
     private bool hasBinaryen = false;
+    private bool hasGit = false;
     private bool hasSpacetimeDBUnitySDK = false;
 
     // Custom SSH installation states
@@ -154,6 +155,7 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
+        hasGit = EditorPrefs.GetBool(PrefsKeyPrefix + "HasGit", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
 
         // Load Custom SSH installation status from EditorPrefs
@@ -306,10 +308,19 @@ public class ServerInstallerWindow : EditorWindow
             {
                 title = "Install Web Assembly Optimizer Binaryen",
                 description = "Binaryen is a compiler toolkit for WebAssembly\n"+
-                "SpacetimeDB can use wasm-opt optimizer for WebAssembly modules improving performance",
+                "SpacetimeDB make use of wasm-opt optimizer for improving performance",
                 isInstalled = hasBinaryen,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallBinaryen
+            },
+            new InstallerItem
+            {
+                title = "Install Git",
+                description = "Git is a distributed version control system\n"+
+                "SpacetimeDB may call git commands during the publish and generate process",
+                isInstalled = hasGit,
+                isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
+                installAction = InstallGit
             },
             new InstallerItem
             {
@@ -470,6 +481,11 @@ public class ServerInstallerWindow : EditorWindow
                 {
                     newState = hasBinaryen;
                     newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains("Git"))
+                {
+                    newState = hasGit;
+                    newEnabledState = hasWSL && hasDebian && !String.IsNullOrEmpty(userName);
                 }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
                 {
@@ -977,7 +993,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
         });
         
-        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen) => {
+        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
             hasWSL = wsl;
             hasDebian = debian;
             hasDebianTrixie = trixie;
@@ -988,6 +1004,7 @@ public class ServerInstallerWindow : EditorWindow
             hasSpacetimeDBService = spacetimeService;
             hasSpacetimeDBLogsService = spacetimeLogsService;
             hasBinaryen = binaryen;
+            hasGit = git;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -1000,6 +1017,7 @@ public class ServerInstallerWindow : EditorWindow
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", hasSpacetimeDBLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", hasBinaryen);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", hasGit);
             EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
         });
 
@@ -1135,7 +1153,7 @@ public class ServerInstallerWindow : EditorWindow
     }
     #endregion
     
-    #region Installation Methods
+    #region WSL Installation Methods
     private async void InstallWSLDebian()
     {
         CheckInstallationStatus();
@@ -1914,6 +1932,71 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus($"Error during Binaryen installation: {ex.Message}", Color.red);
             LogMessage($"Binaryen installation error: {ex}", -1);
+        }
+    }
+    
+    private async void InstallGit()
+    {
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasGit && !installIfAlreadyInstalled)
+        {
+            SetStatus("Git is already installed.", Color.green);
+            return;
+        }
+        
+        SetStatus("Installing Git...", Color.green);
+        
+        string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
+        SetStatus("Running: apt update", Color.yellow);
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(
+            updateCommand, 
+            LogMessage, 
+            visibleInstallProcesses, 
+            keepWindowOpenForDebug
+        );
+        if (!updateSuccess)
+        {
+            SetStatus("Failed to update package list. Git installation aborted.", Color.red);
+            return;
+        }
+        
+        // Delay between commands to ensure UI updates
+        await Task.Delay(1000);
+        
+        // Now install git
+        string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing git...' && sudo apt install -y git\"";
+        SetStatus("Running: apt install -y git", Color.yellow);
+        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+            installCommand, 
+            LogMessage, 
+            visibleInstallProcesses, 
+            keepWindowOpenForDebug
+        );
+        if (!installSuccess)
+        {
+            CheckInstallationStatus();
+            await Task.Delay(2000);
+            if (WSL1Installed && hasGit)
+                SetStatus("Git installed successfully. (WSL1)", Color.green);
+            else
+                SetStatus("Failed to install Git. Installation aborted.", Color.red);
+            
+            return;
+        }
+        
+        // Check installation status
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasGit)
+        {
+            SetStatus("Git installed successfully.", Color.green);
+        }
+        else
+        {
+            SetStatus("Git installation failed. Please install manually.", Color.red);
         }
     }
     

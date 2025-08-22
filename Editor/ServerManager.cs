@@ -89,6 +89,7 @@ public class ServerManager
     private bool hasSpacetimeDBLogsService;
     private bool hasRust;
     private bool hasBinaryen;
+    private bool hasGit;
     private bool wslPrerequisitesChecked;
     private bool initializedFirstModule;
     private bool publishFirstModule;
@@ -154,6 +155,7 @@ public class ServerManager
     public bool HasSpacetimeDBLogsService => hasSpacetimeDBLogsService;
     public bool HasRust => hasRust;
     public bool HasBinaryen => hasBinaryen;
+    public bool HasGit => hasGit;
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
     public bool InitializedFirstModule => initializedFirstModule;
     public bool PublishFirstModule => publishFirstModule;
@@ -253,6 +255,7 @@ public class ServerManager
         hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
         hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
+        hasGit = EditorPrefs.GetBool(PrefsKeyPrefix + "HasGit", false);
         
         // Load UX state
         initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
@@ -426,6 +429,7 @@ public class ServerManager
     public void SetHasSpacetimeDBLogsService(bool value) { hasSpacetimeDBLogsService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", value); }
     public void SetHasRust(bool value) { hasRust = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", value); }
     public void SetHasBinaryen(bool value) { hasBinaryen = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", value); }
+    public void SetHasGit(bool value) { hasGit = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", value); }
     public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
     public void SetInitializedFirstModule(bool value) { initializedFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", value); }
     public void SetPublishFirstModule(bool value) { publishFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "PublishFirstModule", value); }
@@ -1636,9 +1640,9 @@ public class ServerManager
         }
     }
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
     {        
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen) => {
+        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
             // Save state in ServerManager
             SetHasWSL(wsl);
             SetHasDebian(debian);
@@ -1650,6 +1654,7 @@ public class ServerManager
             SetHasSpacetimeDBService(spacetimeService);
             SetHasSpacetimeDBLogsService(spacetimeLogsService);
             SetHasBinaryen(binaryen);
+            SetHasGit(git);
             SetWslPrerequisitesChecked(true);
             
             // Save state to EditorPrefs - moved here from ServerWindow
@@ -1664,6 +1669,7 @@ public class ServerManager
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", spacetimeLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", rust);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", binaryen);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", git);
 
             // Read userName from EditorPrefs - moved here from ServerWindow
             string storedUserName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
@@ -1672,7 +1678,7 @@ public class ServerManager
                 SetUserName(storedUserName);
             }
               // Then call the original callback
-            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen);
+            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git);
         });
     }
 
@@ -2254,6 +2260,30 @@ public class ServerManager
         );
         
         return formattedOutput;
+    }
+
+    public void OpenSSHWindow()
+    {
+        // Extract just the IP/hostname from the customServerUrl (remove protocol, port, and path)
+        string serverHost = ExtractHostname(customServerUrl);
+        
+        // Validate that we have all required values
+        if (string.IsNullOrEmpty(serverHost) || string.IsNullOrEmpty(sshUserName))
+        {
+            LogMessage("Cannot open SSH window: Missing server host or username", -1);
+            return;
+        }
+        
+        // Construct the SSH command with proper escaping
+        string sshCommand = $"ssh {sshUserName}@{serverHost}";
+        
+        if (DebugMode)
+        {
+            LogMessage($"Opening SSH window with command: {sshCommand}", 0);
+        }
+
+        // Open a new command window and execute the SSH command, keeping the window open
+        Process.Start("cmd.exe", $"/K {sshCommand}");
     }
     #endregion
 

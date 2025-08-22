@@ -34,6 +34,7 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
     private bool hasBinaryen = false;
+    private bool hasGit = false;
     private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
     private bool publishFirstModule = false;
@@ -446,6 +447,7 @@ public class ServerWindow : EditorWindow
         hasSpacetimeDBLogsService = serverManager.HasSpacetimeDBLogsService;
         hasRust = serverManager.HasRust;
         hasBinaryen = serverManager.HasBinaryen;
+        hasGit = serverManager.HasGit;
         
         initializedFirstModule = serverManager.InitializedFirstModule;
         publishFirstModule = serverManager.PublishFirstModule;
@@ -1740,12 +1742,7 @@ public class ServerWindow : EditorWindow
         {
             EditorGUILayout.Space(-10);
 
-            if (serverMode == ServerMode.WslServer)
-                EditorGUILayout.LabelField("WSL SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
-            else if (serverMode == ServerMode.CustomServer)
-                EditorGUILayout.LabelField("Remote SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
-            else if (serverMode == ServerMode.MaincloudServer)
-                EditorGUILayout.LabelField("Maincloud SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField("SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
@@ -1780,31 +1777,36 @@ public class ServerWindow : EditorWindow
             EditorGUI.EndDisabledGroup();
 
             if (serverMode != ServerMode.MaincloudServer)
+            if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
             {
-                if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
-                {
-                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                    serverManager.PingServer(true);
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
-                }
+                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                serverManager.PingServer(true);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+            }
+
+            if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+            {
+                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
             // Service Status button (only in Custom Server mode)
             if (serverMode == ServerMode.CustomServer)
             {
+                EditorGUILayout.LabelField("Custom Server Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+
                 if (GUILayout.Button("Service Status", buttonStyle))
                 {
                     if (CLIAvailableRemote())
                     CheckServiceStatus();
                     else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a remote (SSH) and it is available.", -1);
                 }
-            }
-            
-            if (GUILayout.Button("Show Version", GUILayout.Height(20)))
-            {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                // Add a button which opens a cmd window with the ssh username
+                if (GUILayout.Button("Open SSH Window", buttonStyle))
+                {
+                    serverManager.OpenSSHWindow();
+                }
             }
 
             if (serverMode == ServerMode.WslServer)
@@ -1837,7 +1839,7 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            EditorGUILayout.LabelField("WSL Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField("WSL Local Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
             {
@@ -2017,7 +2019,7 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen) => {
+        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
             EditorApplication.delayCall += () => {
                 // Update local state for UI
                 hasWSL = wsl;
@@ -2030,6 +2032,7 @@ public class ServerWindow : EditorWindow
                 hasSpacetimeDBLogsService = spacetimeLogsService;
                 hasRust = rust;
                 hasBinaryen = binaryen;
+                hasGit = git;
                 wslPrerequisitesChecked = true;
                 
                 // Load userName value 
@@ -2039,7 +2042,7 @@ public class ServerWindow : EditorWindow
                 
                 bool essentialSoftware = 
                     wsl && debian && trixie && curl && 
-                    spacetime && spacetimePath && spacetimeService;
+                    spacetime && spacetimePath && spacetimeService && git;
 
                 bool essentialUserSettings = 
                     !string.IsNullOrEmpty(userName) &&
@@ -2055,6 +2058,7 @@ public class ServerWindow : EditorWindow
                 if (!spacetime) missingComponents.Add("- SpacetimeDB Server");
                 if (!spacetimePath) missingComponents.Add("- SpacetimeDB Path");
                 if (!spacetimeService) missingComponents.Add("- SpacetimeDB Service");
+                if (!git) missingComponents.Add("- Git");
 
                 List<string> missingUserSettings = new List<string>();
                 if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
