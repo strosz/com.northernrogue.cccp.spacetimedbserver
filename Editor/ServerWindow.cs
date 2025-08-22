@@ -37,6 +37,8 @@ public class ServerWindow : EditorWindow
     private bool wslPrerequisitesChecked = false;
     private bool initializedFirstModule = false;
     private bool publishFirstModule = false;
+    private bool hasAllPrerequisites = false;
+
     private string userName = "";
     private string backupDirectory = "";
     private string serverDirectory = "";
@@ -447,6 +449,7 @@ public class ServerWindow : EditorWindow
         
         initializedFirstModule = serverManager.InitializedFirstModule;
         publishFirstModule = serverManager.PublishFirstModule;
+        hasAllPrerequisites = serverManager.HasAllPrerequisites;
         
         wslPrerequisitesChecked = serverManager.WslPrerequisitesChecked;
         userName = serverManager.UserName;
@@ -604,7 +607,17 @@ public class ServerWindow : EditorWindow
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox); // Start of Pre-Requisites section
 
-        bool showPrerequisites = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false), "Pre-Requisites", true);
+        string prerequisitesTitle;
+        if (hasAllPrerequisites)
+        {
+            prerequisitesTitle = "Pre-Requisites";
+        }
+        else
+        {
+            prerequisitesTitle = "Pre-Requisites (Check Needed)";
+        }
+
+        bool showPrerequisites = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false), prerequisitesTitle, true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", showPrerequisites);
 
         if (showPrerequisites)
@@ -1488,7 +1501,7 @@ public class ServerWindow : EditorWindow
         if (serverMode != ServerMode.MaincloudServer)
         {
             bool serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
-            if (!serverManager.WslPrerequisitesChecked || !serverManager.HasWSL || !serverManager.HasDebian)
+            if (!serverManager.WslPrerequisitesChecked || !serverManager.HasAllPrerequisites)
             {
                 if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
                 {
@@ -1888,8 +1901,9 @@ public class ServerWindow : EditorWindow
             firstModuleStyle.normal.textColor = Color.green;
             firstModuleStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
             firstModuleStyle.fontStyle = FontStyle.Bold;
+            firstModuleStyle.alignment = TextAnchor.MiddleCenter;
 
-            EditorGUILayout.LabelField("Ready to Publish First Module! Will take longer than a regular publish because of initial compiling.", firstModuleStyle);
+            EditorGUILayout.LabelField("Ready to Publish First Module! \n Initial compiling may take a minute.", firstModuleStyle, GUILayout.Height(30));
         }
         
         // Centered Grey Mini Label for Publish/Generate instructions
@@ -2045,6 +2059,7 @@ public class ServerWindow : EditorWindow
                 if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
                 if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
                 if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+                if (string.IsNullOrEmpty(authToken)) missingUserSettings.Add("- Auth Token");
 
                 if (!essentialSoftware || !essentialUserSettings)
                 {
@@ -2057,14 +2072,22 @@ public class ServerWindow : EditorWindow
                         "Server Installer Window", "Cancel"
                     );
                     if (needsInstallation) ServerInstallerWindow.ShowWindow();
+                    hasAllPrerequisites = false;
+                    serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
                 }
-                else if (essentialSoftware)
+                else if (essentialSoftware && essentialUserSettings)
                 {
                     EditorUtility.DisplayDialog(
                         "All Software Installed", 
-                        "You have all the necessary software installed to run SpacetimeDB.\n",
+                        "You have everything necessary to run SpacetimeDB on your server. \n\n" +
+                        "Please proceed to publish your module.",
                         "OK"
                     );
+                    hasAllPrerequisites = true;
+                    serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
+
+                    publishFirstModule = true;
+                    serverManager.SetPublishFirstModule(publishFirstModule);
                 }
                 // After writing module name this will appear (when essential software and user settings)
                 else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)

@@ -92,6 +92,7 @@ public class ServerManager
     private bool wslPrerequisitesChecked;
     private bool initializedFirstModule;
     private bool publishFirstModule;
+    private bool hasAllPrerequisites;
 
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion;
@@ -156,6 +157,7 @@ public class ServerManager
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
     public bool InitializedFirstModule => initializedFirstModule;
     public bool PublishFirstModule => publishFirstModule;
+    public bool HasAllPrerequisites => hasAllPrerequisites;
 
     // Process getters
     public ServerCMDProcess GetCmdProcessor() => cmdProcessor;
@@ -255,6 +257,7 @@ public class ServerManager
         // Load UX state
         initializedFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "InitializedFirstModule", false);
         publishFirstModule = EditorPrefs.GetBool(PrefsKeyPrefix + "PublishFirstModule", false);
+        hasAllPrerequisites = EditorPrefs.GetBool(PrefsKeyPrefix + "HasAllPrerequisites", false);
         
         // Load prerequisites settings
         wslPrerequisitesChecked = EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
@@ -426,6 +429,7 @@ public class ServerManager
     public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
     public void SetInitializedFirstModule(bool value) { initializedFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", value); }
     public void SetPublishFirstModule(bool value) { publishFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "PublishFirstModule", value); }
+    public void SetHasAllPrerequisites(bool value) { hasAllPrerequisites = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasAllPrerequisites", value); }
     
     public void SetServerMode(ServerMode mode)
     {
