@@ -709,20 +709,36 @@ public class ServerCustomProcess
         }
         
         // Parse the version from output that looks like:
-        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.1.0/spacetimedb-cli
+        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.3.1/spacetimedb-cli
         // Commit: 
-        // spacetimedb tool version 1.1.0; spacetimedb-lib version 1.1.0;"
+        // spacetimedb tool version 1.3.0; spacetimedb-lib version 1.3.0;"
+        // Prefer the version from the path (1.3.1) over the tool version (1.3.0)
         string version = "";
         
-        // Try to find the version using regex pattern
-        System.Text.RegularExpressions.Match match = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
+        // First try to extract version from the path (preferred method)
+        System.Text.RegularExpressions.Match pathMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"Path:\s+[^\r\n]*?/bin/([0-9]+\.[0-9]+\.[0-9]+)/");
 
-        if (match.Success && match.Groups.Count > 1)
+        if (pathMatch.Success && pathMatch.Groups.Count > 1)
         {
-            version = match.Groups[1].Value;
-            if (debugMode) Log($"Detected SpacetimeDB version on custom server: {version}", 1);
+            version = pathMatch.Groups[1].Value;
+            if (debugMode) Log($"Detected SpacetimeDB version from path on custom server: {version}", 1);
+        }
+        else
+        {
+            // Fallback to tool version if path version not found
+            System.Text.RegularExpressions.Match toolMatch = 
+                System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
 
+            if (toolMatch.Success && toolMatch.Groups.Count > 1)
+            {
+                version = toolMatch.Groups[1].Value;
+                if (debugMode) Log($"Detected SpacetimeDB version from tool output on custom server: {version}", 1);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(version))
+        {
             // Save to EditorPrefs
             EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", version);
 

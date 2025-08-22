@@ -1708,6 +1708,7 @@ public class ServerWindow : EditorWindow
         // Restore the original color after using it
         connectedStyle.normal.textColor = originalStatusColor;
 
+        // SpacetimeDB version display
         GUIStyle versionStyle = new GUIStyle(EditorStyles.miniLabel);
         versionStyle.fontSize = 10;
         versionStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
