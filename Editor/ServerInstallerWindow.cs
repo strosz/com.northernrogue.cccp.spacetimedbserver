@@ -72,8 +72,6 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasCustomCurl = false;
     private bool hasCustomSpacetimeDBServer = false;
     private bool hasCustomSpacetimeDBPath = false;
-    private bool hasCustomRust = false;
-    private bool hasCustomBinaryen = false;
     private bool hasCustomSpacetimeDBService = false;
     private bool hasCustomSpacetimeDBLogsService = false;
 
@@ -164,8 +162,6 @@ public class ServerInstallerWindow : EditorWindow
         hasCustomCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomCurl", false);
         hasCustomSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", false);
         hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
-        hasCustomRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomRust", false);
-        hasCustomBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomBinaryen", false);
         hasCustomSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", false);
         hasCustomSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false);
 
@@ -397,24 +393,6 @@ public class ServerInstallerWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Rust",
-                description = "Rust is a programming language that runs 2x faster than C#\n"+
-                "Note: Required to use the SpacetimeDB Server with Rust Language",
-                isInstalled = hasCustomRust,
-                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomRust
-            },
-            new InstallerItem
-            {
-                title = "Install Web Assembly Optimizer Binaryen",
-                description = "Binaryen is a compiler toolkit for WebAssembly\n"+
-                "SpacetimeDB can use wasm-opt optimizer for WebAssembly modules improving performance",
-                isInstalled = hasCustomBinaryen,
-                isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomBinaryen
-            },
-            new InstallerItem
-            {
                 title = "Install SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
@@ -541,16 +519,6 @@ public class ServerInstallerWindow : EditorWindow
                 {
                     newState = hasCustomSpacetimeDBService;
                     newEnabledState = isSessionActive && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(sshUserName);
-                }
-                else if (item.title.Contains("Rust"))
-                {
-                    newState = hasCustomRust;
-                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
-                }
-                else if (item.title.Contains("Web Assembly Optimizer Binaryen"))
-                {
-                    newState = hasCustomBinaryen;
-                    newEnabledState = isSessionActive && hasCustomCurl && !String.IsNullOrEmpty(sshUserName);
                 }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
                 {
@@ -1045,8 +1013,6 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomSpacetimeDBPath = false;
             hasCustomSpacetimeDBService = false;
             hasCustomSpacetimeDBLogsService = false;
-            hasCustomRust = false;
-            hasCustomBinaryen = false;
             
             // Update UI
             UpdateInstallerItemsStatus();
@@ -1068,8 +1034,6 @@ public class ServerInstallerWindow : EditorWindow
             hasCustomSpacetimeDBPath = false;
             hasCustomSpacetimeDBService = false;
             hasCustomSpacetimeDBLogsService = false;
-            hasCustomRust = false;
-            hasCustomBinaryen = false;
             
             UpdateInstallerItemsStatus();
             isCustomRefreshing = false;
@@ -1107,18 +1071,6 @@ public class ServerInstallerWindow : EditorWindow
         var pathResult = await customProcess.RunCustomCommandAsync($"bash -l -c 'which spacetime' 2>/dev/null");
         hasCustomSpacetimeDBPath = pathResult.success && !string.IsNullOrEmpty(pathResult.output) && pathResult.output.Contains("spacetime");
         await Task.Delay(100);
-        
-        // Check Rust - Verify rustc and cargo are actually installed and working
-        SetStatus("Checking Rust status...", Color.yellow);
-        var rustResult = await customProcess.RunCustomCommandAsync($"bash -l -c 'which rustc && which cargo' 2>/dev/null");
-        hasCustomRust = rustResult.success && !string.IsNullOrEmpty(rustResult.output) && rustResult.output.Contains("rustc") && rustResult.output.Contains("cargo");
-        await Task.Delay(100);
-
-        // Check Binaryen - Check if wasm-opt is installed
-        SetStatus("Checking Binaryen status...", Color.yellow);
-        var binaryenResult = await customProcess.RunCustomCommandAsync("test -f '/usr/local/bin/wasm-opt' && echo 'found' || echo 'not_found'");
-        hasCustomBinaryen = binaryenResult.success && binaryenResult.output.Trim() == "found";
-        await Task.Delay(100);
 
         // Check if SpacetimeDB is installed as a service
         SetStatus("Checking SpacetimeDB Service status...", Color.yellow);
@@ -1137,8 +1089,6 @@ public class ServerInstallerWindow : EditorWindow
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomCurl", hasCustomCurl);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", hasCustomSpacetimeDBServer);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomRust", hasCustomRust);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomBinaryen", hasCustomBinaryen);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", hasCustomSpacetimeDBService);
         EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", hasCustomSpacetimeDBLogsService);
         
@@ -2504,101 +2454,6 @@ public class ServerInstallerWindow : EditorWindow
         }
     }
 
-    private async void InstallCustomRust()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomRust && !installIfAlreadyInstalled)
-            {
-                SetStatus("Rust is already installed on the remote server.", Color.green);
-                return;
-            }
-            
-            SetStatus("Installing Rust on remote server...", Color.yellow);
-            
-            // Create a more structured bash script for Rust installation
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Installing Rust on Remote Server =====\"\n\n" +
-                "echo \"===== Step 1: Installing prerequisites =====\"\n" +
-                "sudo apt update\n" +
-                "sudo apt install -y build-essential curl\n\n" +
-                
-                "echo \"===== Step 2: Downloading Rust installer =====\"\n" +
-                $"cd /home/{sshUserName}\n" +
-                "sudo curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh\n" +
-                "sudo chmod +x rustup.sh\n" +
-                $"sudo chown {sshUserName}:{sshUserName} rustup.sh\n\n" +
-                
-                "echo \"===== Step 3: Installing Rust with automatic -y =====\"\n" +
-                $"sudo -u {sshUserName} bash -c './rustup.sh -y'\n" +
-                "sudo rm rustup.sh\n\n" +
-                
-                "echo \"===== Step 4: Setting up Rust environment =====\"\n" +
-                $"# Add Rust to PATH for user {sshUserName} if not already present\n" +
-                $"if ! grep -q \"HOME/.cargo/env\" /home/{sshUserName}/.bashrc; then\n" +
-                $"  echo 'source \"$HOME/.cargo/env\"' >> /home/{sshUserName}/.bashrc\n" +
-                $"  sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
-                "fi\n\n" +
-                
-                "echo \"===== Step 5: Verifying installation =====\"\n" +
-                "echo \"Checking Rust version:\"\n" +
-                $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && rustc --version'\n\n" +
-                "echo \"Checking Cargo version:\"\n" +
-                $"sudo -u {sshUserName} bash -c 'source \"$HOME/.cargo/env\" && cargo --version'\n\n" +
-                
-                "echo \"===== Done! =====\"\n";
-                
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Installing Rust in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("Rust installation completed. Checking installation status...", Color.green);
-                
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomRust)
-                {
-                    SetStatus("Rust installed successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("Rust installation verification failed. It may take a server restart to take effect.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("Rust installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }
-
     private async void InstallCustomSpacetimeDBService()
     {
         try
@@ -2755,90 +2610,6 @@ public class ServerInstallerWindow : EditorWindow
             {
                 SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
             }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }
-
-    private async void InstallCustomBinaryen()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomBinaryen && !installIfAlreadyInstalled)
-            {
-                SetStatus("Binaryen is already installed on the remote server.", Color.green);
-                return;
-            }
-
-            if (!hasCustomCurl)
-            {
-                SetStatus("curl is required to install Binaryen. Please install curl first.", Color.red);
-                return;
-            }
-
-            SetStatus("Installing Web Assembly Optimizer Binaryen on remote server...", Color.yellow);
-
-            // Use the exact URL that works, with proper error handling
-            string commands = 
-                "echo \"Downloading Binaryen...\" && " +
-                "curl -L \"https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz\" -o /tmp/binaryen.tar.gz && " +
-                "echo \"Extracting Binaryen...\" && " +
-                "sudo tar -xz --strip-components=2 -C /usr/local/bin -f /tmp/binaryen.tar.gz binaryen-version_123/bin && " +
-                "echo \"Cleaning up...\" && " +
-                "rm -f /tmp/binaryen.tar.gz && " +
-                "echo \"Verifying installation...\" && " +
-                "wasm-opt --version 2>/dev/null || echo \"wasm-opt binary installed successfully\"";
-
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Installing Binaryen in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("Binaryen installation completed. Checking installation status...", Color.green);
-                
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomBinaryen)
-                {
-                    SetStatus("Binaryen (Web Assembly Optimizer) installed successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("Binaryen installation verification failed. Please check the terminal output.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("Binaryen installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error during Binaryen installation: {ex.Message}", Color.red);
-            LogMessage($"Binaryen installation error: {ex}", -1);
         }
         finally
         {
