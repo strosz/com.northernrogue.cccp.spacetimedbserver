@@ -98,6 +98,7 @@ public class ServerManager
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion;
     public string spacetimeDBCurrentVersionCustom;
+    public string spacetimeDBCurrentVersionTool;
     public string spacetimeDBLatestVersion;
 
     // Update Rust
@@ -309,6 +310,7 @@ public class ServerManager
 
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
+        spacetimeDBCurrentVersionTool = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
@@ -2377,7 +2379,8 @@ public class ServerManager
         // spacetimedb tool version 1.3.0; spacetimedb-lib version 1.3.0;"
         // Prefer the version from the path (1.3.1) over the tool version (1.3.0)
         string version = "";
-        
+        string toolversion = "";
+
         // First try to extract version from the path (preferred method)
         System.Text.RegularExpressions.Match pathMatch = 
             System.Text.RegularExpressions.Regex.Match(result.output, @"Path:\s+[^\r\n]*?/bin/([0-9]+\.[0-9]+\.[0-9]+)/");
@@ -2390,14 +2393,27 @@ public class ServerManager
         else
         {
             // Fallback to tool version if path version not found
-            System.Text.RegularExpressions.Match toolMatch = 
+            System.Text.RegularExpressions.Match fallbackToolMatch = 
                 System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
 
-            if (toolMatch.Success && toolMatch.Groups.Count > 1)
+            if (fallbackToolMatch.Success && fallbackToolMatch.Groups.Count > 1)
             {
-                version = toolMatch.Groups[1].Value;
+                version = fallbackToolMatch.Groups[1].Value;
                 if (debugMode) LogMessage($"Detected SpacetimeDB version from tool output: {version}", 1);
             }
+        }
+
+        // Also save the tool version for cargo.toml version update in Installer Window
+        System.Text.RegularExpressions.Match toolMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
+
+        if (toolMatch.Success && toolMatch.Groups.Count > 1)
+        {
+            toolversion = toolMatch.Groups[1].Value;
+            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", toolversion);
+            spacetimeDBCurrentVersionTool = toolversion;
+
+            if (debugMode) LogMessage($"Detected SpacetimeDB tool version from output: {toolversion}", 1);
         }
 
         if (!string.IsNullOrEmpty(version))
@@ -2420,7 +2436,9 @@ public class ServerManager
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
         }
     }
+    #endregion
     
+    #region Rust Version
     public async Task CheckRustVersion() // Only runs in WSL once when WSL has started
     {
         if (debugMode) LogMessage("Checking Rust version...", 0);

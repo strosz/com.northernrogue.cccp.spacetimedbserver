@@ -13,8 +13,9 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerCMDProcess
 {
-    // Settings
     public static bool debugMode = false;
+    
+    // Settings
     private string userName = "";
     private const string PrefsKeyPrefix = "CCCP_";
     

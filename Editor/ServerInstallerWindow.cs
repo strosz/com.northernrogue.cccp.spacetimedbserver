@@ -3,7 +3,8 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using UnityEngine.Rendering;
+using System.IO;
+using System.Text.RegularExpressions;
 
 // Check and install everything necessary to run SpacetimeDB with this window ///
 
@@ -11,6 +12,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerInstallerWindow : EditorWindow
 {
+    public static bool debugMode = false;
+
     private List<InstallerItem> installerItems = new List<InstallerItem>();
     private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
     private ServerCMDProcess cmdProcess;
@@ -33,6 +36,7 @@ public class ServerInstallerWindow : EditorWindow
 
     // EditorPrefs
     private string userName = ""; // For WSL mode
+    private string serverDirectory = ""; // For WSL mode
     private string sshUserName = ""; // For SSH remote server mode
 
     // Temporary fields for username input
@@ -41,6 +45,7 @@ public class ServerInstallerWindow : EditorWindow
 
     private string spacetimeDBCurrentVersion = "";
     private string spacetimeDBCurrentVersionCustom = "";
+    private string spacetimeDBCurrentVersionTool = "";
     private string spacetimeDBLatestVersion = "";
     
     private string rustCurrentVersion = "";
@@ -181,6 +186,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Cache the current username
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
         sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
         tempUserNameInput = userName; // Initialize the temp input with the stored username for WSL
         tempCreateUserNameInput = ""; // Initialize empty for the "Create User" functionality
@@ -188,6 +194,7 @@ public class ServerInstallerWindow : EditorWindow
         // Load version info of SpacetimeDB
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
+        spacetimeDBCurrentVersionTool = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
         
         // Load version info of Rust
@@ -1545,6 +1552,8 @@ public class ServerInstallerWindow : EditorWindow
             if (hasSpacetimeDBServer)
             {
                 SetStatus("SpacetimeDB Server installed successfully.", Color.green);
+                // Update Cargo.toml spacetimedb version if needed
+                UpdateCargoSpacetimeDBVersion();
             }
             else
             {
@@ -2122,7 +2131,92 @@ public class ServerInstallerWindow : EditorWindow
     }
     #endregion
     
-    #region Custom Installation Methods
+    #region Cargo.toml Update
+    private void UpdateCargoSpacetimeDBVersion()
+    {
+        // LogMessages are behind debugMode because this method is more of an extra check
+        try
+        {
+            if (string.IsNullOrEmpty(serverDirectory))
+            {
+                if (debugMode) LogMessage("Server directory not set. Cannot update Cargo.toml.", 0);
+                return;
+            }
+            
+            if (string.IsNullOrEmpty(spacetimeDBCurrentVersionTool))
+            {
+                if (debugMode) LogMessage("SpacetimeDB tool version not available. Cannot update Cargo.toml.", 0);
+                return;
+            }
+            
+            // Convert WSL path to Windows path if needed
+            string cargoTomlPath;
+            if (serverDirectory.StartsWith("/home/") || serverDirectory.StartsWith("/mnt/"))
+            {
+                // This is a WSL path, convert to Windows path
+                // For WSL paths like /home/username/server, we need to access via \\wsl$\Debian\home\username\server
+                string wslPath = serverDirectory.Replace("/", "\\");
+                cargoTomlPath = $"\\\\wsl$\\Debian{wslPath}\\Cargo.toml";
+            }
+            else
+            {
+                // Assume it's already a Windows path
+                cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+            }
+            
+            // Check if Cargo.toml exists
+            if (!File.Exists(cargoTomlPath))
+            {
+                if (debugMode) LogMessage($"Cargo.toml not found at {cargoTomlPath}. No update needed.", 0);
+                return;
+            }
+            
+            // Read the file content
+            string content = File.ReadAllText(cargoTomlPath);
+            
+            // Pattern to match spacetimedb = "x.x.x" (allowing for different quote styles and spacing)
+            string pattern = @"spacetimedb\s*=\s*[""']([^""']+)[""']";
+            Match match = Regex.Match(content, pattern);
+            
+            if (match.Success)
+            {
+                string currentVersion = match.Groups[1].Value.Trim();
+                
+                if (!string.IsNullOrEmpty(currentVersion) && currentVersion != spacetimeDBCurrentVersionTool)
+                {
+                    // Replace the version, preserving the original quote style
+                    string originalMatch = match.Value;
+                    string quoteChar = originalMatch.Contains("\"") ? "\"" : "'";
+                    string replacement = $"spacetimedb = {quoteChar}{spacetimeDBCurrentVersionTool}{quoteChar}";
+                    string newContent = content.Replace(originalMatch, replacement);
+                    
+                    // Write back to file
+                    File.WriteAllText(cargoTomlPath, newContent);
+                    
+                    if (debugMode) LogMessage($"Updated Cargo.toml spacetimedb version from {currentVersion} to {spacetimeDBCurrentVersionTool}", 1);
+                }
+                else if (currentVersion == spacetimeDBCurrentVersionTool)
+                {
+                    if (debugMode) LogMessage($"Cargo.toml spacetimedb version is already up to date ({currentVersion})", 1);
+                }
+                else
+                {
+                    if (debugMode) LogMessage("Found spacetimedb dependency but version string is empty", 0);
+                }
+            }
+            else
+            {
+                if (debugMode) LogMessage("spacetimedb dependency not found in Cargo.toml", 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) LogMessage($"Error updating Cargo.toml: {ex.Message}", -1);
+        }
+    }
+    #endregion
+    
+    #region Custom Installation
     private async void InstallCustomUser()
     {
         try

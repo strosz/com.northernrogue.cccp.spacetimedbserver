@@ -254,7 +254,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(5);
         
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.Width(110));
 
         GUILayout.FlexibleSpace();
 
@@ -289,7 +289,7 @@ public class ServerWindow : EditorWindow
         clearStyle.fontSize = 12;
         clearStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
         clearStyle.hover.textColor = clearStyle.normal.textColor; // Explicitly define hover textColor
-        if (GUILayout.Button(new GUIContent("clear"), clearStyle, GUILayout.Width(50)))
+        if (GUILayout.Button(new GUIContent("clear"), clearStyle, GUILayout.Width(35)))
         {
             commandOutputLog = "";
             Repaint();
@@ -1479,6 +1479,7 @@ public class ServerWindow : EditorWindow
                 debugMode = newDebugMode;
                 
                 // Update other components that need to know about debug mode
+                ServerInstallerWindow.debugMode = newDebugMode;
                 ServerOutputWindow.debugMode = newDebugMode;
                 ServerWindowInitializer.debugMode = newDebugMode;
                 ServerUpdateProcess.debugMode = newDebugMode;
