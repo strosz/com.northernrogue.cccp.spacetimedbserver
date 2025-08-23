@@ -29,7 +29,7 @@ public class ServerInstallerWindow : EditorWindow
     
     // Tab selection
     private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
-    private readonly string[] tabNames = { "WSL Server Installer", "Custom Server Installer" };
+    private readonly string[] tabNames = { "WSL Local Installer", "Custom Remote Installer" };
 
     // EditorPrefs
     private string userName = ""; // For WSL mode
@@ -48,6 +48,7 @@ public class ServerInstallerWindow : EditorWindow
     private GUIStyle itemTitleStyle;
     private GUIStyle installedStyle;
     private GUIStyle installButtonStyle;
+    private GUIStyle sectionHeaderStyle;
     private bool stylesInitialized = false;
     
     // WSL Installation states
@@ -242,7 +243,8 @@ public class ServerInstallerWindow : EditorWindow
                 "Note: If you already have WSL installed, it will install Debian for your chosen WSL version",
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
-                installAction = InstallWSLDebian
+                installAction = InstallWSLDebian,
+                sectionHeader = "Required Local Software"
             },
             new InstallerItem
             {
@@ -325,7 +327,8 @@ public class ServerInstallerWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
-                installAction = InstallSpacetimeDBUnitySDK
+                installAction = InstallSpacetimeDBUnitySDK,
+                sectionHeader = "Required Unity Plugin"
             }
         };
 
@@ -342,7 +345,8 @@ public class ServerInstallerWindow : EditorWindow
                 isEnabled = isConnectedSSH,
                 installAction = InstallCustomUser,
                 hasUsernameField = true,
-                usernameLabel = "Create Username:"
+                usernameLabel = "Create Username:",
+                sectionHeader = "Required Remote Software"
             },
             new InstallerItem
             {
@@ -398,7 +402,8 @@ public class ServerInstallerWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
-                installAction = InstallSpacetimeDBUnitySDK
+                installAction = InstallSpacetimeDBUnitySDK,
+                sectionHeader = "Required Unity Plugin"
             }
         };
     }
@@ -601,6 +606,12 @@ public class ServerInstallerWindow : EditorWindow
         installButtonStyle.hover.textColor = new Color(0.3f, 0.8f, 0.3f);
         installButtonStyle.fontStyle = FontStyle.Bold;
         
+        // Section header style
+        sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel);
+        sectionHeaderStyle.fontSize = 12;
+        sectionHeaderStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+        sectionHeaderStyle.margin = new RectOffset(0, 0, 10, 5);
+        
         stylesInitialized = true;
     }
     
@@ -665,8 +676,9 @@ public class ServerInstallerWindow : EditorWindow
             "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +
             "You get a local CLI for spacetime commands.\n" +
             "Required for all server modes to be able to publish your server." :
-            "Install all the required software to run SpacetimeDB Server on a remote Debian machine via SSH.\n" +
-            "Works on a fresh Debian 12 or 13 server, VM or VPS instance from the ground up.";
+            "Install all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
+            "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
+            "Note: The Local WSL installation is required to be able to publish to your remote server.";
 
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
@@ -771,6 +783,13 @@ public class ServerInstallerWindow : EditorWindow
     // Optimized to reduce GC allocations
     private void DrawInstallerItem(InstallerItem item, int index)
     {
+        // Display section header if this item has one
+        if (!string.IsNullOrEmpty(item.sectionHeader))
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField(item.sectionHeader, sectionHeaderStyle);
+        }
+        
         // Container box for each installer item
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         
@@ -2671,6 +2690,7 @@ public class ServerInstallerWindow : EditorWindow
         public bool hasUsernameField = false; // Whether to show a username input field
         public string usernameLabel = "Debian Username:"; // Default label for the username field
         public string expectedModuleName = ""; // Expected module name for database logs service
+        public string sectionHeader = ""; // Optional section header to display before this item
     }
     #endregion
 } // Class
