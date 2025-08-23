@@ -100,6 +100,11 @@ public class ServerManager
     public string spacetimeDBCurrentVersionCustom;
     public string spacetimeDBLatestVersion;
 
+    // Update Rust
+    public string rustCurrentVersion;
+    public string rustLatestVersion;
+    public string rustupVersion;
+
     // Server output window settings
     private bool echoToConsole;
 
@@ -305,6 +310,10 @@ public class ServerManager
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+        
+        rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
+        rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
+        rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
         
         // Load server mode
         string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer"); // CustomServer // MaincloudServer
@@ -2035,6 +2044,7 @@ public class ServerManager
                 if (isWslRunning)
                 {
                     await CheckSpacetimeDBVersion();
+                    await CheckRustVersion();
                 }
             }
             
@@ -2345,9 +2355,9 @@ public class ServerManager
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
         
         // Only proceed if prerequisites are met
-        if (!WslPrerequisitesChecked || !HasWSL || !HasDebian || !HasDebianTrixie || string.IsNullOrEmpty(UserName))
+        if (!hasAllPrerequisites)
         {
-            if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met or username not set", 0);
+            if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met", 0);
             return;
         }
         
@@ -2408,6 +2418,140 @@ public class ServerManager
         else
         {
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+        }
+    }
+    
+    public async Task CheckRustVersion() // Only runs in WSL once when WSL has started
+    {
+        if (debugMode) LogMessage("Checking Rust version...", 0);
+        
+        // Only proceed if prerequisites are met
+        if (!hasAllPrerequisites || !hasRust)
+        {
+            if (debugMode) LogMessage("Skipping Rust version check - prerequisites not met or Rust not installed", 0);
+            return;
+        }
+        
+        // Use RunServerCommandAsync to run the rustup check command (mark as status check for silent mode)
+        var result = await cmdProcessor.RunServerCommandAsync("rustup check", serverDirectory, true);
+        
+        if (string.IsNullOrEmpty(result.output))
+        {
+            if (debugMode) LogMessage("Failed to get Rust version information", -1);
+            return;
+        }
+        
+        // TODO: Remove this simulation line after testing
+        //result.output = "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)\nrustup - Up to date : 1.28.2";
+        
+        if (debugMode) LogMessage($"Rust check output: {result.output}", 0);
+        
+        // Parse the version from output that looks like:
+        // "stable-x86_64-unknown-linux-gnu - Up to date : 1.89.0 (29483883e 2025-08-04)
+        // rustup - Up to date : 1.28.2"
+        // Or when updates are available:
+        // "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)
+        // rustup - Update available : 1.28.2 -> 1.29.0"
+        
+        string rustStableVersion = "";
+        string rustupCurrentVersion = "";
+        bool rustUpdateAvailable = false;
+        bool rustupUpdateAvailable = false;
+        
+        // Parse Rust stable version
+        System.Text.RegularExpressions.Match rustMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
+        
+        if (rustMatch.Success && rustMatch.Groups.Count > 1)
+        {
+            rustStableVersion = rustMatch.Groups[1].Value;
+            
+            // Check if update is available for Rust and extract latest version
+            if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Update available"))
+            {
+                rustUpdateAvailable = true;
+                
+                // Try to extract the latest version from "1.89.0 -> 1.90.0" format
+                System.Text.RegularExpressions.Match latestMatch = 
+                    System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?->\s*([0-9]+\.[0-9]+\.[0-9]+)");
+                
+                if (latestMatch.Success && latestMatch.Groups.Count > 1)
+                {
+                    string latestVersion = latestMatch.Groups[1].Value;
+                    EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", latestVersion);
+                    rustLatestVersion = latestVersion;
+                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion} to {latestVersion}", 1);
+                }
+                else
+                {
+                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion}", 1);
+                }
+            }
+            else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
+            {
+                // Clear the latest version when up to date
+                EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", "");
+                rustLatestVersion = "";
+                if (debugMode) LogMessage($"Rust is up to date at version: {rustStableVersion}", 1);
+            }
+        }
+        
+        // Parse rustup version
+        System.Text.RegularExpressions.Match rustupMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"rustup.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
+        
+        if (rustupMatch.Success && rustupMatch.Groups.Count > 1)
+        {
+            rustupCurrentVersion = rustupMatch.Groups[1].Value;
+            
+            // Check if update is available for rustup
+            if (result.output.Contains("rustup - Update available"))
+            {
+                rustupUpdateAvailable = true;
+                if (debugMode) LogMessage($"Rustup update available from version: {rustupCurrentVersion}", 1);
+            }
+            else if (result.output.Contains("rustup - Up to date"))
+            {
+                if (debugMode) LogMessage($"Rustup is up to date at version: {rustupCurrentVersion}", 1);
+            }
+        }
+        
+        // Save versions to EditorPrefs and local variables
+        if (!string.IsNullOrEmpty(rustStableVersion))
+        {
+            EditorPrefs.SetString(PrefsKeyPrefix + "RustVersion", rustStableVersion);
+            rustCurrentVersion = rustStableVersion;
+            
+            if (rustUpdateAvailable)
+            {
+                LogMessage($"Rust update available for WSL! Click on the Installer Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", true);
+            }
+            else
+            {
+                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
+            }
+        }
+        
+        if (!string.IsNullOrEmpty(rustupCurrentVersion))
+        {
+            EditorPrefs.SetString(PrefsKeyPrefix + "RustupVersion", rustupCurrentVersion);
+            rustupVersion = rustupCurrentVersion;
+            
+            if (rustupUpdateAvailable)
+            {
+                //LogMessage($"Rustup update available for WSL! Click on the Installer Window update button to install the latest version: {rustupCurrentVersion}", 1);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "RustupUpdateAvailable", true);
+            }
+            else
+            {
+                EditorPrefs.SetBool(PrefsKeyPrefix + "RustupUpdateAvailable", false);
+            }
+        }
+        
+        if (string.IsNullOrEmpty(rustStableVersion) && string.IsNullOrEmpty(rustupCurrentVersion))
+        {
+            if (debugMode) LogMessage("Could not parse Rust version information from output", -1);
         }
     }
     

@@ -43,6 +43,12 @@ public class ServerInstallerWindow : EditorWindow
     private string spacetimeDBCurrentVersionCustom = "";
     private string spacetimeDBLatestVersion = "";
     
+    private string rustCurrentVersion = "";
+    private string rustLatestVersion = "";
+    private string rustupVersion = "";
+    
+    private bool rustUpdateAvailable = false;
+    
     // Styles
     private GUIStyle titleStyle;
     private GUIStyle itemTitleStyle;
@@ -183,6 +189,12 @@ public class ServerInstallerWindow : EditorWindow
         spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
         spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
         spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+        
+        // Load version info of Rust
+        rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
+        rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
+        rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
+        rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
         
         // Initialize both installer item lists
         InitializeInstallerItems();
@@ -414,6 +426,15 @@ public class ServerInstallerWindow : EditorWindow
 
         // Update the correct list based on current tab
         List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+        
+        // Reload version information from EditorPrefs to ensure we have the latest data
+        spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+        spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
+        spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+        rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
+        rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
+        rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
+        rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
         
         // For WSL installer items
         if (currentTab == 0) {
@@ -808,10 +829,13 @@ public class ServerInstallerWindow : EditorWindow
         EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        
 
         if (currentTab == 0) {
-            showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
+            showUpdateButton = (item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
-                                    spacetimeDBCurrentVersion != spacetimeDBLatestVersion;
+                                    spacetimeDBCurrentVersion != spacetimeDBLatestVersion) ||
+                              (item.title.Contains("Install Rust") && 
+                                    rustUpdateAvailable && 
+                                    !string.IsNullOrEmpty(rustLatestVersion));
         } else if (currentTab == 1) {
             showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
@@ -824,7 +848,22 @@ public class ServerInstallerWindow : EditorWindow
         {
             EditorGUILayout.Space(2);
             EditorGUI.BeginDisabledGroup(isDisabled);
-            if (GUILayout.Button("Update to v"+spacetimeDBLatestVersion, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
+            
+            string updateButtonText;
+            if (item.title.Contains("Install Rust"))
+            {
+                updateButtonText = "Update to v" + rustLatestVersion;
+            }
+            else if (item.title.Contains("SpacetimeDB Server"))
+            {
+                updateButtonText = "Update to v" + spacetimeDBLatestVersion;
+            }
+            else
+            {
+                updateButtonText = "Update";
+            }
+            
+            if (GUILayout.Button(updateButtonText, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
             {
                 EditorApplication.delayCall += () => {
                     item.installAction?.Invoke();
@@ -1750,7 +1789,9 @@ public class ServerInstallerWindow : EditorWindow
         CheckInstallationStatus();
         await Task.Delay(1000);
         
-        if (hasRust && !installIfAlreadyInstalled)
+        bool isUpdate = hasRust && rustUpdateAvailable && !string.IsNullOrEmpty(rustLatestVersion);
+        
+        if (hasRust && !installIfAlreadyInstalled && !isUpdate)
         {
             SetStatus("Rust is already installed.", Color.green);
             return;
@@ -1762,7 +1803,44 @@ public class ServerInstallerWindow : EditorWindow
             return;
         }
         
-        SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
+        if (isUpdate)
+        {
+            SetStatus($"Updating Rust from v{rustCurrentVersion} to v{rustLatestVersion} - Step 1: Running rustup update", Color.yellow);
+        }
+        else
+        {
+            SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
+        }
+        
+        // Handle Rust update case
+        if (isUpdate)
+        {
+            SetStatus($"Updating Rust from v{rustCurrentVersion} to v{rustLatestVersion} - Running rustup update", Color.yellow);
+            string rustUpdateCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\" && rustup update\"";
+            bool rustUpdateSuccess = await cmdProcess.RunPowerShellInstallCommand(rustUpdateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+            
+            if (rustUpdateSuccess)
+            {
+                // Update the current version to the latest version
+                rustCurrentVersion = rustLatestVersion;
+                EditorPrefs.SetString(PrefsKeyPrefix + "RustVersion", rustCurrentVersion);
+                
+                // Clear the update available flags
+                rustUpdateAvailable = false;
+                rustLatestVersion = "";
+                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
+                EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", "");
+                
+                SetStatus($"Rust updated successfully to v{rustCurrentVersion}!", Color.green);
+            }
+            else
+            {
+                SetStatus("Failed to update Rust. Update aborted.", Color.red);
+            }
+            
+            UpdateInstallerItemsStatus();
+            return;
+        }
         
         // First update package list
         string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
