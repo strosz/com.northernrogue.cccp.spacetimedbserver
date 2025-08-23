@@ -873,7 +873,25 @@ public class ServerInstallerWindow : EditorWindow
         }
         else if (item.isInstalled && !alwaysShowInstall)
         {
-            EditorGUILayout.LabelField("✓ Installed", installedStyle, GUILayout.Width(100));
+            if (item.title.Contains("SpacetimeDB Server") && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
+            {
+                if (currentTab == 0 && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
+                {
+                    EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersion, installedStyle, GUILayout.Width(110));
+                }
+                else if (currentTab == 1 && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
+                {
+                    EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
+                }
+            }
+            else if (item.title.Contains("Install Rust") && !string.IsNullOrEmpty(rustCurrentVersion))
+            {
+                EditorGUILayout.LabelField("✓ Installed v " + rustCurrentVersion, installedStyle, GUILayout.Width(110));
+            }
+            else
+            {
+                EditorGUILayout.LabelField("✓ Installed", installedStyle, GUILayout.Width(110));
+            }
         }
         else
         {
