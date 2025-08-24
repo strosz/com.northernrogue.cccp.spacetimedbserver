@@ -933,6 +933,10 @@ public class ServerInstallerWindow : EditorWindow
             {
                 EditorGUILayout.LabelField("✓ Installed v " + rustCurrentVersion, installedStyle, GUILayout.Width(110));
             }
+            else if (item.title.Contains("SpacetimeDB Unity SDK") && !string.IsNullOrEmpty(spacetimeSDKCurrentVersion))
+            {
+                EditorGUILayout.LabelField("✓ Installed v " + spacetimeSDKCurrentVersion, installedStyle, GUILayout.Width(110));
+            }
             else
             {
                 EditorGUILayout.LabelField("✓ Installed", installedStyle, GUILayout.Width(110));
@@ -2172,9 +2176,7 @@ public class ServerInstallerWindow : EditorWindow
                     UpdateInstallerItemsStatus();
                     
                     // After successful installation, ensure the window updates properly
-                    EditorApplication.delayCall += () => {
-                        CheckInstallationStatus();
-                    };
+                    CheckInstallationStatus();
                 }
                 else
                 {
