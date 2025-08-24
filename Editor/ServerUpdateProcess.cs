@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 
-// Handles new updates for the asset from Unity, Github and SpacetimeDB ///
+// Checks for new updates for this asset and related packages ///
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -14,27 +14,27 @@ public class ServerUpdateProcess
 {
     public static bool debugMode = false; // Set in ServerWindow
 
-    /////////////////////////////// Cosmos Github Update Checker ///////////////////////////////
-    private const string CosmosGithubUpdateAvailablePrefKey = "CCCP_GithubUpdateAvailable";
+    private const string PrefsKeyPrefix = "CCCP_";
+
+    /////////// CCCP Github Update Checker ///////////
     private const string owner = "strosz";
     private const string packageName = "com.northernrogue.cccp.spacetimedbserver";
     private const string branch = "main";
-
     private static ListRequest listRequest;
     private static string currentVersion = "";
     private static string latestCommitSha = "";
     private static AddRequest addRequest;
     private static ServerWindow window;
 
-    /////////////////////// Cosmos Unity Version Update Checker ///////////////////////////
-    //private const string CosmosUnityUpdateAvailablePrefKey = "CCCP_UnityUpdateAvailable";    /////////////////////////////// SpacetimeDB Update Checker ///////////////////////////////
+    /////////// CCCP Asset Store Version Update Checker //////////
+    //private const string CCCP_AssetStoreUpdateAvailablePrefKey = "CCCP_AssetStoreUpdateAvailable";
 
-    /////////////////////////////// SpacetimeDB Update Installer ///////////////////////////////
-    private const string SpacetimeDBUpdateAvailablePrefKey = "CCCP_SpacetimeDBUpdateAvailable";
-    private const string SpacetimeDBVersionPrefKey = "CCCP_SpacetimeDBVersion";
-    private const string SpacetimeDBLatestVersionPrefKey = "CCCP_SpacetimeDBLatestVersion";
+    /////////// SpacetimeDB Server Update Checker ///////////
     private static string spacetimeDBLatestVersion = "";
-    
+
+    /////////// SpacetimeDB SDK Update Checker ///////////
+    private static string spacetimeDBSDKLatestVersion = "";
+
     static ServerUpdateProcess()
     {
         EditorApplication.delayCall += () => {
@@ -56,7 +56,7 @@ public class ServerUpdateProcess
         if (debugMode) Debug.Log($"Checked for GitHub update - Stored SHA: {latestCommitSha}");
         
         FetchLatestCommitAsync();
-        return EditorPrefs.GetBool(CosmosGithubUpdateAvailablePrefKey, false);
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
     }
 
     private static void FetchLatestCommitAsync()
@@ -94,20 +94,20 @@ public class ServerUpdateProcess
                 latestCommitSha = fetchedSha;
                 EditorPrefs.SetString("CCCP_LastCommitSha", latestCommitSha);
                 if (debugMode) Debug.Log($"First fetch: latest commit SHA is {latestShaShort(latestCommitSha)}");
-                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false);
+                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
             }
             else if (fetchedSha != latestCommitSha)
             {
                 if (debugMode) Debug.Log($"New commit detected! Old: {latestShaShort(latestCommitSha)}  New: {latestShaShort(fetchedSha)}");
                 latestCommitSha = fetchedSha;
                 EditorPrefs.SetString("CCCP_LastCommitSha", latestCommitSha);
-                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, true);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "GithubUpdateAvailable", true);
                 DisplayGithubUpdateAvailable();
             }
             else
             {
                 if (debugMode) Debug.Log("No new commit found.");
-                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false);
+                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
             }
         }
         catch (Exception e)
@@ -124,7 +124,7 @@ public class ServerUpdateProcess
     public static bool IsGithubUpdateAvailable()
     {
         // EditorPrefs can also be called directly
-        return EditorPrefs.GetBool(CosmosGithubUpdateAvailablePrefKey, false);
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
     }
 
     // Display the update available message once in the ServerWindow
@@ -160,14 +160,14 @@ public class ServerUpdateProcess
                 Debug.Log("Package updated successfully: " + addRequest.Result.packageId);
                 if (window != null && debugMode)
                     window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
-                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false);
+                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
             }
             else if (addRequest.Status == StatusCode.Failure)
             {
                 Debug.LogError("Package update failed: " + addRequest.Error.message);
                 if (window != null && debugMode)
                     window.LogMessage("Package update failed: " + addRequest.Error.message, -1);
-                EditorPrefs.SetBool(CosmosGithubUpdateAvailablePrefKey, false); // To not occupy UI space
+                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false); // To not occupy UI space
             }
                 
             EditorApplication.update -= GithubUpdateProgress;
@@ -216,7 +216,7 @@ public class ServerUpdateProcess
     public static bool CheckForSpacetimeDBUpdate()
     {
         FetchSpacetimeDBVersionAsync();
-        return EditorPrefs.GetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
     }
 
     private static void FetchSpacetimeDBVersionAsync()
@@ -255,20 +255,20 @@ public class ServerUpdateProcess
             }
             
             spacetimeDBLatestVersion = version;
-            EditorPrefs.SetString(SpacetimeDBLatestVersionPrefKey, spacetimeDBLatestVersion);
-            
+            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", spacetimeDBLatestVersion);
+
             if (debugMode) Debug.Log($"Latest SpacetimeDB version: {spacetimeDBLatestVersion}");
             
             // Compare with current installed version
-            string currentSpacetimeDBVersion = EditorPrefs.GetString(SpacetimeDBVersionPrefKey, "");
+            string currentSpacetimeDBVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
             if (!string.IsNullOrEmpty(currentSpacetimeDBVersion) && currentSpacetimeDBVersion != spacetimeDBLatestVersion)
             {
                 if (debugMode) Debug.Log($"SpacetimeDB update available! Current: {currentSpacetimeDBVersion}, Latest: {spacetimeDBLatestVersion}");
-                EditorPrefs.SetBool(SpacetimeDBUpdateAvailablePrefKey, true);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
             }
             else
             {
-                EditorPrefs.SetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
             }
         }
         catch (Exception e)
@@ -280,13 +280,13 @@ public class ServerUpdateProcess
     // Public method to check if a SpacetimeDB update is available
     public static bool IsSpacetimeDBUpdateAvailable()
     {
-        return EditorPrefs.GetBool(SpacetimeDBUpdateAvailablePrefKey, false);
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
     }
     
     // Public method to get the latest SpacetimeDB version
     public static string SpacetimeDBLatestVersion()
     {
-        return EditorPrefs.GetString(SpacetimeDBLatestVersionPrefKey, "");
+        return EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
     }
 
     // Data model for SpacetimeDB release response

@@ -92,16 +92,17 @@ public class ServerInstallerWindow : EditorWindow
     // WSL 1 requires unique install logic for Debian apps
     private bool WSL1Installed;
 
-    // Debug
+    // Debug install process
     private bool visibleInstallProcesses = true;
     private bool keepWindowOpenForDebug = true;
-
-    // Debug install process
     private bool alwaysShowInstall = false;
     private bool installIfAlreadyInstalled = false;
     private bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
     
     // Settings
+    private bool updateCargoToml = false;
+
+    // Keys
     private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
     private const string FirstTimeOpenKey = "FirstTimeOpen";    
 
@@ -180,9 +181,10 @@ public class ServerInstallerWindow : EditorWindow
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
         
-        // Load install debug settings from EditorPrefs
+        // Load install debug settings and other settings from EditorPrefs
         visibleInstallProcesses = EditorPrefs.GetBool(PrefsKeyPrefix + "VisibleInstallProcesses", true);
         keepWindowOpenForDebug = EditorPrefs.GetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", true);
+        updateCargoToml = EditorPrefs.GetBool(PrefsKeyPrefix + "UpdateCargoToml", true);
         
         // Cache the current username
         userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
@@ -682,6 +684,20 @@ public class ServerInstallerWindow : EditorWindow
                 alwaysShowInstall = forceInstall;
                 installIfAlreadyInstalled = forceInstall;
                 // No EditorPrefs for forceInstall as it's a transient state for the session
+            });
+
+            menu.ShowAsContext();
+        }
+        
+        // Settings Dropdown
+        GUIContent settingsContent = new GUIContent("Settings");
+        if (EditorGUILayout.DropdownButton(settingsContent, FocusType.Passive, EditorStyles.toolbarDropDown, GUILayout.Width(70)))
+        {
+            GenericMenu menu = new GenericMenu();
+
+            menu.AddItem(new GUIContent("Update Cargo.toml automatically"), updateCargoToml, () => {
+                updateCargoToml = !updateCargoToml;
+                EditorPrefs.SetBool(PrefsKeyPrefix + "UpdateCargoToml", updateCargoToml);
             });
 
             menu.ShowAsContext();
@@ -1553,7 +1569,7 @@ public class ServerInstallerWindow : EditorWindow
             {
                 SetStatus("SpacetimeDB Server installed successfully.", Color.green);
                 // Update Cargo.toml spacetimedb version if needed
-                UpdateCargoSpacetimeDBVersion();
+                if (updateCargoToml) UpdateCargoSpacetimeDBVersion();
             }
             else
             {
