@@ -33,7 +33,7 @@ public class ServerUpdateProcess
     private static string spacetimeDBLatestVersion = "";
 
     /////////// SpacetimeDB SDK Update Checker ///////////
-    private static string spacetimeDBSDKLatestVersion = "";
+    private static string spacetimeSDKLatestVersion = "";
 
     static ServerUpdateProcess()
     {
@@ -42,6 +42,7 @@ public class ServerUpdateProcess
             if (debugMode) Debug.Log("ServerUpdateProcess: Starting update checks...");
             CheckForGithubUpdate();
             CheckForSpacetimeDBUpdate();
+            CheckForSpacetimeSDKUpdate();
         };
     }
 
@@ -294,6 +295,138 @@ public class ServerUpdateProcess
     private class ReleaseData
     {
         public string tag_name;
+    }
+
+    // Data models for SpacetimeDB SDK tags response
+    [Serializable]
+    private class TagData
+    {
+        public string name;
+    }
+
+    [Serializable]
+    private class TagDataArray
+    {
+        public TagData[] tags;
+    }
+    #endregion
+
+    #region SpacetimeSDK Update
+    public static bool CheckForSpacetimeSDKUpdate()
+    {
+        FetchSpacetimeSDKVersionAsync();
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+    }
+
+    private static void FetchSpacetimeSDKVersionAsync()
+    {
+        string url = "https://api.github.com/repos/clockworklabs/com.clockworklabs.spacetimedbsdk/tags";
+
+        UnityWebRequest request = UnityWebRequest.Get(url);
+        request.SetRequestHeader("User-Agent", "UnitySpacetimeSDKChecker");
+        
+        UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+        operation.completed += _ => {
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                if (debugMode) Debug.LogError("SpacetimeDB SDK API request failed: " + request.error);
+            }
+            else
+            {
+                ProcessSpacetimeSDKTagsResponse(request.downloadHandler.text);
+            }
+            request.Dispose();
+        };
+    }
+
+    private static void ProcessSpacetimeSDKTagsResponse(string json)
+    {
+        try
+        {
+            // Parse the JSON response to extract the first (latest) tag
+            TagData[] tagsData = JsonUtility.FromJson<TagDataArray>("{\"tags\":" + json + "}").tags;
+            
+            if (tagsData != null && tagsData.Length > 0)
+            {
+                string version = tagsData[0].name; // First tag is the latest
+                
+                if (!string.IsNullOrEmpty(version) && version.StartsWith("v"))
+                {
+                    // Remove 'v' prefix if present
+                    version = version.Substring(1);
+                }
+                
+                spacetimeSDKLatestVersion = version;
+                EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", spacetimeSDKLatestVersion);
+
+                if (debugMode) Debug.Log($"Latest SpacetimeDB SDK version: {spacetimeSDKLatestVersion}");
+                
+                // Compare with current installed version
+                string currentSDKVersion = GetCurrentSDKVersion();
+                if (!string.IsNullOrEmpty(currentSDKVersion) && currentSDKVersion != spacetimeSDKLatestVersion)
+                {
+                    if (debugMode) Debug.Log($"SpacetimeDB SDK update available! Current: {currentSDKVersion}, Latest: {spacetimeSDKLatestVersion}");
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", true);
+                }
+                else
+                {
+                    EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+                }
+            }
+            else
+            {
+                if (debugMode) Debug.LogWarning("No tags found for SpacetimeDB SDK");
+                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+            }
+        }
+        catch (Exception e)
+        {
+            if (debugMode) Debug.LogError("Failed to parse SpacetimeDB SDK tags data: " + e.Message);
+        }
+    }
+
+    // Get the current installed SDK version
+    private static string GetCurrentSDKVersion()
+    {
+        const string sdkPackageName = "com.clockworklabs.spacetimedbsdk";
+        
+        ListRequest request = Client.List();
+        while (!request.IsCompleted) { }
+
+        if (request.Status == StatusCode.Success)
+        {
+            foreach (var package in request.Result)
+            {
+                if (package.name == sdkPackageName)
+                {
+                    return package.version;
+                }
+            }
+        }
+        else if (request.Status == StatusCode.Failure)
+        {
+            if (debugMode) Debug.LogError($"Failed to get SDK version: {request.Error.message}");
+        }
+        
+        return "";
+    }
+
+    // Public method to check if a SpacetimeDB SDK update is available
+    public static bool IsSpacetimeSDKUpdateAvailable()
+    {
+        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+    }
+    
+    // Public method to get the latest SpacetimeDB SDK version
+    public static string SpacetimeSDKLatestVersion()
+    {
+        return EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", "");
+    }
+
+    // Public method to get the current installed SpacetimeDB SDK version
+    public static string GetCurrentSpacetimeSDKVersion()
+    {
+        return GetCurrentSDKVersion();
     }
     #endregion
 

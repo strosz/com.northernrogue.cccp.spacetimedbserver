@@ -54,6 +54,11 @@ public class ServerInstallerWindow : EditorWindow
     
     private bool rustUpdateAvailable = false;
     
+    // SpacetimeDB SDK version tracking
+    private string spacetimeSDKCurrentVersion = "";
+    private string spacetimeSDKLatestVersion = "";
+    private bool spacetimeSDKUpdateAvailable = false;
+    
     // Styles
     private GUIStyle titleStyle;
     private GUIStyle itemTitleStyle;
@@ -204,6 +209,11 @@ public class ServerInstallerWindow : EditorWindow
         rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
         rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
         rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
+        
+        // Load version info of SpacetimeDB SDK
+        spacetimeSDKCurrentVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
+        spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
+        spacetimeSDKUpdateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
         
         // Initialize both installer item lists
         InitializeInstallerItems();
@@ -444,6 +454,11 @@ public class ServerInstallerWindow : EditorWindow
         rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
         rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
         rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
+        
+        // Reload SpacetimeDB SDK version information
+        spacetimeSDKCurrentVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
+        spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
+        spacetimeSDKUpdateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
         
         // For WSL installer items
         if (currentTab == 0) {
@@ -858,7 +873,10 @@ public class ServerInstallerWindow : EditorWindow
                                     spacetimeDBCurrentVersion != spacetimeDBLatestVersion) ||
                               (item.title.Contains("Install Rust") && 
                                     rustUpdateAvailable && 
-                                    !string.IsNullOrEmpty(rustLatestVersion));
+                                    !string.IsNullOrEmpty(rustLatestVersion)) ||
+                              (item.title.Contains("SpacetimeDB Unity SDK") && 
+                                    spacetimeSDKUpdateAvailable && 
+                                    !string.IsNullOrEmpty(spacetimeSDKLatestVersion));
         } else if (currentTab == 1) {
             showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
@@ -880,6 +898,10 @@ public class ServerInstallerWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB Server"))
             {
                 updateButtonText = "Update to v" + spacetimeDBLatestVersion;
+            }
+            else if (item.title.Contains("SpacetimeDB Unity SDK"))
+            {
+                updateButtonText = "Update to v" + spacetimeSDKLatestVersion;
             }
             else
             {
@@ -2095,28 +2117,56 @@ public class ServerInstallerWindow : EditorWindow
         CheckInstallationStatus();
         await Task.Delay(1000);
         
-        if (hasSpacetimeDBUnitySDK && !installIfAlreadyInstalled)
+        // Check if this is an update or fresh install
+        bool isUpdate = hasSpacetimeDBUnitySDK && spacetimeSDKUpdateAvailable && !string.IsNullOrEmpty(spacetimeSDKLatestVersion);
+        
+        if (hasSpacetimeDBUnitySDK && !installIfAlreadyInstalled && !isUpdate)
         {
             SetStatus("SpacetimeDB Unity SDK is already installed.", Color.green);
             return;
         }
         
-        SetStatus("Installing SpacetimeDB Unity SDK...", Color.yellow);
-
-        // Display a warning to users about the installation process
-        if (EditorUtility.DisplayDialog(
-            "SpacetimeDB SDK Installation",
-            "Installing the SpacetimeDB SDK will add a package from GitHub and may trigger a script reload.\n\n" +
-            "The installation process may take up to a minute. Please don't close Unity during this time.",
-            "Install",
-            "Cancel"))
+        // Set appropriate status message
+        if (isUpdate)
         {
-            // Use the ServerSpacetimeSDKInstaller to install the SDK
+            SetStatus($"Updating SpacetimeDB Unity SDK from v{spacetimeSDKCurrentVersion} to v{spacetimeSDKLatestVersion}...", Color.yellow);
+        }
+        else
+        {
+            SetStatus("Installing SpacetimeDB Unity SDK...", Color.yellow);
+        }
+
+        // Display appropriate dialog
+        string dialogTitle = isUpdate ? "SpacetimeDB SDK Update" : "SpacetimeDB SDK Installation";
+        string dialogMessage = isUpdate 
+            ? $"Updating the SpacetimeDB SDK from v{spacetimeSDKCurrentVersion} to v{spacetimeSDKLatestVersion} will download the latest package from GitHub and may trigger a script reload.\n\n" +
+              "The update process may take up to a minute. Please don't close Unity during this time."
+            : "Installing the SpacetimeDB SDK will add a package from GitHub and may trigger a script reload.\n\n" +
+              "The installation process may take up to a minute. Please don't close Unity during this time.";
+        
+        string actionButton = isUpdate ? "Update" : "Install";
+        
+        if (EditorUtility.DisplayDialog(dialogTitle, dialogMessage, actionButton, "Cancel"))
+        {
+            // Use the ServerSpacetimeSDKInstaller to install/update the SDK
+            // Pass isUpdate as forceUpdate so the package is refreshed when updating
             ServerSpacetimeSDKInstaller.InstallSDK((success, errorMessage) => 
             {
                 if (success)
                 {
-                    SetStatus("SpacetimeDB Unity SDK installed successfully.", Color.green);
+                    if (isUpdate)
+                    {
+                        SetStatus($"SpacetimeDB Unity SDK updated successfully to v{spacetimeSDKLatestVersion}!", Color.green);
+                        
+                        // Clear the update available flags after successful update
+                        spacetimeSDKUpdateAvailable = false;
+                        spacetimeSDKCurrentVersion = spacetimeSDKLatestVersion;
+                    }
+                    else
+                    {
+                        SetStatus("SpacetimeDB Unity SDK installed successfully.", Color.green);
+                    }
+                    
                     hasSpacetimeDBUnitySDK = true;
                     EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", true);
                     UpdateInstallerItemsStatus();
@@ -2129,20 +2179,25 @@ public class ServerInstallerWindow : EditorWindow
                 else
                 {
                     string errorMsg = string.IsNullOrEmpty(errorMessage) ? "Unknown error" : errorMessage;
-                    SetStatus($"SpacetimeDB Unity SDK installation failed: {errorMsg}", Color.red);
+                    string failureMessage = isUpdate 
+                        ? $"SpacetimeDB Unity SDK update failed: {errorMsg}"
+                        : $"SpacetimeDB Unity SDK installation failed: {errorMsg}";
+                    
+                    SetStatus(failureMessage, Color.red);
                     
                     // Show a more detailed error dialog
                     EditorUtility.DisplayDialog(
-                        "Installation Failed",
-                        $"Failed to install SpacetimeDB Unity SDK: {errorMsg}\n\n" +
+                        isUpdate ? "Update Failed" : "Installation Failed",
+                        $"{failureMessage}\n\n" +
                         "You can try again later or install it manually via Package Manager (Window > Package Manager > Add package from git URL).",
                         "OK");
                 }
-            });
+            }, isUpdate);
         }
         else
         {
-            SetStatus("SpacetimeDB Unity SDK installation cancelled.", Color.yellow);
+            string cancelMessage = isUpdate ? "SpacetimeDB Unity SDK update cancelled." : "SpacetimeDB Unity SDK installation cancelled.";
+            SetStatus(cancelMessage, Color.yellow);
         }
     }
     #endregion

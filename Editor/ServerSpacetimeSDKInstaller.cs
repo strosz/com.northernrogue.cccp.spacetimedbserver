@@ -109,6 +109,16 @@ public static class ServerSpacetimeSDKInstaller
     /// <param name="callback">Callback that will be invoked when installation completes</param>
     public static void InstallSDK(InstallCompletedCallback callback)
     {
+        InstallSDK(callback, false);
+    }
+
+    /// <summary>
+    /// Installs or updates the SpacetimeDB SDK from GitHub
+    /// </summary>
+    /// <param name="callback">Callback that will be invoked when installation completes</param>
+    /// <param name="forceUpdate">If true, will proceed with installation even if SDK is already installed (for updates)</param>
+    public static void InstallSDK(InstallCompletedCallback callback, bool forceUpdate)
+    {
         if (s_IsInstalling)
         {
             Debug.LogWarning("[SpacetimeDB] SDK installation already in progress");
@@ -119,7 +129,7 @@ public static class ServerSpacetimeSDKInstaller
         // First check if it's already installed
         IsSDKInstalled((isInstalled) =>
         {
-            if (isInstalled)
+            if (isInstalled && !forceUpdate)
             {
                 Debug.Log("[SpacetimeDB] SDK is already installed");
                 callback?.Invoke(true);
@@ -130,9 +140,17 @@ public static class ServerSpacetimeSDKInstaller
             {
                 s_IsInstalling = true;
                 s_TimeoutStartTime = Time.realtimeSinceStartup;
-                Debug.Log("[SpacetimeDB] Installing SDK from Git: " + SDK_PACKAGE_URL);
                 
-                // Try to add with specific version
+                if (isInstalled && forceUpdate)
+                {
+                    Debug.Log("[SpacetimeDB] Updating SDK from Git: " + SDK_PACKAGE_URL);
+                }
+                else
+                {
+                    Debug.Log("[SpacetimeDB] Installing SDK from Git: " + SDK_PACKAGE_URL);
+                }
+                
+                // Try to add with specific version (this will update if already installed)
                 s_AddRequest = Client.Add(SDK_PACKAGE_URL);
                 EditorApplication.update += InstallUpdate;
                 

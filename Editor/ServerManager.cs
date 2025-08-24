@@ -2046,6 +2046,7 @@ public class ServerManager
                 if (isWslRunning)
                 {
                     await CheckSpacetimeDBVersion();
+                    await CheckSpacetimeSDKVersion();
                     await CheckRustVersion();
                 }
             }
@@ -2434,6 +2435,55 @@ public class ServerManager
         else
         {
             if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+        }
+    }
+    
+    public async Task CheckSpacetimeSDKVersion() // Check for SDK updates when WSL starts
+    {
+        if (debugMode) LogMessage("Checking SpacetimeDB SDK version...", 0);
+        
+        // First check if SDK is installed using the installer
+        bool isSDKInstalled = false;
+        var taskCompletionSource = new TaskCompletionSource<bool>();
+        
+        ServerSpacetimeSDKInstaller.IsSDKInstalled((isInstalled) =>
+        {
+            isSDKInstalled = isInstalled;
+            taskCompletionSource.SetResult(isInstalled);
+        });
+        
+        // Wait for the callback to complete
+        await taskCompletionSource.Task;
+        
+        if (!isSDKInstalled)
+        {
+            if (debugMode) LogMessage("SpacetimeDB SDK is not installed - skipping version check", 0);
+            return;
+        }
+        
+        if (debugMode) LogMessage("SpacetimeDB SDK is installed, checking for updates...", 0);
+        
+        // Get current and latest versions from ServerUpdateProcess EditorPrefs
+        string currentSDKVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
+        string latestSDKVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
+        bool updateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
+        
+        if (!string.IsNullOrEmpty(currentSDKVersion))
+        {
+            if (debugMode) LogMessage($"Current SpacetimeDB SDK version: {currentSDKVersion}", 1);
+            
+            if (updateAvailable && !string.IsNullOrEmpty(latestSDKVersion) && currentSDKVersion != latestSDKVersion)
+            {
+                LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Installer Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+            }
+            else if (!string.IsNullOrEmpty(latestSDKVersion))
+            {
+                if (debugMode) LogMessage($"SpacetimeDB SDK is up to date (version {currentSDKVersion})", 1);
+            }
+        }
+        else
+        {
+            if (debugMode) LogMessage("Could not determine current SpacetimeDB SDK version", -1);
         }
     }
     #endregion
