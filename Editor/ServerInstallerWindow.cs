@@ -245,6 +245,9 @@ public class ServerInstallerWindow : EditorWindow
     {
         // Clean up the update callback when the window is closed
         EditorApplication.update -= OnEditorUpdate;
+
+        // Reload server manager editor preferences to ensure up to date versions and variables
+        serverManager.LoadEditorPrefs();
     }
 
     private void OnEditorUpdate()
@@ -674,6 +677,7 @@ public class ServerInstallerWindow : EditorWindow
                 CheckCustomInstallationStatus();
                 sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
             }
+            UpdateInstallerItemsStatus();
         }
         EditorGUI.EndDisabledGroup();
                
@@ -1584,7 +1588,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
 
-            await serverManager.CheckSpacetimeDBVersion(); // Extra check to ensure version is updated
+            await serverManager.CheckSpacetimeDBVersion();
             spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
             
             CheckInstallationStatus();
@@ -1601,6 +1605,8 @@ public class ServerInstallerWindow : EditorWindow
             {
                 SetStatus("SpacetimeDB Server installation failed. Please install manually.", Color.red);
             }
+
+            UpdateInstallerItemsStatus();
         }
     }
 
@@ -1981,6 +1987,8 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus("Rust installation failed. Please install manually.", Color.red);
         }
+
+        UpdateInstallerItemsStatus();
     }
 
     private async void InstallBinaryen()

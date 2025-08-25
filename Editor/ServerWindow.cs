@@ -619,8 +619,16 @@ public class ServerWindow : EditorWindow
             prerequisitesTitle = "Pre-Requisites (Check Needed)";
         }
 
-        bool showPrerequisites = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false), prerequisitesTitle, true);
+        bool previousShowPrerequisites = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false);
+        // Pre Requisites foldout state
+        bool showPrerequisites = EditorGUILayout.Foldout(previousShowPrerequisites, prerequisitesTitle, true);
         EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", showPrerequisites);
+
+        // Trigger refresh when foldout state changes
+        if (showPrerequisites != previousShowPrerequisites)
+        {
+            serverManager.LoadEditorPrefs();
+        }
 
         if (showPrerequisites)
         {

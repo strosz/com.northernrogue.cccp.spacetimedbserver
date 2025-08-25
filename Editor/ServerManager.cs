@@ -248,7 +248,7 @@ public class ServerManager
         Configure();
     }
 
-    private void LoadEditorPrefs()
+    public void LoadEditorPrefs()
     {
         // Load prerequisites state
         hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
