@@ -248,6 +248,13 @@ public class ServerInstallerWindow : EditorWindow
 
         // Reload server manager editor preferences to ensure up to date versions and variables
         serverManager.LoadEditorPrefs();
+        
+        // Repaint the ServerWindow
+        var serverWindow = GetWindow<ServerWindow>();
+        if (serverWindow != null)
+        {
+            serverWindow.Repaint();
+        }
     }
 
     private void OnEditorUpdate()
@@ -1606,7 +1613,7 @@ public class ServerInstallerWindow : EditorWindow
                 SetStatus("SpacetimeDB Server installation failed. Please install manually.", Color.red);
             }
 
-            UpdateInstallerItemsStatus();
+            Repaint();
         }
     }
 
@@ -1988,7 +1995,7 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Rust installation failed. Please install manually.", Color.red);
         }
 
-        UpdateInstallerItemsStatus();
+        Repaint();
     }
 
     private async void InstallBinaryen()

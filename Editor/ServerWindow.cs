@@ -628,6 +628,7 @@ public class ServerWindow : EditorWindow
         if (showPrerequisites != previousShowPrerequisites)
         {
             serverManager.LoadEditorPrefs();
+            Repaint();
         }
 
         if (showPrerequisites)
