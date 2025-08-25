@@ -2067,7 +2067,6 @@ public class ServerWindow : EditorWindow
                 if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
                 if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
                 if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
-                if (string.IsNullOrEmpty(authToken)) missingUserSettings.Add("- Auth Token");
 
                 if (!essentialSoftware || !essentialUserSettings)
                 {
@@ -2089,7 +2088,8 @@ public class ServerWindow : EditorWindow
                     EditorUtility.DisplayDialog(
                         "All Software Installed", 
                         "You have everything necessary to run SpacetimeDB on your server. \n\n" +
-                        "Please proceed to publish your module.",
+                        "Please proceed to publish your module.\n\n" +
+                        "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
                         "OK"
                     );
                     hasAllPrerequisites = true;

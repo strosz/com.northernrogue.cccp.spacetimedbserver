@@ -8,7 +8,7 @@
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
-SpacetimeDB is a database and framework designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is a Unity integration for SpacetimeDB, allowing anyone to get started creating an online world in a free and highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
+SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is a Unity integration for SpacetimeDB, allowing anyone to get started creating an online world in a free and highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
 
 Install directly in your Unity Package Manager with this git URL
 
@@ -22,7 +22,7 @@ Install directly in your Unity Package Manager with this git URL
    - Quickly start developing using SpacetimeDB with a local WSL server then publish the exact same project to a custom server or Maincloud.
 
 🚀 **Silent Server and One-Click Server Management**
-   - Start your server silently in about three seconds.
+   - Start your server silently in a second.
    - Automatic pre-requisite checks ensure a smooth start.
    - No extra command-line windows needed!
 
@@ -96,9 +96,8 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Supported Platforms
 
-   *   Includes an optional automatic installer for all pre-requisites required to use SpacetimeDB® within Unity® for Windows®.
+   *   Includes an automatic installer for WSL and all other pre-requisites required to use SpacetimeDB® within Unity® for Windows®.
    *   **Windows:** Requires WSL (Windows Subsystem for Linux) with Debian (installer provided).
-   *   Custom Remote server mode installs Debian on the remote server and expects a Debian command environment. May work with other manually installed distros that are based on Debian.
 
 ## Getting Started
    - Install the asset using this .git URL in the Package Manager´s + menu.<br>

@@ -1549,12 +1549,13 @@ public class ServerManager
             "\n\nYou will need to either create a new table and manually migrate the old table data by writing and running a reducer for this, OR re-publish with Ctrl+Alt+Click to clear the database. Be sure to make a backup of your database first."
             ,"OK");
 
-            successfulPublish = false; // Mark as unsuccessful due to migration requirement
+            successfulPublish = false;
         }
 
-        if (!string.IsNullOrEmpty(error) && error.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0)
+        // If the output contains the word error and isn't compiling the publish probably has failed. Excluded compiling since some packages may contain the word error.
+        if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("compiling", StringComparison.OrdinalIgnoreCase))
         {
-            successfulPublish = false; // Mark as unsuccessful due to error
+            successfulPublish = false;
         }
 
         // Go on to Auto-Generate if mode is enabled (continues even if unsuccessful to get all logs)
