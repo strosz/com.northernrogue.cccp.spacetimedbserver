@@ -5,6 +5,7 @@ namespace NorthernRogue.CCCP.Editor {
 
 public static class Github
 {
+    // For the free github release of this asset we want to display this message at the welcome screen
     public static void WelcomeWindow()
     {
         EditorGUILayout.Space(30);

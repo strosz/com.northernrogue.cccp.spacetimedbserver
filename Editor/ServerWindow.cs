@@ -310,8 +310,11 @@ public class ServerWindow : EditorWindow
         // Handle autoscroll behavior based on user interaction
         HandleAutoscrollBehavior(previousScrollPosition);
 
-        // Github Update Button
-        if (ServerUpdateProcess.IsGithubUpdateAvailable())
+        // CCCP Update Button (GitHub or Asset Store)
+        bool githubUpdateAvailable = ServerUpdateProcess.IsGithubUpdateAvailable();
+        bool assetStoreUpdateAvailable = ServerUpdateProcess.IsAssetStoreUpdateAvailable();
+        
+        if (githubUpdateAvailable || assetStoreUpdateAvailable)
         {
             // Check if we need to reset the updating state after 10 seconds
             if (isUpdatingCCCP && EditorApplication.timeSinceStartup - cccpUpdateStartTime > 10.0)
@@ -319,7 +322,19 @@ public class ServerWindow : EditorWindow
                 isUpdatingCCCP = false;
             }
             
-            string buttonText = isUpdatingCCCP ? "Updating CCCP Package..." : "New CCCP Update Available";
+            string buttonText;
+            if (isUpdatingCCCP)
+            {
+                buttonText = "Updating CCCP Package...";
+            }
+            else if (githubUpdateAvailable)
+            {
+                buttonText = "New CCCP Update Available (GitHub)";
+            }
+            else
+            {
+                buttonText = "New CCCP Update Available (Asset Store)";
+            }
             
             // Create a custom style for the button based on the state
             GUIStyle updateButtonStyle = new GUIStyle(GUI.skin.button);
@@ -342,7 +357,15 @@ public class ServerWindow : EditorWindow
             {
                 isUpdatingCCCP = true;
                 cccpUpdateStartTime = EditorApplication.timeSinceStartup;
-                ServerUpdateProcess.UpdateGithubPackage();
+                
+                if (githubUpdateAvailable)
+                {
+                    ServerUpdateProcess.UpdateGithubPackage();
+                }
+                else if (assetStoreUpdateAvailable)
+                {
+                    ServerUpdateProcess.UpdateAssetStorePackage();
+                }
             }
         }
         EditorGUILayout.EndVertical();

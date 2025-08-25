@@ -119,18 +119,39 @@ public class ServerWelcomeWindow : EditorWindow
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
 
-        Type githubClass = Type.GetType("NorthernRogue.CCCP.Editor.Github");
-        if (githubClass != null)
+        // Welcome message depending on version (Github Dev version if both versions are true)
+        if (ServerUpdateProcess.IsGithubVersion() && ServerUpdateProcess.IsAssetStoreVersion())
         {
-            MethodInfo methodInfo = githubClass.GetMethod("WelcomeWindow");
-            if (methodInfo != null)
+            // Display GitHub welcome window if this is a GitHub version
+            Type githubClass = Type.GetType("NorthernRogue.CCCP.Editor.Github");
+            if (githubClass != null)
             {
-                EditorGUILayout.BeginVertical();
-                methodInfo.Invoke(null, null);
-                EditorGUILayout.EndVertical();
+                MethodInfo methodInfo = githubClass.GetMethod("WelcomeWindow");
+                if (methodInfo != null)
+                {
+                    EditorGUILayout.BeginVertical();
+                    methodInfo.Invoke(null, null);
+                    EditorGUILayout.EndVertical();
+                }
             }
         }
-        
+        // Asset store version if not GitHub version
+        if (!ServerUpdateProcess.IsGithubVersion() && ServerUpdateProcess.IsAssetStoreVersion())
+        {
+            // Display Asset Store welcome window if this is an Asset Store version
+            Type assetStoreClass = Type.GetType("NorthernRogue.CCCP.Editor.AssetStore");
+            if (assetStoreClass != null)
+            {
+                MethodInfo methodInfo = assetStoreClass.GetMethod("WelcomeWindow");
+                if (methodInfo != null)
+                {
+                    EditorGUILayout.BeginVertical();
+                    methodInfo.Invoke(null, null);
+                    EditorGUILayout.EndVertical();
+                }
+            }
+        }
+
         EditorGUILayout.EndVertical();
     }
 } // Class
