@@ -2358,8 +2358,8 @@ public class ServerManager
     {
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
         
-        // Only proceed if prerequisites are met
-        if (!hasAllPrerequisites)
+        // Only proceed if enough prerequisites are met
+        if (!hasWSL || !hasDebianTrixie || !hasSpacetimeDBServer || !hasSpacetimeDBPath)
         {
             if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met", 0);
             return;
@@ -2494,8 +2494,8 @@ public class ServerManager
     {
         if (debugMode) LogMessage("Checking Rust version...", 0);
         
-        // Only proceed if prerequisites are met
-        if (!hasAllPrerequisites || !hasRust)
+        // Only proceed if enough prerequisites are met
+        if (!hasWSL || !hasDebianTrixie || !hasRust)
         {
             if (debugMode) LogMessage("Skipping Rust version check - prerequisites not met or Rust not installed", 0);
             return;

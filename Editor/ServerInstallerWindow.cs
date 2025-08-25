@@ -1128,6 +1128,9 @@ public class ServerInstallerWindow : EditorWindow
         // Check SpacetimeDB version to update it if it was updated in the installer
         await serverManager.CheckSpacetimeDBVersion();
 
+        // Check Rust version to update it if it was updated in the installer
+        await serverManager.CheckRustVersion();
+
         // Update UI
         UpdateInstallerItemsStatus();
         
@@ -1988,6 +1991,9 @@ public class ServerInstallerWindow : EditorWindow
         
         if (hasRust)
         {
+            // Fetch the actual Rust version for immediate display
+            await serverManager.CheckRustVersion();
+            UpdateInstallerItemsStatus();
             SetStatus("Rust installed successfully.", Color.green);
         }
         else

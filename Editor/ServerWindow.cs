@@ -2082,8 +2082,9 @@ public class ServerWindow : EditorWindow
                     bool needsInstallation = EditorUtility.DisplayDialog(
                         "Missing Software", 
                         "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
-                        "Please install or set the following:\n" +
+                        "Please install the following:\n" +
                         string.Join("\n", missingComponents) + "\n" +
+                        "Please set the following Pre-Requisites:\n" +
                         string.Join("\n", missingUserSettings),
                         "Server Installer Window", "Cancel"
                     );
