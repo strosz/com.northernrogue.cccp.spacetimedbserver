@@ -1552,8 +1552,8 @@ public class ServerManager
             successfulPublish = false;
         }
 
-        // If the output contains the word error and isn't compiling the publish probably has failed. Excluded compiling since some packages may contain the word error.
-        if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("compiling", StringComparison.OrdinalIgnoreCase))
+        // If the output contains the word error and isn't compiling the publish probably has failed. Excluded initial downloading since some packages may contain the word error.
+        if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("downloaded", StringComparison.OrdinalIgnoreCase))
         {
             successfulPublish = false;
         }
