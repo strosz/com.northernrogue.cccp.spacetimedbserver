@@ -1259,14 +1259,21 @@ public class ServerInstallerWindow : EditorWindow
         "Cosmos Cove Control Panel will now run a compability test to determine if your PC supports Virtualization and Hyper-V which is necessary for WSL2.\n\n"
         , "OK");
 
+        SetStatus("Running WSL compatibility test...", Color.green);
+
         bool installedSuccessfully = false;
 
         // Define installation actions for WSL1 and WSL2
         Action installWSL1 = async () => 
         {
             SetStatus("Installing WSL1 with Debian...", Color.green);
-            
-            if (EditorUtility.DisplayDialog("Install WSL1 with Debian", "This will install WSL1 with Debian. You may have to press keys during the install process. Do you want to continue?", "Yes", "No"))
+
+            if (EditorUtility.DisplayDialog("Install WSL1 with Debian",
+            "This will install WSL1 with Debian.\n"+
+            "You may have to press keys to create your user credentials during the installation process.\n"+
+            "Note: When you type the password it is updated even if you don't see it.\n"+
+            "Do you want to continue?", 
+            "Yes", "No"))
             {
                 string dismCommand = "powershell.exe -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'\"";
                 string wsl1SetupCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 1 && wsl --install -d Debian\"";
@@ -1326,7 +1333,12 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus("Installing WSL2 with Debian...", Color.green);
             
-            if (EditorUtility.DisplayDialog("Install WSL2 with Debian", "This will install WSL2 with Debian. Do you want to continue?", "Yes", "No"))
+            if (EditorUtility.DisplayDialog("Install WSL2 with Debian", 
+            "This will install WSL2 with Debian.\n"+
+            "You may have to press keys to create your user credentials during the installation process.\n"+
+            "Note: When you type the password it is updated even if you don't see it.\n"+
+            "Do you want to continue?", 
+            "Yes", "No"))
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
                 await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
