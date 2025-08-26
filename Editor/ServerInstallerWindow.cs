@@ -12,7 +12,7 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerInstallerWindow : EditorWindow
 {
-    public static bool debugMode = false;
+    public static bool debugMode = false; // Set in ServerWindow
 
     private List<InstallerItem> installerItems = new List<InstallerItem>();
     private List<InstallerItem> customInstallerItems = new List<InstallerItem>();

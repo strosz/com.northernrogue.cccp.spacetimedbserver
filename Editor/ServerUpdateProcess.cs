@@ -467,11 +467,11 @@ public class ServerUpdateProcess
         }
         else if (isGithub)
         {
-            return "GitHub";
+            return "GitHub Build";
         }
         else if (isAssetStore)
         {
-            return "Asset Store";
+            return "Asset Store Build";
         }
         else
         {

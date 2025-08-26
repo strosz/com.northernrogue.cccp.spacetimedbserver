@@ -1346,8 +1346,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string autoPublishTooltip = 
-            "Automatic Publishing: The server will automatically publish the module when changes are detected. \n\n"+
-            "Manual Publish: The server will not automatically publish the module and will require manual publishing.";
+            "Automatic Publishing: The WSL CLI will automatically publish the module to your server when changes are detected. \n\n"+
+            "Manual Publish: The WSL CLI will not automatically publish the module and will require manual publishing.";
             EditorGUILayout.LabelField(new GUIContent("Auto Publish Mode:", autoPublishTooltip), GUILayout.Width(120));
             GUIStyle autoPublishStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoPublishMode)
@@ -1376,8 +1376,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string publishGenerateTooltip = 
-            "Publish will Generate: Publish button publishes the module and generates the Client Code. \n\n"+
-            "Separate Generate: Separate generate button to generate the Client Code.\n\n"+
+            "Publish will Generate: Publish button publishes the module and generates the client code. \n\n"+
+            "Separate Generate: Separate generate button to generate the client code.\n\n"+
             "Recommended: Publish will Generate.";
             EditorGUILayout.LabelField(new GUIContent("Publish / Generate:", publishGenerateTooltip), GUILayout.Width(120));
             GUIStyle publishGenerateStyle = new GUIStyle(GUI.skin.button);
@@ -1401,9 +1401,9 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.Space(5);
                 EditorGUILayout.BeginHorizontal();
                 string wslCloseTooltip = 
-                "Close WSL at Unity Quit: The server will close the WSL process when Unity is closed. \n"+
-                "Saves resources when server is not in use. WSL may otherwise leave several processes running.\n\n"+
-                "Keep Running: The server will keep the WSL process running after Unity is closed.\n\n"+
+                "Close WSL at Unity Quit: The WSL CLI will close WSL when Unity is closed. \n"+
+                "Saves resources when WSL is not in use. WSL may otherwise leave several processes running.\n\n"+
+                "Keep Running: The WSL CLI will keep the WSL process running after Unity is closed.\n\n"+
                 "Recommended: Close WSL at Unity Quit";
                 EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
                 GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
