@@ -1367,7 +1367,7 @@ public class ServerManager
                     // Check if this is login info output and apply color formatting
                     string formattedOutput = FormatLoginInfoOutput(result.output);
                     LogMessage(formattedOutput, 0);
-                    UnityEngine.Debug.Log("Command output: " + formattedOutput);
+                    if (debugMode) UnityEngine.Debug.Log("Command output: " + formattedOutput);
                 }
                 
                 if (!string.IsNullOrEmpty(result.error))

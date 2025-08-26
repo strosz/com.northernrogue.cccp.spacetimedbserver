@@ -1916,7 +1916,22 @@ public class ServerWindow : EditorWindow
             firstModuleStyle.fontStyle = FontStyle.Bold;
             firstModuleStyle.alignment = TextAnchor.MiddleCenter;
 
-            EditorGUILayout.LabelField("Ready to Publish First Module! \n Initial compiling may take a minute.", firstModuleStyle, GUILayout.Height(30));
+            string displayText = "Ready to Publish Server Module! \n Initial compiling may take a minute.";
+            string tooltip = "You have all necessary prerequisites to publish a module. \nClick to dismiss this notification.";
+
+            // Create a button-like appearance
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            // Use a button that looks like a label for better click response
+            if (GUILayout.Button(new GUIContent(displayText, tooltip), firstModuleStyle))
+            {
+                publishFirstModule = false;
+                Repaint();
+            }
+
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
         }
         
         // Centered Grey Mini Label for Publish/Generate instructions
@@ -2086,9 +2101,18 @@ public class ServerWindow : EditorWindow
                         string.Join("\n", missingComponents) + "\n" +
                         "Please set the following Pre-Requisites:\n" +
                         string.Join("\n", missingUserSettings),
-                        "Server Installer Window", "Cancel"
+                        "Server Installer Window", "Pre-Requisites"
                     );
-                    if (needsInstallation) ServerInstallerWindow.ShowWindow();
+                    if (needsInstallation)
+                    {
+                        ServerInstallerWindow.ShowWindow();
+                    }
+                    else 
+                    {
+                        // Open the pre-requisites drawer
+                        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", true);
+                        Repaint();
+                    }
 
                     hasAllPrerequisites = false;
                     serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
