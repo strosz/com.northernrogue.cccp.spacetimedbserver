@@ -99,13 +99,17 @@ Install directly in your Unity Package Manager with this git URL
    *   Includes an automatic installer for WSL and all other pre-requisites required to use SpacetimeDB® within Unity® for Windows®.
    *   **Windows:** Requires WSL (Windows Subsystem for Linux) with Debian (installer provided).
 
-## Getting Started
-   - Install the asset using this .git URL in the Package Manager´s + menu.<br>
+## Quick Start
+   Install the asset using this .git URL in the Package Manager´s + menu.<br>
    ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
-   - A Welcome Window displays if successful with a link to the Server Installer Window which will determine if you have everything necessary to run SpacetimeDB on Windows WSL. Install the listed free and publicly available software one by one starting from the top. 
-   - Now you can run SpacetimeDB directly from Unity!
+   
+   A Welcome Window displays if successful with a link to the Main Window and the Installer Window.
 
-   **Note:** The Server Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
+   1. Enter the essential Pre-Requisite settings for your server in the Main Window.
+   2. Install the listed free and publicly available software one by one for Local WSL starting from the top in the Installer Window.
+   3. Now you can run SpacetimeDB directly from Unity!
+
+   **Note:** The Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
 
 ## Upcoming Features
    - New command interface with all commands.

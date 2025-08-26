@@ -1927,6 +1927,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(new GUIContent(displayText, tooltip), firstModuleStyle))
             {
                 publishFirstModule = false;
+                serverManager.SetPublishFirstModule(false);
                 Repaint();
             }
 
