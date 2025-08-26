@@ -92,9 +92,8 @@ public class ServerWindow : EditorWindow
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
-    
+
     // Scroll tracking for autoscroll behavior
-    private Vector2 lastScrollPosition;
     private bool wasAutoScrolling = false;
     private bool needsScrollToBottom = false; // Flag to control when to apply autoscroll
     private Texture2D logoTexture;
@@ -222,7 +221,7 @@ public class ServerWindow : EditorWindow
             GUIStyle titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
             titleControlStyle.fontSize = 10;
             titleControlStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
-            string tooltipVersion = "Click to change logo color";
+            string tooltipVersion = "Click to change logo color\n" + "Type: " + ServerUpdateProcess.GetCachedDistributionType();
             if (GUILayout.Button(new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion), titleControlStyle))
             {
                 colorLogo = !colorLogo;
@@ -621,7 +620,8 @@ public class ServerWindow : EditorWindow
                 //UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
             }
         }
-        
+
+        // Sync UI updates that doesn't need to refresh often
         SyncFieldsFromServerManager();
     }
     #endregion
@@ -1308,30 +1308,7 @@ public class ServerWindow : EditorWindow
             ColorUtility.TryParseHtmlString("#808080", out hiddenColor); // Grey
             Color debugColor;
             ColorUtility.TryParseHtmlString("#30C099", out debugColor); // Cyan
-        
-            if (serverMode == ServerMode.WslServer) {
-                // Server Mode toggle
-                EditorGUILayout.Space(5);
-                EditorGUILayout.BeginHorizontal();
-                string serverModeTooltip = 
-                "Show CMD: Displays the standard CMD process window of the server. \n\n"+
-                "Silent Mode: The server runs silently in the background without any window.";
-                EditorGUILayout.LabelField(new GUIContent("CMD Visiblity:", serverModeTooltip), GUILayout.Width(120));
-                GUIStyle silentToggleStyle = new GUIStyle(GUI.skin.button);
-                if (serverManager.SilentMode)
-                {
-                    silentToggleStyle.normal.textColor = hiddenColor;
-                    silentToggleStyle.hover.textColor = hiddenColor;
-                }
-                if (GUILayout.Button(serverManager.SilentMode ? "Silent Mode" : "Show CMD", silentToggleStyle))
-                {
-                    bool newSilentMode = !serverManager.SilentMode;
-                    serverManager.SetSilentMode(newSilentMode);
-                    silentMode = newSilentMode; // Keep local field in sync
-                }
-                EditorGUILayout.EndHorizontal();
-            }
-            
+                   
             // Server Change Detection toggle
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
@@ -2683,9 +2660,6 @@ public class ServerWindow : EditorWindow
             {
                 wasAutoScrolling = false;
             }
-            
-            // Update last position for next frame
-            lastScrollPosition = scrollPosition;
         }
     }
 

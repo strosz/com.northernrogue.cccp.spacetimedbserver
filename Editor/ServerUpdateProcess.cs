@@ -19,6 +19,7 @@ public class ServerUpdateProcess
     /////////// Version Detection ///////////
     private static bool? isAssetStoreVersion = null;
     private static bool? isGithubVersion = null;
+    private static string distributionType = "";
 
     /////////// CCCP Github Update Checker ///////////
     private const string owner = "strosz";
@@ -42,11 +43,14 @@ public class ServerUpdateProcess
 
     static ServerUpdateProcess()
     {
+        // Initialize distribution type on first load
+        InitializeDistributionType();
+        
         EditorApplication.delayCall += () => {
             if (debugMode) 
             {
                 Debug.Log("ServerUpdateProcess: Starting update checks...");
-                Debug.Log($"Distribution Type: {GetDistributionType()}");
+                Debug.Log($"Distribution Type: {distributionType}");
             }
             CheckForGithubUpdate();
             CheckForAssetStoreUpdate();
@@ -54,6 +58,25 @@ public class ServerUpdateProcess
             CheckForSpacetimeSDKUpdate();
             //Debug.Log(GetVersionDebugInfo()); // Keep for debugging
         };
+    }
+
+    private static void InitializeDistributionType()
+    {
+        // First try to load from EditorPrefs
+        distributionType = EditorPrefs.GetString(PrefsKeyPrefix + "DistributionType", "");
+        
+        // Only calculate if empty (first time or cache was cleared)
+        if (string.IsNullOrEmpty(distributionType))
+        {
+            distributionType = GetDistributionType();
+            EditorPrefs.SetString(PrefsKeyPrefix + "DistributionType", distributionType);
+            
+            if (debugMode) Debug.Log($"Distribution type calculated and cached: {distributionType}");
+        }
+        else if (debugMode)
+        {
+            Debug.Log($"Distribution type loaded from cache: {distributionType}");
+        }
     }
 
     #region Github Update
@@ -369,7 +392,7 @@ public class ServerUpdateProcess
     /// </summary>
     public static string GetVersionDebugInfo()
     {
-        string info = $"Distribution Type: {GetDistributionType()}\n";
+        string info = $"Distribution Type: {distributionType}\n";
         info += $"Current Version: {GetCurrentPackageVersion()}\n";
         info += $"Is GitHub Version: {IsGithubVersion()}\n";
         info += $"Is Asset Store Version: {IsAssetStoreVersion()}\n";
@@ -454,6 +477,19 @@ public class ServerUpdateProcess
         {
             return "Unknown";
         }
+    }
+
+    /// <summary>
+    /// Gets the cached distribution type without recalculating
+    /// </summary>
+    public static string GetCachedDistributionType()
+    {
+        // If not initialized yet, initialize it
+        if (string.IsNullOrEmpty(distributionType))
+        {
+            InitializeDistributionType();
+        }
+        return distributionType;
     }
 
     /// <summary>
