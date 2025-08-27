@@ -23,5 +23,12 @@
     "Online"
   ],
   "documentationUrl": "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing",
-  "type": "tool"
+  "type": "tool",
+  "samples": [
+    {
+      "displayName": "Example Import Reducer",
+      "description": "Contains sample server code written in Rust for an import reducer allowing you to import your database with the Database window",
+      "path": "Samples~/ImportReducer"
+    }
+  ]
 }
