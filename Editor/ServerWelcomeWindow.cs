@@ -29,12 +29,12 @@ public class ServerWelcomeWindow : EditorWindow
         }
     }
     
-    [MenuItem("SpacetimeDB/Welcome Window", priority = -10002)]
+    [MenuItem("Window/SpacetimeDB/~ Welcome Window ~")]
     public static void ShowWindow()
     {
         ServerWelcomeWindow window = GetWindow<ServerWelcomeWindow>("Welcome to Cosmos Cove");
-        window.minSize = new Vector2(450f, 530f);
-        window.maxSize = new Vector2(450f, 530f);
+        window.minSize = new Vector2(450f, 570f);
+        window.maxSize = new Vector2(450f, 570f);
     }
     
     private void OnGUI()
@@ -77,11 +77,11 @@ public class ServerWelcomeWindow : EditorWindow
 
         string welcomeText = 
         "This is a Windows WSL integration of SpacetimeDB within Unity.\n" +
-        "SpacetimeDB has been added to your editor toolbar.\n\n" +
-        "<b>Quick Start</b>\n" +
-        "1. Open the Main Window. \n Enter the essential Pre-Requisites.\n\n" +
-        "2. Open the Installer Window. \n Check and install all essential software.\n\n" +
-        "3. You can now publish and start the server! \n\n (If you try to start it before you will be guided to the necessary steps)";
+        "SpacetimeDB has been added to your editor's menu at\n <b>Window>SpacetimeDB</b>.\n\n" +
+        "<size=125%><b>Quick Start</b></size>\n" +
+        "1. Open the Main Window.\n Enter the essential Pre-Requisites.\n <size=75%><color=grey>Don't Init New Module until step 2 is done.\n Auth token can be entered after all steps.</color></size>\n\n" +
+        "2. Open the Installer Window.\n Check and install all essential software.\n\n" +
+        "3. You can now publish and start the server! \n\n (For a detailed Quick Start check the documentation)";
 
         EditorGUILayout.LabelField(welcomeText, textStyle);
         

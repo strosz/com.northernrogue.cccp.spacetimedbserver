@@ -19,7 +19,7 @@ public static class AssetStore
 
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Premium Support", GUILayout.Height(30), GUILayout.Width(200)))
+        if (GUILayout.Button("Support", GUILayout.Height(30), GUILayout.Width(200)))
         {
             try
             {
@@ -27,14 +27,14 @@ public static class AssetStore
                 var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(System.Reflection.Assembly.GetExecutingAssembly());
                 if (packageInfo != null)
                 {
-                    string pdfPath = System.IO.Path.Combine(packageInfo.assetPath, "PremiumSupport.pdf");
+                    string pdfPath = System.IO.Path.Combine(packageInfo.assetPath, "Support.pdf");
                     if (System.IO.File.Exists(pdfPath))
                     {
                         Application.OpenURL("file:///" + pdfPath.Replace('\\', '/'));
                     }
                     else
                     {
-                        Debug.LogWarning("PremiumSupport.pdf not found at expected location: " + pdfPath);
+                        Debug.LogWarning("Support.pdf not found at expected location: " + pdfPath);
                     }
                 }
                 else
@@ -44,7 +44,7 @@ public static class AssetStore
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning(new System.Exception("Failed to open PremiumSupport.pdf", ex));
+                Debug.LogWarning(new System.Exception("Failed to open Support.pdf", ex));
             }
         }
         GUILayout.FlexibleSpace();

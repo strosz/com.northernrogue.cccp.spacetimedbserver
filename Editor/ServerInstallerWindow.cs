@@ -111,7 +111,7 @@ public class ServerInstallerWindow : EditorWindow
     private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
     private const string FirstTimeOpenKey = "FirstTimeOpen";    
 
-    [MenuItem("SpacetimeDB/Installer Window", priority = -10001)]
+    [MenuItem("Window/SpacetimeDB/2. Installer Window")]
     public static void ShowWindow()
     {
         ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");

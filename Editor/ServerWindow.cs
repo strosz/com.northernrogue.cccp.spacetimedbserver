@@ -92,6 +92,7 @@ public class ServerWindow : EditorWindow
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
+    private bool cccpUpdateDismissed = false;
 
     // Scroll tracking for autoscroll behavior
     private bool wasAutoScrolling = false;
@@ -121,7 +122,7 @@ public class ServerWindow : EditorWindow
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
-    [MenuItem("SpacetimeDB/Main Window", priority = -9000)]
+    [MenuItem("Window/SpacetimeDB/1. Main Window")]
     public static void ShowWindow()
     {
         ServerWindow window = GetWindow<ServerWindow>("SpacetimeDB");
@@ -313,7 +314,7 @@ public class ServerWindow : EditorWindow
         bool githubUpdateAvailable = ServerUpdateProcess.IsGithubUpdateAvailable();
         bool assetStoreUpdateAvailable = ServerUpdateProcess.IsAssetStoreUpdateAvailable();
         
-        if (githubUpdateAvailable || assetStoreUpdateAvailable)
+        if ((githubUpdateAvailable || assetStoreUpdateAvailable) && !cccpUpdateDismissed)
         {
             // Check if we need to reset the updating state after 10 seconds
             if (isUpdatingCCCP && EditorApplication.timeSinceStartup - cccpUpdateStartTime > 10.0)
@@ -352,7 +353,12 @@ public class ServerWindow : EditorWindow
                 updateButtonStyle.focused.textColor = Color.white;
             }
             
-            if (GUILayout.Button(buttonText, updateButtonStyle))
+            // Create horizontal layout for update button and dismiss button
+            EditorGUILayout.BeginHorizontal();
+
+            string updateButtonTooltip = "Update CCCP Package";
+
+            if (GUILayout.Button(new GUIContent(buttonText, updateButtonTooltip), updateButtonStyle))
             {
                 isUpdatingCCCP = true;
                 cccpUpdateStartTime = EditorApplication.timeSinceStartup;
@@ -366,6 +372,22 @@ public class ServerWindow : EditorWindow
                     ServerUpdateProcess.UpdateAssetStorePackage();
                 }
             }
+            
+            // Dismiss button (X)
+            GUIStyle dismissButtonStyle = new GUIStyle(GUI.skin.button);
+            dismissButtonStyle.normal.textColor = Color.white;
+            dismissButtonStyle.hover.textColor = Color.orange;
+            dismissButtonStyle.active.textColor = Color.orange;
+            dismissButtonStyle.focused.textColor = Color.white;
+            dismissButtonStyle.fontSize = 12;
+
+            string dismissButtonTooltip = "Dismiss Update Notification";
+
+            if (GUILayout.Button(new GUIContent("✕", dismissButtonTooltip), dismissButtonStyle, GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight)))
+            {
+                cccpUpdateDismissed = true;
+            }
+            EditorGUILayout.EndHorizontal();
         }
         EditorGUILayout.EndVertical();
     }
@@ -409,6 +431,9 @@ public class ServerWindow : EditorWindow
         // Load UI preferences
         autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
         colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", false);
+
+        // Reset CCCP update dismiss state on enable
+        cccpUpdateDismissed = false;
 
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;
@@ -961,8 +986,13 @@ public class ServerWindow : EditorWindow
                 }
                 else
                 {
-                    // initFirstModule is set to true in InitNewModule
-                    InitNewModule();
+                    if (hasAllPrerequisites)
+                    {
+                        // initFirstModule is set to true in InitNewModule
+                        InitNewModule();
+                    } else {
+                        EditorUtility.DisplayDialog("Missing Prerequisites", "Please ensure all prerequisites are met and all necessary software has been installed in the Installer Window before initializing a new module.", "OK");
+                    }
                 }
             }
             EditorGUI.EndDisabledGroup();
@@ -2843,9 +2873,9 @@ public class ServerWindow : EditorWindow
     }
 
     // Display Cosmos Cove Control Panel title text in the menu bar
-    [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", priority = -11000)]
+    [MenuItem("Window/SpacetimeDB/- Cosmos Cove Control Panel -")]
     private static void CosmosCoveControlPanel(){}
-    [MenuItem("SpacetimeDB/Cosmos Cove Control Panel", true, priority = -11000)]
+    [MenuItem("Window/SpacetimeDB/- Cosmos Cove Control Panel -", true)]
     private static bool ValidateCosmosCoveControlPanel(){return false;}
 
 } // Class

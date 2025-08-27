@@ -35,7 +35,7 @@ Install directly in your Unity Package Manager with this git URL
    - Server Installer Window which installs everything necessary from the ground up.
    - If starting fresh you will have your own local WSL or custom remote SpacetimeDB server in no-time.
    - Extra compability checks for important steps.
-   - Get notified of new SpacetimeDB server updates and update it in the Server Installer Window.
+   - Get notified of new SpacetimeDB server, Rust and SpacetimeDB SDK updates and update them in the Installer Window.
 
 📊 **Real-time Monitoring**
    - Monitor server status directly in Unity and send utility commands.

@@ -1,7 +1,7 @@
 {
   "name": "com.northernrogue.cccp.spacetimedbserver",
   "displayName": "Cosmos Cove Control Panel for SpacetimeDB",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
@@ -10,7 +10,7 @@
     "email": "mathias@northernrogue.se",
     "url": "https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"
   },
-  "description": "SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making local server management a breeze.",
+  "description": "SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is an unofficial integration that streamlines the SpacetimeDB experience within Unity, making server management a breeze.",
   "keywords": [
     "SpacetimeDB",
     "Server",
