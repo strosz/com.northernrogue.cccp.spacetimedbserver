@@ -2153,7 +2153,7 @@ public class ServerWindow : EditorWindow
                     EditorUtility.DisplayDialog(
                         "All Software Installed", 
                         "You have everything necessary to run SpacetimeDB on your server. \n\n" +
-                        "Please proceed to publish your module.\n\n" +
+                        "Please proceed to init your module (if creating a new server) and then publish your module.\n\n" +
                         "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
                         "OK"
                     );
@@ -2224,7 +2224,7 @@ public class ServerWindow : EditorWindow
         
         if (!isReachable)
         {
-            LogMessage("Server is not reachable. Please check if the server is online and your network connection.", -1);
+            LogMessage("Server is not reachable. Please check if the server is online at the URL and if your credentials are valid.", -1);
             return;
         }
         
