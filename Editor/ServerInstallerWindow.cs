@@ -1151,6 +1151,9 @@ public class ServerInstallerWindow : EditorWindow
 
         // Update UI
         UpdateInstallerItemsStatus();
+
+        // Update WSL1 status
+        WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
         
         isRefreshing = false;
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
@@ -1484,7 +1487,7 @@ public class ServerInstallerWindow : EditorWindow
             CheckInstallationStatus();
             await Task.Delay(1000);
             if (WSL1Installed && hasDebianTrixie)
-            SetStatus("Debian Trixie Update installed successfully.", Color.green);
+            SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
             else
             SetStatus("Failed to perform full upgrade to Trixie.", Color.red);
 
@@ -1558,7 +1561,7 @@ public class ServerInstallerWindow : EditorWindow
             CheckInstallationStatus();
             await Task.Delay(2000);
             if (WSL1Installed && hasCurl)
-            SetStatus("cURL installed successfully.", Color.green);
+            SetStatus("cURL installed successfully. (WSL1)", Color.green);
             else
             SetStatus("Failed to install cURL. Installation aborted.", Color.red);
             
@@ -1975,7 +1978,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             if (WSL1Installed)
             {
-                SetStatus("Rust installation continuing.", Color.green);
+                SetStatus("Rust installation continuing. (WSL1)", Color.green);
             } else {
                 SetStatus("Failed to install Rust. Installation aborted.", Color.red);
                 return;
@@ -1990,7 +1993,7 @@ public class ServerInstallerWindow : EditorWindow
         {   
             if (WSL1Installed)
             {
-                SetStatus("Rust installation continuing.", Color.green);
+                SetStatus("Rust installation continuing. (WSL1)", Color.green);
             } else {
                 SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
                 return;
@@ -2003,11 +2006,11 @@ public class ServerInstallerWindow : EditorWindow
         bool buildEssentialSuccess = await cmdProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!buildEssentialSuccess)
         {
-            CheckInstallationStatus();
+            CheckInstallationStatus(); // If failed to install build-essential, we still check if Rust is installed
             await Task.Delay(1000);
             if (WSL1Installed && hasRust)
             {
-                SetStatus("Rust build-essential package installed successfully.", Color.green);
+                SetStatus("Rust installed successfully. (WSL1)", Color.green); // If WSL1 Rust is successfully installed here
                 return;
             } else {
                 SetStatus("Warning: Failed to install build-essential. Some Rust packages may not compile correctly.", Color.yellow);
@@ -2080,9 +2083,9 @@ public class ServerInstallerWindow : EditorWindow
         bool keySuccess = await cmdProcess.RunPowerShellInstallCommand(keyCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!keySuccess)
         {
-            if (WSL1Installed)
+            if (WSL1Installed) // WSL1 continues despite if some commands are unsuccessful
             {
-                SetStatus(".NET SDK 8.0 installation continuing.", Color.green);
+                SetStatus(".NET SDK 8.0 installation continuing. (WSL1)", Color.green);
             } else {
                 SetStatus("Failed to download Microsoft package signing key. Installation aborted.", Color.red);
                 return;
@@ -2098,7 +2101,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             if (WSL1Installed)
             {
-                SetStatus(".NET SDK 8.0 installation continuing.", Color.green);
+                SetStatus(".NET SDK 8.0 installation continuing. (WSL1)", Color.green);
             } else {
                 SetStatus("Failed to install Microsoft package repository. Installation aborted.", Color.red);
                 return;
