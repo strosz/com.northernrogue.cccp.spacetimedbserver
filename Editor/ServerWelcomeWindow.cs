@@ -79,7 +79,7 @@ public class ServerWelcomeWindow : EditorWindow
         "This is a Windows WSL integration of SpacetimeDB within Unity.\n" +
         "SpacetimeDB has been added to your editor's menu at\n <b>Window>SpacetimeDB</b>.\n\n" +
         "<size=125%><b>Quick Start</b></size>\n" +
-        "1. Open the Main Window.\n Enter the essential Pre-Requisites.\n <size=75%><color=grey>Don't Init New Module until step 2 is done.\n Auth token can be entered after all steps.</color></size>\n\n" +
+        "1. Open the Main Window.\n Enter the essential Pre-Requisites.\n <size=75%><color=grey>Init New Module after step 2 is done.\n Auth token can be entered after all steps are done.</color></size>\n\n" +
         "2. Open the Installer Window.\n Check and install all essential software.\n\n" +
         "3. You can now publish and start the server! \n\n (For a detailed Quick Start check the documentation)";
 

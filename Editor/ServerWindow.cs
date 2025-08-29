@@ -33,6 +33,7 @@ public class ServerWindow : EditorWindow
     private bool hasSpacetimeDBService = false;
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
+    private bool hasNETSDK = false;
     private bool hasBinaryen = false;
     private bool hasGit = false;
     private bool wslPrerequisitesChecked = false;
@@ -493,6 +494,7 @@ public class ServerWindow : EditorWindow
         hasSpacetimeDBService = serverManager.HasSpacetimeDBService;
         hasSpacetimeDBLogsService = serverManager.HasSpacetimeDBLogsService;
         hasRust = serverManager.HasRust;
+        hasNETSDK = serverManager.HasNETSDK;
         hasBinaryen = serverManager.HasBinaryen;
         hasGit = serverManager.HasGit;
         
@@ -947,7 +949,7 @@ public class ServerWindow : EditorWindow
             string buttonText = deleteMode && hasSelectedModule ? "Delete Selected Module" : "Init New Module";
             string baseTooltip = deleteMode && hasSelectedModule ? 
                 "Delete Selected Module: Removes the currently selected saved module from the list." :
-                "Init a new module: Initializes a new SpacetimeDB module with the selected name and path.";
+                "Init a new module: Initializes a new SpacetimeDB module with the selected name, path and language.";
             
             string fullTooltip = baseTooltip + "\n\nTip: Hold Ctrl + Alt while clicking to delete the selected saved module instead (The path and files remain on the disk).";
             
@@ -2075,7 +2077,7 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
+        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
             EditorApplication.delayCall += () => {
                 // Update local state for UI
                 hasWSL = wsl;
@@ -2089,6 +2091,7 @@ public class ServerWindow : EditorWindow
                 hasRust = rust;
                 hasBinaryen = binaryen;
                 hasGit = git;
+                hasNETSDK = netSdk;
                 wslPrerequisitesChecked = true;
                 
                 // Load userName value 
@@ -2098,7 +2101,7 @@ public class ServerWindow : EditorWindow
                 
                 bool essentialSoftware = 
                     wsl && debian && trixie && curl && 
-                    spacetime && spacetimePath && spacetimeService && git;
+                    spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
 
                 bool essentialUserSettings = 
                     !string.IsNullOrEmpty(userName) &&
@@ -2107,14 +2110,15 @@ public class ServerWindow : EditorWindow
                     !string.IsNullOrEmpty(moduleName) &&
                     !string.IsNullOrEmpty(serverLang);
 
-                List<string> missingComponents = new List<string>();
-                if (!wsl) missingComponents.Add("- WSL");
-                if (!debian) missingComponents.Add("- Debian");
-                if (!trixie) missingComponents.Add("- Debian Trixie Update");
-                if (!spacetime) missingComponents.Add("- SpacetimeDB Server");
-                if (!spacetimePath) missingComponents.Add("- SpacetimeDB Path");
-                if (!spacetimeService) missingComponents.Add("- SpacetimeDB Service");
-                if (!git) missingComponents.Add("- Git");
+                List<string> missingSoftware = new List<string>();
+                if (!wsl) missingSoftware.Add("- WSL");
+                if (!debian) missingSoftware.Add("- Debian");
+                if (!trixie) missingSoftware.Add("- Debian Trixie Update");
+                if (!spacetime) missingSoftware.Add("- SpacetimeDB Server");
+                if (!spacetimePath) missingSoftware.Add("- SpacetimeDB Path");
+                if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
+                if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
+                if (!git) missingSoftware.Add("- Git");
 
                 List<string> missingUserSettings = new List<string>();
                 if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
@@ -2128,8 +2132,8 @@ public class ServerWindow : EditorWindow
                     bool needsInstallation = EditorUtility.DisplayDialog(
                         "Missing Software", 
                         "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
-                        "Please install the following:\n" +
-                        string.Join("\n", missingComponents) + "\n" +
+                        "Please install the following Software:\n" +
+                        string.Join("\n", missingSoftware) + "\n" +
                         "Please set the following Pre-Requisites:\n" +
                         string.Join("\n", missingUserSettings),
                         "Server Installer Window", "Pre-Requisites"

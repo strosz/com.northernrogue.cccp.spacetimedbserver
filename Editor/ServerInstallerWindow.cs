@@ -78,6 +78,7 @@ public class ServerInstallerWindow : EditorWindow
     private bool hasSpacetimeDBService = false;
     private bool hasSpacetimeDBLogsService = false;
     private bool hasRust = false;
+    private bool hasNETSDK = false;
     private bool hasBinaryen = false;
     private bool hasGit = false;
     private bool hasSpacetimeDBUnitySDK = false;
@@ -170,6 +171,7 @@ public class ServerInstallerWindow : EditorWindow
         hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
         hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
+        hasNETSDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasNETSDK", false);
         hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
         hasGit = EditorPrefs.GetBool(PrefsKeyPrefix + "HasGit", false);
         hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
@@ -337,11 +339,20 @@ public class ServerInstallerWindow : EditorWindow
             new InstallerItem
             {
                 title = "Install Rust",
-                description = "Rust is a programming language that runs 2x faster than C#\n"+
+                description = "Rust is a programming language that can be 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
                 installAction = InstallRust
+            },
+            new InstallerItem
+            {
+                title = "Install .NET SDK 8.0",
+                description = ".NET SDK 8.0 is Microsoft's software development kit for C#\n"+
+                "Note: Required to use the SpacetimeDB Server with C# Language",
+                isInstalled = hasNETSDK,
+                isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
+                installAction = InstallNETSDK
             },
             new InstallerItem
             {
@@ -513,6 +524,11 @@ public class ServerInstallerWindow : EditorWindow
                 else if (item.title.Contains("Rust"))
                 {
                     newState = hasRust;
+                    newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
+                }
+                else if (item.title.Contains(".NET SDK 8.0"))
+                {
+                    newState = hasNETSDK;
                     newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
                 }
                 else if (item.title.Contains("Web Assembly Optimizer Binaryen"))
@@ -1097,7 +1113,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
         });
         
-        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
+        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk) => {
             hasWSL = wsl;
             hasDebian = debian;
             hasDebianTrixie = trixie;
@@ -1109,6 +1125,7 @@ public class ServerInstallerWindow : EditorWindow
             hasSpacetimeDBLogsService = spacetimeLogsService;
             hasBinaryen = binaryen;
             hasGit = git;
+            hasNETSDK = netsdk;
             
             // Save state to EditorPrefs
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
@@ -1120,6 +1137,7 @@ public class ServerInstallerWindow : EditorWindow
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", hasSpacetimeDBService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", hasSpacetimeDBLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasNETSDK", hasNETSDK);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", hasBinaryen);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", hasGit);
             EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
@@ -1466,7 +1484,7 @@ public class ServerInstallerWindow : EditorWindow
             CheckInstallationStatus();
             await Task.Delay(1000);
             if (WSL1Installed && hasDebianTrixie)
-            SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
+            SetStatus("Debian Trixie Update installed successfully.", Color.green);
             else
             SetStatus("Failed to perform full upgrade to Trixie.", Color.red);
 
@@ -1540,7 +1558,7 @@ public class ServerInstallerWindow : EditorWindow
             CheckInstallationStatus();
             await Task.Delay(2000);
             if (WSL1Installed && hasCurl)
-            SetStatus("cURL installed successfully. (WSL1)", Color.green);
+            SetStatus("cURL installed successfully.", Color.green);
             else
             SetStatus("Failed to install cURL. Installation aborted.", Color.red);
             
@@ -1957,7 +1975,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             if (WSL1Installed)
             {
-                SetStatus("Rust installation continuing. (WSL1)", Color.green);
+                SetStatus("Rust installation continuing.", Color.green);
             } else {
                 SetStatus("Failed to install Rust. Installation aborted.", Color.red);
                 return;
@@ -1972,7 +1990,7 @@ public class ServerInstallerWindow : EditorWindow
         {   
             if (WSL1Installed)
             {
-                SetStatus("Rust installation continuing. (WSL1)", Color.green);
+                SetStatus("Rust installation continuing.", Color.green);
             } else {
                 SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
                 return;
@@ -1989,7 +2007,7 @@ public class ServerInstallerWindow : EditorWindow
             await Task.Delay(1000);
             if (WSL1Installed && hasRust)
             {
-                SetStatus("Rust installed successfully. (WSL1)", Color.green);
+                SetStatus("Rust build-essential package installed successfully.", Color.green);
                 return;
             } else {
                 SetStatus("Warning: Failed to install build-essential. Some Rust packages may not compile correctly.", Color.yellow);
@@ -2011,6 +2029,137 @@ public class ServerInstallerWindow : EditorWindow
         else
         {
             SetStatus("Rust installation failed. Please install manually.", Color.red);
+        }
+
+        Repaint();
+    }
+
+    private async void InstallNETSDK()
+    {
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasNETSDK && !installIfAlreadyInstalled)
+        {
+            SetStatus(".NET SDK 8.0 is already installed.", Color.green);
+            return;
+        }
+
+        if (!hasCurl)
+        {
+            SetStatus("curl is required to install .NET SDK 8.0. Please install curl first.", Color.red);
+            return;
+        }
+        
+        SetStatus("Installing .NET SDK 8.0 - Step 1: Update package list", Color.yellow);
+        
+        // First update package list
+        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
+        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!updateSuccess)
+        {
+            SetStatus("Failed to update package list. .NET SDK 8.0 installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(2000);
+        
+        // Install required packages for .NET SDK
+        SetStatus("Installing .NET SDK 8.0 - Step 2: Installing required packages", Color.yellow);
+        string prereqCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y wget\"";
+        bool prereqSuccess = await cmdProcess.RunPowerShellInstallCommand(prereqCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!prereqSuccess)
+        {
+            SetStatus("Failed to install prerequisites for .NET SDK 8.0. Installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(2000);
+        
+        // Download Microsoft package signing key
+        SetStatus("Installing .NET SDK 8.0 - Step 3: Adding Microsoft package signing key", Color.yellow);
+        string keyCommand = $"wsl -d Debian -u {userName} bash -c \"wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb\"";
+        bool keySuccess = await cmdProcess.RunPowerShellInstallCommand(keyCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!keySuccess)
+        {
+            if (WSL1Installed)
+            {
+                SetStatus(".NET SDK 8.0 installation continuing.", Color.green);
+            } else {
+                SetStatus("Failed to download Microsoft package signing key. Installation aborted.", Color.red);
+                return;
+            }
+        }
+        await Task.Delay(2000);
+        
+        // Install Microsoft package
+        SetStatus("Installing .NET SDK 8.0 - Step 4: Installing Microsoft package repository", Color.yellow);
+        string installMSPackageCommand = $"wsl -d Debian -u {userName} bash -c \"sudo dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb\"";
+        bool installMSPackageSuccess = await cmdProcess.RunPowerShellInstallCommand(installMSPackageCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!installMSPackageSuccess)
+        {
+            if (WSL1Installed)
+            {
+                SetStatus(".NET SDK 8.0 installation continuing.", Color.green);
+            } else {
+                SetStatus("Failed to install Microsoft package repository. Installation aborted.", Color.red);
+                return;
+            }
+        }
+        await Task.Delay(2000);
+        
+        // Update package list again with Microsoft repository
+        SetStatus("Installing .NET SDK 8.0 - Step 5: Updating package list with Microsoft repository", Color.yellow);
+        string updateMSCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
+        bool updateMSSuccess = await cmdProcess.RunPowerShellInstallCommand(updateMSCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!updateMSSuccess)
+        {
+            SetStatus("Failed to update package list with Microsoft repository. Installation aborted.", Color.red);
+            return;
+        }
+        await Task.Delay(2000);
+        
+        // Install .NET SDK 8.0
+        SetStatus("Installing .NET SDK 8.0 - Step 6: Installing .NET SDK 8.0", Color.yellow);
+        string netSDKInstallCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y dotnet-sdk-8.0\"";
+        bool netSDKInstallSuccess = await cmdProcess.RunPowerShellInstallCommand(netSDKInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!netSDKInstallSuccess)
+        {
+            CheckInstallationStatus();
+            await Task.Delay(1000);
+            if (WSL1Installed && hasNETSDK)
+            {
+                SetStatus(".NET SDK 8.0 installed successfully.", Color.green);
+            } else {
+                SetStatus("Failed to install .NET SDK 8.0. Installation aborted.", Color.red);
+                return;
+            }
+        }
+
+        // Install WASI experimental workload
+        SetStatus("Installing .NET SDK 8.0 - Step 7: Installing WASI experimental workload", Color.yellow);
+        string wasiWorkloadCommand = "wsl -d Debian -- sudo dotnet workload install wasi-experimental";
+        bool wasiWorkloadSuccess = await cmdProcess.RunPowerShellInstallCommand(wasiWorkloadCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        if (!wasiWorkloadSuccess)
+        {
+            if (WSL1Installed)
+            {
+                SetStatus(".NET SDK 8.0 with WASI workload installed successfully.", Color.green);
+            } else {
+                SetStatus("Warning: Failed to install WASI experimental workload. SpacetimeDB C# modules may not compile correctly.", Color.yellow);
+            }
+        }
+
+        // Check installation status
+        CheckInstallationStatus();
+        await Task.Delay(1000);
+        
+        if (hasNETSDK)
+        {
+            SetStatus(".NET SDK 8.0 with WASI experimental workload installed successfully.", Color.green);
+            UpdateInstallerItemsStatus();
+        }
+        else
+        {
+            SetStatus(".NET SDK 8.0 installation failed. Please install manually.", Color.red);
         }
 
         Repaint();
@@ -2055,7 +2204,7 @@ public class ServerInstallerWindow : EditorWindow
                 await Task.Delay(2000);
                 if (WSL1Installed && hasBinaryen)
                 {
-                    SetStatus("Binaryen installed successfully. (WSL1)", Color.green);
+                    SetStatus("Binaryen installed successfully.", Color.green);
                 }
                 else
                 {
@@ -2128,7 +2277,7 @@ public class ServerInstallerWindow : EditorWindow
             CheckInstallationStatus();
             await Task.Delay(2000);
             if (WSL1Installed && hasGit)
-                SetStatus("Git installed successfully. (WSL1)", Color.green);
+                SetStatus("Git installed successfully.", Color.green);
             else
                 SetStatus("Failed to install Git. Installation aborted.", Color.red);
             

@@ -88,6 +88,7 @@ public class ServerManager
     private bool hasSpacetimeDBService;
     private bool hasSpacetimeDBLogsService;
     private bool hasRust;
+    private bool hasNETSDK;
     private bool hasBinaryen;
     private bool hasGit;
     private bool wslPrerequisitesChecked;
@@ -160,6 +161,7 @@ public class ServerManager
     public bool HasSpacetimeDBService => hasSpacetimeDBService;
     public bool HasSpacetimeDBLogsService => hasSpacetimeDBLogsService;
     public bool HasRust => hasRust;
+    public bool HasNETSDK => hasNETSDK;
     public bool HasBinaryen => hasBinaryen;
     public bool HasGit => hasGit;
     public bool WslPrerequisitesChecked => wslPrerequisitesChecked;
@@ -260,6 +262,7 @@ public class ServerManager
         hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
         hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
         hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
+        hasNETSDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasNETSDK", false);
         hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
         hasGit = EditorPrefs.GetBool(PrefsKeyPrefix + "HasGit", false);
         
@@ -439,6 +442,7 @@ public class ServerManager
     public void SetHasSpacetimeDBService(bool value) { hasSpacetimeDBService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", value); }
     public void SetHasSpacetimeDBLogsService(bool value) { hasSpacetimeDBLogsService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", value); }
     public void SetHasRust(bool value) { hasRust = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", value); }
+    public void SetHasNETSDK(bool value) { hasNETSDK = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasNETSDK", value); }
     public void SetHasBinaryen(bool value) { hasBinaryen = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", value); }
     public void SetHasGit(bool value) { hasGit = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", value); }
     public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
@@ -1652,9 +1656,9 @@ public class ServerManager
         }
     }
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
     {        
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git) => {
+        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk) => {
             // Save state in ServerManager
             SetHasWSL(wsl);
             SetHasDebian(debian);
@@ -1667,6 +1671,7 @@ public class ServerManager
             SetHasSpacetimeDBLogsService(spacetimeLogsService);
             SetHasBinaryen(binaryen);
             SetHasGit(git);
+            SetHasNETSDK(netsdk);
             SetWslPrerequisitesChecked(true);
             
             // Save state to EditorPrefs - moved here from ServerWindow
@@ -1680,6 +1685,7 @@ public class ServerManager
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", spacetimeService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", spacetimeLogsService);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", rust);
+            EditorPrefs.SetBool(PrefsKeyPrefix + "HasNETSDK", netsdk);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", binaryen);
             EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", git);
 
@@ -1690,7 +1696,7 @@ public class ServerManager
                 SetUserName(storedUserName);
             }
               // Then call the original callback
-            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git);
+            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk);
         });
     }
 

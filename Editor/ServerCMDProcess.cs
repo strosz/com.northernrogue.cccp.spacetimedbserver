@@ -468,7 +468,7 @@ public class ServerCMDProcess
     
     #region CheckPrereq
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
     {
         logCallback("Checking pre-requisites...", 0);
         
@@ -539,7 +539,12 @@ public class ServerCMDProcess
                 // Git Check
                 "Write-Host 'Checking Git...'; " +
                 "$git = (wsl -d Debian -u " + userName + " -- which git 2>&1); " +
-                "if ($git -match '/usr/bin/git') { Write-Host 'GIT_INSTALLED=TRUE' } else { Write-Host 'GIT_INSTALLED=FALSE' }" +
+                "if ($git -match '/usr/bin/git') { Write-Host 'GIT_INSTALLED=TRUE' } else { Write-Host 'GIT_INSTALLED=FALSE' }; " +
+                
+                // .NET SDK Check - Check for dotnet executable and SDK 8.0
+                "Write-Host 'Checking .NET SDK 8.0...'; " +
+                "$dotnet = (wsl -d Debian -u " + userName + " -- bash -c 'test -f /usr/bin/dotnet && echo \"dotnet found\" || echo \"not found\"' 2>&1); " +
+                "if ($dotnet -match 'dotnet found') { Write-Host 'NETSDK_INSTALLED=TRUE' } else { Write-Host 'NETSDK_INSTALLED=FALSE' }" +
             "} else { " +
                 // Set all dependent checks to FALSE if WSL is not installed
                 "Write-Host 'DEBIAN_INSTALLED=FALSE'; " +
@@ -551,7 +556,8 @@ public class ServerCMDProcess
                 "Write-Host 'SPACETIMEDBSERVICE_INSTALLED=FALSE'; " +
                 "Write-Host 'SPACETIMEDBLOGSSERVICE_INSTALLED=FALSE'; " +
                 "Write-Host 'BINARYEN_INSTALLED=FALSE'; " +
-                "Write-Host 'GIT_INSTALLED=FALSE'" +
+                "Write-Host 'GIT_INSTALLED=FALSE'; " +
+                "Write-Host 'NETSDK_INSTALLED=FALSE'" +
             "}\"";
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.UseShellExecute = false;
@@ -576,7 +582,8 @@ public class ServerCMDProcess
         bool hasSpacetimeDBLogsService = output.Contains("SPACETIMEDBLOGSSERVICE_INSTALLED=TRUE");
         bool hasBinaryen = output.Contains("BINARYEN_INSTALLED=TRUE");
         bool hasGit = output.Contains("GIT_INSTALLED=TRUE");
-        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}, Service: {hasSpacetimeDBService}, Logs Service: {hasSpacetimeDBLogsService}, Binaryen: {hasBinaryen}, Git: {hasGit}", 0);
+        bool hasNETSDK = output.Contains("NETSDK_INSTALLED=TRUE");
+        //logCallback($"Pre-requisites check complete. WSL: {hasWSL}, Debian: {hasDebian}, Debian Trixie: {hasDebianTrixie}, curl: {hasCurl}, SpacetimeDB: {hasSpacetimeDB}, SpacetimeDB Path: {hasSpacetimeDBPath}, Rust: {hasRust}, Service: {hasSpacetimeDBService}, Logs Service: {hasSpacetimeDBLogsService}, Binaryen: {hasBinaryen}, Git: {hasGit}, .NET SDK: {hasNETSDK}", 0);
         if (!hasWSL || !hasDebian || !hasDebianTrixie || !hasCurl || !hasSpacetimeDB || !hasSpacetimeDBPath)
         {
             logCallback("Missing pre-requisites. Install manually or with the Server Installer Window.", -2);
@@ -584,7 +591,7 @@ public class ServerCMDProcess
         {
             logCallback("Pre-requisites check complete. All required components are installed.", 1);
         }
-        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust, hasSpacetimeDBService, hasSpacetimeDBLogsService, hasBinaryen, hasGit);
+        callback(hasWSL, hasDebian, hasDebianTrixie, hasCurl, hasSpacetimeDB, hasSpacetimeDBPath, hasRust, hasSpacetimeDBService, hasSpacetimeDBLogsService, hasBinaryen, hasGit, hasNETSDK);
     }
     #endregion
 
