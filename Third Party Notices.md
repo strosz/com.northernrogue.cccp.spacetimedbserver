@@ -39,7 +39,15 @@ By using the automated installer features, you acknowledge and agree to the resp
 - **Download URL:** https://install.spacetimedb.com
 - **Documentation:** https://spacetimedb.com/docs
 
-### 4. Rust Programming Language & Cargo
+### 4. .NET SDK 8.0
+- **Publisher:** Microsoft Corporation
+- **License:** MIT License
+- **Source:** Official Microsoft installation script
+- **Purpose:** Software development kit for .NET applications and SpacetimeDB C# modules
+- **Download URL:** via `apt install dotnet-sdk-8.0`
+- **Documentation:** https://github.com/dotnet/core/blob/main/LICENSE.TXT
+
+### 5. Rust Programming Language & Cargo
 - **Publisher:** Mozilla Foundation / Rust Foundation
 - **License:** MIT License and Apache License 2.0
 - **Source:** Official Rust installation script
@@ -47,7 +55,7 @@ By using the automated installer features, you acknowledge and agree to the resp
 - **Download URL:** https://sh.rustup.rs
 - **Documentation:** https://forge.rust-lang.org/infra/channel-layout.html#license
 
-### 5. Git Version Control System
+### 6. Git Version Control System
 - **Publisher:** Git Project / Software Freedom Conservancy
 - **License:** GNU General Public License v2.0
 - **Source:** Official Debian package repositories
@@ -55,7 +63,7 @@ By using the automated installer features, you acknowledge and agree to the resp
 - **Installation:** via `apt install git`
 - **Documentation:** https://git-scm.com/about/free-and-open-source
 
-### 6. cURL Data Transfer Tool
+### 7. cURL Data Transfer Tool
 - **Publisher:** Daniel Stenberg and contributors
 - **License:** MIT/X derivate license (curl license)
 - **Source:** Official Debian package repositories
@@ -63,7 +71,7 @@ By using the automated installer features, you acknowledge and agree to the resp
 - **Installation:** via `apt install curl`
 - **Documentation:** https://curl.se/docs/copyright.html
 
-### 7. Binaryen WebAssembly Toolkit
+### 8. Binaryen WebAssembly Toolkit
 - **Publisher:** WebAssembly Community Group
 - **License:** Apache License 2.0
 - **Source:** Official Debian package repositories
@@ -77,12 +85,13 @@ By using the automated installer features, you acknowledge and agree to the resp
 
 All downloaded software licenses have been reviewed for compatibility:
 
--  **Microsoft WSL:** Proprietary license, no redistribution concerns
--  **SpacetimeDB:** Commercial license, downloaded from official source
--  **Rust (MIT/Apache 2.0):** Requires attribution (provided in documentation)
--  **Git (GPL v2.0):** Not redistributed, user downloads directly
--  **cURL (MIT-style):** Permissive license, no redistribution
--  **Binaryen (Apache 2.0):** Requires attribution (provided in documentation)
+- **Microsoft WSL:** Proprietary license, no redistribution concerns
+- **SpacetimeDB:** Commercial license, downloaded from official source
+- **.NET SDK (MIT):** Requires attribution (provided in documentation)
+- **Rust (MIT/Apache 2.0):** Requires attribution (provided in documentation)
+- **Git (GPL v2.0):** Not redistributed, user downloads directly
+- **cURL (MIT-style):** Permissive license, no redistribution
+- **Binaryen (Apache 2.0):** Requires attribution (provided in documentation)
 
 **Note:** GPL and Apache 2.0 licensed software is downloaded by users directly from official sources and is not redistributed with this Unity package.
 
@@ -91,6 +100,12 @@ All downloaded software licenses have been reviewed for compatibility:
 ## Attribution Requirements
 
 For software requiring attribution when used:
+
+### .NET SDK
+```
+.NET is licensed under the MIT License
+Copyright (c) .NET Foundation and Contributors
+```
 
 ### Rust Programming Language
 ```
@@ -122,7 +137,7 @@ For questions regarding third-party software licensing or this notice:
 
 ---
 
-**Last Updated:** August 27, 2025  
+**Last Updated:** August 30, 2025  
 **Package Version:** 0.4.2
 
 ---

@@ -28,7 +28,7 @@
     {
       "displayName": "Example Import Reducer",
       "description": "Contains sample server code written in Rust for an import reducer allowing you to import your database with the Database window",
-      "path": "Samples~/ImportReducer"
+      "path": "Samples/ImportReducer"
     }
   ]
 }
