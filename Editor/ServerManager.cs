@@ -1310,7 +1310,7 @@ public class ServerManager
             if (!string.IsNullOrWhiteSpace(description))
             LogMessage($"{description}...", 0);
 
-            // Publish and Generate uses the local CLI and is not run on SSH
+            // Publish and Generate uses the local CLI and is not run on SSH, so this is for all other SSH commands
             if (serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate"))
             {
                 var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command); // SSH command
@@ -1326,15 +1326,7 @@ public class ServerManager
                 // Most results will be output here
                 if (!string.IsNullOrEmpty(result.error))
                 {
-                    // Filter out formatting errors for generate commands that don't affect functionality
-                    bool isGenerateCmd = command.Contains("spacetime generate");
-                    string filteredError = isGenerateCmd ? FilterGenerateErrors(result.error) : result.error;
-                    
-                    if (!string.IsNullOrEmpty(filteredError))
-                    {
-                        LogMessage(filteredError, -2);
-                        publishing = false;
-                    }
+                    // To be added
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
@@ -1342,27 +1334,20 @@ public class ServerManager
                     if (debugMode) LogMessage("Command completed with no output.", 0);
                     publishing = false;
                 }
-
-                // Handle special cases for publish and generate
-                bool isPublishCommand = command.Contains("spacetime publish");
-                bool isGenerateCommand = command.Contains("spacetime generate");
                 
                 // Marked as success if the command was run, but may yet contain errors
                 if (result.success)
                 {
-                    if (isPublishCommand)
-                    {
-                        PublishResult(result.output, result.error);
-                    }
-                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
-                    {
-                        GenerateResult(result.output, result.error);
-                    }
+                    // To be added
+                } 
+                else // if !result.success
+                {
+                    LogMessage("Custom Remote mode command failed to execute.", -2);
                 }
             }
-            else // WSL local or Maincloud mode
+            else // WSL local commands, Custom Remote publish or Maincloud commands
             {
-                // Execute the command through the command processor
+                // Errors which causes the command to fail may be needed to be procesed directly in RunServerCommandAsync
                 var result = await cmdProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
                 // Display the results in the output log
@@ -1408,6 +1393,22 @@ public class ServerManager
                     {
                         GenerateResult(result.output, result.error);
                     }
+                }
+                else // if !result.success
+                {
+                    if (isPublishCommand)
+                    {
+                        LogMessage("Publishing failed!", -1);
+                    }
+                    else if (isGenerateCommand)
+                    {
+                        LogMessage("Generating Unity files failed!", -1);
+                    }
+                    else
+                    {
+                        LogMessage("Command failed to execute.", -2);
+                    }
+                    publishing = false;
                 }
             }
         }
@@ -1557,7 +1558,7 @@ public class ServerManager
         }
 
         // If the output contains the word error and isn't compiling the publish probably has failed. Excluded initial downloading since some packages may contain the word error.
-        if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("downloaded", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("downloaded", StringComparison.OrdinalIgnoreCase) && !error.Contains("compiling", StringComparison.OrdinalIgnoreCase))
         {
             successfulPublish = false;
         }

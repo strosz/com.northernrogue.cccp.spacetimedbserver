@@ -831,9 +831,9 @@ public class ServerWindow : EditorWindow
             // Module Language dropdown
             EditorGUILayout.BeginHorizontal();
             string serverLangTooltip = 
-            "Rust: The default programming language for SpacetimeDB server modules. \n\n"+
-            "C-Sharp: The C# programming language for SpacetimeDB server modules. \n\n"+
-            "Recommended: Rust which is 2x faster than C#.";
+            "Rust: The default programming language for SpacetimeDB server modules. You need to install Rust in the Installer Window to be able to Publish.\n\n"+
+            "C-Sharp: The C# programming language for SpacetimeDB server modules. You need to install the .NET SDK in the Installer Window to be able to Publish.\n\n"+
+            "Recommended: Rust which can be up to 2x faster than C#. If you are more comfortable with C# it will work fine as well.";
             EditorGUILayout.LabelField(new GUIContent("Module Language:", serverLangTooltip), GUILayout.Width(110));
             string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
             string[] serverLangValues = new string[] { "rust", "csharp" };
@@ -988,10 +988,12 @@ public class ServerWindow : EditorWindow
                 }
                 else
                 {
+                    CheckPrerequisites();
                     if (hasAllPrerequisites)
                     {
                         // initFirstModule is set to true in InitNewModule
                         InitNewModule();
+                        EditorUtility.DisplayDialog("Module Initialized", "The new module has been initialized successfully.", "OK");
                     } else {
                         EditorUtility.DisplayDialog("Missing Prerequisites", "Please ensure all prerequisites are met and all necessary software has been installed in the Installer Window before initializing a new module.", "OK");
                     }
@@ -2044,12 +2046,12 @@ public class ServerWindow : EditorWindow
                         "Yes, Reset Database",
                         "Cancel"))
                 {
-                    serverManager.Publish(true);
+                    serverManager.Publish(true); // Publish with a database reset
                 }
             }
             else
             {
-                serverManager.Publish(false);
+                serverManager.Publish(false); // Publish without a database reset
                 publishing = true; // Set flag to indicate publishing is in progress
                 publishFirstModule = false;
                 serverManager.SetPublishFirstModule(false);

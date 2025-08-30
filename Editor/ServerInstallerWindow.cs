@@ -147,10 +147,10 @@ public class ServerInstallerWindow : EditorWindow
             EditorApplication.delayCall += () => {
                 bool continuePressed = EditorUtility.DisplayDialog(
                     "SpacetimeDB Automatic Installer",
-                    "Welcome to the automatic installer window that checks and installs everything needed for your Windows PC to run SpacetimeDB from the ground up.\n" +
-                    "Start from the top and click the install on each item.\n\n" +
-                    "All named software in this window is official and publicly available free software that belongs to the respective parties.\n" +
-                    "For a manual installation process, check the documentation.",
+                    "Welcome to the installer window that checks and installs everything needed for your Windows PC to run SpacetimeDB from the ground up.\n\n" +
+                    "All named software in this window is official and publicly available software owned by their respective parties.\n" +
+                    "By proceeding, you agree to the terms and licenses of each installed component. For detailed licensing information, see 'Third Party Notices.md' in your package folder.\n" +
+                    "A manual installation process is in the documentation.",
                     "Continue", "Documentation");
                 
                 if (!continuePressed) {
@@ -347,7 +347,7 @@ public class ServerInstallerWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install .NET SDK 8.0",
+                title = "Install .NET SDK for C#",
                 description = ".NET SDK 8.0 is Microsoft's software development kit for C#\n"+
                 "Note: Required to use the SpacetimeDB Server with C# Language",
                 isInstalled = hasNETSDK,
@@ -526,7 +526,7 @@ public class ServerInstallerWindow : EditorWindow
                     newState = hasRust;
                     newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);
                 }
-                else if (item.title.Contains(".NET SDK 8.0"))
+                else if (item.title.Contains(".NET SDK"))
                 {
                     newState = hasNETSDK;
                     newEnabledState = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName);

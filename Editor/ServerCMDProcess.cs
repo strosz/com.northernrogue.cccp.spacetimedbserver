@@ -906,6 +906,17 @@ public class ServerCMDProcess
                 logCallback($"Error: The command (likely 'spacetime') was not found in the WSL environment for user '{userName}'. Ensure SpacetimeDB is correctly installed and in the PATH for that user.", -1);
                 commandSuccess = false;
             }
+            else if (error.Contains("not detect the language of the module"))
+            {
+                logCallback("Please ensure Init New Module has run successfully on your selected module before publishing.", 0);
+                commandSuccess = false;
+                EditorUtility.DisplayDialog("Publish Error", "Please ensure Init New Module has run successfully on your selected module before publishing.", "OK");
+            }
+            else if (error.Contains("invalid characters in database name"))
+            {
+                logCallback("Please ensure your module name is written in lowercase characters.", -1);
+                commandSuccess = false;
+            }
             else if (isLogSizeCommand && !string.IsNullOrEmpty(output) && output.Trim().All(char.IsDigit))
             {
                 // Log size commands are successful if they return numeric output
