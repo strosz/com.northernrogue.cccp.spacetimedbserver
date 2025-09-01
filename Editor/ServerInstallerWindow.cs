@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.IO;
 using System.Text.RegularExpressions;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Check and install everything necessary to run SpacetimeDB with this window ///
 
@@ -249,7 +250,7 @@ public class ServerInstallerWindow : EditorWindow
         EditorApplication.update -= OnEditorUpdate;
 
         // Reload server manager editor preferences to ensure up to date versions and variables
-        serverManager.LoadEditorPrefs();
+        serverManager.LoadSettings();
         
         // Repaint the ServerWindow
         var serverWindow = GetWindow<ServerWindow>();

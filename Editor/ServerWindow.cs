@@ -5,6 +5,7 @@ using System.IO;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -677,7 +678,7 @@ public class ServerWindow : EditorWindow
         // Trigger refresh when foldout state changes
         if (showPrerequisites != previousShowPrerequisites)
         {
-            serverManager.LoadEditorPrefs();
+            serverManager.LoadSettings();
             Repaint();
         }
 
@@ -802,7 +803,7 @@ public class ServerWindow : EditorWindow
             if (newunityLangSelectedIndex != unityLangSelectedIndex)
             {
                 unityLang = unityLangValues[newunityLangSelectedIndex];
-                serverManager.SetUnityLang(unityLang);
+                serverManager.unityLang = unityLang;
                 LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
             }
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
@@ -821,7 +822,7 @@ public class ServerWindow : EditorWindow
                 if (!string.IsNullOrEmpty(path))
                 {
                     clientDirectory = path;
-                    serverManager.SetClientDirectory(clientDirectory);
+                    serverManager.clientDirectory = clientDirectory;
                     LogMessage($"Client path set to: {clientDirectory}", 1);
                 }
             }
@@ -843,7 +844,7 @@ public class ServerWindow : EditorWindow
             if (newServerLangSelectedIndex != serverLangSelectedIndex)
             {
                 serverLang = serverLangValues[newServerLangSelectedIndex];
-                serverManager.SetServerLang(serverLang);
+                serverManager.serverLang = serverLang;
                 LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
             }
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
@@ -865,7 +866,7 @@ public class ServerWindow : EditorWindow
                 if (!string.IsNullOrEmpty(path))
                 {
                     serverDirectory = path;
-                    serverManager.SetServerDirectory(serverDirectory);
+                    serverManager.UpdateServerDirectory(serverDirectory);
 
                     // Update the detection process with the new directory
                     if (detectionProcess != null)
@@ -877,7 +878,7 @@ public class ServerWindow : EditorWindow
                     {
                         string moduleNameToAdd = newModuleNameInput; // Store the name before clearing
                         int moduleIndex = AddModuleToSavedList(moduleNameToAdd, serverDirectory);
-                        serverManager.SetModuleName(moduleNameToAdd);
+                        serverManager.moduleName = moduleNameToAdd;
                         
                         // Automatically select the newly added module
                         if (moduleIndex >= 0)
@@ -1023,7 +1024,7 @@ public class ServerWindow : EditorWindow
                     if (!string.IsNullOrEmpty(path))
                     {
                         backupDirectory = path;
-                        serverManager.SetBackupDirectory(backupDirectory);
+                        serverManager.backupDirectory = backupDirectory;
                         LogMessage($"Backup directory set to: {backupDirectory}", 1);
                     }
                 }
@@ -1040,7 +1041,7 @@ public class ServerWindow : EditorWindow
                 if (newUserName != userName)
                 {
                     userName = newUserName;
-                    serverManager.SetUserName(userName);
+                    serverManager.userName = userName;
                     if (debugMode) LogMessage($"Debian username set to: {userName}", 0);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(userName)), GUILayout.Width(20));
@@ -1057,7 +1058,7 @@ public class ServerWindow : EditorWindow
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
-                    serverManager.SetServerUrl(serverUrl);
+                    serverManager.serverUrl = serverUrl;
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(serverUrl);
                     if (extractedPort > 0) // If a valid port is found
@@ -1065,7 +1066,7 @@ public class ServerWindow : EditorWindow
                         if (extractedPort != serverPort) // If the port is different from the current customServerPort
                         {
                             serverPort = extractedPort;
-                            serverManager.SetServerPort(serverPort);
+                            serverManager.serverPort = serverPort;
 
                             if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
                         }
@@ -1090,7 +1091,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != authToken)
                 {
                     authToken = newAuthToken;
-                    serverManager.SetAuthToken(authToken);
+                    serverManager.authToken = authToken;
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1154,7 +1155,7 @@ public class ServerWindow : EditorWindow
                     if (!string.IsNullOrEmpty(path))
                     {
                         sshPrivateKeyPath = path;
-                        serverManager.SetSSHPrivateKeyPath(sshPrivateKeyPath);
+                        serverManager.sshPrivateKeyPath = sshPrivateKeyPath;
                         if (serverCustomProcess != null) // Update ServerCustomProcess if it exists
                         {
                             serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
@@ -1174,7 +1175,7 @@ public class ServerWindow : EditorWindow
                 if (newUserName != sshUserName)
                 {
                     sshUserName = newUserName;
-                    serverManager.SetSSHUserName(sshUserName);
+                    serverManager.sshUserName = sshUserName;
                                        
                     if (debugMode) LogMessage($"SSH username set to: {sshUserName}", 0);
                 }
@@ -1193,7 +1194,7 @@ public class ServerWindow : EditorWindow
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
-                    serverManager.SetCustomServerUrl(customServerUrl);
+                    serverManager.customServerUrl = customServerUrl;
                     
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(customServerUrl);
@@ -1202,7 +1203,7 @@ public class ServerWindow : EditorWindow
                         if (extractedPort != customServerPort) // If the port is different from the current customServerPort
                         {
                             customServerPort = extractedPort;
-                            serverManager.SetCustomServerPort(customServerPort);
+                            serverManager.customServerPort = customServerPort;
                             
                             if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
                         }
@@ -1227,7 +1228,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != customServerAuthToken)
                 {
                     customServerAuthToken = newAuthToken;
-                    serverManager.SetCustomServerAuthToken(customServerAuthToken);
+                    serverManager.customServerAuthToken = customServerAuthToken;
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1294,7 +1295,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != maincloudAuthToken)
                 {
                     maincloudAuthToken = newAuthToken;
-                    serverManager.SetMaincloudAuthToken(maincloudAuthToken);
+                    serverManager.maincloudAuthToken = maincloudAuthToken;
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(maincloudAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1360,7 +1361,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(serverManager.DetectServerChanges ? "Detecting Changes" : "Not Detecting Changes", changeToggleStyle))
             {
                 bool newDetectChanges = !serverManager.DetectServerChanges;
-                serverManager.SetDetectServerChanges(newDetectChanges);
+                serverManager.UpdateDetectServerChanges(newDetectChanges);
                 detectServerChanges = newDetectChanges; // Keep local field in sync
                 
                 if (newDetectChanges)
@@ -1393,12 +1394,12 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(serverManager.AutoPublishMode ? "Automatic Publishing" : "Manual Publish", autoPublishStyle))
             {
                 bool newAutoPublish = !serverManager.AutoPublishMode;
-                serverManager.SetAutoPublishMode(newAutoPublish);
+                serverManager.autoPublishMode = newAutoPublish;
                 autoPublishMode = newAutoPublish; // Keep local field in sync
                 
                 if (newAutoPublish && !serverManager.DetectServerChanges)
                 {
-                    serverManager.SetDetectServerChanges(true);
+                    serverManager.UpdateDetectServerChanges(true);
                     detectServerChanges = true; // Keep local field in sync
                     serverChangesDetected = false;
                     serverManager.ServerChangesDetected = false;
@@ -1424,7 +1425,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(serverManager.PublishAndGenerateMode ? "Publish will Generate" : "Separate Generate", publishGenerateStyle))
             {
                 bool newPublishGenerate = !serverManager.PublishAndGenerateMode;
-                serverManager.SetPublishAndGenerateMode(newPublishGenerate);
+                serverManager.publishAndGenerateMode = newPublishGenerate;
                 publishAndGenerateMode = newPublishGenerate; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
@@ -1449,7 +1450,7 @@ public class ServerWindow : EditorWindow
                 if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
                 {
                     bool newAutoClose = !serverManager.AutoCloseWsl;
-                    serverManager.SetAutoCloseWsl(newAutoClose);
+                    serverManager.autoCloseWsl = newAutoClose;
                     autoCloseWsl = newAutoClose; // Keep local field in sync
                 }
                 EditorGUILayout.EndHorizontal();
@@ -1474,7 +1475,7 @@ public class ServerWindow : EditorWindow
                 if (GUILayout.Button(serverManager.ClearModuleLogAtStart ? "Clear at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
                 {
                     bool newClearModule = !serverManager.ClearModuleLogAtStart;
-                    serverManager.SetClearModuleLogAtStart(newClearModule);
+                    serverManager.clearModuleLogAtStart = newClearModule;
                     clearModuleLogAtStart = newClearModule; // Keep local field in sync
                 }
                 EditorGUILayout.EndHorizontal();
@@ -1496,7 +1497,7 @@ public class ServerWindow : EditorWindow
                 if (GUILayout.Button(serverManager.ClearDatabaseLogAtStart ? "Clear at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
                 {
                     bool newClearDatabase = !serverManager.ClearDatabaseLogAtStart;
-                    serverManager.SetClearDatabaseLogAtStart(newClearDatabase);
+                    serverManager.clearDatabaseLogAtStart = newClearDatabase;
                     clearDatabaseLogAtStart = newClearDatabase; // Keep local field in sync
                 }
                 EditorGUILayout.EndHorizontal();
@@ -1518,7 +1519,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(serverManager.DebugMode ? "Debug Mode" : "Debug Disabled", debugToggleStyle))
             {
                 bool newDebugMode = !serverManager.DebugMode;
-                serverManager.SetDebugMode(newDebugMode);
+                serverManager.debugMode = newDebugMode;
                 debugMode = newDebugMode;
                 
                 // Update other components that need to know about debug mode
@@ -2842,9 +2843,9 @@ public class ServerWindow : EditorWindow
             serverDirectory = module.path;
             
             // Update ServerManager
-            serverManager.SetModuleName(moduleName);
-            serverManager.SetServerDirectory(serverDirectory);
-            serverManager.SetSelectedModuleIndex(index); // To remember the place in the list
+            serverManager.moduleName = moduleName;
+            serverManager.UpdateServerDirectory(serverDirectory);
+            serverManager.selectedModuleIndex = index; // To remember the place in the list
             
             // Update detection process
             if (detectionProcess != null)
