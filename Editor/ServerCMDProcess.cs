@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Runs the local wsl server installation processes and methods ///
 
@@ -17,7 +18,6 @@ public class ServerCMDProcess
     
     // Settings
     private string userName = "";
-    private const string PrefsKeyPrefix = "CCCP_";
     
     // Path constants for WSL
     public const string WslPidPath = "/tmp/spacetime.pid";
@@ -44,9 +44,9 @@ public class ServerCMDProcess
         this.logCallback = logCallback;
         ServerCMDProcess.debugMode = debugMode;
         
-        // Load username from EditorPrefs
-        this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Initialized with username from EditorPrefs: {this.userName}");
+        // Load username from Settings
+        CCCPSettingsAdapter.GetUserName();
+        if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Initialized with username from Settings: {this.userName}");
     }
     
     #region Installation
@@ -203,11 +203,11 @@ public class ServerCMDProcess
     // Validates that a debian username is configured for WSL operations. Automatically suppresses errors on first run (before prerequisites checked).
     private bool ValidateUserName(bool silentMode, out bool shouldSuppressErrors)
     {
-        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        userName = CCCPSettingsAdapter.GetUserName();
         if (string.IsNullOrEmpty(userName))
         {
             // Auto-enable silent mode on first run (when prerequisites haven't been checked yet)
-            bool isFirstRun = !EditorPrefs.GetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", false);
+            bool isFirstRun = !CCCPSettingsAdapter.GetWslPrerequisitesChecked();
             shouldSuppressErrors = silentMode || isFirstRun;
             
             if (!shouldSuppressErrors)
@@ -472,8 +472,8 @@ public class ServerCMDProcess
     {
         logCallback("Checking pre-requisites...", 0);
         
-        // Get username from EditorPrefs
-        string userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
+        // Get username from Settings
+        string userName = CCCPSettingsAdapter.GetUserName();
         if (string.IsNullOrEmpty(userName)) {
             userName = "root"; // Fallback to root if no username set
         }
@@ -604,8 +604,8 @@ public class ServerCMDProcess
         try
         {   
             // Check if SpacetimeDB service is enabled first
-            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
-            
+            bool hasSpacetimeDBService = CCCPSettingsAdapter.GetHasSpacetimeDBService();
+
             if (hasSpacetimeDBService)
             {
                 // Use service-based stopping
@@ -1126,9 +1126,9 @@ public class ServerCMDProcess
         try
         {
             // Check if SpacetimeDB service is available
-            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
-            bool hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
-            
+            bool hasSpacetimeDBService = CCCPSettingsAdapter.GetHasSpacetimeDBService();
+            bool hasSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasSpacetimeDBLogsService();
+
             if (!hasSpacetimeDBService)
             {
                 logCallback("SpacetimeDB service is not configured. Cannot start services.", -1);
@@ -1183,8 +1183,8 @@ public class ServerCMDProcess
         try
         {
             // Check if SpacetimeDB service is available
-            bool hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
-            bool hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
+            bool hasSpacetimeDBService = CCCPSettingsAdapter.GetHasSpacetimeDBService();
+            bool hasSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasSpacetimeDBLogsService();
 
             bool stopSuccess = false;
 

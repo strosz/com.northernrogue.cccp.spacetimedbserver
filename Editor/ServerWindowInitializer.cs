@@ -1,6 +1,7 @@
 using UnityEditor;
+using NorthernRogue.CCCP.Editor.Settings;
 
-// Manages editor states /// Can be moved to ServerWindow?
+// Manages editor states
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -17,7 +18,7 @@ public static class ServerWindowInitializer
     // Stop WSL on editor quit
     private static bool OnEditorWantsToQuit()
     {
-        bool autoCloseWsl = EditorPrefs.GetBool("ServerWindow_AutoCloseWsl", true);
+        bool autoCloseWsl = CCCPSettingsAdapter.GetAutoCloseWsl();
         if (autoCloseWsl)
         {
             if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] AutoCloseWsl is enabled. Attempting to close WSL.");

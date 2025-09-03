@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Processes the backup and restore commands of the local WSL Server ///
 
@@ -425,11 +426,8 @@ public class ServerVersionProcess
     
     private bool ServerIsRunning()
     {
-        // If delegate is configured, use it; otherwise fall back to EditorPrefs
-        if (isServerRunningDelegate != null)
-            return isServerRunningDelegate();
-        
-        return EditorPrefs.GetBool("CCCP_ServerStarted", false);
+        // If delegate is configured, use it
+        return isServerRunningDelegate != null && isServerRunningDelegate();
     }
     
     private void StopServer()
@@ -452,20 +450,20 @@ public class ServerVersionProcess
     
     private bool GetAutoCloseWsl()
     {
-        // If delegate is configured, use it; otherwise fall back to EditorPrefs
+        // If delegate is configured, use it; otherwise fall back to Settings
         if (getAutoCloseWslDelegate != null)
             return getAutoCloseWslDelegate();
             
-        return EditorPrefs.GetBool("CCCP_AutoCloseWsl", true);
+        return CCCPSettingsAdapter.GetAutoCloseWsl();
     }
     
     private void SetAutoCloseWsl(bool value)
     {
-        // If delegate is configured, use it; otherwise set EditorPrefs directly
+        // If delegate is configured, use it; otherwise set Settings directly
         if (setAutoCloseWslDelegate != null)
             setAutoCloseWslDelegate(value);
         else
-            EditorPrefs.SetBool("CCCP_AutoCloseWsl", value);
+            CCCPSettingsAdapter.SetAutoCloseWsl(value);
     }
 
     #endregion

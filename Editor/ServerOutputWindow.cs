@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 using System.Text.RegularExpressions;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Handles and displays the logs from both the SpacetimeDB module and the database ///
 
@@ -12,13 +13,6 @@ namespace NorthernRogue.CCCP.Editor {
 public class ServerOutputWindow : EditorWindow
 {
     public static bool debugMode = false; // Controlled by ServerWindow    
-
-    // Add EditorPrefs keys
-    private const string PrefsKeyPrefix = "CCCP_";
-    private const string PrefsKeyAutoScroll = PrefsKeyPrefix + "AutoScroll";
-    private const string PrefsKeyEchoToConsole = PrefsKeyPrefix + "EchoToConsole";
-    private const string PrefsKeyShowLocalTime = PrefsKeyPrefix + "ShowLocalTime";
-    private const string PrefsKeyLogUpdateFrequency = PrefsKeyPrefix + "LogUpdateFrequency";
 
     // Logs
     private string outputLogFull = ""; // Module logs
@@ -146,12 +140,12 @@ public class ServerOutputWindow : EditorWindow
         // Subscribe to update
         EditorApplication.update += CheckForLogUpdates;
         
-        // Load settings from EditorPrefs
-        autoScroll = EditorPrefs.GetBool(PrefsKeyAutoScroll, true);
-        echoToConsole = EditorPrefs.GetBool(PrefsKeyEchoToConsole, true);
-        showLocalTime = EditorPrefs.GetBool(PrefsKeyShowLocalTime, false);
-        logUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyLogUpdateFrequency, 1f);
-        
+        // Load settings from Settings
+        autoScroll = CCCPSettingsAdapter.GetAutoscroll();
+        echoToConsole = CCCPSettingsAdapter.GetEchoToConsole();
+        showLocalTime = CCCPSettingsAdapter.GetShowLocalTime();
+        logUpdateFrequency = CCCPSettingsAdapter.GetLogUpdateFrequency();
+
         // Apply log update frequency to intervals
         UpdateRefreshIntervals(logUpdateFrequency);
         
@@ -186,7 +180,7 @@ public class ServerOutputWindow : EditorWindow
         }
         
         // Initialize server processes based on mode
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
         {
             InitializeServerCustomProcess();
@@ -378,7 +372,7 @@ public class ServerOutputWindow : EditorWindow
         double currentTime = EditorApplication.timeSinceStartup;
         
         // Load server mode
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         // Check if this might be an SSH log update (faster refresh needed)
         bool isSSHLogUpdate = modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase);
         double currentRefreshInterval = isSSHLogUpdate ? sshRefreshInterval : refreshInterval;
@@ -694,7 +688,7 @@ public class ServerOutputWindow : EditorWindow
                         // Update log size when refresh button is clicked for custom server
                         UpdateLogSizeForCustomServer();
                     }
-                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WslServer)
+                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
                     {
                         serverWindow.ForceWSLLogRefresh();
                         if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered WSL log refresh for WSL server");
@@ -735,7 +729,7 @@ public class ServerOutputWindow : EditorWindow
             formattedLogCache.Clear();
             scrollPosition = Vector2.zero;
             autoScroll = true;
-            EditorPrefs.SetBool(PrefsKeyAutoScroll, autoScroll);
+            CCCPSettingsAdapter.SetAutoscroll(true);
             needsRepaint = true;
         }
 
@@ -751,8 +745,8 @@ public class ServerOutputWindow : EditorWindow
         if (newAutoScroll != autoScroll)
         {
             autoScroll = newAutoScroll;
-            EditorPrefs.SetBool(PrefsKeyAutoScroll, autoScroll);
-            
+            CCCPSettingsAdapter.SetAutoscroll(autoScroll);
+
             if (autoScroll)
             {
                 scrollToBottom = true;
@@ -766,8 +760,8 @@ public class ServerOutputWindow : EditorWindow
         if (newEchoToConsole != echoToConsole)
         {
             echoToConsole = newEchoToConsole;
-            EditorPrefs.SetBool(PrefsKeyEchoToConsole, echoToConsole);
-            
+            CCCPSettingsAdapter.SetEchoToConsole(echoToConsole);
+
             if (echoToConsole)
             {
                 loggedToConsoleModule.Clear();
@@ -781,8 +775,8 @@ public class ServerOutputWindow : EditorWindow
         if (newShowLocalTime != showLocalTime)
         {
             showLocalTime = newShowLocalTime;
-            EditorPrefs.SetBool(PrefsKeyShowLocalTime, showLocalTime);
-            
+            CCCPSettingsAdapter.SetShowLocalTime(showLocalTime);
+
             // Clear the format cache to refresh timestamps
             formattedLogCache.Clear();
             currentLogHash = 0; // Reset hash to force reformatting
@@ -803,8 +797,8 @@ public class ServerOutputWindow : EditorWindow
         if (Math.Abs(newLogUpdateFrequency - logUpdateFrequency) > 0.01f)
         {
             logUpdateFrequency = newLogUpdateFrequency;
-            EditorPrefs.SetFloat(PrefsKeyLogUpdateFrequency, logUpdateFrequency);
-            
+            CCCPSettingsAdapter.SetLogUpdateFrequency(logUpdateFrequency);
+
             // Update the refresh intervals for RefreshOpenWindow rate limiting
             UpdateRefreshIntervals(logUpdateFrequency);
             
@@ -815,7 +809,7 @@ public class ServerOutputWindow : EditorWindow
         }
         
         // Server Log Size label (for Custom Server and WSL Server modes)
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase) || modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
         {
             GUILayout.FlexibleSpace(); // Push the log size label to the right
@@ -1141,7 +1135,7 @@ public class ServerOutputWindow : EditorWindow
         strippedLog = strippedLog.Replace("INFO", "<color=#66CCFF>INFO</color>");
         strippedLog = strippedLog.Replace("DEBUG", "<color=#66CCFF>DEBUG</color>");
 
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
 
         // Also convert any existing formatted timestamps if showing local time
         if (showLocalTime) {
@@ -1391,7 +1385,7 @@ public class ServerOutputWindow : EditorWindow
             
             if (debugMode && (!string.IsNullOrEmpty(moduleLog) || !string.IsNullOrEmpty(databaseLog)))
             {
-                string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+                string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
                 //UnityEngine.Debug.Log($"[ServerOutputWindow] Standalone echo completed for {modeName} mode");
             }
         }
@@ -1497,7 +1491,7 @@ public class ServerOutputWindow : EditorWindow
     private async void UpdateLogSizeForCustomServer()
     {
         // Check if we're in custom server mode
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         if (!modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
         {
             return; // Not custom server mode, skip
@@ -1557,7 +1551,7 @@ public class ServerOutputWindow : EditorWindow
     private async void UpdateLogSizeForWSLServer()
     {
         // Check if we're in WSL server mode
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         if (!modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
         {
             return; // Not WSL server mode, skip

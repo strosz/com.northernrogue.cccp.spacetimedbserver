@@ -6,19 +6,14 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Handles the methods related to managing a custom server for SpacetimeDB ///
 
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerCustomProcess
-{
-    // Constants
-    private const string PrefsKeyPrefix = "CCCP_";
-    
-    // Callback delegate for logging messages
-    private Action<string, int> logCallback;
-    
+{     
     // Debug mode flag
     public static bool debugMode = false;
     
@@ -26,7 +21,6 @@ public class ServerCustomProcess
     private string sshUserName;
     private string customServerUrl;
     private int customServerPort;
-    private string customServerAuthToken;
     private string sshPrivateKeyPath = ""; // Path to the SSH private key file
     
     // SSH connection status
@@ -34,6 +28,9 @@ public class ServerCustomProcess
     
     // Service mode - was selectable before but kept if needed in the future
     private bool serviceMode;
+
+    // Callback delegate for logging messages
+    private Action<string, int> logCallback;
     
     // Session status tracking
     private bool sessionActive = false;
@@ -64,16 +61,16 @@ public class ServerCustomProcess
         ServerCustomProcess.debugMode = debugMode;
     }
     
-    // Automatically load settings from EditorPrefs
+    // Automatically load settings from Settings
     public void LoadSettings()
     {
-        sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
-        sshPrivateKeyPath = EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "");
-        serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", true);
-        
+        sshUserName = CCCPSettingsAdapter.GetSSHUserName();
+        sshPrivateKeyPath = CCCPSettingsAdapter.GetSSHPrivateKeyPath();
+        serviceMode = CCCPSettingsAdapter.GetServiceMode();
+
         // Get server URL for SSH connection (hostname only)
-        string serverUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
-        
+        string serverUrl = CCCPSettingsAdapter.GetCustomServerUrl();
+
         // Extract server address from URL
         if (!string.IsNullOrEmpty(serverUrl))
         {
@@ -92,12 +89,9 @@ public class ServerCustomProcess
         // Use SSH default port 22 instead of the server application port
         customServerPort = 22; // Default SSH port
         
-        // Store the SpacetimeDB server port separately
-        int spacetimeDbPort = EditorPrefs.GetInt(PrefsKeyPrefix + "CustomServerPort", 3000);
-        
-        // Get auth token
-        customServerAuthToken = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerAuthToken", "");
-        
+        // Get Custom Server port
+        int spacetimeDbPort = CCCPSettingsAdapter.GetCustomServerPort();
+
         if (debugMode) Log($"SSH settings loaded: User={sshUserName}, Host={customServerUrl}:{customServerPort}, KeyPath={sshPrivateKeyPath} (SpacetimeDB on port {spacetimeDbPort})", 0);
     }
     
@@ -535,7 +529,7 @@ public class ServerCustomProcess
                 {
                     Log("SpacetimeDB service started successfully!", 1);
 
-                    if (EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false))
+                    if (CCCPSettingsAdapter.GetHasCustomSpacetimeDBLogsService())
                     {
                         // Start the custom logs service if configured
                         if (debugMode) Log("Starting custom SpacetimeDB logs service...", 0);
@@ -606,7 +600,7 @@ public class ServerCustomProcess
             } else {
                 if (debugMode) Log("SpacetimeDB service stopped successfully on remote machine.", 1);
 
-                if (EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false))
+                if (CCCPSettingsAdapter.GetHasCustomSpacetimeDBLogsService())
                 {
                     // Stop the custom logs service if configured
                     if (debugMode) Log("Stopping custom SpacetimeDB logs service...", 0);
@@ -739,11 +733,11 @@ public class ServerCustomProcess
 
         if (!string.IsNullOrEmpty(version))
         {
-            // Save to EditorPrefs
-            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", version);
+            // Save to Settings
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionCustom(version);
 
             // Check if update is available by comparing with the latest version
-            string latestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+            string latestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
             if (!string.IsNullOrEmpty(latestVersion) && version != latestVersion)
             {
                 Log($"SpacetimeDB update available for custom server! Click on the update button in Commands. Current version: {version} and latest version: {latestVersion}", 1);
@@ -760,7 +754,7 @@ public class ServerCustomProcess
     public void SetPrivateKeyPath(string path)
     {
         sshPrivateKeyPath = path;
-        EditorPrefs.SetString(PrefsKeyPrefix + "SSHPrivateKeyPath", path);
+        CCCPSettingsAdapter.SetSSHPrivateKeyPath(path);
         
         // Clear caches when changing key
         commandCache.Clear();

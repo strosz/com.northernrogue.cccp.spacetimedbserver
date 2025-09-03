@@ -11,6 +11,7 @@ using Newtonsoft.Json.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Net;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // A basic database interface for managing the SQL of the server and exporting/importing it ///
 
@@ -20,7 +21,7 @@ public class ServerDataWindow : EditorWindow
 {
     public static bool debugMode = false;
 
-    // Configuration (Loaded from EditorPrefs via ServerWindow keys)
+    // Configuration
     private string serverURL = "http://127.0.0.1:3000/v1";
     private string moduleName = "";
     private string authToken = ""; // Required to be authenticated to access all of the SQL API
@@ -47,7 +48,6 @@ public class ServerDataWindow : EditorWindow
 
     // Parent window reference to get settings
     private ServerWindow parentServerWindow;
-    private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix
 
     // --- HttpClient Instance ---
     // Use a static instance for efficiency (reuse connections)
@@ -81,8 +81,6 @@ public class ServerDataWindow : EditorWindow
     private bool stylesInitialized = false;
 
     private Dictionary<string, Dictionary<string, float>> tableColumnWidths = new Dictionary<string, Dictionary<string, float>>();
-    private const string ColumnWidthPrefsKey = "ServerDataWindow_ColumnWidths";
-    private const string LastSelectedTableKey = "ServerDataWindow_LastSelectedTable";
     private const float MinColumnWidth = 30f;
     private float startDragX;
     private int draggingColumnIndex = -1;
@@ -105,7 +103,7 @@ public class ServerDataWindow : EditorWindow
     {
         // Attempt to find the parent window to access its settings
         FindParentWindow();
-        LoadSettings(); // Load settings from EditorPrefs
+        LoadSettings();
         
         // Load saved column widths
         LoadColumnWidths();
@@ -131,7 +129,7 @@ public class ServerDataWindow : EditorWindow
 
     private void LoadColumnWidths()
     {
-        string savedWidths = EditorPrefs.GetString(ColumnWidthPrefsKey, "");
+        string savedWidths = CCCPSettingsAdapter.GetColumnWidths();
         if (!string.IsNullOrEmpty(savedWidths))
         {
             try
@@ -151,7 +149,7 @@ public class ServerDataWindow : EditorWindow
         try
         {
             string serializedWidths = JsonConvert.SerializeObject(tableColumnWidths);
-            EditorPrefs.SetString(ColumnWidthPrefsKey, serializedWidths);
+            CCCPSettingsAdapter.SetColumnWidths(serializedWidths);
         }
         catch (Exception ex)
         {
@@ -206,19 +204,19 @@ public class ServerDataWindow : EditorWindow
     {
         // Load settings potentially set by ServerWindow
         // Provide defaults or fetch them dynamically if needed
-        string rawServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
+        string rawServerUrl = CCCPSettingsAdapter.GetServerUrl();
         serverURL = GetApiBaseUrl(rawServerUrl); // Process URL to ensure it has /v1
-        moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", ""); // Assuming ModuleName is DB Name
-        authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", ""); // Assuming ServerWindow stores a token
-        backupDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "BackupDirectory", "");
+        moduleName = CCCPSettingsAdapter.GetModuleName();
+        authToken = CCCPSettingsAdapter.GetAuthToken();
+        backupDirectory = CCCPSettingsAdapter.GetBackupDirectory();
 
-        string rawMaincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        string rawMaincloudUrl = CCCPSettingsAdapter.GetMaincloudUrl();
         maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
 
-        string rawCustomServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+        string rawCustomServerUrl = CCCPSettingsAdapter.GetCustomServerUrl();
         customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
-        
-        serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
+
+        serverMode = CCCPSettingsAdapter.GetServerMode().ToString();
 
         if (string.IsNullOrEmpty(moduleName))
         {
@@ -256,7 +254,7 @@ public class ServerDataWindow : EditorWindow
         EditorGUILayout.Space(5);
         DrawMainContent();
         EditorGUILayout.Space(5);
-        DrawStatusMessage(); // Moved to bottom
+        DrawStatusMessage();
     }
 
     private void DrawToolbar()
@@ -377,8 +375,8 @@ public class ServerDataWindow : EditorWindow
             if (GUILayout.Button(tableName, buttonStyle, GUILayout.ExpandWidth(true)))
             {
                 tableToSelect = tableName;
-                // Save selected table to EditorPrefs
-                EditorPrefs.SetString(LastSelectedTableKey, tableName);
+                // Save selected table to Settings
+                CCCPSettingsAdapter.SetLastSelectedTable(tableName);
             }
             
             // Add clear button with the custom style
@@ -685,7 +683,7 @@ public class ServerDataWindow : EditorWindow
                 if (showServerReachableInformation) // Enabled if schema couldn't be found
                 {
                     EditorGUILayout.HelpBox("Couldn't fetch database schema.\n" +
-                    "Check that your server URL is correct, your module is published and the server is running.", MessageType.Info);
+                    "Check that your server URL is correct, your module is selected/published and the server is running.", MessageType.Info);
                 }
             }
             
@@ -810,7 +808,7 @@ public class ServerDataWindow : EditorWindow
         Repaint();
         
         // Use GetApiBaseUrl to ensure URL has /v1
-        if (serverMode == "WslServer")
+        if (serverMode == "WSLServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
@@ -1044,7 +1042,7 @@ public class ServerDataWindow : EditorWindow
         // --- 1. Set Authentication Header ---
         // If you need dynamic authentication (e.g., username/password -> token)
         // Add a step here to call POST /v1/identity
-        // For now, we assume authToken is provided via EditorPrefs or not needed.
+        // For now, we assume authToken is provided via Settings or not needed.
         // Ensure Auth header is set on HttpClient if token exists
 
         // --- 2. Get Schema to find table names (Using HttpClient) ---
@@ -1055,7 +1053,7 @@ public class ServerDataWindow : EditorWindow
         string tokenSnippet = string.IsNullOrEmpty(authToken) ? "None" : authToken.Substring(0, Math.Min(authToken.Length, 5)) + "...";
         // if (debugMode) Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
 
-        if (serverMode == "WslServer")
+        if (serverMode == "WSLServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
@@ -1272,7 +1270,7 @@ public class ServerDataWindow : EditorWindow
         }
 
         // Check if we have a previously selected table saved
-        string lastSelectedTable = EditorPrefs.GetString(LastSelectedTableKey, "");
+        string lastSelectedTable = CCCPSettingsAdapter.GetLastSelectedTable();
         
         if (tableNames.Any())
         {
@@ -2432,7 +2430,7 @@ public class ServerDataWindow : EditorWindow
         
         try
         {
-            if (serverMode == "WslServer")
+            if (serverMode == "WSLServer")
                 urlBase = GetApiBaseUrl(serverURL);
             else if (serverMode == "CustomServer")
                 urlBase = GetApiBaseUrl(customServerUrl);
@@ -2598,7 +2596,7 @@ public class ServerDataWindow : EditorWindow
     private IEnumerator ImportDataCoroutine(List<(string tableName, string jsonData)> tablesToImport, Action<bool, string> callback)
     {
         // Reuse HttpClient and base URL logic from Refresh
-        if (serverMode == "WslServer")
+        if (serverMode == "WSLServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);

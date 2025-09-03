@@ -6,6 +6,7 @@ using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using NorthernRogue.CCCP.Editor.Settings;
+using ModuleInfo = NorthernRogue.CCCP.Editor.Settings.ModuleInfo;
 
 // The main Comos Cove Control Panel that controls the server and launches all features ///
 
@@ -22,75 +23,75 @@ public class ServerWindow : EditorWindow
     private ServerDetectionProcess detectionProcess;
     
     // Server mode
-    private ServerMode serverMode = ServerMode.WslServer;
+    private ServerMode serverMode = ServerMode.WSLServer;
 
-    // Pre-requisites WSL
-    private bool hasWSL = false;
-    private bool hasDebian = false;
-    private bool hasDebianTrixie = false;
-    private bool hasCurl = false;
-    private bool hasSpacetimeDBServer = false;
-    private bool hasSpacetimeDBPath = false;
-    private bool hasSpacetimeDBService = false;
-    private bool hasSpacetimeDBLogsService = false;
-    private bool hasRust = false;
-    private bool hasNETSDK = false;
-    private bool hasBinaryen = false;
-    private bool hasGit = false;
-    private bool wslPrerequisitesChecked = false;
-    private bool initializedFirstModule = false;
-    private bool publishFirstModule = false;
-    private bool hasAllPrerequisites = false;
+    // Pre-requisites WSL - Direct property access to settings
+    private bool hasWSL { get => CCCPSettingsAdapter.GetHasWSL(); set => CCCPSettingsAdapter.SetHasWSL(value); }
+    private bool hasDebian { get => CCCPSettingsAdapter.GetHasDebian(); set => CCCPSettingsAdapter.SetHasDebian(value); }
+    private bool hasDebianTrixie { get => CCCPSettingsAdapter.GetHasDebianTrixie(); set => CCCPSettingsAdapter.SetHasDebianTrixie(value); }
+    private bool hasCurl { get => CCCPSettingsAdapter.GetHasCurl(); set => CCCPSettingsAdapter.SetHasCurl(value); }
+    private bool hasSpacetimeDBServer { get => CCCPSettingsAdapter.GetHasSpacetimeDBServer(); set => CCCPSettingsAdapter.SetHasSpacetimeDBServer(value); }
+    private bool hasSpacetimeDBPath { get => CCCPSettingsAdapter.GetHasSpacetimeDBPath(); set => CCCPSettingsAdapter.SetHasSpacetimeDBPath(value); }
+    private bool hasSpacetimeDBService { get => CCCPSettingsAdapter.GetHasSpacetimeDBService(); set => CCCPSettingsAdapter.SetHasSpacetimeDBService(value); }
+    private bool hasSpacetimeDBLogsService { get => CCCPSettingsAdapter.GetHasSpacetimeDBLogsService(); set => CCCPSettingsAdapter.SetHasSpacetimeDBLogsService(value); }
+    private bool hasRust { get => CCCPSettingsAdapter.GetHasRust(); set => CCCPSettingsAdapter.SetHasRust(value); }
+    private bool hasNETSDK { get => CCCPSettingsAdapter.GetHasNETSDK(); set => CCCPSettingsAdapter.SetHasNETSDK(value); }
+    private bool hasBinaryen { get => CCCPSettingsAdapter.GetHasBinaryen(); set => CCCPSettingsAdapter.SetHasBinaryen(value); }
+    private bool hasGit { get => CCCPSettingsAdapter.GetHasGit(); set => CCCPSettingsAdapter.SetHasGit(value); }
+    private bool wslPrerequisitesChecked { get => CCCPSettingsAdapter.GetWslPrerequisitesChecked(); set => CCCPSettingsAdapter.SetWslPrerequisitesChecked(value); }
+    private bool initializedFirstModule { get => CCCPSettingsAdapter.GetInitializedFirstModule(); set => CCCPSettingsAdapter.SetInitializedFirstModule(value); }
+    private bool publishFirstModule { get => CCCPSettingsAdapter.GetPublishFirstModule(); set => CCCPSettingsAdapter.SetPublishFirstModule(value); }
+    private bool hasAllPrerequisites { get => CCCPSettingsAdapter.GetHasAllPrerequisites(); set => CCCPSettingsAdapter.SetHasAllPrerequisites(value); }
 
-    private string userName = "";
-    private string backupDirectory = "";
-    private string serverDirectory = "";
-    private string unityLang = "rust";
-    private string clientDirectory = "";
-    private string serverLang = "rust";
-    private string moduleName = "";
-    private string serverUrl = "";
-    private int serverPort = 3000;
-    private string authToken = "";
+    // Server Configuration - Direct property access to settings
+    private string userName { get => CCCPSettingsAdapter.GetUserName(); set => CCCPSettingsAdapter.SetUserName(value); }
+    private string backupDirectory { get => CCCPSettingsAdapter.GetBackupDirectory(); set => CCCPSettingsAdapter.SetBackupDirectory(value); }
+    private string serverDirectory { get => CCCPSettingsAdapter.GetServerDirectory(); set => CCCPSettingsAdapter.SetServerDirectory(value); }
+    private string unityLang { get => CCCPSettingsAdapter.GetUnityLang(); set => CCCPSettingsAdapter.SetUnityLang(value); }
+    private string clientDirectory { get => CCCPSettingsAdapter.GetClientDirectory(); set => CCCPSettingsAdapter.SetClientDirectory(value); }
+    private string serverLang { get => CCCPSettingsAdapter.GetServerLang(); set => CCCPSettingsAdapter.SetServerLang(value); }
+    private string moduleName { get => CCCPSettingsAdapter.GetModuleName(); set => CCCPSettingsAdapter.SetModuleName(value); }
+    private string serverUrl { get => CCCPSettingsAdapter.GetServerUrl(); set => CCCPSettingsAdapter.SetServerUrl(value); }
+    private int serverPort { get => CCCPSettingsAdapter.GetServerPort(); set => CCCPSettingsAdapter.SetServerPort(value); }
+    private string authToken { get => CCCPSettingsAdapter.GetAuthToken(); set => CCCPSettingsAdapter.SetAuthToken(value); }
 
-    // Pre-requisites Custom Server
-    private string sshUserName = "";
-    private string customServerUrl = "";
-    private int customServerPort = 0;
-    private string customServerAuthToken = "";
-    private string sshPrivateKeyPath = ""; // Added SSH private key path variable
+    // Pre-requisites Custom Server - Direct property access to settings
+    private string sshUserName { get => CCCPSettingsAdapter.GetSSHUserName(); set => CCCPSettingsAdapter.SetSSHUserName(value); }
+    private string customServerUrl { get => CCCPSettingsAdapter.GetCustomServerUrl(); set => CCCPSettingsAdapter.SetCustomServerUrl(value); }
+    private int customServerPort { get => CCCPSettingsAdapter.GetCustomServerPort(); set => CCCPSettingsAdapter.SetCustomServerPort(value); }
+    private string customServerAuthToken { get => CCCPSettingsAdapter.GetCustomServerAuthToken(); set => CCCPSettingsAdapter.SetCustomServerAuthToken(value); }
+    private string sshPrivateKeyPath { get => CCCPSettingsAdapter.GetSSHPrivateKeyPath(); set => CCCPSettingsAdapter.SetSSHPrivateKeyPath(value); }
     private bool isConnected;
 
-    // Pre-requisites Maincloud Server
-    //private string maincloudUrl = "maincloud.spacetimedb.com";
-    private string maincloudAuthToken = "";
+    // Pre-requisites Maincloud Server - Direct property access to settings
+    private string maincloudAuthToken { get => CCCPSettingsAdapter.GetMaincloudAuthToken(); set => CCCPSettingsAdapter.SetMaincloudAuthToken(value); }
    
     // Server status
     private double lastCheckTime = 0;
     private const double checkInterval = 5.0; // Master interval for status checks
 
-    // Server Settings
-    public bool debugMode = false;
-    private bool hideWarnings = false;
-    private bool detectServerChanges = false;
-    private bool serverChangesDetected = false;
-    private bool autoPublishMode = false;
-    private bool publishAndGenerateMode = false;
-    private bool silentMode = false;
-    private bool autoCloseWsl = false;
-    private bool clearModuleLogAtStart = true;
-    private bool clearDatabaseLogAtStart = true;
+    // Server Settings - Direct property access to settings
+    public bool debugMode { get => CCCPSettingsAdapter.GetDebugMode(); set => CCCPSettingsAdapter.SetDebugMode(value); }
+    private bool hideWarnings { get => CCCPSettingsAdapter.GetHideWarnings(); set => CCCPSettingsAdapter.SetHideWarnings(value); }
+    private bool detectServerChanges { get => CCCPSettingsAdapter.GetDetectServerChanges(); set => CCCPSettingsAdapter.SetDetectServerChanges(value); }
+    private bool serverChangesDetected { get => CCCPSettingsAdapter.GetServerChangesDetected(); set => CCCPSettingsAdapter.SetServerChangesDetected(value); }
+    private bool autoPublishMode { get => CCCPSettingsAdapter.GetAutoPublishMode(); set => CCCPSettingsAdapter.SetAutoPublishMode(value); }
+    private bool publishAndGenerateMode { get => CCCPSettingsAdapter.GetPublishAndGenerateMode(); set => CCCPSettingsAdapter.SetPublishAndGenerateMode(value); }
+    private bool silentMode { get => CCCPSettingsAdapter.GetSilentMode(); set => CCCPSettingsAdapter.SetSilentMode(value); }
+    private bool autoCloseWsl { get => CCCPSettingsAdapter.GetAutoCloseWsl(); set => CCCPSettingsAdapter.SetAutoCloseWsl(value); }
+    private bool clearModuleLogAtStart { get => CCCPSettingsAdapter.GetClearModuleLogAtStart(); set => CCCPSettingsAdapter.SetClearModuleLogAtStart(value); }
+    private bool clearDatabaseLogAtStart { get => CCCPSettingsAdapter.GetClearDatabaseLogAtStart(); set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); }
 
-    // Update SpacetimeDB
-    private string spacetimeDBCurrentVersion = "";
-    private string spacetimeDBCurrentVersionCustom = "";
-    private string spacetimeDBLatestVersion = "";
+    // Update SpacetimeDB - Direct property access to settings
+    private string spacetimeDBCurrentVersion { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(value); }
+    private string spacetimeDBCurrentVersionCustom { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionCustom(value); }
+    private string spacetimeDBLatestVersion { get => CCCPSettingsAdapter.GetSpacetimeDBLatestVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(value); }
 
-    // UI
+    // UI - Direct property access to settings for persistent UI state
     private Vector2 scrollPosition;
     private string commandOutputLog = "";
-    private bool autoscroll = true;
-    private bool colorLogo = false;
+    private bool autoscroll { get => CCCPSettingsAdapter.GetAutoscroll(); set => CCCPSettingsAdapter.SetAutoscroll(value); }
+    private bool colorLogo { get => CCCPSettingsAdapter.GetColorLogo(); set => CCCPSettingsAdapter.SetColorLogo(value); }
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
@@ -112,9 +113,8 @@ public class ServerWindow : EditorWindow
     private bool runReducerWindowOpen = false;
     private Color windowToggleColor = new Color(0.6f, 1.6f, 0.6f);
     
-    // Session state key for domain reload
+    // Session state key for domain reload - Check if yet needed
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
-    private const string PrefsKeyPrefix = "CCCP_";
 
     // Track WSL status
     private bool isWslRunning = false;
@@ -133,39 +133,16 @@ public class ServerWindow : EditorWindow
     
     public enum ServerMode
     {
-        WslServer,
+        WSLServer,
         CustomServer,
         MaincloudServer,
     }
 
-    [System.Serializable]
-    public struct ModuleInfo
-    {
-        public string name;
-        public string path;
-        
-        public ModuleInfo(string name, string path)
-        {
-            this.name = name;
-            this.path = path;
-        }
-    }
+    // Saved modules list - Direct property access to settings
+    private List<ModuleInfo> savedModules { get => CCCPSettingsAdapter.GetSavedModules(); set => CCCPSettingsAdapter.SetSavedModules(value); }
+    private int selectedModuleIndex { get => CCCPSettingsAdapter.GetSelectedModuleIndex(); set => CCCPSettingsAdapter.SetSelectedModuleIndex(value); }
+    private string newModuleNameInput = ""; // Input field for new module name (UI state)
 
-    // Saved modules list
-    private List<ModuleInfo> savedModules = new List<ModuleInfo>();
-    private int selectedModuleIndex = -1;
-    private string newModuleNameInput = ""; // Input field for new module name
-
-    [System.Serializable]
-    private class SerializableList<T>
-    {
-        public List<T> items;
-        
-        public SerializableList(List<T> items)
-        {
-            this.items = items;
-        }
-    }
     #region OnGUI
 
     private void OnGUI()
@@ -206,7 +183,7 @@ public class ServerWindow : EditorWindow
             subTitleStyle.alignment = TextAnchor.MiddleCenter;
 
             //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
-            if (serverMode == ServerMode.WslServer)
+            if (serverMode == ServerMode.WSLServer)
                 EditorGUILayout.LabelField("WSL Server Mode", subTitleStyle);
             else if (serverMode == ServerMode.CustomServer)
                 EditorGUILayout.LabelField("Custom Server Mode", subTitleStyle);
@@ -228,7 +205,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion), titleControlStyle))
             {
                 colorLogo = !colorLogo;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ColorLogo", colorLogo);
+                CCCPSettingsAdapter.SetColorLogo(colorLogo);
             }
             GUILayout.EndHorizontal();
         }
@@ -270,7 +247,7 @@ public class ServerWindow : EditorWindow
         if (GUILayout.Button(new GUIContent("autoscroll"), autoscrollStyle, GUILayout.Width(75)))
         {
             autoscroll = !autoscroll;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+            CCCPSettingsAdapter.SetAutoscroll(autoscroll);
             
             // If autoscroll was just enabled, scroll to bottom immediately
             if (autoscroll)
@@ -423,16 +400,8 @@ public class ServerWindow : EditorWindow
         // Initialize ServerManager with logging callback
         serverManager = new ServerManager(LogMessage, Repaint);
 
-        // Load server mode from EditorPrefs
-        LoadServerModeFromPrefs();            
-        // Sync local fields from ServerManager's values (for UI display only)
-        SyncFieldsFromServerManager();
-        // Load saved modules list
-        LoadModulesList();
-
-        // Load UI preferences
-        autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", true);
-        colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", false);
+        // Load server mode from Settings
+        LoadServerModeFromSettings();
 
         // Reset CCCP update dismiss state on enable
         cccpUpdateDismissed = false;
@@ -465,7 +434,7 @@ public class ServerWindow : EditorWindow
 
         // Add this section near the end of OnEnable
         // Perform an immediate WSL status check if in WSL mode
-        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
         {
             EditorApplication.delayCall += async () =>
             {
@@ -481,69 +450,6 @@ public class ServerWindow : EditorWindow
                 }
             };
         }
-    }
-    
-    private void SyncFieldsFromServerManager()
-    {
-        // Copy values from ServerManager to local fields for UI display
-        hasWSL = serverManager.HasWSL;
-        hasDebian = serverManager.HasDebian;
-        hasDebianTrixie = serverManager.HasDebianTrixie;
-        hasCurl = serverManager.HasCurl;
-        hasSpacetimeDBServer = serverManager.HasSpacetimeDBServer;
-        hasSpacetimeDBPath = serverManager.HasSpacetimeDBPath;
-        hasSpacetimeDBService = serverManager.HasSpacetimeDBService;
-        hasSpacetimeDBLogsService = serverManager.HasSpacetimeDBLogsService;
-        hasRust = serverManager.HasRust;
-        hasNETSDK = serverManager.HasNETSDK;
-        hasBinaryen = serverManager.HasBinaryen;
-        hasGit = serverManager.HasGit;
-        
-        initializedFirstModule = serverManager.InitializedFirstModule;
-        publishFirstModule = serverManager.PublishFirstModule;
-        hasAllPrerequisites = serverManager.HasAllPrerequisites;
-        
-        wslPrerequisitesChecked = serverManager.WslPrerequisitesChecked;
-        userName = serverManager.UserName;
-        serverUrl = serverManager.ServerUrl;
-        serverPort = serverManager.ServerPort;
-        authToken = serverManager.AuthToken;
-
-        backupDirectory = serverManager.BackupDirectory;
-        serverDirectory = serverManager.ServerDirectory;
-        serverLang = serverManager.ServerLang;
-        clientDirectory = serverManager.ClientDirectory;
-        unityLang = serverManager.UnityLang;
-        moduleName = serverManager.ModuleName;
-        selectedModuleIndex = serverManager.SelectedModuleIndex;
-
-        sshUserName = serverManager.SSHUserName;
-        sshPrivateKeyPath = serverManager.SSHPrivateKeyPath;
-        customServerUrl = serverManager.CustomServerUrl;
-        customServerPort = serverManager.CustomServerPort;
-        customServerAuthToken = serverManager.CustomServerAuthToken;
-
-        hideWarnings = serverManager.HideWarnings;
-        detectServerChanges = serverManager.DetectServerChanges;
-        autoPublishMode = serverManager.AutoPublishMode;
-        publishAndGenerateMode = serverManager.PublishAndGenerateMode;
-        silentMode = serverManager.SilentMode;
-        debugMode = serverManager.DebugMode;
-        clearModuleLogAtStart = serverManager.ClearModuleLogAtStart;
-        clearDatabaseLogAtStart = serverManager.ClearDatabaseLogAtStart;
-        autoCloseWsl = serverManager.AutoCloseWsl;
-        
-        serverMode = (ServerMode)serverManager.CurrentServerMode;
-        serverChangesDetected = serverManager.ServerChangesDetected;
-
-        spacetimeDBCurrentVersion = serverManager.spacetimeDBCurrentVersion;
-        spacetimeDBCurrentVersionCustom = serverManager.spacetimeDBCurrentVersionCustom;
-        spacetimeDBLatestVersion = serverManager.spacetimeDBLatestVersion;
-
-        isWslRunning = serverManager.IsWslRunning;
-        publishing = serverManager.Publishing;
-
-        maincloudAuthToken = serverManager.MaincloudAuthToken;
     }
 
     private async void EditorUpdateHandler()
@@ -594,8 +500,12 @@ public class ServerWindow : EditorWindow
             // Only update UI if the operation wasn't cancelled
             if (!token.IsCancellationRequested)
             {
-                // Update local state for UI display
-                serverChangesDetected = serverManager.ServerChangesDetected;
+                // Update local state for UI display - only update if value actually changed
+                bool newServerChangesDetected = serverManager.ServerChangesDetected;
+                if (serverChangesDetected != newServerChangesDetected)
+                {
+                    serverChangesDetected = newServerChangesDetected;
+                }
                 isWslRunning = serverManager.IsWslRunning;
             }
         }
@@ -619,6 +529,9 @@ public class ServerWindow : EditorWindow
         // Cleanup event handlers
         EditorApplication.update -= EditorUpdateHandler;
         EditorApplication.focusChanged -= OnFocusChanged;
+        
+        // Force save any pending UI settings changes
+        CCCPSettingsAdapter.ForceUISettingsSave();
         
         // Cleanup cancellation token source
         if (statusCheckCTS != null)
@@ -648,9 +561,6 @@ public class ServerWindow : EditorWindow
                 //UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
             }
         }
-
-        // Sync UI updates that doesn't need to refresh often
-        SyncFieldsFromServerManager();
     }
     #endregion
     
@@ -670,10 +580,10 @@ public class ServerWindow : EditorWindow
             prerequisitesTitle = "Pre-Requisites (Check Needed)";
         }
 
-        bool previousShowPrerequisites = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", false);
         // Pre Requisites foldout state
+        bool previousShowPrerequisites = CCCPSettingsAdapter.GetShowPrerequisites();
         bool showPrerequisites = EditorGUILayout.Foldout(previousShowPrerequisites, prerequisitesTitle, true);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", showPrerequisites);
+        CCCPSettingsAdapter.SetShowPrerequisites(showPrerequisites);
 
         // Trigger refresh when foldout state changes
         if (showPrerequisites != previousShowPrerequisites)
@@ -703,7 +613,7 @@ public class ServerWindow : EditorWindow
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
-            if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WslServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WSLServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
                 {
@@ -713,19 +623,19 @@ public class ServerWindow : EditorWindow
                         serverManager.StopMaincloudLog();
                         if (debugMode) LogMessage("Stopped Maincloud log process before mode switch", 0);
 
-                        serverMode = ServerMode.WslServer;
+                        serverMode = ServerMode.WSLServer;
                         UpdateServerModeState();
                     }
                 } else // If server is not started or in Custom mode, just switch to WSL
                 {
-                    serverMode = ServerMode.WslServer;
+                    serverMode = ServerMode.WSLServer;
                     UpdateServerModeState();
                 }
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted && serverMode == ServerMode.WslServer)
+                if (serverManager.serverStarted && serverMode == ServerMode.WSLServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
@@ -748,7 +658,7 @@ public class ServerWindow : EditorWindow
             string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted && serverMode == ServerMode.WslServer)
+                if (serverManager.serverStarted && serverMode == ServerMode.WSLServer)
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Local server and change the server mode to Maincloud server?","OK","Cancel");
                     if (modeChange)
@@ -803,7 +713,7 @@ public class ServerWindow : EditorWindow
             if (newunityLangSelectedIndex != unityLangSelectedIndex)
             {
                 unityLang = unityLangValues[newunityLangSelectedIndex];
-                serverManager.unityLang = unityLang;
+                CCCPSettingsAdapter.SetUnityLang(unityLang);
                 LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
             }
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
@@ -822,7 +732,7 @@ public class ServerWindow : EditorWindow
                 if (!string.IsNullOrEmpty(path))
                 {
                     clientDirectory = path;
-                    serverManager.clientDirectory = clientDirectory;
+                    CCCPSettingsAdapter.SetClientDirectory(clientDirectory);
                     LogMessage($"Client path set to: {clientDirectory}", 1);
                 }
             }
@@ -844,7 +754,7 @@ public class ServerWindow : EditorWindow
             if (newServerLangSelectedIndex != serverLangSelectedIndex)
             {
                 serverLang = serverLangValues[newServerLangSelectedIndex];
-                serverManager.serverLang = serverLang;
+                CCCPSettingsAdapter.SetServerLang(serverLang);
                 LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
             }
             GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
@@ -857,7 +767,8 @@ public class ServerWindow : EditorWindow
             "Name: The name of your existing SpacetimeDB module you used when you created the module,\n"+
             "OR the name you want your SpacetimeDB module to have when initializing a new one.\n\n"+
             "Path: Directory of where Cargo.toml is located or to be created at.\n"+
-            "Note: Create a new empty folder if the module has not been created yet.";            EditorGUILayout.LabelField(new GUIContent("Module New Entry:", moduleSettingsTooltip), GUILayout.Width(110));
+            "Note: Create a new empty folder if the module has not been created yet.";            
+            EditorGUILayout.LabelField(new GUIContent("Module New Entry:", moduleSettingsTooltip), GUILayout.Width(110));
             newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput, GUILayout.Width(100));
             string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
             if (GUILayout.Button(new GUIContent("Add", serverDirButtonTooltip), GUILayout.Width(47), GUILayout.Height(20)))
@@ -866,7 +777,7 @@ public class ServerWindow : EditorWindow
                 if (!string.IsNullOrEmpty(path))
                 {
                     serverDirectory = path;
-                    serverManager.UpdateServerDirectory(serverDirectory);
+                    serverManager.UpdateServerDetectionDirectory(serverDirectory);
 
                     // Update the detection process with the new directory
                     if (detectionProcess != null)
@@ -1005,7 +916,7 @@ public class ServerWindow : EditorWindow
             #endregion
 
             #region WSL Mode
-            if (serverMode == ServerMode.WslServer)
+            if (serverMode == ServerMode.WSLServer)
             {
                 // WSL Settings
                 GUILayout.Label("WSL Server Settings", EditorStyles.centeredGreyMiniLabel);
@@ -1024,7 +935,7 @@ public class ServerWindow : EditorWindow
                     if (!string.IsNullOrEmpty(path))
                     {
                         backupDirectory = path;
-                        serverManager.backupDirectory = backupDirectory;
+                        CCCPSettingsAdapter.SetBackupDirectory(backupDirectory);
                         LogMessage($"Backup directory set to: {backupDirectory}", 1);
                     }
                 }
@@ -1058,7 +969,7 @@ public class ServerWindow : EditorWindow
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
-                    serverManager.serverUrl = serverUrl;
+                    CCCPSettingsAdapter.SetServerUrl(serverUrl);
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(serverUrl);
                     if (extractedPort > 0) // If a valid port is found
@@ -1066,7 +977,7 @@ public class ServerWindow : EditorWindow
                         if (extractedPort != serverPort) // If the port is different from the current customServerPort
                         {
                             serverPort = extractedPort;
-                            serverManager.serverPort = serverPort;
+                            CCCPSettingsAdapter.SetServerPort(serverPort);
 
                             if (debugMode) LogMessage($"Port extracted from URL: {serverPort}", 0);
                         }
@@ -1083,7 +994,7 @@ public class ServerWindow : EditorWindow
                 
                 // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "AuthToken",
+                string tokenTooltip = GetAuthTokenTooltip(AuthTokenType.WSL,
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
@@ -1091,7 +1002,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != authToken)
                 {
                     authToken = newAuthToken;
-                    serverManager.authToken = authToken;
+                    CCCPSettingsAdapter.SetAuthToken(authToken);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(authToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1155,7 +1066,7 @@ public class ServerWindow : EditorWindow
                     if (!string.IsNullOrEmpty(path))
                     {
                         sshPrivateKeyPath = path;
-                        serverManager.sshPrivateKeyPath = sshPrivateKeyPath;
+                        CCCPSettingsAdapter.SetSSHPrivateKeyPath(sshPrivateKeyPath);
                         if (serverCustomProcess != null) // Update ServerCustomProcess if it exists
                         {
                             serverCustomProcess.SetPrivateKeyPath(sshPrivateKeyPath);
@@ -1175,8 +1086,8 @@ public class ServerWindow : EditorWindow
                 if (newUserName != sshUserName)
                 {
                     sshUserName = newUserName;
-                    serverManager.sshUserName = sshUserName;
-                                       
+                    CCCPSettingsAdapter.SetSSHUserName(sshUserName);
+
                     if (debugMode) LogMessage($"SSH username set to: {sshUserName}", 0);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(sshUserName)), GUILayout.Width(20));
@@ -1194,8 +1105,8 @@ public class ServerWindow : EditorWindow
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
-                    serverManager.customServerUrl = customServerUrl;
-                    
+                    CCCPSettingsAdapter.SetCustomServerUrl(customServerUrl);
+
                     // Extract port from URL
                     int extractedPort = ExtractPortFromUrl(customServerUrl);
                     if (extractedPort > 0) // If a valid port is found
@@ -1203,8 +1114,8 @@ public class ServerWindow : EditorWindow
                         if (extractedPort != customServerPort) // If the port is different from the current customServerPort
                         {
                             customServerPort = extractedPort;
-                            serverManager.customServerPort = customServerPort;
-                            
+                            CCCPSettingsAdapter.SetCustomServerPort(customServerPort);
+
                             if (debugMode) LogMessage($"Port extracted from URL: {customServerPort}", 0);
                         }
                         // If the port is the same, we don't need to do anything,
@@ -1220,7 +1131,7 @@ public class ServerWindow : EditorWindow
 
                 // Custom Serer Auth Token
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "CustomServerAuthToken",
+                string tokenTooltip = GetAuthTokenTooltip(AuthTokenType.Custom,
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
@@ -1228,7 +1139,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != customServerAuthToken)
                 {
                     customServerAuthToken = newAuthToken;
-                    serverManager.customServerAuthToken = customServerAuthToken;
+                    CCCPSettingsAdapter.SetCustomServerAuthToken(customServerAuthToken);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(customServerAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1287,7 +1198,7 @@ public class ServerWindow : EditorWindow
 
                 // Auth Token setting
                 EditorGUILayout.BeginHorizontal();
-                string tokenTooltip = GetAuthTokenTooltip(PrefsKeyPrefix + "MaincloudAuthToken",
+                string tokenTooltip = GetAuthTokenTooltip(AuthTokenType.Maincloud,
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
@@ -1295,7 +1206,7 @@ public class ServerWindow : EditorWindow
                 if (newAuthToken != maincloudAuthToken)
                 {
                     maincloudAuthToken = newAuthToken;
-                    serverManager.maincloudAuthToken = maincloudAuthToken;
+                    CCCPSettingsAdapter.SetMaincloudAuthToken(maincloudAuthToken);
                 }
                 GUILayout.Label(GetStatusIcon(!string.IsNullOrEmpty(maincloudAuthToken)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1331,8 +1242,8 @@ public class ServerWindow : EditorWindow
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", false), "Settings", true);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowSettingsWindow", showSettingsWindow);
+        bool showSettingsWindow = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowSettingsWindow(), "Settings", true);
+        CCCPSettingsAdapter.SetShowSettingsWindow(showSettingsWindow);
 
         if (showSettingsWindow)
         {   
@@ -1430,7 +1341,7 @@ public class ServerWindow : EditorWindow
             }
             EditorGUILayout.EndHorizontal();
 
-            if (serverMode == ServerMode.WslServer)
+            if (serverMode == ServerMode.WSLServer)
             {
                 // WSL Auto Close toggle
                 EditorGUILayout.Space(5);
@@ -1457,7 +1368,7 @@ public class ServerWindow : EditorWindow
             }
 
             // Clear Module and Database Log at Start toggle buttons
-            if ((serverManager.SilentMode && serverMode == ServerMode.WslServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
+            if ((serverManager.SilentMode && serverMode == ServerMode.WSLServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);
@@ -1557,7 +1468,7 @@ public class ServerWindow : EditorWindow
             }
             else // If Prerequisites are checked then show normal server controls
             {
-                if (serverMode == ServerMode.WslServer)
+                if (serverMode == ServerMode.WSLServer)
                 {
                     if (!serverRunning)
                     {
@@ -1594,8 +1505,8 @@ public class ServerWindow : EditorWindow
         }
 
         // Activation of Server Windows
-        bool wslServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WslServer;
-        bool wslServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WslServer;
+        bool WSLServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WSLServer;
+        bool WSLServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WSLServer;
         bool customServerActive = serverManager.IsServerStarted && serverMode == ServerMode.CustomServer;
         bool customServerActiveSilent = serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
@@ -1604,7 +1515,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!wslServerActiveSilent && !customServerActiveSilent && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActiveSilent && !customServerActiveSilent && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1639,7 +1550,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                
         // Browse Database
-        EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
         var dbIcon = EditorGUIUtility.IconContent("d_VerticalLayoutGroup Icon").image;
         GUIContent dbContent = new GUIContent("Browse DB", "Browse and query the SpacetimeDB database");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1674,7 +1585,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                 
         // Run Reducer
-        EditorGUI.BeginDisabledGroup(!wslServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
         var playIcon = EditorGUIUtility.IconContent("d_PlayButton").image;
         GUIContent reducerContent = new GUIContent("Run Reducer", "Run database reducers");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1761,7 +1672,7 @@ public class ServerWindow : EditorWindow
         versionStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
-        if (serverMode == ServerMode.WslServer)
+        if (serverMode == ServerMode.WSLServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.CustomServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
@@ -1780,9 +1691,9 @@ public class ServerWindow : EditorWindow
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);       
 
-        bool showUtilityCommands = EditorGUILayout.Foldout(EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", false), "Commands", true);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowUtilityCommands", showUtilityCommands);
-        
+        bool showUtilityCommands = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowUtilityCommands(), "Commands", true);
+        CCCPSettingsAdapter.SetShowUtilityCommands(showUtilityCommands);
+
         if (showUtilityCommands)
         {
             EditorGUILayout.Space(-10);
@@ -1791,7 +1702,7 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
-                if (serverMode == ServerMode.WslServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
+                if (serverMode == ServerMode.WSLServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
                 #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
                 #pragma warning restore CS4014
@@ -1854,7 +1765,7 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            if (serverMode == ServerMode.WslServer)
+            if (serverMode == ServerMode.WSLServer)
             {
                 if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
                 {
@@ -1891,7 +1802,7 @@ public class ServerWindow : EditorWindow
                 serverManager.OpenDebianWindow();
             }
 
-            if (serverMode == ServerMode.WslServer)
+            if (serverMode == ServerMode.WSLServer)
             {
                 string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
@@ -1902,7 +1813,7 @@ public class ServerWindow : EditorWindow
                 EditorGUI.EndDisabledGroup();
             }
 
-            if (debugMode && serverMode == ServerMode.WslServer)
+            if (debugMode && serverMode == ServerMode.WSLServer)
             {
                 if (GUILayout.Button("Test Server Running", GUILayout.Height(20)))
                 {
@@ -1962,7 +1873,7 @@ public class ServerWindow : EditorWindow
             if (GUILayout.Button(new GUIContent(displayText, tooltip), firstModuleStyle))
             {
                 publishFirstModule = false;
-                serverManager.SetPublishFirstModule(false);
+                CCCPSettingsAdapter.SetPublishFirstModule(false);
                 Repaint();
             }
 
@@ -2055,7 +1966,7 @@ public class ServerWindow : EditorWindow
                 serverManager.Publish(false); // Publish without a database reset
                 publishing = true; // Set flag to indicate publishing is in progress
                 publishFirstModule = false;
-                serverManager.SetPublishFirstModule(false);
+                CCCPSettingsAdapter.SetPublishFirstModule(false);
             }
         }
         
@@ -2080,7 +1991,7 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        serverManager.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
+        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
             EditorApplication.delayCall += () => {
                 // Update local state for UI
                 hasWSL = wsl;
@@ -2148,12 +2059,12 @@ public class ServerWindow : EditorWindow
                     else 
                     {
                         // Open the pre-requisites drawer
-                        EditorPrefs.SetBool(PrefsKeyPrefix + "ShowPrerequisites", true);
+                        CCCPSettingsAdapter.SetShowPrerequisites(true);
                         Repaint();
                     }
 
                     hasAllPrerequisites = false;
-                    serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
+                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
                 }
                 else if (essentialSoftware && essentialUserSettings)
                 {
@@ -2165,10 +2076,10 @@ public class ServerWindow : EditorWindow
                         "OK"
                     );
                     hasAllPrerequisites = true;
-                    serverManager.SetHasAllPrerequisites(hasAllPrerequisites);
+                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
                     publishFirstModule = true;
-                    serverManager.SetPublishFirstModule(publishFirstModule);
+                    CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
                 }
                 // After writing module name this will appear (when essential software and user settings)
                 else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
@@ -2327,7 +2238,7 @@ public class ServerWindow : EditorWindow
     public void ForceWSLLogRefresh()
     {
         if (debugMode) UnityEngine.Debug.Log("[ServerWindow] Force triggering WSL log refresh");
-        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WslServer)
+        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
         {
             serverManager.ForceWSLLogRefresh();
         }
@@ -2496,10 +2407,30 @@ public class ServerWindow : EditorWindow
     
     #region Utility Methods
 
-    // Helper method to format auth token tooltip with first and last 20 characters
-    private string GetAuthTokenTooltip(string prefsKey, string baseTooltip)
+    public enum AuthTokenType
     {
-        string storedToken = EditorPrefs.GetString(prefsKey, "");
+        WSL,
+        Custom,
+        Maincloud
+    }
+
+    // Helper method to format auth token tooltip with first and last 20 characters
+    private string GetAuthTokenTooltip(AuthTokenType tokenType, string baseTooltip)
+    {
+        string storedToken = "";
+        switch (tokenType)
+        {
+            case AuthTokenType.WSL:
+                storedToken = CCCPSettingsAdapter.GetAuthToken();
+                break;
+            case AuthTokenType.Custom:
+                storedToken = CCCPSettingsAdapter.GetCustomServerAuthToken();
+                break;
+            case AuthTokenType.Maincloud:
+                storedToken = CCCPSettingsAdapter.GetMaincloudAuthToken();
+                break;
+        }
+
         if (string.IsNullOrEmpty(storedToken))
         {
             return baseTooltip;
@@ -2618,7 +2549,7 @@ public class ServerWindow : EditorWindow
         // Set the appropriate flag based on the current serverMode
         switch (serverMode)
         {
-            case ServerMode.WslServer:
+            case ServerMode.WSLServer:
                 if (debugMode) LogMessage("Server mode set-default config: Local", 0);
                 EditorUpdateHandler();
                 // Configure SpacetimeDB CLI for local server
@@ -2647,24 +2578,22 @@ public class ServerWindow : EditorWindow
         serverManager.SetServerMode((ServerManager.ServerMode)serverMode);
 
         // Use string representation for consistency with ServerManager
-        EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
+        CCCPSettingsAdapter.SetServerMode((ServerManager.ServerMode)serverMode);
         Repaint();
     }
 
-    private void LoadServerModeFromPrefs()
+    private void LoadServerModeFromSettings()
     {
-        // Load server mode from preferences using string representation for compatibility with ServerManager
-        string modeName = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "WslServer");
+        // Load server mode from settings using string representation for compatibility with ServerManager
+        string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
         if (Enum.TryParse(modeName, out ServerMode mode))
         {
             serverMode = mode;
         }
         else
         {
-            // Fallback to reading the old INT version for backwards compatibility
-            serverMode = (ServerMode)EditorPrefs.GetInt(PrefsKeyPrefix + "ServerMode", (int)ServerMode.WslServer);
-            // Update to new string format
-            EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", serverMode.ToString());
+            UnityEngine.Debug.Log($"Unknown server mode in preferences: {modeName}. Defaulting to WSLServer.");
+            serverMode = ServerMode.WSLServer;
         }
         
         UpdateServerModeState();
@@ -2699,14 +2628,14 @@ public class ServerWindow : EditorWindow
                 {
                     // User manually scrolled up while autoscroll was on - turn it off
                     autoscroll = false;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+                    CCCPSettingsAdapter.SetAutoscroll(autoscroll);
                     Repaint();
                 }
                 else if (!autoscroll && isAtBottom)
                 {
                     // User scrolled to the bottom while autoscroll was off - turn it on
                     autoscroll = true;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "Autoscroll", autoscroll);
+                    CCCPSettingsAdapter.SetAutoscroll(autoscroll);
                     Repaint();
                 }
             }
@@ -2774,39 +2703,20 @@ public class ServerWindow : EditorWindow
     {
         serverManager.InitNewModule();
         initializedFirstModule = true;
-        serverManager.SetInitializedFirstModule(true);
         publishFirstModule = true;
-        serverManager.SetPublishFirstModule(publishFirstModule);
+        CCCPSettingsAdapter.SetInitializedFirstModule(true);
+        CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
     }
 
     private void SaveModulesList()
     {
         try
         {
-            string json = JsonUtility.ToJson(new SerializableList<ModuleInfo>(savedModules));
-            EditorPrefs.SetString(PrefsKeyPrefix + "SavedModules", json);
+            CCCPSettingsAdapter.SetSavedModules(savedModules);
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogError($"Error saving modules list: {ex.Message}");
-        }
-    }
-
-    private void LoadModulesList()
-    {
-        try
-        {
-            string json = EditorPrefs.GetString(PrefsKeyPrefix + "SavedModules", "");
-            if (!string.IsNullOrEmpty(json))
-            {
-                var serializableList = JsonUtility.FromJson<SerializableList<ModuleInfo>>(json);
-                savedModules = serializableList?.items ?? new List<ModuleInfo>();
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode) UnityEngine.Debug.LogError($"Error loading modules list: {ex.Message}");
-            savedModules = new List<ModuleInfo>();
         }
     }
 
@@ -2819,14 +2729,14 @@ public class ServerWindow : EditorWindow
         {
             if (savedModules[i].name == name)
             {
-                savedModules[i] = new ModuleInfo(name, path);
+                savedModules[i] = new ModuleInfo { name = name, path = path };
                 SaveModulesList();
                 return i;
             }
         }
 
         // Add new module
-        savedModules.Add(new ModuleInfo(name, path));
+        savedModules.Add(new ModuleInfo { name = name, path = path });
         SaveModulesList();
         return savedModules.Count - 1;
     }
@@ -2844,9 +2754,9 @@ public class ServerWindow : EditorWindow
             
             // Update ServerManager
             serverManager.moduleName = moduleName;
-            serverManager.UpdateServerDirectory(serverDirectory);
-            serverManager.selectedModuleIndex = index; // To remember the place in the list
-            
+            serverManager.UpdateServerDetectionDirectory(serverDirectory);
+            CCCPSettingsAdapter.SetSelectedModuleIndex(index);
+
             // Update detection process
             if (detectionProcess != null)
             {

@@ -35,10 +35,13 @@ public class ServerInstallerWindow : EditorWindow
     private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
     private readonly string[] tabNames = { "WSL Local Installer", "Custom Remote Installer" };
 
-    // EditorPrefs
-    private string userName = ""; // For WSL mode
-    private string serverDirectory = ""; // For WSL mode
-    private string sshUserName = ""; // For SSH remote server mode
+    // Settings access - no longer store in private variables
+    private CCCPSettings Settings => CCCPSettings.Instance;
+
+    // Convenience properties for frequently accessed settings in this window
+    private string userName => Settings.userName;
+    private string sshUserName => Settings.sshUserName;
+    private string serverDirectory => Settings.serverDirectory;
 
     // Temporary fields for username input
     private string tempUserNameInput = "";
@@ -109,10 +112,6 @@ public class ServerInstallerWindow : EditorWindow
     // Settings
     private bool updateCargoToml = false;
 
-    // Keys
-    private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
-    private const string FirstTimeOpenKey = "FirstTimeOpen";    
-
     [MenuItem("Window/SpacetimeDB/2. Installer Window")]
     public static void ShowWindow()
     {
@@ -141,8 +140,7 @@ public class ServerInstallerWindow : EditorWindow
         serverManager = new ServerManager(LogMessage, () => Repaint());
         
         // Check if this is the first time the window is opened
-        bool isFirstTime = !EditorPrefs.HasKey(PrefsKeyPrefix+FirstTimeOpenKey);
-        if (isFirstTime)
+        if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
         {
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
@@ -158,61 +156,58 @@ public class ServerInstallerWindow : EditorWindow
                     Application.OpenURL(ServerWindow.Documentation);
                 }
 
-                EditorPrefs.SetBool(PrefsKeyPrefix+FirstTimeOpenKey, true);
+                CCCPSettingsAdapter.SetFirstTimeOpenInstaller(false);
             };
         }
         
-        // Load WSL installation status from EditorPrefs
-        hasWSL = EditorPrefs.GetBool(PrefsKeyPrefix + "HasWSL", false);
-        hasDebian = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebian", false);
-        hasDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasDebianTrixie", false);
-        hasCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCurl", false);
-        hasSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", false);
-        hasSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", false);
-        hasSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBService", false);
-        hasSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", false);
-        hasRust = EditorPrefs.GetBool(PrefsKeyPrefix + "HasRust", false);
-        hasNETSDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasNETSDK", false);
-        hasBinaryen = EditorPrefs.GetBool(PrefsKeyPrefix + "HasBinaryen", false);
-        hasGit = EditorPrefs.GetBool(PrefsKeyPrefix + "HasGit", false);
-        hasSpacetimeDBUnitySDK = EditorPrefs.GetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", false);
+        // Load WSL installation status from Settings
+        hasWSL = CCCPSettingsAdapter.GetHasWSL();
+        hasDebian = CCCPSettingsAdapter.GetHasDebian();
+        hasDebianTrixie = CCCPSettingsAdapter.GetHasDebianTrixie();
+        hasCurl = CCCPSettingsAdapter.GetHasCurl();
+        hasSpacetimeDBServer = CCCPSettingsAdapter.GetHasSpacetimeDBServer();
+        hasSpacetimeDBPath = CCCPSettingsAdapter.GetHasSpacetimeDBPath();
+        hasSpacetimeDBService = CCCPSettingsAdapter.GetHasSpacetimeDBService();
+        hasSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasSpacetimeDBLogsService();
+        hasRust = CCCPSettingsAdapter.GetHasRust();
+        hasNETSDK = CCCPSettingsAdapter.GetHasNETSDK();
+        hasBinaryen = CCCPSettingsAdapter.GetHasBinaryen();
+        hasGit = CCCPSettingsAdapter.GetHasGit();
+        hasSpacetimeDBUnitySDK = CCCPSettingsAdapter.GetHasSpacetimeDBUnitySDK();
 
-        // Load Custom SSH installation status from EditorPrefs
-        hasCustomDebianUser = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomDebianUser", false);
-        hasCustomDebianTrixie = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomDebianTrixie", false);
-        hasCustomCurl = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomCurl", false);
-        hasCustomSpacetimeDBServer = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", false);
-        hasCustomSpacetimeDBPath = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", false);
-        hasCustomSpacetimeDBService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", false);
-        hasCustomSpacetimeDBLogsService = EditorPrefs.GetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", false);
+        // Load Custom SSH installation status from Settings
+        hasCustomDebianUser = CCCPSettingsAdapter.GetHasCustomDebianUser();
+        hasCustomDebianTrixie = CCCPSettingsAdapter.GetHasCustomDebianTrixie();
+        hasCustomCurl = CCCPSettingsAdapter.GetHasCustomCurl();
+        hasCustomSpacetimeDBServer = CCCPSettingsAdapter.GetHasCustomSpacetimeDBServer();
+        hasCustomSpacetimeDBPath = CCCPSettingsAdapter.GetHasCustomSpacetimeDBPath();
+        hasCustomSpacetimeDBService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBService();
+        hasCustomSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBLogsService();
 
         // WSL 1 requires unique install logic for Debian apps
-        WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
-        
-        // Load install debug settings and other settings from EditorPrefs
-        visibleInstallProcesses = EditorPrefs.GetBool(PrefsKeyPrefix + "VisibleInstallProcesses", true);
-        keepWindowOpenForDebug = EditorPrefs.GetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", true);
-        updateCargoToml = EditorPrefs.GetBool(PrefsKeyPrefix + "UpdateCargoToml", true);
-        
-        // Cache the current username
-        userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
-        sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
-        tempUserNameInput = userName; // Initialize the temp input with the stored username for WSL
+        WSL1Installed = CCCPSettingsAdapter.GetWSL1Installed();
+
+        // Load install debug settings and other settings from Settings
+        visibleInstallProcesses = CCCPSettingsAdapter.GetVisibleInstallProcesses();
+        keepWindowOpenForDebug = CCCPSettingsAdapter.GetKeepWindowOpenForDebug();
+        updateCargoToml = CCCPSettingsAdapter.GetUpdateCargoToml();
+
+        // Cache the current username from Settings
+        tempUserNameInput = CCCPSettingsAdapter.GetUserName(); // Initialize the temp input with the stored username for WSL
         tempCreateUserNameInput = ""; // Initialize empty for the "Create User" functionality
         
         // Load version info of SpacetimeDB
-        spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
-        spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
-        spacetimeDBCurrentVersionTool = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", "");
-        spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
-        
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
+        spacetimeDBCurrentVersionTool = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionTool();
+        spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
+
         // Load version info of Rust
-        rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
-        rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
-        rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
-        rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
-        
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
+
         // Load version info of SpacetimeDB SDK
         spacetimeSDKCurrentVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
         spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
@@ -240,7 +235,6 @@ public class ServerInstallerWindow : EditorWindow
         if (isConnectedSSH)
         {
             CheckCustomInstallationStatus();
-            sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
         }
     }
     
@@ -335,7 +329,7 @@ public class ServerInstallerWindow : EditorWindow
                 isInstalled = hasSpacetimeDBService,
                 isEnabled = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName),
                 installAction = InstallSpacetimeDBService,
-                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") // Load from prefs or use default
+                expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
             {
@@ -446,7 +440,7 @@ public class ServerInstallerWindow : EditorWindow
                 isInstalled = hasCustomSpacetimeDBService,
                 isEnabled = customProcess.IsSessionActive() && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(userName),
                 installAction = InstallCustomSpacetimeDBService,
-                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") // Load from prefs or use default
+                expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
             {
@@ -467,16 +461,16 @@ public class ServerInstallerWindow : EditorWindow
 
         // Update the correct list based on current tab
         List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
-        
-        // Reload version information from EditorPrefs to ensure we have the latest data
-        spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
-        spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", "");
-        spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
-        rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", "");
-        rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", "");
-        rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", "");
-        rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
-        
+
+        // Reload version information from Settings to ensure we have the latest data
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
+        spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
+
         // Reload SpacetimeDB SDK version information
         spacetimeSDKCurrentVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
         spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
@@ -699,7 +693,6 @@ public class ServerInstallerWindow : EditorWindow
                 CheckInstallationStatus();
             } else {
                 CheckCustomInstallationStatus();
-                sshUserName = EditorPrefs.GetString(PrefsKeyPrefix + "SSHUserName", "");
             }
             UpdateInstallerItemsStatus();
         }
@@ -713,12 +706,12 @@ public class ServerInstallerWindow : EditorWindow
 
             menu.AddItem(new GUIContent("Show Install Windows"), visibleInstallProcesses, () => {
                 visibleInstallProcesses = !visibleInstallProcesses;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
+                CCCPSettingsAdapter.SetVisibleInstallProcesses(visibleInstallProcesses);
             });
 
             menu.AddItem(new GUIContent("Keep Windows Open"), keepWindowOpenForDebug, () => {
                 keepWindowOpenForDebug = !keepWindowOpenForDebug;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", keepWindowOpenForDebug);
+                CCCPSettingsAdapter.SetKeepWindowOpenForDebug(keepWindowOpenForDebug);
             });
             
             menu.AddItem(new GUIContent("Force Install"), forceInstall, () => {
@@ -726,7 +719,7 @@ public class ServerInstallerWindow : EditorWindow
                 // Update dependent flags when forceInstall changes
                 alwaysShowInstall = forceInstall;
                 installIfAlreadyInstalled = forceInstall;
-                // No EditorPrefs for forceInstall as it's a transient state for the session
+                // No Settings for forceInstall as it's a transient state for the session
             });
 
             menu.ShowAsContext();
@@ -740,7 +733,7 @@ public class ServerInstallerWindow : EditorWindow
 
             menu.AddItem(new GUIContent("Update Cargo.toml automatically"), updateCargoToml, () => {
                 updateCargoToml = !updateCargoToml;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "UpdateCargoToml", updateCargoToml);
+                CCCPSettingsAdapter.SetUpdateCargoToml(updateCargoToml);
             });
 
             menu.ShowAsContext();
@@ -803,11 +796,10 @@ public class ServerInstallerWindow : EditorWindow
                 GUI.GetNameOfFocusedControl() == "UsernameField" && !string.IsNullOrEmpty(tempUserNameInput))
             {
                 // Submit the username only on Enter
-                userName = tempUserNameInput;
-                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                CCCPSettingsAdapter.SetUserName(tempUserNameInput);
                 foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
-                UnityEngine.Debug.Log("Username submitted via Enter: " + userName);
+                UnityEngine.Debug.Log("Username submitted via Enter: " + tempUserNameInput);
                 
                 // Use the current event to prevent it from propagating
                 e.Use();
@@ -823,8 +815,7 @@ public class ServerInstallerWindow : EditorWindow
             if (GUILayout.Button("Set", GUILayout.Width(50)) && !string.IsNullOrEmpty(tempUserNameInput))
             {
                 // Submit the username only on button click
-                userName = tempUserNameInput;
-                EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                CCCPSettingsAdapter.SetUserName(tempUserNameInput);
                 foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
 
@@ -1003,8 +994,7 @@ public class ServerInstallerWindow : EditorWindow
                 string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
                 if (EditorGUI.EndChangeCheck() && newUserName != userName)
                 {
-                    userName = newUserName;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "UserName", userName);
+                    CCCPSettingsAdapter.SetUserName(newUserName);
                 }
             }
             else if (currentTab == 1)
@@ -1024,7 +1014,7 @@ public class ServerInstallerWindow : EditorWindow
                     string newUserName = EditorGUILayout.TextField(sshUserName, GUILayout.Width(150));
                     if (EditorGUI.EndChangeCheck() && newUserName != sshUserName)
                     {
-                        sshUserName = newUserName;
+                        CCCPSettingsAdapter.SetSSHUserName(newUserName);
                     }
                     EditorGUI.EndDisabledGroup();
                 }
@@ -1041,7 +1031,7 @@ public class ServerInstallerWindow : EditorWindow
             EditorGUI.BeginChangeCheck();
             EditorGUI.BeginDisabledGroup(true);
             string currentModuleName = string.IsNullOrEmpty(item.expectedModuleName) ? 
-                EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "") : 
+                CCCPSettingsAdapter.GetModuleName() : 
                 item.expectedModuleName;
             
             // Display "No module found." if currentModuleName is empty
@@ -1051,8 +1041,8 @@ public class ServerInstallerWindow : EditorWindow
             if (EditorGUI.EndChangeCheck() && newModuleName != item.expectedModuleName)
             {
                 item.expectedModuleName = newModuleName;
-                // Save to EditorPrefs for persistence
-                EditorPrefs.SetString(PrefsKeyPrefix + "ModuleName", item.expectedModuleName);
+                // Save to Settings for persistence
+                CCCPSettingsAdapter.SetModuleName(item.expectedModuleName);
             }
             EditorGUI.EndDisabledGroup();
             EditorGUILayout.EndHorizontal();
@@ -1110,7 +1100,7 @@ public class ServerInstallerWindow : EditorWindow
         // Check for SpacetimeDB Unity SDK separately
         ServerSpacetimeSDKInstaller.IsSDKInstalled((isSDKInstalled) => {
             hasSpacetimeDBUnitySDK = isSDKInstalled;
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", hasSpacetimeDBUnitySDK);
+            CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(hasSpacetimeDBUnitySDK);
             UpdateInstallerItemsStatus();
         });
         
@@ -1128,20 +1118,20 @@ public class ServerInstallerWindow : EditorWindow
             hasGit = git;
             hasNETSDK = netsdk;
             
-            // Save state to EditorPrefs
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasWSL", hasWSL);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", hasDebian);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", hasDebianTrixie);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", hasCurl);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", hasSpacetimeDBServer);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", hasSpacetimeDBPath);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", hasSpacetimeDBService);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", hasSpacetimeDBLogsService);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", hasRust);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasNETSDK", hasNETSDK);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", hasBinaryen);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", hasGit);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "VisibleInstallProcesses", visibleInstallProcesses);
+            // Save state to Settings
+            CCCPSettingsAdapter.SetHasWSL(hasWSL);
+            CCCPSettingsAdapter.SetHasDebian(hasDebian);
+            CCCPSettingsAdapter.SetHasDebianTrixie(hasDebianTrixie);
+            CCCPSettingsAdapter.SetHasCurl(hasCurl);
+            CCCPSettingsAdapter.SetHasSpacetimeDBServer(hasSpacetimeDBServer);
+            CCCPSettingsAdapter.SetHasSpacetimeDBPath(hasSpacetimeDBPath);
+            CCCPSettingsAdapter.SetHasSpacetimeDBService(hasSpacetimeDBService);
+            CCCPSettingsAdapter.SetHasSpacetimeDBLogsService(hasSpacetimeDBLogsService);
+            CCCPSettingsAdapter.SetHasRust(hasRust);
+            CCCPSettingsAdapter.SetHasNETSDK(hasNETSDK);
+            CCCPSettingsAdapter.SetHasBinaryen(hasBinaryen);
+            CCCPSettingsAdapter.SetHasGit(hasGit);
+            CCCPSettingsAdapter.SetVisibleInstallProcesses(visibleInstallProcesses);
         });
 
         // Check SpacetimeDB version to update it if it was updated in the installer
@@ -1154,8 +1144,8 @@ public class ServerInstallerWindow : EditorWindow
         UpdateInstallerItemsStatus();
 
         // Update WSL1 status
-        WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", false);
-        
+        WSL1Installed = CCCPSettingsAdapter.GetWSL1Installed();
+
         isRefreshing = false;
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
     }
@@ -1243,16 +1233,16 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Checking SpacetimeDB Database Logs Service status...", Color.yellow);
         var logsServiceResult = await customProcess.RunCustomCommandAsync("systemctl status spacetimedb-logs.service 2>/dev/null | head -n 1");
         hasCustomSpacetimeDBLogsService = logsServiceResult.success && logsServiceResult.output.Contains("spacetimedb-logs.service");
-        
-        // Save installation status to EditorPrefs
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianUser", hasCustomDebianUser);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomDebianTrixie", hasCustomDebianTrixie);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomCurl", hasCustomCurl);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBServer", hasCustomSpacetimeDBServer);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBPath", hasCustomSpacetimeDBPath);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBService", hasCustomSpacetimeDBService);
-        EditorPrefs.SetBool(PrefsKeyPrefix + "HasCustomSpacetimeDBLogsService", hasCustomSpacetimeDBLogsService);
-        
+
+        // Save installation status to Settings
+        CCCPSettingsAdapter.SetHasCustomDebianUser(hasCustomDebianUser);
+        CCCPSettingsAdapter.SetHasCustomDebianTrixie(hasCustomDebianTrixie);
+        CCCPSettingsAdapter.SetHasCustomCurl(hasCustomCurl);
+        CCCPSettingsAdapter.SetHasCustomSpacetimeDBServer(hasCustomSpacetimeDBServer);
+        CCCPSettingsAdapter.SetHasCustomSpacetimeDBPath(hasCustomSpacetimeDBPath);
+        CCCPSettingsAdapter.SetHasCustomSpacetimeDBService(hasCustomSpacetimeDBService);
+        CCCPSettingsAdapter.SetHasCustomSpacetimeDBLogsService(hasCustomSpacetimeDBLogsService);
+
         // Update SpacetimeDB version for custom installation
         await customProcess.CheckSpacetimeDBVersionCustom();
 
@@ -1321,7 +1311,7 @@ public class ServerInstallerWindow : EditorWindow
                         SetStatus("WSL1 with Debian installed successfully.", Color.green);
 
                         WSL1Installed = true; // To handle WSL1 Debian installs uniquely
-                        EditorPrefs.SetBool(PrefsKeyPrefix + "WSL1Installed", WSL1Installed);
+                        CCCPSettingsAdapter.SetWSL1Installed(WSL1Installed);
 
                         UpdateInstallerItemsStatus();
 
@@ -1718,8 +1708,8 @@ public class ServerInstallerWindow : EditorWindow
             SetStatus("Please enter a username first.", Color.red);
             return;
         }
-        
-        // Get the expected module name from the installer item or EditorPrefs
+
+        // Get the expected module name from the installer item or Settings
         string expectedModuleName = "";
         foreach (var item in installerItems)
         {
@@ -1729,11 +1719,11 @@ public class ServerInstallerWindow : EditorWindow
                 break;
             }
         }
-        
-        // If expectedModuleName is empty, try to get it from EditorPrefs
+
+        // If expectedModuleName is empty, try to get it from Settings
         if (string.IsNullOrEmpty(expectedModuleName))
         {
-            expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+            expectedModuleName = CCCPSettingsAdapter.GetModuleName();
         }
         
         if (string.IsNullOrEmpty(expectedModuleName))
@@ -1942,13 +1932,13 @@ public class ServerInstallerWindow : EditorWindow
             {
                 // Update the current version to the latest version
                 rustCurrentVersion = rustLatestVersion;
-                EditorPrefs.SetString(PrefsKeyPrefix + "RustVersion", rustCurrentVersion);
-                
+                CCCPSettingsAdapter.SetRustCurrentVersion(rustCurrentVersion);
+
                 // Clear the update available flags
                 rustUpdateAvailable = false;
                 rustLatestVersion = "";
-                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
-                EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", "");
+                CCCPSettingsAdapter.SetRustUpdateAvailable(false);
+                CCCPSettingsAdapter.SetRustLatestVersion("");
                 
                 SetStatus($"Rust updated successfully to v{rustCurrentVersion}!", Color.green);
             }
@@ -2358,7 +2348,7 @@ public class ServerInstallerWindow : EditorWindow
                     }
                     
                     hasSpacetimeDBUnitySDK = true;
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBUnitySDK", true);
+                    CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(true);
                     UpdateInstallerItemsStatus();
                     
                     // After successful installation, ensure the window updates properly
@@ -2493,7 +2483,7 @@ public class ServerInstallerWindow : EditorWindow
                 return;
             }
 
-            if (string.IsNullOrEmpty(EditorPrefs.GetString(PrefsKeyPrefix + "SSHPrivateKeyPath", "")))
+            if (string.IsNullOrEmpty(CCCPSettingsAdapter.GetSSHPrivateKeyPath()))
             {
                 SetStatus("Please first generate a SSH private key and enter the path.", Color.red);
                 return;
@@ -2552,8 +2542,7 @@ public class ServerInstallerWindow : EditorWindow
                 // Update the SSH username if it's not already set
                 if (string.IsNullOrEmpty(sshUserName))
                 {
-                    sshUserName = newUserName;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "SSHUserName", sshUserName);
+                    CCCPSettingsAdapter.SetSSHUserName(newUserName);
                 }
                 
                 SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
@@ -2938,8 +2927,8 @@ public class ServerInstallerWindow : EditorWindow
                 SetStatus("Please enter a SSH username first.", Color.red);
                 return;
             }
-                    
-            // Get the expected module name from the installer item or EditorPrefs
+
+            // Get the expected module name from the installer item or Settings
             string expectedModuleName = "";
             foreach (var item in customInstallerItems)
             {
@@ -2949,11 +2938,11 @@ public class ServerInstallerWindow : EditorWindow
                     break;
                 }
             }
-            
-            // If expectedModuleName is empty, try to get it from EditorPrefs
+
+            // If expectedModuleName is empty, try to get it from Settings
             if (string.IsNullOrEmpty(expectedModuleName))
             {
-                expectedModuleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", "");
+                expectedModuleName = CCCPSettingsAdapter.GetModuleName();
             }
             
             if (string.IsNullOrEmpty(expectedModuleName))

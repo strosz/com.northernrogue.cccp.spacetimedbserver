@@ -4,6 +4,7 @@ using UnityEngine.Networking;
 using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Checks for new updates for this asset and related packages ///
 
@@ -13,8 +14,6 @@ namespace NorthernRogue.CCCP.Editor {
 public class ServerUpdateProcess
 {
     public static bool debugMode = false; // Set in ServerWindow
-
-    private const string PrefsKeyPrefix = "CCCP_";
 
     /////////// Version Detection ///////////
     private static bool? isAssetStoreVersion = null;
@@ -62,14 +61,14 @@ public class ServerUpdateProcess
 
     private static void InitializeDistributionType()
     {
-        // First try to load from EditorPrefs
-        distributionType = EditorPrefs.GetString(PrefsKeyPrefix + "DistributionType", "");
+        // First try to load from Settings
+        distributionType = CCCPSettingsAdapter.GetDistributionType();
         
         // Only calculate if empty (first time or cache was cleared)
         if (string.IsNullOrEmpty(distributionType))
         {
             distributionType = GetDistributionType();
-            EditorPrefs.SetString(PrefsKeyPrefix + "DistributionType", distributionType);
+            CCCPSettingsAdapter.SetDistributionType(distributionType);
             
             if (debugMode) Debug.Log($"Distribution type calculated and cached: {distributionType}");
         }
@@ -89,7 +88,7 @@ public class ServerUpdateProcess
             return false;
         }
 
-        string storedSha = EditorPrefs.GetString("CCCP_LastCommitSha", "");
+        string storedSha = CCCPSettingsAdapter.GetGithubLastCommitSha();
         if (!string.IsNullOrEmpty(storedSha))
         {
             latestCommitSha = storedSha;
@@ -97,7 +96,7 @@ public class ServerUpdateProcess
         if (debugMode) Debug.Log($"Checked for GitHub update - Stored SHA: {latestCommitSha}");
         
         FetchLatestCommitAsync();
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetCCCPGithubUpdateAvailable();
     }
 
     private static void FetchLatestCommitAsync()
@@ -133,22 +132,22 @@ public class ServerUpdateProcess
             if (string.IsNullOrEmpty(latestCommitSha))
             {
                 latestCommitSha = fetchedSha;
-                EditorPrefs.SetString("CCCP_LastCommitSha", latestCommitSha);
+                CCCPSettingsAdapter.SetGithubLastCommitSha(latestCommitSha);
                 if (debugMode) Debug.Log($"First fetch: latest commit SHA is {latestShaShort(latestCommitSha)}");
-                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPGithubUpdateAvailable(false);
             }
             else if (fetchedSha != latestCommitSha)
             {
                 if (debugMode) Debug.Log($"New commit detected! Old: {latestShaShort(latestCommitSha)}  New: {latestShaShort(fetchedSha)}");
                 latestCommitSha = fetchedSha;
-                EditorPrefs.SetString("CCCP_LastCommitSha", latestCommitSha);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "GithubUpdateAvailable", true);
+                CCCPSettingsAdapter.SetGithubLastCommitSha(latestCommitSha);
+                CCCPSettingsAdapter.SetCCCPGithubUpdateAvailable(true);
                 DisplayGithubUpdateAvailable();
             }
             else
             {
                 if (debugMode) Debug.Log("No new commit found.");
-                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPGithubUpdateAvailable(false);
             }
         }
         catch (Exception e)
@@ -168,8 +167,8 @@ public class ServerUpdateProcess
         if (!ShouldCheckGithubUpdates())
             return false;
             
-        // EditorPrefs can also be called directly
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
+        // Settings can also be called directly
+        return CCCPSettingsAdapter.GetCCCPGithubUpdateAvailable();
     }
 
     // Display the update available message once in the ServerWindow
@@ -205,14 +204,14 @@ public class ServerUpdateProcess
                 Debug.Log("Package updated successfully: " + addRequest.Result.packageId);
                 if (window != null && debugMode)
                     window.LogMessage("Package updated successfully: " + addRequest.Result.packageId, 1);
-                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPGithubUpdateAvailable(false);
             }
             else if (addRequest.Status == StatusCode.Failure)
             {
                 Debug.LogError("Package update failed: " + addRequest.Error.message);
                 if (window != null && debugMode)
                     window.LogMessage("Package update failed: " + addRequest.Error.message, -1);
-                EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", false); // To not occupy UI space
+                CCCPSettingsAdapter.SetCCCPGithubUpdateAvailable(false);
             }
                 
             EditorApplication.update -= GithubUpdateProgress;
@@ -240,7 +239,7 @@ public class ServerUpdateProcess
         if (debugMode) Debug.Log("Checking for Asset Store package updates...");
         
         SearchAssetStorePackageAsync();
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetCCCPAssetStoreUpdateAvailable();
     }
 
     private static void SearchAssetStorePackageAsync()
@@ -262,7 +261,7 @@ public class ServerUpdateProcess
             else if (searchRequest.Status == StatusCode.Failure)
             {
                 if (debugMode) Debug.Log($"Asset Store search failed: {searchRequest.Error.message}");
-                EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(false);
             }
             
             EditorApplication.update -= AssetStoreSearchProgress;
@@ -285,7 +284,7 @@ public class ServerUpdateProcess
                     {
                         string latestVersion = package.version;
                         cccpAssetStoreLatestVersion = latestVersion;
-                        EditorPrefs.SetString(PrefsKeyPrefix + "AssetStoreLatestVersion", cccpAssetStoreLatestVersion);
+                        CCCPSettingsAdapter.SetCCCPAssetStoreLatestVersion(cccpAssetStoreLatestVersion);
                         
                         if (debugMode) Debug.Log($"Found package in registry - Current: {currentVersion}, Latest: {latestVersion}");
                         
@@ -293,31 +292,31 @@ public class ServerUpdateProcess
                         if (!string.IsNullOrEmpty(currentVersion) && CompareVersions(currentVersion, latestVersion) < 0)
                         {
                             if (debugMode) Debug.Log($"Asset Store update available! Current: {currentVersion}, Latest: {latestVersion}");
-                            EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", true);
+                            CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(true);
                             DisplayAssetStoreUpdateAvailable();
                         }
                         else
                         {
                             if (debugMode) Debug.Log("No Asset Store update available - current version is up to date");
-                            EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+                            CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(false);
                         }
                         return;
                     }
                 }
                 
                 if (debugMode) Debug.Log("Package not found in available registries");
-                EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(false);
             }
             else
             {
                 if (debugMode) Debug.Log("No packages found in search results");
-                EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+                CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(false);
             }
         }
         catch (Exception e)
         {
             if (debugMode) Debug.LogError("Failed to process Asset Store search response: " + e.Message);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+            CCCPSettingsAdapter.SetCCCPAssetStoreUpdateAvailable(false);
         }
     }
 
@@ -359,7 +358,7 @@ public class ServerUpdateProcess
         if (!IsAssetStoreVersion())
             return false;
             
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetCCCPAssetStoreUpdateAvailable();
     }
 
     // Display the Asset Store update available message once in the ServerWindow
@@ -372,7 +371,7 @@ public class ServerUpdateProcess
     // Public method to get the latest Asset Store version
     public static string AssetStoreLatestVersion()
     {
-        return EditorPrefs.GetString(PrefsKeyPrefix + "AssetStoreLatestVersion", "");
+        return CCCPSettingsAdapter.GetCCCPAssetStoreLatestVersion();
     }
 
     // Update Asset Store package (opens Package Manager)
@@ -421,8 +420,8 @@ public class ServerUpdateProcess
         
         // Cache the result
         isAssetStoreVersion = hasAssetStoreFile;
-        EditorPrefs.SetBool(PrefsKeyPrefix + "IsAssetStoreVersion", hasAssetStoreFile);
-        
+        CCCPSettingsAdapter.SetIsAssetStoreVersion(hasAssetStoreFile);
+
         if (debugMode) Debug.Log($"Asset Store version detected: {hasAssetStoreFile}");
         
         return hasAssetStoreFile;
@@ -444,7 +443,7 @@ public class ServerUpdateProcess
         
         // Cache the result
         isGithubVersion = hasGithubFile;
-        EditorPrefs.SetBool(PrefsKeyPrefix + "IsGithubVersion", hasGithubFile);
+        CCCPSettingsAdapter.SetIsGitHubVersion(hasGithubFile);
         
         if (debugMode) Debug.Log($"GitHub version detected: {hasGithubFile}");
         
@@ -580,7 +579,7 @@ public class ServerUpdateProcess
     public static bool CheckForSpacetimeDBUpdate()
     {
         FetchSpacetimeDBVersionAsync();
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetSpacetimeDBUpdateAvailable();
     }
 
     private static void FetchSpacetimeDBVersionAsync()
@@ -619,20 +618,20 @@ public class ServerUpdateProcess
             }
             
             spacetimeDBLatestVersion = version;
-            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", spacetimeDBLatestVersion);
+            CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(spacetimeDBLatestVersion);
 
             if (debugMode) Debug.Log($"Latest SpacetimeDB version: {spacetimeDBLatestVersion}");
             
             // Compare with current installed version
-            string currentSpacetimeDBVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", "");
+            string currentSpacetimeDBVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
             if (!string.IsNullOrEmpty(currentSpacetimeDBVersion) && currentSpacetimeDBVersion != spacetimeDBLatestVersion)
             {
                 if (debugMode) Debug.Log($"SpacetimeDB update available! Current: {currentSpacetimeDBVersion}, Latest: {spacetimeDBLatestVersion}");
-                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
             else
             {
-                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(false);
             }
         }
         catch (Exception e)
@@ -644,13 +643,13 @@ public class ServerUpdateProcess
     // Public method to check if a SpacetimeDB update is available
     public static bool IsSpacetimeDBUpdateAvailable()
     {
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetSpacetimeDBUpdateAvailable();
     }
     
     // Public method to get the latest SpacetimeDB version
     public static string SpacetimeDBLatestVersion()
     {
-        return EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+        return CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
     }
 
     // Data model for SpacetimeDB release response
@@ -678,7 +677,7 @@ public class ServerUpdateProcess
     public static bool CheckForSpacetimeSDKUpdate()
     {
         FetchSpacetimeSDKVersionAsync();
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetSpacetimeSDKUpdateAvailable();
     }
 
     private static void FetchSpacetimeSDKVersionAsync()
@@ -720,7 +719,7 @@ public class ServerUpdateProcess
                 }
                 
                 spacetimeSDKLatestVersion = version;
-                EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", spacetimeSDKLatestVersion);
+                CCCPSettingsAdapter.SetSpacetimeSDKLatestVersion(spacetimeSDKLatestVersion);
 
                 if (debugMode) Debug.Log($"Latest SpacetimeDB SDK version: {spacetimeSDKLatestVersion}");
                 
@@ -729,17 +728,17 @@ public class ServerUpdateProcess
                 if (!string.IsNullOrEmpty(currentSDKVersion) && currentSDKVersion != spacetimeSDKLatestVersion)
                 {
                     if (debugMode) Debug.Log($"SpacetimeDB SDK update available! Current: {currentSDKVersion}, Latest: {spacetimeSDKLatestVersion}");
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", true);
+                    CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(true);
                 }
                 else
                 {
-                    EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+                    CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
                 }
             }
             else
             {
                 if (debugMode) Debug.LogWarning("No tags found for SpacetimeDB SDK");
-                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+                CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
             }
         }
         catch (Exception e)
@@ -777,13 +776,13 @@ public class ServerUpdateProcess
     // Public method to check if a SpacetimeDB SDK update is available
     public static bool IsSpacetimeSDKUpdateAvailable()
     {
-        return EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", false);
+        return CCCPSettingsAdapter.GetSpacetimeSDKUpdateAvailable();
     }
     
     // Public method to get the latest SpacetimeDB SDK version
     public static string SpacetimeSDKLatestVersion()
     {
-        return EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", "");
+        return CCCPSettingsAdapter.GetSpacetimeSDKLatestVersion();
     }
 
     // Public method to get the current installed SpacetimeDB SDK version

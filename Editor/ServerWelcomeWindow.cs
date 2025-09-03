@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System;
 using System.Reflection;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Displays the welcome window with information about the asset and how to get started ///
 
@@ -9,13 +10,11 @@ namespace NorthernRogue.CCCP.Editor {
     
 public class ServerWelcomeWindow : EditorWindow
 {
-    private const string WelcomeWindowShownKey = "ServerWelcomeWindow_WelcomeWindowShown";
-
     [InitializeOnLoadMethod]
     private static void Initialize()
     {
         // Check if the welcome window has been shown before
-        bool hasShown = EditorPrefs.GetBool(WelcomeWindowShownKey, false);
+        bool hasShown = CCCPSettingsAdapter.GetWelcomeWindowShown();
         
         if (!hasShown)
         {
@@ -24,7 +23,7 @@ public class ServerWelcomeWindow : EditorWindow
             {
                 ShowWindow();
                 // Mark the window as shown
-                EditorPrefs.SetBool(WelcomeWindowShownKey, true);
+                CCCPSettingsAdapter.SetWelcomeWindowShown(true);
             };
         }
     }

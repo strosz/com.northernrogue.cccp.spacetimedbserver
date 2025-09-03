@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Loads the available reducers from the server schema and can call them with custom params ///
 
@@ -43,9 +44,6 @@ public class ServerReducerWindow : EditorWindow
     private GUIStyle reducerTitleStyle;
     private GUIStyle cmdButtonStyle;
     private bool stylesInitialized = false;
-    
-    // Constants
-    private const string PrefsKeyPrefix = "CCCP_"; // Use the same prefix as ServerWindow
     
     // HTTP Client
     private static readonly HttpClient httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
@@ -471,19 +469,19 @@ public class ServerReducerWindow : EditorWindow
     
     private void LoadSettings()
     {
-        // Load settings from EditorPrefs (shared with ServerWindow)
-        string rawServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "ServerURL", "");
+        // Load settings from Settings
+        string rawServerUrl = CCCPSettingsAdapter.GetServerUrl();
         serverURL = GetApiBaseUrl(rawServerUrl);
-        moduleName = EditorPrefs.GetString(PrefsKeyPrefix + "ModuleName", moduleName);
-        authToken = EditorPrefs.GetString(PrefsKeyPrefix + "AuthToken", authToken);
-        
-        string rawMaincloudUrl = EditorPrefs.GetString(PrefsKeyPrefix + "MaincloudURL", "https://maincloud.spacetimedb.com/");
+        moduleName = CCCPSettingsAdapter.GetModuleName();
+        authToken = CCCPSettingsAdapter.GetAuthToken();
+
+        string rawMaincloudUrl = CCCPSettingsAdapter.GetMaincloudUrl();
         maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
-        
-        string rawCustomServerUrl = EditorPrefs.GetString(PrefsKeyPrefix + "CustomServerURL", "");
+
+        string rawCustomServerUrl = CCCPSettingsAdapter.GetCustomServerUrl();
         customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
-        
-        serverMode = EditorPrefs.GetString(PrefsKeyPrefix + "ServerMode", "");
+
+        serverMode = CCCPSettingsAdapter.GetServerMode().ToString();
     }
     
     public void RefreshReducers()
@@ -492,7 +490,7 @@ public class ServerReducerWindow : EditorWindow
 
         LoadSettings();
 
-        if (serverMode == "WslServer")
+        if (serverMode == "WSLServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
             {
@@ -537,7 +535,7 @@ public class ServerReducerWindow : EditorWindow
         // Move try-catch outside of the iterator
         // Add version parameter to match ServerDataWindow's schema request
 
-        if (serverMode == "WslServer"){
+        if (serverMode == "WSLServer"){
             schemaUrl = $"{serverURL}/database/{moduleName}/schema?version=9";
         } else if (serverMode == "CustomServer") {
             schemaUrl = $"{customServerUrl}/database/{moduleName}/schema?version=9";
@@ -644,7 +642,7 @@ public class ServerReducerWindow : EditorWindow
     {
         LoadSettings();
 
-        if (serverMode == "WslServer")
+        if (serverMode == "WSLServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
             {
@@ -757,7 +755,7 @@ public class ServerReducerWindow : EditorWindow
     
     private IEnumerator RunReducerCoroutine(string reducerName, List<object> parameters, Action<bool, string> callback)
     {
-        if (serverMode == "WslServer"){
+        if (serverMode == "WSLServer"){
             reducerUrl = $"{serverURL}/database/{moduleName}/call/{reducerName}";
         } else if (serverMode == "CustomServer") {
             reducerUrl = $"{customServerUrl}/database/{moduleName}/call/{reducerName}";

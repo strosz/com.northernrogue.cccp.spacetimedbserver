@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Detects file changes in the server directory to be able to notify and auto compile ///
 
@@ -16,7 +17,6 @@ namespace NorthernRogue.CCCP.Editor
         public event ServerChangesCallback OnServerChangesDetected;
 
         // Constants
-        private const string PrefsKeyPrefix = "CCCP_";
         private const int MaxFilesPerScan = 100;
         
         // File extensions to monitor for script changes
@@ -59,8 +59,8 @@ namespace NorthernRogue.CCCP.Editor
             }
             
             // Save configuration
-            EditorPrefs.SetString(PrefsKeyPrefix + "ServerDirectory", serverDirectory);
-            EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", detectServerChanges);
+            CCCPSettingsAdapter.SetServerDirectory(serverDirectory);
+            CCCPSettingsAdapter.SetDetectServerChanges(detectServerChanges);
         }
 
         public bool IsDetectingChanges()
@@ -78,8 +78,8 @@ namespace NorthernRogue.CCCP.Editor
             if (this.detectServerChanges != detect)
             {
                 this.detectServerChanges = detect;
-                EditorPrefs.SetBool(PrefsKeyPrefix + "DetectServerChanges", detect);
-                
+                CCCPSettingsAdapter.SetDetectServerChanges(detect);
+
                 if (detect && !initialScanPerformed)
                 {
                     // Run initial scan when enabling detection
@@ -336,8 +336,8 @@ namespace NorthernRogue.CCCP.Editor
             serverChangesDetected = detected;
             
             // Save state
-            EditorPrefs.SetBool(PrefsKeyPrefix + "ServerChangesDetected", serverChangesDetected);
-            
+            CCCPSettingsAdapter.SetServerChangesDetected(serverChangesDetected);
+
             // Notify subscribers if state changed
             if (changed && OnServerChangesDetected != null)
             {
@@ -345,17 +345,17 @@ namespace NorthernRogue.CCCP.Editor
             }
         }
         
-        // Load state from EditorPrefs
+        // Load state from Settings
         private void LoadState()
         {
-            serverDirectory = EditorPrefs.GetString(PrefsKeyPrefix + "ServerDirectory", "");
-            detectServerChanges = EditorPrefs.GetBool(PrefsKeyPrefix + "DetectServerChanges", true);
-            serverChangesDetected = EditorPrefs.GetBool(PrefsKeyPrefix + "ServerChangesDetected", false);
-            
-            // Also load file tracking data from EditorPrefs if exists
-            string originalInfoJson = EditorPrefs.GetString(PrefsKeyPrefix + "OriginalFileInfo", "");
-            string currentInfoJson = EditorPrefs.GetString(PrefsKeyPrefix + "CurrentFileInfo", "");
-            
+            serverDirectory = CCCPSettingsAdapter.GetServerDirectory();
+            detectServerChanges = CCCPSettingsAdapter.GetDetectServerChanges();
+            serverChangesDetected = CCCPSettingsAdapter.GetServerChangesDetected();
+
+            // Also load file tracking data from Settings if exists
+            string originalInfoJson = CCCPSettingsAdapter.GetOriginalFileInfo();
+            string currentInfoJson = CCCPSettingsAdapter.GetCurrentFileInfo();
+
             if (!string.IsNullOrEmpty(originalInfoJson))
             {
                 try
@@ -385,8 +385,8 @@ namespace NorthernRogue.CCCP.Editor
                 }
             }
         }
-        
-        // Save tracking state to EditorPrefs
+
+        // Save tracking state to Settings
         private void SaveTrackingState()
         {
             try
@@ -394,11 +394,11 @@ namespace NorthernRogue.CCCP.Editor
                 // Serialize dictionaries to JSON
                 string originalInfoJson = JsonUtility.ToJson(new SerializableFileInfoDictionary(originalFileInfo));
                 string currentInfoJson = JsonUtility.ToJson(new SerializableFileInfoDictionary(currentFileInfo));
-                
-                // Save to EditorPrefs
-                EditorPrefs.SetString(PrefsKeyPrefix + "OriginalFileInfo", originalInfoJson);
-                EditorPrefs.SetString(PrefsKeyPrefix + "CurrentFileInfo", currentInfoJson);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "ServerChangesDetected", serverChangesDetected);
+
+                // Save to Settings
+                CCCPSettingsAdapter.SetOriginalFileInfo(originalInfoJson);
+                CCCPSettingsAdapter.SetCurrentFileInfo(currentInfoJson);
+                CCCPSettingsAdapter.SetServerChangesDetected(serverChangesDetected);
             }
             catch (Exception ex)
             {

@@ -1,5 +1,4 @@
 using UnityEngine;
-using System;
 using System.Collections.Generic;
 
 namespace NorthernRogue.CCCP.Editor.Settings
@@ -11,7 +10,7 @@ namespace NorthernRogue.CCCP.Editor.Settings
     public class CCCPSettings : ScriptableObject
     {
         [Header("Server Configuration")]
-        public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WslServer;
+        public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
         public string userName = "";
         public string serverUrl = "http://0.0.0.0:3000/";
         public int serverPort = 3000;
@@ -83,25 +82,38 @@ namespace NorthernRogue.CCCP.Editor.Settings
         public bool clearDatabaseLogAtStart = true;
         public bool autoCloseWsl = true;
         public bool echoToConsole = true;
-        
+        public bool showLocalTime = true;
+        public bool welcomeWindowShown = false;
+
         [Header("Version Information")]
         public string spacetimeDBCurrentVersion = "";
         public string spacetimeDBCurrentVersionCustom = "";
         public string spacetimeDBCurrentVersionTool = "";
         public string spacetimeDBLatestVersion = "";
+        public string spacetimeSDKLatestVersion = "";
         public string rustCurrentVersion = "";
         public string rustLatestVersion = "";
         public string rustupVersion = "";
+        public string CCCPAssetStoreLatestVersion = "";
+        public bool rustupUpdateAvailable = false;
         public bool rustUpdateAvailable = false;
         public bool spacetimeSDKUpdateAvailable = false;
-        
+        public bool SpacetimeDBUpdateAvailable = false;
+        public bool CCCPGithubUpdateAvailable = false;
+        public bool CCCPAssetStoreUpdateAvailable = false;
+        public string distributionType = "";
+        public string githubLastCommitSha = "";
+        public bool isAssetStoreVersion = false;
+        public bool isGitHubVersion = false;
+
         [Header("Installer Settings")]
         public bool WSL1Installed = false;
         public bool visibleInstallProcesses = true;
         public bool keepWindowOpenForDebug = true;
         public bool updateCargoToml = true;
         public bool serviceMode = true;
-        
+        public bool firstTimeOpenInstaller = true;
+
         [Header("UI Settings")]
         public bool autoscroll = true;
         public bool colorLogo = false;
@@ -142,7 +154,7 @@ namespace NorthernRogue.CCCP.Editor.Settings
         // Reset to defaults
         public void ResetToDefaults()
         {
-            serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WslServer;
+            serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
             userName = "";
             serverUrl = "http://0.0.0.0:3000/";
             serverPort = 3000;
@@ -201,23 +213,36 @@ namespace NorthernRogue.CCCP.Editor.Settings
             clearDatabaseLogAtStart = true;
             autoCloseWsl = true;
             echoToConsole = true;
-            
+            showLocalTime = true;
+            welcomeWindowShown = false;
+
             spacetimeDBCurrentVersion = "";
             spacetimeDBCurrentVersionCustom = "";
             spacetimeDBCurrentVersionTool = "";
             spacetimeDBLatestVersion = "";
+            spacetimeSDKLatestVersion = "";
             rustCurrentVersion = "";
             rustLatestVersion = "";
             rustupVersion = "";
+            CCCPAssetStoreLatestVersion = "";
             rustUpdateAvailable = false;
+            rustupUpdateAvailable = false;
             spacetimeSDKUpdateAvailable = false;
-            
+            SpacetimeDBUpdateAvailable = false;
+            CCCPGithubUpdateAvailable = false;
+            CCCPAssetStoreUpdateAvailable = false;
+            distributionType = "";
+            githubLastCommitSha = "";
+            isAssetStoreVersion = false;
+            isGitHubVersion = false;
+
             WSL1Installed = false;
             visibleInstallProcesses = true;
             keepWindowOpenForDebug = true;
             updateCargoToml = true;
             serviceMode = true;
-            
+            firstTimeOpenInstaller = true;
+
             autoscroll = true;
             colorLogo = false;
             showPrerequisites = false;

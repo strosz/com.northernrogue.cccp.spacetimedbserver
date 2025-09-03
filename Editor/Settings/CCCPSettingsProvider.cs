@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEditor;
-using System.IO;
 using System.Linq;
 
 namespace NorthernRogue.CCCP.Editor.Settings
@@ -17,16 +16,12 @@ namespace NorthernRogue.CCCP.Editor.Settings
         [SettingsProvider]
         public static SettingsProvider CreateCCCPSettingsProvider()
         {
-            var provider = new SettingsProvider("Project/CCCP SpacetimeDB", SettingsScope.Project)
+            var provider = new SettingsProvider("Project/Cosmos Cove Control Panel", SettingsScope.Project)
             {
-                label = "CCCP SpacetimeDB",
+                label = "Cosmos Cove Control Panel",
                 guiHandler = (searchContext) =>
                 {
                     var settings = GetOrCreateSettings();
-                    
-                    EditorGUILayout.Space();
-                    EditorGUILayout.LabelField("SpacetimeDB Control Panel Settings", EditorStyles.boldLabel);
-                    EditorGUILayout.Space();
                     
                     using (var changeCheck = new EditorGUI.ChangeCheckScope())
                     {
@@ -234,13 +229,11 @@ namespace NorthernRogue.CCCP.Editor.Settings
         }
         
         /// <summary>
-        /// Migrate settings from EditorPrefs to the new settings system
+        /// Migration support for users upgrading from GitHub version
+        /// Safe to leave in - only runs if old EditorPrefs keys exist
         /// </summary>
         private static void MigrateFromEditorPrefs(CCCPSettings settings)
         {
-            // Migration support for users upgrading from GitHub version
-            // Safe to leave in - only runs if old EditorPrefs keys exist
-            
             Debug.Log("CCCP: Migrating settings from EditorPrefs to Settings Provider...");
             
             // Server Configuration
@@ -347,17 +340,31 @@ namespace NorthernRogue.CCCP.Editor.Settings
             settings.spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", settings.spacetimeDBCurrentVersionCustom);
             settings.spacetimeDBCurrentVersionTool = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", settings.spacetimeDBCurrentVersionTool);
             settings.spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", settings.spacetimeDBLatestVersion);
+            settings.spacetimeSDKLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", settings.spacetimeSDKLatestVersion);
+            settings.CCCPAssetStoreLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "CCCPAssetStoreLatestVersion", settings.CCCPAssetStoreLatestVersion);
             settings.rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", settings.rustCurrentVersion);
             settings.rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", settings.rustLatestVersion);
             settings.rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", settings.rustupVersion);
+            settings.rustupUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustupUpdateAvailable", settings.rustupUpdateAvailable);
             settings.rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", settings.rustUpdateAvailable);
+            settings.SpacetimeDBUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", settings.SpacetimeDBUpdateAvailable);
+            settings.spacetimeSDKUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeSDKUpdateAvailable", settings.spacetimeSDKUpdateAvailable);
+            settings.CCCPGithubUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "GithubUpdateAvailable", settings.CCCPGithubUpdateAvailable);
+            settings.CCCPAssetStoreUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "AssetStoreUpdateAvailable", settings.CCCPAssetStoreUpdateAvailable);
             
+            // Distribution and Version Control Information
+            settings.distributionType = EditorPrefs.GetString(PrefsKeyPrefix + "DistributionType", settings.distributionType);
+            settings.githubLastCommitSha = EditorPrefs.GetString(PrefsKeyPrefix + "GithubLastCommitSha", settings.githubLastCommitSha);
+            settings.isAssetStoreVersion = EditorPrefs.GetBool(PrefsKeyPrefix + "IsAssetStoreVersion", settings.isAssetStoreVersion);
+            settings.isGitHubVersion = EditorPrefs.GetBool(PrefsKeyPrefix + "IsGitHubVersion", settings.isGitHubVersion);
+
             // Installer Settings
             settings.WSL1Installed = EditorPrefs.GetBool(PrefsKeyPrefix + "WSL1Installed", settings.WSL1Installed);
             settings.visibleInstallProcesses = EditorPrefs.GetBool(PrefsKeyPrefix + "VisibleInstallProcesses", settings.visibleInstallProcesses);
             settings.keepWindowOpenForDebug = EditorPrefs.GetBool(PrefsKeyPrefix + "KeepWindowOpenForDebug", settings.keepWindowOpenForDebug);
             settings.updateCargoToml = EditorPrefs.GetBool(PrefsKeyPrefix + "UpdateCargoToml", settings.updateCargoToml);
             settings.serviceMode = EditorPrefs.GetBool(PrefsKeyPrefix + "ServiceMode", settings.serviceMode);
+            settings.firstTimeOpenInstaller = EditorPrefs.GetBool(PrefsKeyPrefix + "FirstTimeOpen", settings.firstTimeOpenInstaller);
             
             // UI Settings
             settings.autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", settings.autoscroll);
@@ -365,6 +372,8 @@ namespace NorthernRogue.CCCP.Editor.Settings
             settings.showPrerequisites = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", settings.showPrerequisites);
             settings.showSettingsWindow = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", settings.showSettingsWindow);
             settings.showUtilityCommands = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", settings.showUtilityCommands);
+            settings.showLocalTime = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowLocalTime", settings.showLocalTime);
+            settings.welcomeWindowShown = EditorPrefs.GetBool(PrefsKeyPrefix + "WelcomeWindowShown", settings.welcomeWindowShown);
             
             // Detection Settings
             settings.serverChangesDetected = EditorPrefs.GetBool(PrefsKeyPrefix + "ServerChangesDetected", settings.serverChangesDetected);

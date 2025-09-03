@@ -10,11 +10,7 @@ using NorthernRogue.CCCP.Editor.Settings;
 namespace NorthernRogue.CCCP.Editor {
 
 public class ServerManager
-{
-    // Migration support for users upgrading from GitHub version
-    // Safe to leave in - only runs if old EditorPrefs keys exist
-    private const string PrefsKeyPrefix = "CCCP_";
-        
+{       
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
@@ -27,7 +23,7 @@ public class ServerManager
     private CCCPSettings Settings => CCCPSettings.Instance;
     
     // Server mode
-    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode 
+    public ServerMode serverMode 
     { 
         get => Settings.serverMode; 
         set => CCCPSettingsAdapter.SetServerMode(value); 
@@ -40,7 +36,6 @@ public class ServerManager
     private const float serverStartupGracePeriod = 10f;
     
     // Server status
-    private const double checkInterval = 5.0;
     private bool serverConfirmedRunning = false;
     private bool justStopped = false;
     private bool pingShowsOnline = true;
@@ -52,112 +47,35 @@ public class ServerManager
     private int consecutiveFailedChecks = 0;
     private const int maxConsecutiveFailuresBeforeStop = 3;
 
-    // Configuration properties - now accessed from Settings via adapter
+    // Core internal properties used throughout ServerManager
+    // These cache frequently accessed settings for performance and convenience
     public string userName 
     { 
         get => Settings.userName; 
         set => CCCPSettingsAdapter.SetUserName(value); 
-    }
-    public string backupDirectory 
-    { 
-        get => Settings.backupDirectory; 
-        set => CCCPSettingsAdapter.SetBackupDirectory(value); 
     }
     public string serverDirectory 
     { 
         get => Settings.serverDirectory; 
         set => CCCPSettingsAdapter.SetServerDirectory(value); 
     }
-    public string unityLang 
-    { 
-        get => Settings.unityLang; 
-        set => CCCPSettingsAdapter.SetUnityLang(value); 
-    }
-    public string clientDirectory 
-    { 
-        get => Settings.clientDirectory; 
-        set => CCCPSettingsAdapter.SetClientDirectory(value); 
-    }
-    public string serverLang 
-    { 
-        get => Settings.serverLang; 
-        set => CCCPSettingsAdapter.SetServerLang(value); 
-    }
     public string moduleName 
     { 
         get => Settings.moduleName; 
         set => CCCPSettingsAdapter.SetModuleName(value); 
     }
-    public int selectedModuleIndex 
-    { 
-        get => Settings.selectedModuleIndex; 
-        set => CCCPSettingsAdapter.SetSelectedModuleIndex(value); 
-    }
-    public string serverUrl 
-    { 
-        get => Settings.serverUrl; 
-        set => CCCPSettingsAdapter.SetServerUrl(value); 
-    }
-    public int serverPort 
-    { 
-        get => Settings.serverPort; 
-        set => CCCPSettingsAdapter.SetServerPort(value); 
-    }
-    public string authToken 
-    { 
-        get => Settings.authToken; 
-        set => CCCPSettingsAdapter.SetAuthToken(value); 
-    }
-
-    public string maincloudUrl 
-    { 
-        get => Settings.maincloudUrl; 
-        set => CCCPSettingsAdapter.SetMaincloudUrl(value); 
-    }
-    public string maincloudAuthToken 
-    { 
-        get => Settings.maincloudAuthToken; 
-        set => CCCPSettingsAdapter.SetMaincloudAuthToken(value); 
-    }
-    
-    // Custom server properties
-    public string sshUserName 
-    { 
-        get => Settings.sshUserName; 
-        set => CCCPSettingsAdapter.SetSSHUserName(value); 
-    }
-    public string customServerUrl 
-    { 
-        get => Settings.customServerUrl; 
-        set => CCCPSettingsAdapter.SetCustomServerUrl(value); 
-    }
-    public int customServerPort 
-    { 
-        get => Settings.customServerPort; 
-        set => CCCPSettingsAdapter.SetCustomServerPort(value); 
-    }
-    public string customServerAuthToken 
-    { 
-        get => Settings.customServerAuthToken; 
-        set => CCCPSettingsAdapter.SetCustomServerAuthToken(value); 
-    }
-    public string sshPrivateKeyPath 
-    { 
-        get => Settings.sshPrivateKeyPath; 
-        set => CCCPSettingsAdapter.SetSSHPrivateKeyPath(value); 
-    }
-    
-    // Server settings
     public bool debugMode 
     { 
         get => Settings.debugMode; 
         set => CCCPSettingsAdapter.SetDebugMode(value); 
     }
-    public bool hideWarnings 
+    public bool silentMode 
     { 
-        get => Settings.hideWarnings; 
-        set => CCCPSettingsAdapter.SetHideWarnings(value); 
+        get => Settings.silentMode; 
+        set => CCCPSettingsAdapter.SetSilentMode(value); 
     }
+    
+    // Additional frequently used properties for server operations
     public bool detectServerChanges 
     { 
         get => Settings.detectServerChanges; 
@@ -178,16 +96,6 @@ public class ServerManager
         get => Settings.publishAndGenerateMode; 
         set => CCCPSettingsAdapter.SetPublishAndGenerateMode(value); 
     }
-    public bool silentMode 
-    { 
-        get => Settings.silentMode; 
-        set => CCCPSettingsAdapter.SetSilentMode(value); 
-    }
-    public bool autoCloseWsl 
-    { 
-        get => Settings.autoCloseWsl; 
-        set => CCCPSettingsAdapter.SetAutoCloseWsl(value); 
-    }
     public bool clearModuleLogAtStart 
     { 
         get => Settings.clearModuleLogAtStart; 
@@ -197,6 +105,11 @@ public class ServerManager
     { 
         get => Settings.clearDatabaseLogAtStart; 
         set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); 
+    }
+    public bool autoCloseWsl 
+    { 
+        get => Settings.autoCloseWsl; 
+        set => CCCPSettingsAdapter.SetAutoCloseWsl(value); 
     }
 
     // Prerequisites state
@@ -326,18 +239,16 @@ public class ServerManager
         get => Settings.echoToConsole; 
         set => CCCPSettingsAdapter.SetEchoToConsole(value); 
     }
-
-
     
     // Compatibility properties (old naming convention) - these will be deprecated
-    public string SSHUserName => sshUserName;
-    public string CustomServerUrl => customServerUrl;
-    public int CustomServerPort => customServerPort;
-    public string CustomServerAuthToken => customServerAuthToken;
-    public string SSHPrivateKeyPath => sshPrivateKeyPath;
+    public string SSHUserName => Settings.sshUserName;
+    public string CustomServerUrl => Settings.customServerUrl;
+    public int CustomServerPort => Settings.customServerPort;
+    public string CustomServerAuthToken => Settings.customServerAuthToken;
+    public string SSHPrivateKeyPath => Settings.sshPrivateKeyPath;
     
     public bool DebugMode => debugMode;
-    public bool HideWarnings => hideWarnings;
+    public bool HideWarnings => Settings.hideWarnings;
     public bool DetectServerChanges => detectServerChanges;
     public bool ServerChangesDetected { get => serverChangesDetected; set => serverChangesDetected = value; }
     public bool AutoPublishMode => autoPublishMode;
@@ -347,21 +258,20 @@ public class ServerManager
     public bool ClearModuleLogAtStart => clearModuleLogAtStart;
     public bool ClearDatabaseLogAtStart => clearDatabaseLogAtStart;
 
-    public string MaincloudUrl => maincloudUrl;
-    public string MaincloudAuthToken => maincloudAuthToken;
+    public string MaincloudUrl => Settings.maincloudUrl;
+    public string MaincloudAuthToken => Settings.maincloudAuthToken;
     
     // Additional compatibility properties
     public string UserName => userName;
-    public string BackupDirectory => backupDirectory;
+    public string BackupDirectory => Settings.backupDirectory;
     public string ServerDirectory => serverDirectory;
-    public string UnityLang => unityLang;
-    public string ClientDirectory => clientDirectory;
-    public string ServerLang => serverLang;
+    public string UnityLang => Settings.unityLang;
+    public string ClientDirectory => Settings.clientDirectory;
+    public string ServerLang => Settings.serverLang;
     public string ModuleName => moduleName;
-    public int SelectedModuleIndex => selectedModuleIndex;
-    public string ServerUrl => serverUrl;
-    public int ServerPort => serverPort;
-    public string AuthToken => authToken;
+    public string ServerUrl => Settings.serverUrl;
+    public int ServerPort => Settings.serverPort;
+    public string AuthToken => Settings.authToken;
 
     // Status properties
     public bool IsServerStarted => serverStarted;
@@ -419,7 +329,7 @@ public class ServerManager
 
     public enum ServerMode
     {
-        WslServer,
+        WSLServer,
         CustomServer,
         MaincloudServer,
     }
@@ -482,25 +392,25 @@ public class ServerManager
         // Debug message if this is a fresh migration
         if (!settings.migratedFromEditorPrefs && HasAnyEditorPrefs())
         {
-            UnityEngine.Debug.Log("CCCP: Settings will be migrated from EditorPrefs on first access.");
+            UnityEngine.Debug.Log("Cosmos Cove Control Panel: Settings have been migrated from EditorPrefs.");
         }
     }
     
     // Helper method to check if any EditorPrefs exist
+    // May be removed when all users migrate to the new settings system
     private bool HasAnyEditorPrefs()
     {
-        return EditorPrefs.HasKey(PrefsKeyPrefix + "UserName") ||
-               EditorPrefs.HasKey(PrefsKeyPrefix + "ServerURL") ||
-               EditorPrefs.HasKey(PrefsKeyPrefix + "ServerMode");
+        return EditorPrefs.HasKey("CCCP_UserName") ||
+               EditorPrefs.HasKey("CCCP_ServerURL") ||
+               EditorPrefs.HasKey("CCCP_ServerMode");
     }
 
-    
-    // Special handling for certain settings that need additional logic
-    public void UpdateServerDirectory(string value) 
+
+    // Needed for the ServerDetectionProcess
+    public void UpdateServerDetectionDirectory(string value) 
     { 
         serverDirectory = value;
         
-        // Update ServerDetectionProcess if it exists
         if (detectionProcess != null)
         {
             detectionProcess.Configure(value, detectServerChanges);
@@ -524,7 +434,7 @@ public class ServerManager
         
         // Add HTTPS protocol
         string httpsUrl = "https://" + cleanedUrl;
-        maincloudUrl = httpsUrl;
+        CCCPSettingsAdapter.SetMaincloudUrl(httpsUrl);
         
         if (debugMode) LogMessage($"Maincloud URL set to: {httpsUrl}", 0);
     }
@@ -555,7 +465,7 @@ public class ServerManager
     // Force WSL log refresh - triggers new journalctl commands for WSL server
     public void ForceWSLLogRefresh()
     {
-        if (logProcessor != null && Settings.serverMode == ServerMode.WslServer)
+        if (logProcessor != null && Settings.serverMode == ServerMode.WSLServer)
         {
             logProcessor.ForceWSLLogRefresh();
         }
@@ -570,26 +480,10 @@ public class ServerManager
         }
     }
     
-    public void SetHasDebian(bool value) { hasDebian = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebian", value); }
-    public void SetHasDebianTrixie(bool value) { hasDebianTrixie = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasDebianTrixie", value); }
-    public void SetHasCurl(bool value) { hasCurl = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasCurl", value); }
-    public void SetHasSpacetimeDBServer(bool value) { hasSpacetimeDBServer = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBServer", value); }    
-    public void SetHasSpacetimeDBPath(bool value) { hasSpacetimeDBPath = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBPath", value); }
-    public void SetHasSpacetimeDBService(bool value) { hasSpacetimeDBService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBService", value); }
-    public void SetHasSpacetimeDBLogsService(bool value) { hasSpacetimeDBLogsService = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasSpacetimeDBLogsService", value); }
-    public void SetHasRust(bool value) { hasRust = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasRust", value); }
-    public void SetHasNETSDK(bool value) { hasNETSDK = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasNETSDK", value); }
-    public void SetHasBinaryen(bool value) { hasBinaryen = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasBinaryen", value); }
-    public void SetHasGit(bool value) { hasGit = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasGit", value); }
-    public void SetWslPrerequisitesChecked(bool value) { wslPrerequisitesChecked = value; EditorPrefs.SetBool(PrefsKeyPrefix + "wslPrerequisitesChecked", value); }
-    public void SetInitializedFirstModule(bool value) { initializedFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "InitializedFirstModule", value); }
-    public void SetPublishFirstModule(bool value) { publishFirstModule = value; EditorPrefs.SetBool(PrefsKeyPrefix + "PublishFirstModule", value); }
-    public void SetHasAllPrerequisites(bool value) { hasAllPrerequisites = value; EditorPrefs.SetBool(PrefsKeyPrefix + "HasAllPrerequisites", value); }
-    
     public void SetServerMode(ServerMode mode)
     {
         serverMode = mode;
-        EditorPrefs.SetString(PrefsKeyPrefix + "ServerMode", mode.ToString());
+        CCCPSettingsAdapter.SetServerMode(mode);
         
         // Clear status cache when changing server modes
         if (cmdProcessor != null)
@@ -641,8 +535,8 @@ public class ServerManager
 
         switch (Settings.serverMode)
         {
-            case ServerMode.WslServer:
-                StartWslServer();
+            case ServerMode.WSLServer:
+                StartWSLServer();
                 break;
             case ServerMode.CustomServer:
                 EditorApplication.delayCall += async () => { await StartCustomServer(); };
@@ -656,7 +550,7 @@ public class ServerManager
         }
     }    
 
-    private void StartWslServer()
+    private void StartWSLServer()
     {
         if (!HasWSL || !HasDebian || !HasDebianTrixie || !HasSpacetimeDBService)
         {
@@ -892,10 +786,10 @@ public class ServerManager
             RepaintCallback?.Invoke();
             return;
         }
-        else if (Settings.serverMode == ServerMode.WslServer)
+        else if (Settings.serverMode == ServerMode.WSLServer)
         {
             EditorApplication.delayCall += async () => {
-                await StopWslServer();
+                await StopWSLServer();
             };
             RepaintCallback?.Invoke();
             return;
@@ -908,7 +802,7 @@ public class ServerManager
         }
     }    
 
-    private async Task StopWslServer()
+    private async Task StopWSLServer()
     {
         // Set the stopping flag to prevent concurrent stops
         isStopping = true;
@@ -1576,7 +1470,7 @@ public class ServerManager
         
         if (resetDatabase)
         {
-            if (Settings.serverMode == ServerMode.WslServer)
+            if (Settings.serverMode == ServerMode.WSLServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
@@ -1793,41 +1687,6 @@ public class ServerManager
         }
     }
 
-    public void CheckPrerequisites(Action<bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool> callback)
-    {        
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk) => {
-            // Save state in ServerManager properties (which will persist to settings)
-            hasWSL = wsl;
-            hasDebian = debian;
-            hasDebianTrixie = trixie;
-            hasCurl = curl;
-            hasSpacetimeDBServer = spacetime;
-            hasSpacetimeDBPath = spacetimePath;
-            hasRust = rust;
-            hasSpacetimeDBService = spacetimeService;
-            hasSpacetimeDBLogsService = spacetimeLogsService;
-            hasBinaryen = binaryen;
-            hasGit = git;
-            hasNETSDK = netsdk;
-            wslPrerequisitesChecked = true;
-            
-            // Migration support for users upgrading from GitHub version
-            // Safe to leave in - only runs if old EditorPrefs keys exist
-            // Read userName from EditorPrefs if settings don't have it yet
-            if (string.IsNullOrEmpty(userName))
-            {
-                string storedUserName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-                if (!string.IsNullOrEmpty(storedUserName))
-                {
-                    userName = storedUserName;
-                }
-            }
-            
-            // Then call the original callback
-            callback(wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk);
-        });
-    }
-
     public void ViewServerLogs()
     {
         if (SilentMode || Settings.serverMode == ServerMode.CustomServer)
@@ -1903,7 +1762,7 @@ public class ServerManager
         }
         else if (Settings.serverMode == ServerMode.MaincloudServer)
         {
-            url = !string.IsNullOrEmpty(maincloudUrl) ? maincloudUrl : "https://maincloud.spacetimedb.com/";
+            url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
         else
         {
@@ -1947,7 +1806,7 @@ public class ServerManager
         }
         else if (Settings.serverMode == ServerMode.MaincloudServer)
         {
-            url = !string.IsNullOrEmpty(maincloudUrl) ? maincloudUrl : "https://maincloud.spacetimedb.com/";
+            url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
         else
         {
@@ -2103,7 +1962,7 @@ public class ServerManager
         // For journalctl-based approach, database logs are part of the main logging
         if (serverStarted && silentMode)
         {
-            if (Settings.serverMode == ServerMode.WslServer)
+            if (Settings.serverMode == ServerMode.WSLServer)
             {
                 // Configure WSL and start logging for journalctl-based approach
                 logProcessor.ConfigureWSL(true);
@@ -2272,7 +2131,7 @@ public class ServerManager
                 return;
             }
 
-            string url = maincloudUrl;
+            string url = Settings.maincloudUrl;
             if (!url.EndsWith("/")) url += "/";
             url += $"v1/database/{moduleName}/schema?version=9";
             
@@ -2284,10 +2143,10 @@ public class ServerManager
                 httpClient.Timeout = TimeSpan.FromSeconds(5);
                 
                 // Add authorization header if token exists
-                if (!string.IsNullOrEmpty(authToken))
+                if (!string.IsNullOrEmpty(Settings.maincloudAuthToken))
                 {
                     httpClient.DefaultRequestHeaders.Authorization = 
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken);
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Settings.maincloudAuthToken);
                 }
                 
                 // Make the request
@@ -2412,18 +2271,18 @@ public class ServerManager
 
     public void OpenSSHWindow()
     {
-        // Extract just the IP/hostname from the customServerUrl (remove protocol, port, and path)
-        string serverHost = ExtractHostname(customServerUrl);
+        // Extract just the IP/hostname from the CustomServerUrl (remove protocol, port, and path)
+        string serverHost = ExtractHostname(CustomServerUrl);
         
         // Validate that we have all required values
-        if (string.IsNullOrEmpty(serverHost) || string.IsNullOrEmpty(sshUserName))
+        if (string.IsNullOrEmpty(serverHost) || string.IsNullOrEmpty(SSHUserName))
         {
             LogMessage("Cannot open SSH window: Missing server host or username", -1);
             return;
         }
         
         // Construct the SSH command with proper escaping
-        string sshCommand = $"ssh {sshUserName}@{serverHost}";
+        string sshCommand = $"ssh {SSHUserName}@{serverHost}";
         
         if (DebugMode)
         {
@@ -2441,7 +2300,7 @@ public class ServerManager
     public async Task CheckAllStatus()
     {
         // Check appropriate status based on server mode
-        if (Settings.serverMode == ServerMode.WslServer)
+        if (Settings.serverMode == ServerMode.WSLServer)
         {
             await CheckWslStatus();
             await CheckServerStatus();
@@ -2481,7 +2340,7 @@ public class ServerManager
         if (echoToConsole)
         {
             ServerOutputWindow.EchoLogsToConsole();
-            echoToConsole = EditorPrefs.GetBool(PrefsKeyPrefix + "EchoToConsole", true); // Update the value
+            CCCPSettingsAdapter.SetEchoToConsole(echoToConsole);
         }
     }
     #endregion
@@ -2546,7 +2405,7 @@ public class ServerManager
         if (toolMatch.Success && toolMatch.Groups.Count > 1)
         {
             toolversion = toolMatch.Groups[1].Value;
-            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", toolversion);
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionTool(toolversion);
             spacetimeDBCurrentVersionTool = toolversion;
 
             if (debugMode) LogMessage($"Detected SpacetimeDB tool version from output: {toolversion}", 1);
@@ -2554,17 +2413,16 @@ public class ServerManager
 
         if (!string.IsNullOrEmpty(version))
         {
-            // Save to EditorPrefs
-            EditorPrefs.SetString(PrefsKeyPrefix + "SpacetimeDBVersion", version);
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(version);
 
             spacetimeDBCurrentVersion = version;
 
             // Check if update is available by comparing with the latest version from ServerUpdateProcess
-            spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", "");
+            spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
             if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
             {
                 LogMessage($"SpacetimeDB update available for WSL! Click on the update button in Commands. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", true);
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
         }
         else
@@ -2598,7 +2456,7 @@ public class ServerManager
         
         if (debugMode) LogMessage("SpacetimeDB SDK is installed, checking for updates...", 0);
         
-        // Get current and latest versions from ServerUpdateProcess EditorPrefs
+        // Get current and latest versions from ServerUpdateProcess
         string currentSDKVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
         string latestSDKVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
         bool updateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
@@ -2681,7 +2539,7 @@ public class ServerManager
                 if (latestMatch.Success && latestMatch.Groups.Count > 1)
                 {
                     string latestVersion = latestMatch.Groups[1].Value;
-                    EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", latestVersion);
+                    CCCPSettingsAdapter.SetRustLatestVersion(latestVersion);
                     rustLatestVersion = latestVersion;
                     if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion} to {latestVersion}", 1);
                 }
@@ -2693,7 +2551,7 @@ public class ServerManager
             else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
             {
                 // Clear the latest version when up to date
-                EditorPrefs.SetString(PrefsKeyPrefix + "RustLatestVersion", "");
+                CCCPSettingsAdapter.SetRustLatestVersion("");
                 rustLatestVersion = "";
                 if (debugMode) LogMessage($"Rust is up to date at version: {rustStableVersion}", 1);
             }
@@ -2719,36 +2577,36 @@ public class ServerManager
             }
         }
         
-        // Save versions to EditorPrefs and local variables
+        // Save versions to Settings and local variables
         if (!string.IsNullOrEmpty(rustStableVersion))
         {
-            EditorPrefs.SetString(PrefsKeyPrefix + "RustVersion", rustStableVersion);
+            CCCPSettingsAdapter.SetRustCurrentVersion(rustStableVersion);
             rustCurrentVersion = rustStableVersion;
             
             if (rustUpdateAvailable)
             {
                 LogMessage($"Rust update available for WSL! Click on the Installer Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", true);
+                CCCPSettingsAdapter.SetRustUpdateAvailable(true);
             }
             else
             {
-                EditorPrefs.SetBool(PrefsKeyPrefix + "RustUpdateAvailable", false);
+                CCCPSettingsAdapter.SetRustUpdateAvailable(false);
             }
         }
         
         if (!string.IsNullOrEmpty(rustupCurrentVersion))
         {
-            EditorPrefs.SetString(PrefsKeyPrefix + "RustupVersion", rustupCurrentVersion);
+            CCCPSettingsAdapter.SetRustupVersion(rustupCurrentVersion);
             rustupVersion = rustupCurrentVersion;
             
             if (rustupUpdateAvailable)
             {
                 //LogMessage($"Rustup update available for WSL! Click on the Installer Window update button to install the latest version: {rustupCurrentVersion}", 1);
-                EditorPrefs.SetBool(PrefsKeyPrefix + "RustupUpdateAvailable", true);
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
             }
             else
             {
-                EditorPrefs.SetBool(PrefsKeyPrefix + "RustupUpdateAvailable", false);
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
             }
         }
         
@@ -2774,7 +2632,7 @@ public class ServerManager
         {
             double currentTime = EditorApplication.timeSinceStartup;
             
-            if (Settings.serverMode == ServerMode.WslServer || Settings.serverMode == ServerMode.MaincloudServer)
+            if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.MaincloudServer)
             {
                 logProcessor.CheckLogProcesses(currentTime);
             }

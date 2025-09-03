@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using NorthernRogue.CCCP.Editor.Settings;
 
 // Processes the logs when the server is running in silent mode ///
 
@@ -33,7 +34,6 @@ public class ServerLogProcess
     private const string SessionKeyDatabaseLogFreshStartTime = "ServerWindow_DatabaseLogFreshStartTime";
     private const string SessionKeyModuleLogStartFresh = "ServerWindow_ModuleLogStartFresh";
     private const string SessionKeyModuleLogFreshStartTime = "ServerWindow_ModuleLogFreshStartTime";
-    private const string PrefsKeyPrefix = "CCCP_"; // Same prefix as ServerWindow
     
     // Settings
     private bool clearModuleLogAtStart = false;
@@ -1613,12 +1613,12 @@ public class ServerLogProcess
         this.cmdProcessor = cmdProcessor;
         ServerLogProcess.debugMode = debugMode;
         
-        // Load username from EditorPrefs
-        this.userName = EditorPrefs.GetString(PrefsKeyPrefix + "UserName", "");
-        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from EditorPrefs: {this.userName}");
-        
-        // Load log update frequency from EditorPrefs and apply it
-        float savedLogUpdateFrequency = EditorPrefs.GetFloat(PrefsKeyPrefix + "LogUpdateFrequency", 1.0f);
+        // Load username from Settings
+        this.userName = CCCPSettingsAdapter.GetUserName();
+        //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Initialized with username from Settings: {this.userName}");
+
+        // Load log update frequency from Settings and apply it
+        float savedLogUpdateFrequency = CCCPSettingsAdapter.GetLogUpdateFrequency();
         UpdateLogReadIntervals(savedLogUpdateFrequency);
         //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Applied saved log update frequency: {savedLogUpdateFrequency}s");
           // Load log content from session state
