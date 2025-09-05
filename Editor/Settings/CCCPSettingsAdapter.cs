@@ -1074,11 +1074,22 @@ namespace NorthernRogue.CCCP.Editor.Settings
             
             try
             {
+                // First try the new format (ModuleListWrapper with "modules" property)
                 var wrapper = JsonUtility.FromJson<ModuleListWrapper>(json);
                 if (wrapper != null && wrapper.modules != null)
                 {
                     Settings.savedModules = wrapper.modules.ToList();
                     SaveSettings();
+                    return;
+                }
+                
+                // Try the old format (SerializableListWrapper with "items" property)
+                var oldWrapper = JsonUtility.FromJson<SerializableListWrapper>(json);
+                if (oldWrapper != null && oldWrapper.items != null)
+                {
+                    Settings.savedModules = oldWrapper.items.ToList();
+                    SaveSettings();
+                    return;
                 }
             }
             catch (System.Exception e)
@@ -1091,6 +1102,12 @@ namespace NorthernRogue.CCCP.Editor.Settings
         private class ModuleListWrapper
         {
             public ModuleInfo[] modules;
+        }
+        
+        [System.Serializable]
+        private class SerializableListWrapper
+        {
+            public ModuleInfo[] items;
         }
         
         #endregion

@@ -865,11 +865,22 @@ public static class CCCPSettingsProvider
         {
             try
             {
-                var moduleWrapper = JsonUtility.FromJson<ModuleListWrapper>(savedModulesJson);
-                if (moduleWrapper != null && moduleWrapper.modules != null)
+                // First try the old format (SerializableList with "items" property)
+                var oldFormatWrapper = JsonUtility.FromJson<SerializableListWrapper>(savedModulesJson);
+                if (oldFormatWrapper != null && oldFormatWrapper.items != null)
                 {
-                    settings.savedModules = moduleWrapper.modules.ToList();
-                    Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs");
+                    settings.savedModules = oldFormatWrapper.items.ToList();
+                    Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (old format)");
+                }
+                else
+                {
+                    // Try the new format (ModuleListWrapper with "modules" property)
+                    var moduleWrapper = JsonUtility.FromJson<ModuleListWrapper>(savedModulesJson);
+                    if (moduleWrapper != null && moduleWrapper.modules != null)
+                    {
+                        settings.savedModules = moduleWrapper.modules.ToList();
+                        Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (new format)");
+                    }
                 }
             }
             catch (System.Exception e)
@@ -1000,6 +1011,12 @@ public static class CCCPSettingsProvider
     private class ModuleListWrapper
     {
         public ModuleInfo[] modules;
+    }
+    
+    [System.Serializable]
+    private class SerializableListWrapper
+    {
+        public ModuleInfo[] items;
     }
 } // Class
 } // Namespace
