@@ -171,7 +171,7 @@ namespace NorthernRogue.CCCP.Editor.Examples
             var settings = CCCPSettings.Instance;
             
             // Show key settings
-            Debug.Log($"Settings file location: Assets/Editor/Resources/CCCPSettings.asset");
+            Debug.Log($"Settings file location: {CCCPSettingsProvider.SettingsPath}");
             Debug.Log($"Migration status: {(settings.migratedFromEditorPrefs ? "Completed" : "Not needed")}");
             Debug.Log($"Current server mode: {settings.serverMode}");
             Debug.Log($"User name: {(string.IsNullOrEmpty(settings.userName) ? "Not set" : settings.userName)}");

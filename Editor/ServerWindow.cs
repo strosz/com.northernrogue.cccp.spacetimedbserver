@@ -95,7 +95,6 @@ public class ServerWindow : EditorWindow
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
-    private bool cccpUpdateDismissed = false;
 
     // Scroll tracking for autoscroll behavior
     private bool wasAutoScrolling = false;
@@ -139,7 +138,15 @@ public class ServerWindow : EditorWindow
     }
 
     // Saved modules list - Direct property access to settings
-    private List<ModuleInfo> savedModules { get => CCCPSettingsAdapter.GetSavedModules(); set => CCCPSettingsAdapter.SetSavedModules(value); }
+    private List<ModuleInfo> savedModules 
+    { 
+        get 
+        { 
+            var modules = CCCPSettingsAdapter.GetSavedModules();
+            return modules ?? new List<ModuleInfo>();
+        } 
+        set => CCCPSettingsAdapter.SetSavedModules(value); 
+    }
     private int selectedModuleIndex { get => CCCPSettingsAdapter.GetSelectedModuleIndex(); set => CCCPSettingsAdapter.SetSelectedModuleIndex(value); }
     private string newModuleNameInput = ""; // Input field for new module name (UI state)
 
@@ -147,6 +154,13 @@ public class ServerWindow : EditorWindow
 
     private void OnGUI()
     {
+        // Ensure serverManager is initialized before drawing GUI
+        if (serverManager == null)
+        {
+            EditorGUILayout.LabelField("Initializing...", EditorStyles.centeredGreyMiniLabel);
+            return;
+        }
+        
         if (!stylesInitialized) InitializeStyles();
 
         EditorGUILayout.BeginVertical();
@@ -289,11 +303,11 @@ public class ServerWindow : EditorWindow
         // Handle autoscroll behavior based on user interaction
         HandleAutoscrollBehavior(previousScrollPosition);
 
-        // CCCP Update Button (GitHub or Asset Store)
+        // CCCP Update Button (GitHub or Asset Store, ServerUpdateProcess checks which version is available)
         bool githubUpdateAvailable = ServerUpdateProcess.IsGithubUpdateAvailable();
         bool assetStoreUpdateAvailable = ServerUpdateProcess.IsAssetStoreUpdateAvailable();
         
-        if ((githubUpdateAvailable || assetStoreUpdateAvailable) && !cccpUpdateDismissed)
+        if ((githubUpdateAvailable || assetStoreUpdateAvailable) && !SessionState.GetBool("CCCPUpdateMessageDismissed", false))
         {
             // Check if we need to reset the updating state after 10 seconds
             if (isUpdatingCCCP && EditorApplication.timeSinceStartup - cccpUpdateStartTime > 10.0)
@@ -364,7 +378,7 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button(new GUIContent("✕", dismissButtonTooltip), dismissButtonStyle, GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight)))
             {
-                cccpUpdateDismissed = true;
+                SessionState.SetBool("CCCPUpdateMessageDismissed", true);
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -397,14 +411,53 @@ public class ServerWindow : EditorWindow
 
     private void OnEnable()
     {
+        // Refresh settings cache to ensure we have the latest data (including migrated modules)
+        // This is critical after EditorPrefs migration as the cached settings may not reflect
+        // the newly migrated data until the cache is explicitly refreshed
+        CCCPSettingsAdapter.RefreshSettingsCache();
+        CCCPSettings.RefreshInstance();
+        
+        if (debugMode) 
+            UnityEngine.Debug.Log($"[ServerWindow] OnEnable: Initial refresh complete. Module count: {savedModules?.Count ?? 0}");
+        
         // Initialize ServerManager with logging callback
         serverManager = new ServerManager(LogMessage, Repaint);
+        
+        // After creating ServerManager, ensure it has the latest settings
+        serverManager.LoadSettings();
+        serverManager.Configure();
+        
+        // Initialize cmdProcessor to avoid null reference exceptions
+        if (cmdProcessor == null)
+        {
+            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+        }
 
         // Load server mode from Settings
         LoadServerModeFromSettings();
-
-        // Reset CCCP update dismiss state on enable
-        cccpUpdateDismissed = false;
+        
+        // Load the currently selected module if any (after initial settings refresh)
+        LoadSelectedModuleFromSettings();
+        
+        // Also do a delayed refresh to handle any timing issues with asset database
+        EditorApplication.delayCall += () => {
+            CCCPSettingsAdapter.RefreshSettingsCache();
+            CCCPSettings.RefreshInstance();
+            
+            // Reconfigure ServerManager with refreshed settings
+            if (serverManager != null)
+            {
+                serverManager.LoadSettings();
+                serverManager.Configure();
+            }
+            
+            // Load the currently selected module if any (after settings refresh)
+            LoadSelectedModuleFromSettings();
+            
+            if (debugMode) 
+                UnityEngine.Debug.Log($"[ServerWindow] OnEnable: Delayed refresh complete. Module count: {savedModules?.Count ?? 0}");
+            Repaint(); // Force a repaint to update the UI
+        };
 
         // Register for focus events
         EditorApplication.focusChanged += OnFocusChanged;
@@ -413,20 +466,23 @@ public class ServerWindow : EditorWindow
         EditorApplication.update += EditorUpdateHandler;
 
         // Check if we were previously running silently and restore state if needed
-        if (!serverManager.IsServerStarted || !serverManager.SilentMode)
+        if (serverManager != null && (!serverManager.IsServerStarted || !serverManager.SilentMode))
         {
             // Clear the flag if not running silently on enable
             SessionState.SetBool(SessionKeyWasRunningSilently, false);
         }
 
         // Ensure the flag is correctly set based on current state when enabled
-        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+        if (serverManager != null)
+        {
+            SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+        }
 
         EditorApplication.playModeStateChanged += HandlePlayModeStateChange;
 
         // Check if we need to restart the database log process
         bool databaseLogWasRunning = SessionState.GetBool("ServerWindow_DatabaseLogRunning", false);
-        if (serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
+        if (serverManager != null && serverManager.IsServerStarted && serverManager.SilentMode && databaseLogWasRunning)
         {
             if (serverManager.DebugMode) LogMessage("Restarting database logs after editor reload...", 0);
             AttemptDatabaseLogRestartAfterReload();
@@ -434,19 +490,22 @@ public class ServerWindow : EditorWindow
 
         // Add this section near the end of OnEnable
         // Perform an immediate WSL status check if in WSL mode
-        if (serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
+        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
         {
             EditorApplication.delayCall += async () =>
             {
                 try
                 {
-                    await serverManager.CheckWslStatus();
-                    isWslRunning = serverManager.IsWslRunning;
-                    Repaint();
+                    if (serverManager != null)
+                    {
+                        await serverManager.CheckWslStatus();
+                        isWslRunning = serverManager.IsWslRunning;
+                        Repaint();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    if (serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
+                    if (serverManager != null && serverManager.DebugMode) UnityEngine.Debug.LogError($"Error in WSL status check: {ex.Message}");
                 }
             };
         }
@@ -482,7 +541,7 @@ public class ServerWindow : EditorWindow
         }
         
         // For Custom Server mode, ensure UI is refreshed periodically to update connection status
-        if (serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer && windowFocused)
+        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer && windowFocused)
         {
             if (currentTime - lastCheckTime > changeCheckInterval)
             {
@@ -495,18 +554,21 @@ public class ServerWindow : EditorWindow
     {
         try
         {
-            await serverManager.CheckAllStatus();
-            //UnityEngine.Debug.Log($"[ServerWindow CheckStatusAsync] Status check completed at {DateTime.Now}"); // Keep for debugging
-            // Only update UI if the operation wasn't cancelled
-            if (!token.IsCancellationRequested)
+            if (serverManager != null)
             {
-                // Update local state for UI display - only update if value actually changed
-                bool newServerChangesDetected = serverManager.ServerChangesDetected;
-                if (serverChangesDetected != newServerChangesDetected)
+                await serverManager.CheckAllStatus();
+                //UnityEngine.Debug.Log($"[ServerWindow CheckStatusAsync] Status check completed at {DateTime.Now}"); // Keep for debugging
+                // Only update UI if the operation wasn't cancelled
+                if (!token.IsCancellationRequested)
                 {
-                    serverChangesDetected = newServerChangesDetected;
+                    // Update local state for UI display - only update if value actually changed
+                    bool newServerChangesDetected = serverManager.ServerChangesDetected;
+                    if (serverChangesDetected != newServerChangesDetected)
+                    {
+                        serverChangesDetected = newServerChangesDetected;
+                    }
+                    isWslRunning = serverManager.IsWslRunning;
                 }
-                isWslRunning = serverManager.IsWslRunning;
             }
         }
         catch (Exception ex)
@@ -524,7 +586,10 @@ public class ServerWindow : EditorWindow
 
         // Save state before disabling (might be domain reload)
         // Ensure SessionState reflects the state *just before* disable/reload
-        SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+        if (serverManager != null)
+        {
+            SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+        }
 
         // Cleanup event handlers
         EditorApplication.update -= EditorUpdateHandler;
@@ -585,10 +650,9 @@ public class ServerWindow : EditorWindow
         bool showPrerequisites = EditorGUILayout.Foldout(previousShowPrerequisites, prerequisitesTitle, true);
         CCCPSettingsAdapter.SetShowPrerequisites(showPrerequisites);
 
-        // Trigger refresh when foldout state changes
+        // Trigger repaint when foldout state changes
         if (showPrerequisites != previousShowPrerequisites)
         {
-            serverManager.LoadSettings();
             Repaint();
         }
 
@@ -615,7 +679,7 @@ public class ServerWindow : EditorWindow
             string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
             if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WSLServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
+                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your Maincloud log process and change the server mode to WSL Local server?","OK","Cancel");
                     if (modeChange)
@@ -635,14 +699,14 @@ public class ServerWindow : EditorWindow
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted && serverMode == ServerMode.WSLServer)
+                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.WSLServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                 }
-                else if (serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
+                else if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
@@ -658,7 +722,7 @@ public class ServerWindow : EditorWindow
             string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager.serverStarted && serverMode == ServerMode.WSLServer)
+                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.WSLServer)
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Local server and change the server mode to Maincloud server?","OK","Cancel");
                     if (modeChange)
@@ -668,7 +732,7 @@ public class ServerWindow : EditorWindow
                         UpdateServerModeState();
                     }
                 } 
-                if (serverManager.serverStarted && serverMode == ServerMode.CustomServer)
+                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.CustomServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
@@ -812,6 +876,7 @@ public class ServerWindow : EditorWindow
             string savedModulesTooltip = 
             "Modules Selection: Select your saved SpacetimeDB module for editing, publishing and change detection.";
             EditorGUILayout.LabelField(new GUIContent("Module Selection:", savedModulesTooltip), GUILayout.Width(110));
+            
             if (savedModules.Count > 0)
             {
                 // Create display options for the dropdown
@@ -1245,7 +1310,7 @@ public class ServerWindow : EditorWindow
         bool showSettingsWindow = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowSettingsWindow(), "Settings", true);
         CCCPSettingsAdapter.SetShowSettingsWindow(showSettingsWindow);
 
-        if (showSettingsWindow)
+        if (showSettingsWindow && serverManager != null)
         {   
             Color recommendedColor = Color.green;
             Color warningColor;
@@ -1444,6 +1509,29 @@ public class ServerWindow : EditorWindow
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
             }
+            
+            // Debug: Refresh Settings Cache button - only show in debug mode
+            if (debugMode)
+            {
+                if (GUILayout.Button("Refresh Settings", GUILayout.Width(100)))
+                {
+                    CCCPSettingsAdapter.RefreshSettingsCache();
+                    CCCPSettings.RefreshInstance();
+                    
+                    // Reconfigure ServerManager with refreshed settings
+                    if (serverManager != null)
+                    {
+                        serverManager.LoadSettings();
+                        serverManager.Configure();
+                    }
+                    
+                    // Reload the selected module
+                    LoadSelectedModuleFromSettings();
+                    
+                    UnityEngine.Debug.Log($"[ServerWindow] Manual settings refresh. Module count: {savedModules?.Count ?? 0}");
+                    Repaint();
+                }
+            }
             EditorGUILayout.EndHorizontal();
         }
         EditorGUILayout.EndVertical();
@@ -1455,6 +1543,14 @@ public class ServerWindow : EditorWindow
     private void DrawServerSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        
+        // Early return if serverManager is not initialized
+        if (serverManager == null)
+        {
+            EditorGUILayout.LabelField("Server manager not initialized", EditorStyles.centeredGreyMiniLabel);
+            EditorGUILayout.EndVertical();
+            return;
+        }
         
         if (serverMode != ServerMode.MaincloudServer)
         {
@@ -1694,7 +1790,7 @@ public class ServerWindow : EditorWindow
         bool showUtilityCommands = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowUtilityCommands(), "Commands", true);
         CCCPSettingsAdapter.SetShowUtilityCommands(showUtilityCommands);
 
-        if (showUtilityCommands)
+        if (showUtilityCommands && serverManager != null)
         {
             EditorGUILayout.Space(-10);
 
@@ -1762,36 +1858,6 @@ public class ServerWindow : EditorWindow
                 if (GUILayout.Button("Open SSH Window", buttonStyle))
                 {
                     serverManager.OpenSSHWindow();
-                }
-            }
-
-            if (serverMode == ServerMode.WSLServer)
-            {
-                if (spacetimeDBCurrentVersion != spacetimeDBLatestVersion)
-                {
-                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the WSL server is not running.";
-                    EditorGUI.BeginDisabledGroup(serverManager.IsServerStarted);
-                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
-                    {
-                        ServerInstallerWindow.ShowWindow();
-                    }
-                    EditorGUI.EndDisabledGroup();
-                }
-            }
-
-            if (serverMode == ServerMode.CustomServer)
-            {
-                if (spacetimeDBCurrentVersionCustom != spacetimeDBLatestVersion)
-                {
-                    string updateTooltip = "Version " + spacetimeDBLatestVersion + " of SpacetimeDB is available.\nUpdate when the server is not running.";
-                    // Use cached connection status instead of blocking synchronous check
-                    serverManager.SSHConnectionStatusAsync();
-                    EditorGUI.BeginDisabledGroup(serverManager.IsSSHConnectionActive);
-                    if (GUILayout.Button(new GUIContent("Update SpacetimeDB", updateTooltip), GUILayout.Height(20)))
-                    {
-                        ServerInstallerWindow.ShowCustomWindow();
-                    }
-                    EditorGUI.EndDisabledGroup();
                 }
             }
 
@@ -1991,6 +2057,12 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
+        // Ensure cmdProcessor is initialized before use
+        if (cmdProcessor == null)
+        {
+            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+        }
+        
         cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
             EditorApplication.delayCall += () => {
                 // Update local state for UI
@@ -2546,6 +2618,13 @@ public class ServerWindow : EditorWindow
 
     private void UpdateServerModeState()
     {       
+        // Ensure serverManager is initialized before proceeding
+        if (serverManager == null)
+        {
+            if (debugMode) LogMessage("ServerManager not initialized, skipping mode state update", -1);
+            return;
+        }
+        
         // Set the appropriate flag based on the current serverMode
         switch (serverMode)
         {
@@ -2596,7 +2675,27 @@ public class ServerWindow : EditorWindow
             serverMode = ServerMode.WSLServer;
         }
         
-        UpdateServerModeState();
+        // Only update server mode state if serverManager is initialized
+        if (serverManager != null)
+        {
+            UpdateServerModeState();
+        }
+    }
+
+    private void LoadSelectedModuleFromSettings()
+    {
+        // Load the selected module if one is saved in settings
+        if (selectedModuleIndex >= 0 && selectedModuleIndex < savedModules.Count)
+        {
+            if (debugMode)
+                UnityEngine.Debug.Log($"[ServerWindow] Loading selected module: index {selectedModuleIndex}, module count: {savedModules.Count}");
+            
+            SelectSavedModule(selectedModuleIndex);
+        }
+        else if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerWindow] No valid selected module to load. Index: {selectedModuleIndex}, Count: {savedModules.Count}");
+        }
     }        
 
     private void HandleAutoscrollBehavior(Vector2 previousScrollPosition)

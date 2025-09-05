@@ -389,11 +389,8 @@ public class ServerManager
         // Force initialization of settings (triggers migration if needed)
         var settings = CCCPSettings.Instance;
         
-        // Debug message if this is a fresh migration
-        if (!settings.migratedFromEditorPrefs && HasAnyEditorPrefs())
-        {
-            UnityEngine.Debug.Log("Cosmos Cove Control Panel: Settings have been migrated from EditorPrefs.");
-        }
+        // Migration is handled automatically in CCCPSettingsProvider.GetOrCreateSettings()
+        // No need to log here since the migration message is already shown during asset creation
     }
     
     // Helper method to check if any EditorPrefs exist
@@ -2421,7 +2418,12 @@ public class ServerManager
             spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
             if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
             {
-                LogMessage($"SpacetimeDB update available for WSL! Click on the update button in Commands. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("SpacetimeDBWSLUpdateMessageShown", false))
+                {
+                    LogMessage($"SpacetimeDB update available for WSL! Click on the Installer Window update button to install. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                    SessionState.SetBool("SpacetimeDBWSLUpdateMessageShown", true);
+                }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
         }

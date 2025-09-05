@@ -740,7 +740,12 @@ public class ServerCustomProcess
             string latestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
             if (!string.IsNullOrEmpty(latestVersion) && version != latestVersion)
             {
-                Log($"SpacetimeDB update available for custom server! Click on the update button in Commands. Current version: {version} and latest version: {latestVersion}", 1);
+                // Only show the update message once per editor session
+                if (!SessionState.GetBool("SpacetimeDBCustomServerUpdateMessageShown", false))
+                {
+                    Log($"SpacetimeDB update available for your Custom Server! Click on the Installer Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
+                    SessionState.SetBool("SpacetimeDBCustomServerUpdateMessageShown", true);
+                }
             }
         }
         else
