@@ -214,7 +214,10 @@ public static class CCCPSettingsProvider
                     
                     EditorGUI.indentLevel--;
                     EditorGUILayout.Space();
-                    
+
+                    EditorGUILayout.LabelField("Settings Visible Here for Reference - Please set them in the Main Window", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(40));
+                    EditorGUI.BeginDisabledGroup(true);
+
                     // Server Configuration (Foldout)
                     var showServerConfig = EditorGUILayout.Foldout(
                         EditorPrefs.GetBool("CCCP_ShowServerConfig", true), 
@@ -358,47 +361,6 @@ public static class CCCPSettingsProvider
                     {
                         EditorGUI.indentLevel++;
                         
-                        // Migration Tools
-                        var showMigrationTools = EditorGUILayout.Foldout(
-                            EditorPrefs.GetBool("CCCP_ShowMigrationTools", false), 
-                            "Migration Tools", 
-                            true
-                        );
-                        EditorPrefs.SetBool("CCCP_ShowMigrationTools", showMigrationTools);
-                        
-                        if (showMigrationTools)
-                        {
-                            EditorGUI.indentLevel++;
-                            
-                            EditorGUILayout.BeginHorizontal();
-                            EditorGUILayout.LabelField($"Migration Status: {(settings.migratedFromEditorPrefs ? "Completed" : "Not Migrated")}", 
-                                GUILayout.ExpandWidth(true));
-                            
-                            EditorGUI.BeginDisabledGroup(!HasEditorPrefsSettings());
-                            if (GUILayout.Button("Force Migration from EditorPrefs", GUILayout.Width(200)))
-                            {
-                                if (EditorUtility.DisplayDialog("Force Migration", 
-                                    "This will overwrite current settings with EditorPrefs data. Continue?", 
-                                    "Migrate", "Cancel"))
-                                {
-                                    settings.migratedFromEditorPrefs = false; // Reset flag to allow re-migration
-                                    MigrateFromEditorPrefs(settings);
-                                    EditorUtility.SetDirty(settings);
-                                    AssetDatabase.SaveAssets();
-                                }
-                            }
-                            EditorGUI.EndDisabledGroup();
-                            EditorGUILayout.EndHorizontal();
-                            
-                            if (!HasEditorPrefsSettings())
-                            {
-                                EditorGUILayout.HelpBox("No EditorPrefs settings found to migrate.", MessageType.Info);
-                            }
-                            
-                            EditorGUI.indentLevel--;
-                            EditorGUILayout.Space();
-                        }
-                        
                         // Maincloud Configuration
                         var showMaincloudConfig = EditorGUILayout.Foldout(
                             EditorPrefs.GetBool("CCCP_ShowMaincloudConfig", false), 
@@ -513,7 +475,6 @@ public static class CCCPSettingsProvider
                         if (showVersionInfo)
                         {
                             EditorGUI.indentLevel++;
-                            EditorGUI.BeginDisabledGroup(true);
                             
                             // Increase label width to make titles wider
                             float prevLabelWidth = EditorGUIUtility.labelWidth;
@@ -545,16 +506,57 @@ public static class CCCPSettingsProvider
                             EditorGUILayout.PropertyField(serializedObject.FindProperty("githubLastCommitSha"));
                             EditorGUI.indentLevel--;
                             
-                            EditorGUI.EndDisabledGroup();
                             EditorGUI.indentLevel--;
                             EditorGUILayout.Space();
                             // Reset label width
                             EditorGUIUtility.labelWidth = prevLabelWidth;
                         }
-                        
                         EditorGUI.indentLevel--;
                     }
+
+                    EditorGUI.EndDisabledGroup();
+
+                    // Migration Tools
+                    var showMigrationTools = EditorGUILayout.Foldout(
+                        EditorPrefs.GetBool("CCCP_ShowMigrationTools", false), 
+                        "Migration From EditorPrefs", 
+                        true
+                    );
+                    EditorPrefs.SetBool("CCCP_ShowMigrationTools", showMigrationTools);
                     
+                    if (showMigrationTools)
+                    {
+                        EditorGUI.indentLevel++;
+                        
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField($"Migration Status: {(settings.migratedFromEditorPrefs ? "Completed" : "Not Migrated")}", 
+                            GUILayout.ExpandWidth(true));
+                        
+                        EditorGUI.BeginDisabledGroup(!HasEditorPrefsSettings());
+                        if (GUILayout.Button("Force Migration from EditorPrefs", GUILayout.Width(200)))
+                        {
+                            if (EditorUtility.DisplayDialog("Force Migration", 
+                                "This will overwrite current settings with EditorPrefs data. Continue?", 
+                                "Migrate", "Cancel"))
+                            {
+                                settings.migratedFromEditorPrefs = false; // Reset flag to allow re-migration
+                                MigrateFromEditorPrefs(settings);
+                                EditorUtility.SetDirty(settings);
+                                AssetDatabase.SaveAssets();
+                            }
+                        }
+                        EditorGUI.EndDisabledGroup();
+                        EditorGUILayout.EndHorizontal();
+                        
+                        if (!HasEditorPrefsSettings())
+                        {
+                            EditorGUILayout.HelpBox("No EditorPrefs settings found to migrate.", MessageType.Info);
+                        }
+                        
+                        EditorGUI.indentLevel--;
+                        EditorGUILayout.Space();
+                    }
+
                     // Reset button
                     EditorGUILayout.Space();
                     if (GUILayout.Button("Reset to Defaults"))

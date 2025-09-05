@@ -2844,8 +2844,10 @@ public class ServerWindow : EditorWindow
     {
         if (index >= 0 && index < savedModules.Count)
         {
-            selectedModuleIndex = index;
             var module = savedModules[index];
+            bool isModuleChange = selectedModuleIndex != index || moduleName != module.name || serverDirectory != module.path;
+            
+            selectedModuleIndex = index;
             
             // Update current settings
             moduleName = module.name;
@@ -2877,7 +2879,11 @@ public class ServerWindow : EditorWindow
                 window?.RefreshReducers();
             }
 
-            LogMessage($"Selected module: {module.name} at {module.path}", 1);
+            // Only log when there's an actual change in module selection
+            if (isModuleChange)
+            {
+                LogMessage($"Selected module: {module.name} at {module.path}", 1);
+            }
         }
     }
     #endregion
