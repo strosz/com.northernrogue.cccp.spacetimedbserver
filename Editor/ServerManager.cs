@@ -358,7 +358,7 @@ public class ServerManager
         versionProcessor = new ServerVersionProcess(cmdProcessor, LogMessage, debugMode);
         
         // Initialize ServerDetectionProcess
-        detectionProcess = new ServerDetectionProcess(debugMode);
+        detectionProcess = new ServerDetectionProcess();
         if (!string.IsNullOrEmpty(serverDirectory))
         {
             detectionProcess.Configure(serverDirectory, detectServerChanges);
@@ -496,7 +496,7 @@ public class ServerManager
         logProcessor.SetServerRunningState(serverStarted);
         
         // Initialize the detection processor
-        detectionProcess = new ServerDetectionProcess(debugMode);
+        detectionProcess = new ServerDetectionProcess();
         detectionProcess.Configure(serverDirectory, detectServerChanges);
         detectionProcess.OnServerChangesDetected += OnServerChangesDetected;
     }
@@ -1369,7 +1369,7 @@ public class ServerManager
                 } 
                 else // if !result.success
                 {
-                    LogMessage("Custom Remote mode command failed to execute.", -2);
+                    if (debugMode) LogMessage("Custom Remote mode command failed to execute.", -2);
                 }
             }
             else // WSL local commands, Custom Remote publish or Maincloud commands

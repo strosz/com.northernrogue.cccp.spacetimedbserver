@@ -488,7 +488,9 @@ public class ServerWindow : EditorWindow
             AttemptDatabaseLogRestartAfterReload();
         }
 
-        // Add this section near the end of OnEnable
+        // Update the publishing state from serverManager
+        publishing = serverManager.Publishing; 
+        
         // Perform an immediate WSL status check if in WSL mode
         if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
         {
@@ -1508,6 +1510,7 @@ public class ServerWindow : EditorWindow
                 ServerCustomProcess.debugMode = newDebugMode;
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
+                ServerDetectionProcess.debugMode = newDebugMode;
             }
             
             // Debug: Refresh Settings Cache button - only show in debug mode
@@ -1958,21 +1961,25 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.LabelField("First Publish then Generate client code.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
         }
 
-        // Add Publish Module button
         EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.ModuleName));
         
-        string editModuleTooltip = "Edit the lib.rs script of the selected module.";
+        string editModuleTooltip = "Edit the module script (lib.rs or lib.cs) of the selected module.";
         if (GUILayout.Button(new GUIContent("Edit Module", editModuleTooltip), GUILayout.Height(20)))
         {
             // Open the module script in the default editor
-            string modulePath = Path.Combine(serverDirectory, "src", "lib.rs");
-            if (File.Exists(modulePath))
+            string modulePathRs = Path.Combine(serverDirectory, "src", "lib.rs");
+            string modulePathCs = Path.Combine(serverDirectory, "lib.cs");
+            if (File.Exists(modulePathRs))
             {
-                Process.Start(modulePath);
+                Process.Start(modulePathRs);
+            }
+            else if (File.Exists(modulePathCs))
+            {
+                Process.Start(modulePathCs);
             }
             else
             {
-                LogMessage($"Module script not found at: {modulePath}", -2);
+                LogMessage("Module script not found", -2);
             }
         }
 

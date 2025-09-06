@@ -12,6 +12,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerDetectionProcess
 {
+    public static bool debugMode;
+
     // Callback delegate for change notifications
     public delegate void ServerChangesCallback(bool changesDetected);
     public event ServerChangesCallback OnServerChangesDetected;
@@ -25,7 +27,6 @@ public class ServerDetectionProcess
     // Member variables
     private string serverDirectory;
     private bool detectServerChanges;
-    private bool debugMode;
     
     // File tracking state - using both size and last write time for better change detection
     private Dictionary<string, (long size, DateTime lastWrite)> originalFileInfo = new Dictionary<string, (long, DateTime)>();
@@ -37,9 +38,8 @@ public class ServerDetectionProcess
     private int pendingFileScanCount = 0;
     private bool hadFocus = true; // Track focus state
 
-    public ServerDetectionProcess(bool debugMode)
+    public ServerDetectionProcess()
     {
-        this.debugMode = debugMode;
         LoadState();
         
         // Subscribe to focus change events
