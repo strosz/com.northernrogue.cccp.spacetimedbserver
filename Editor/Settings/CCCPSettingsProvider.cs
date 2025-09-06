@@ -123,8 +123,6 @@ public static class CCCPSettingsProvider
                         EditorGUILayout.Space();
                     }
 
-                    // Set or Move Settings Asset
-                    EditorGUILayout.LabelField("Set or Move Settings Asset", EditorStyles.boldLabel);
                     EditorGUI.indentLevel++;
                     
                     EditorGUILayout.BeginHorizontal();
@@ -519,7 +517,7 @@ public static class CCCPSettingsProvider
                     // Migration Tools
                     var showMigrationTools = EditorGUILayout.Foldout(
                         EditorPrefs.GetBool("CCCP_ShowMigrationTools", false), 
-                        "Migration From EditorPrefs", 
+                        "Migrate From EditorPrefs Settings System", 
                         true
                     );
                     EditorPrefs.SetBool("CCCP_ShowMigrationTools", showMigrationTools);
@@ -533,10 +531,11 @@ public static class CCCPSettingsProvider
                             GUILayout.ExpandWidth(true));
                         
                         EditorGUI.BeginDisabledGroup(!HasEditorPrefsSettings());
-                        if (GUILayout.Button("Force Migration from EditorPrefs", GUILayout.Width(200)))
+                        if (GUILayout.Button("Force Migrate from EditorPrefs", GUILayout.Width(200)))
                         {
-                            if (EditorUtility.DisplayDialog("Force Migration", 
-                                "This will overwrite current settings with EditorPrefs data. Continue?", 
+                            if (EditorUtility.DisplayDialog("Force Migration",
+                                "In case you used an older version of this asset you can migrate the settings.\n" +
+                                "This will overwrite current settings with previous EditorPrefs data if found. Continue?", 
                                 "Migrate", "Cancel"))
                             {
                                 settings.migratedFromEditorPrefs = false; // Reset flag to allow re-migration

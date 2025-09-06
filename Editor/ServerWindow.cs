@@ -123,10 +123,10 @@ public class ServerWindow : EditorWindow
 
     public static string Documentation = "https://docs.google.com/document/d/1HpGrdNicubKD8ut9UN4AzIOwdlTh1eO4ampZuEk5fM0/edit?usp=sharing";
 
-    [MenuItem("Window/SpacetimeDB/1. Main Window")]
+    [MenuItem("Window/SpacetimeDB Server Manager/1. Main Window")]
     public static void ShowWindow()
     {
-        ServerWindow window = GetWindow<ServerWindow>("SpacetimeDB");
+        ServerWindow window = GetWindow<ServerWindow>("Server Manager");
         window.minSize = new Vector2(270f, 600f);
     }    
     
@@ -2895,9 +2895,9 @@ public class ServerWindow : EditorWindow
     }
 
     // Display Cosmos Cove Control Panel title text in the menu bar
-    [MenuItem("Window/SpacetimeDB/- Cosmos Cove Control Panel -")]
+    [MenuItem("Window/SpacetimeDB Server Manager/- Cosmos Cove Control Panel -")]
     private static void CosmosCoveControlPanel(){}
-    [MenuItem("Window/SpacetimeDB/- Cosmos Cove Control Panel -", true)]
+    [MenuItem("Window/SpacetimeDB Server Manager/- Cosmos Cove Control Panel -", true)]
     private static bool ValidateCosmosCoveControlPanel(){return false;}
 
 } // Class

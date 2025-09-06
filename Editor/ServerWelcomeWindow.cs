@@ -28,7 +28,7 @@ public class ServerWelcomeWindow : EditorWindow
         }
     }
     
-    [MenuItem("Window/SpacetimeDB/~ Welcome Window ~")]
+    [MenuItem("Window/SpacetimeDB Server Manager/~ Welcome Window ~")]
     public static void ShowWindow()
     {
         ServerWelcomeWindow window = GetWindow<ServerWelcomeWindow>("Welcome to Cosmos Cove");
@@ -76,7 +76,7 @@ public class ServerWelcomeWindow : EditorWindow
 
         string welcomeText = 
         "This is a Windows WSL integration of SpacetimeDB within Unity.\n" +
-        "SpacetimeDB has been added to your editor's menu at\n <b>Window>SpacetimeDB</b>.\n\n" +
+        "You can find it in your editor's toolbar at\n <b>Window>SpacetimeDB Server Manager</b>.\n\n" +
         "<size=125%><b>Quick Start</b></size>\n" +
         "1. Open the Main Window.\n Enter the essential Pre-Requisites.\n <size=75%><color=grey>Init New Module after step 2 is done.\n Auth token can be entered after all steps are done.</color></size>\n\n" +
         "2. Open the Installer Window.\n Check and install all essential software.\n\n" +

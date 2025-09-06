@@ -112,7 +112,7 @@ public class ServerInstallerWindow : EditorWindow
     // Settings
     private bool updateCargoToml = false;
 
-    [MenuItem("Window/SpacetimeDB/2. Installer Window")]
+    [MenuItem("Window/SpacetimeDB Server Manager/2. Installer Window")]
     public static void ShowWindow()
     {
         ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");
