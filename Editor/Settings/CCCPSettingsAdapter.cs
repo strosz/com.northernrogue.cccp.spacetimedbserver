@@ -51,10 +51,19 @@ public static class CCCPSettingsAdapter
     {
         if (_cachedSettings != null)
         {
-            EditorUtility.SetDirty(_cachedSettings);
-            AssetDatabase.SaveAssets();
-            _pendingSave = false;
-            _pendingUISave = false;
+            try
+            {
+                EditorUtility.SetDirty(_cachedSettings);
+                AssetDatabase.SaveAssets();
+                _pendingSave = false;
+                _pendingUISave = false;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"CCCP Settings: Failed to save settings: {ex.Message}");
+                _pendingSave = false;
+                _pendingUISave = false;
+            }
         }
     }
     
@@ -71,15 +80,44 @@ public static class CCCPSettingsAdapter
             if (!_pendingSave)
             {
                 _pendingSave = true;
-                EditorApplication.delayCall += () =>
-                {
-                    if (_pendingSave)
-                    {
-                        _pendingSave = false;
-                        AssetDatabase.SaveAssets();
-                    }
-                };
+                // Use a safer approach that checks if we're in a valid state to save
+                EditorApplication.delayCall += SafeDeferredSave;
             }
+        }
+    }
+    
+    /// <summary>
+    /// Safely save assets with proper context checking
+    /// </summary>
+    private static void SafeDeferredSave()
+    {
+        try
+        {
+            if (!_pendingSave)
+                return;
+                
+            _pendingSave = false;
+            
+            // Check if we're in a safe context to save assets
+            // Avoid saving during asset post-processing or when UI is not ready
+            if (EditorApplication.isCompiling || 
+                EditorApplication.isUpdating ||
+                EditorApplication.isPlayingOrWillChangePlaymode ||
+                (!EditorApplication.isPlaying && EditorApplication.isPaused))
+            {
+                // Retry later if we're not in a safe state
+                _pendingSave = true;
+                EditorApplication.delayCall += SafeDeferredSave;
+                return;
+            }
+            
+            AssetDatabase.SaveAssets();
+        }
+        catch (System.Exception ex)
+        {
+            // Log the error but don't let it break the application
+            Debug.LogWarning($"CCCP Settings: Failed to save assets in deferred call: {ex.Message}");
+            _pendingSave = false; // Reset the flag even if save failed
         }
     }
     
