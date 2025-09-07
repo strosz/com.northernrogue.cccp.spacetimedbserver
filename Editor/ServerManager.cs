@@ -11,6 +11,11 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerManager
 {       
+    // SessionState keys for domain reload persistence
+    private const string SessionKeyServerStarted = "ServerManager_ServerStarted";
+    private const string SessionKeyServerMode = "ServerManager_ServerMode";
+    private const string SessionKeyIsStartingUp = "ServerManager_IsStartingUp";
+    
     // Process Handlers
     private ServerCMDProcess cmdProcessor;
     private ServerLogProcess logProcessor;
@@ -342,6 +347,9 @@ public class ServerManager
         // Load settings (migration will happen automatically if needed)
         LoadSettings();
         
+        // Restore server state from SessionState (domain reload persistence)
+        RestoreServerStateFromSessionState();
+        
         // Initialize the processors
         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
         
@@ -378,30 +386,17 @@ public class ServerManager
         
         // Configure
         Configure();
+        
+        // Register for assembly reload events to save state before domain reload
+        AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
     }
 
     public void LoadSettings()
     {
-        // Migration support for users upgrading from GitHub version
-        // Safe to leave in - only runs if old EditorPrefs keys exist
-        // Settings will automatically migrate from EditorPrefs when first accessed
-        
-        // Force initialization of settings (triggers migration if needed)
         var settings = CCCPSettings.Instance;
         
-        // Migration is handled automatically in CCCPSettingsProvider.GetOrCreateSettings()
-        // No need to log here since the migration message is already shown during asset creation
+        // Migration from EditorPrefs is handled automatically in CCCPSettingsProvider.GetOrCreateSettings()
     }
-    
-    // Helper method to check if any EditorPrefs exist
-    // May be removed when all users migrate to the new settings system
-    private bool HasAnyEditorPrefs()
-    {
-        return EditorPrefs.HasKey("CCCP_UserName") ||
-               EditorPrefs.HasKey("CCCP_ServerURL") ||
-               EditorPrefs.HasKey("CCCP_ServerMode");
-    }
-
 
     // Needed for the ServerDetectionProcess
     public void UpdateServerDetectionDirectory(string value) 
@@ -501,6 +496,91 @@ public class ServerManager
         detectionProcess.OnServerChangesDetected += OnServerChangesDetected;
     }
 
+    /// <summary>
+    /// Restores server state from SessionState after domain reload
+    /// This ensures serverStarted persists across Unity compilation
+    /// </summary>
+    private void RestoreServerStateFromSessionState()
+    {
+        // Restore server started state
+        bool sessionServerStarted = SessionState.GetBool(SessionKeyServerStarted, false);
+        bool sessionIsStartingUp = SessionState.GetBool(SessionKeyIsStartingUp, false);
+        
+        if (sessionServerStarted || sessionIsStartingUp)
+        {
+            if (debugMode)
+                LogMessage($"[ServerManager] Restoring server state from SessionState: serverStarted={sessionServerStarted}, isStartingUp={sessionIsStartingUp}", 0);
+            
+            // Restore the state
+            serverStarted = sessionServerStarted;
+            isStartingUp = sessionIsStartingUp;
+            
+            // If server was marked as started, verify it's actually still running
+            if (serverStarted)
+            {
+                EditorApplication.delayCall += async () =>
+                {
+                    try
+                    {
+                        bool isActuallyRunning = await PingServerStatusAsync();
+                        if (!isActuallyRunning)
+                        {
+                            if (debugMode)
+                                LogMessage("[ServerManager] Server state was restored but ping failed - server appears to be offline. Resetting state.", 1);
+                            
+                            serverStarted = false;
+                            isStartingUp = false;
+                            SaveServerStateToSessionState();
+                        }
+                        else
+                        {
+                            if (debugMode)
+                                LogMessage("[ServerManager] Server state restored successfully - server is confirmed running.", 0);
+                        }
+                        
+                        RepaintCallback?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode)
+                            LogMessage($"[ServerManager] Error verifying restored server state: {ex.Message}", 2);
+                    }
+                };
+            }
+        }
+        else if (debugMode)
+        {
+            LogMessage("[ServerManager] No server state to restore from SessionState", 0);
+        }
+    }
+
+    /// <summary>
+    /// Saves current server state to SessionState for domain reload persistence
+    /// </summary>
+    public void SaveServerStateToSessionState()
+    {
+        SessionState.SetBool(SessionKeyServerStarted, serverStarted);
+        SessionState.SetBool(SessionKeyIsStartingUp, isStartingUp);
+        SessionState.SetInt(SessionKeyServerMode, (int)serverMode);
+        
+        if (debugMode)
+            LogMessage($"[ServerManager] Saved server state to SessionState: serverStarted={serverStarted}, isStartingUp={isStartingUp}, serverMode={serverMode}", 0);
+    }
+
+    /// <summary>
+    /// Called before assembly reload to save server state
+    /// </summary>
+    private void OnBeforeAssemblyReload()
+    {
+        if (debugMode)
+            LogMessage("[ServerManager] Assembly reload detected - saving server state...", 0);
+        
+        SaveServerStateToSessionState();
+        
+        // Unregister the event to prevent memory leaks
+        AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
+    }
+
     private void LogMessage(string message, int style)
     {
         LogCallback?.Invoke(message, style);
@@ -591,6 +671,7 @@ public class ServerManager
                 {
                     if (DebugMode) LogMessage("Server service confirmed running immediately!", 1);
                     serverStarted = true;
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
                     serverConfirmedRunning = true;
                     isStartingUp = false; // Skip the startup grace period since we confirmed service is running
                     
@@ -621,6 +702,7 @@ public class ServerManager
                     isStartingUp = true;
                     startupTime = (float)EditorApplication.timeSinceStartup;
                     serverStarted = true; // Assume starting, CheckServerStatus will verify
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
                     
                     // For service-based approach, configure WSL
                     logProcessor.ConfigureWSL(true); // isLocalServer = true
@@ -641,6 +723,7 @@ public class ServerManager
                 LogMessage($"Error during server start sequence: {ex.Message}", -1);
                 serverStarted = false;
                 isStartingUp = false;
+                SaveServerStateToSessionState(); // Persist state across domain reloads
                 logProcessor.StopLogging();
                 
                 // Update log processor state
@@ -681,6 +764,7 @@ public class ServerManager
             if (debugMode) LogMessage("Custom server process started, waiting for confirmation...", 1);
             // Mark as starting up, but do not confirm running yet
             serverStarted = true;
+            SaveServerStateToSessionState(); // Persist state across domain reloads
             isStartingUp = true;
             serverConfirmedRunning = false;
             startupTime = (float)EditorApplication.timeSinceStartup;
@@ -727,6 +811,7 @@ public class ServerManager
 
         // Set server as running
         serverStarted = true;
+        SaveServerStateToSessionState(); // Persist state across domain reloads
         isStartingUp = false;
         serverConfirmedRunning = true;
         
@@ -904,6 +989,7 @@ public class ServerManager
         {
             // Force state update
             serverStarted = false;
+            SaveServerStateToSessionState(); // Persist state across domain reloads
             isStartingUp = false;
             serverConfirmedRunning = false;
             serverProcess = null; 
@@ -926,6 +1012,7 @@ public class ServerManager
         
         // Force state update
         serverStarted = false;
+        SaveServerStateToSessionState(); // Persist state across domain reloads
         isStartingUp = false;
         serverConfirmedRunning = false;
         justStopped = true; // Set flag indicating stop was just initiated
@@ -1023,6 +1110,7 @@ public class ServerManager
                     LogMessage("Server confirmed running!", 1);
                     isStartingUp = false;
                     serverStarted = true; // Explicitly confirm started state
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
                     serverConfirmedRunning = true;
                     justStopped = false; // Reset flag on successful start confirmation
                     consecutiveFailedChecks = 0; // Reset failure counter on successful start
@@ -1056,6 +1144,7 @@ public class ServerManager
                             LogMessage("Final service check shows server is actually running - recovering!", 1);
                             isStartingUp = false;
                             serverStarted = true;
+                            SaveServerStateToSessionState(); // Persist state across domain reloads
                             serverConfirmedRunning = true;
                             justStopped = false;
                             consecutiveFailedChecks = 0;
@@ -1071,6 +1160,7 @@ public class ServerManager
                     
                     isStartingUp = false;
                     serverStarted = false;
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
                     serverConfirmedRunning = false;
                     justStopped = false; // Reset flag on failed start
                     consecutiveFailedChecks = 0; // Reset failure counter on failed start
@@ -1169,13 +1259,11 @@ public class ServerManager
                         serverConfirmedRunning = true;
                         justStopped = false;
                         
-                        string msg = $"Server running confirmed ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
-                        LogMessage(msg, 1);
+                        if (DebugMode) LogMessage($"Server running confirmed ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})", 1);
 
                         // Update logProcessor state
                         logProcessor.SetServerRunningState(true);
                         
-                        if (DebugMode) LogMessage("Server state updated to running.", 1);
                         RepaintCallback?.Invoke();
                     }
                     else
@@ -1205,6 +1293,7 @@ public class ServerManager
                             // Update state
                             serverConfirmedRunning = false;
                             serverStarted = false;
+                            SaveServerStateToSessionState(); // Persist state across domain reloads
 
                             // Update logProcessor state
                             logProcessor.SetServerRunningState(false);
@@ -1282,6 +1371,7 @@ public class ServerManager
                             // Detected server running, probably it was already running when Unity started
                             if (debugMode) LogMessage($"Detected SpacetimeDB running ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})", 1);
                             serverStarted = true;
+                            SaveServerStateToSessionState(); // Persist state across domain reloads
                             serverConfirmedRunning = true;
                             isStartingUp = false;
                             justStopped = false; // Ensure flag is clear if we recover state

@@ -591,6 +591,8 @@ public class ServerWindow : EditorWindow
         if (serverManager != null)
         {
             SessionState.SetBool(SessionKeyWasRunningSilently, serverManager.IsServerStarted && serverManager.SilentMode);
+            // Also save the ServerManager state for domain reload persistence
+            serverManager.SaveServerStateToSessionState();
         }
 
         // Cleanup event handlers
@@ -1511,6 +1513,7 @@ public class ServerWindow : EditorWindow
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
                 ServerDetectionProcess.debugMode = newDebugMode;
+                ServerSpacetimeSDKInstaller.debugMode = newDebugMode;
             }
             
             // Debug: Refresh Settings Cache button - only show in debug mode

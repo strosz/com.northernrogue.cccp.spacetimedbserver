@@ -298,7 +298,39 @@ public static class CCCPSettingsProvider
                         EditorGUI.indentLevel++;
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("moduleName"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("selectedModuleIndex"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("savedModules"));
+                        // Custom draw for lists/arrays so we can control label widths per element
+                        var savedModulesProp = serializedObject.FindProperty("savedModules");
+
+                        // Header + size
+                        EditorGUILayout.LabelField(savedModulesProp.displayName, EditorStyles.boldLabel);
+                        EditorGUI.indentLevel++;
+
+                        serializedObject.Update();
+                        int newSize = EditorGUILayout.IntField("Number of Modules", savedModulesProp.arraySize);
+                        if (newSize != savedModulesProp.arraySize)
+                        {
+                            while (newSize > savedModulesProp.arraySize)
+                                savedModulesProp.InsertArrayElementAtIndex(savedModulesProp.arraySize);
+                            while (newSize < savedModulesProp.arraySize)
+                                savedModulesProp.DeleteArrayElementAtIndex(savedModulesProp.arraySize - 1);
+                        }
+
+                        // Draw each element in a single horizontal row with a reduced label width so the value field gets more space
+                        for (int i = 0; i < savedModulesProp.arraySize; i++)
+                        {
+                            var elem = savedModulesProp.GetArrayElementAtIndex(i);
+                            EditorGUILayout.BeginHorizontal();
+
+                            float prevLabelWidth2 = EditorGUIUtility.labelWidth;
+                            EditorGUIUtility.labelWidth = 80f; // narrower label for list element
+                            EditorGUILayout.PropertyField(elem, new GUIContent($"Module {i}"));
+                            EditorGUIUtility.labelWidth = prevLabelWidth2;
+
+                            EditorGUILayout.EndHorizontal();
+                        }
+
+                        serializedObject.ApplyModifiedProperties();
+                        EditorGUI.indentLevel--;
                         EditorGUI.indentLevel--;
                         EditorGUILayout.Space();
                     }

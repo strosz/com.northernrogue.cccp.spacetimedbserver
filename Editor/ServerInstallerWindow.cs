@@ -2442,7 +2442,7 @@ public class ServerInstallerWindow : EditorWindow
                     // Write back to file
                     File.WriteAllText(cargoTomlPath, newContent);
                     
-                    if (debugMode) LogMessage($"Updated Cargo.toml spacetimedb version from {currentVersion} to {spacetimeDBCurrentVersionTool}", 1);
+                    LogMessage($"Updated Cargo.toml spacetimedb version from {currentVersion} to {spacetimeDBCurrentVersionTool}", 1);
                 }
                 else if (currentVersion == spacetimeDBCurrentVersionTool)
                 {

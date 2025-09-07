@@ -134,6 +134,121 @@ public class ServerDetectionProcess
         }
     }
 
+    // Check if this is a Rust project (has Cargo.toml in root)
+    private bool IsRustProject()
+    {
+        string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+        return File.Exists(cargoTomlPath);
+    }
+
+    // Check if this is a C# project (has global.json in root)
+    private bool IsCSharpProject()
+    {
+        string globalJsonPath = Path.Combine(serverDirectory, "global.json");
+        return File.Exists(globalJsonPath);
+    }
+
+    // Scan Rust project structure (existing logic)
+    private void ScanRustProject(Dictionary<string, (long size, DateTime lastWrite)> newFileInfo)
+    {
+        string srcDirectory = Path.Combine(serverDirectory, "src");
+        string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+        
+        // Check for Cargo.toml existence and add it to tracking
+        if (File.Exists(cargoTomlPath))
+        {
+            try 
+            {
+                var fileInfo = new FileInfo(cargoTomlPath);
+                newFileInfo[cargoTomlPath] = (fileInfo.Length, fileInfo.LastWriteTime);
+            }
+            catch (IOException ex)
+            {
+                if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for Cargo.toml: {ex.Message}");
+            }
+        }
+        
+        // Scan src directory if it exists
+        if (Directory.Exists(srcDirectory))
+        {
+            foreach (string extension in ScriptExtensions)
+            {
+                try
+                {
+                    string[] filesWithExtension = Directory.GetFiles(srcDirectory, "*" + extension, SearchOption.AllDirectories);
+                    foreach (string file in filesWithExtension)
+                    {
+                        try
+                        {
+                            var fileInfo = new FileInfo(file);
+                            newFileInfo[file] = (fileInfo.Length, fileInfo.LastWriteTime);
+                        }
+                        catch (IOException ex)
+                        {
+                            if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for file {file}: {ex.Message}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Error scanning for {extension} files: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    // Scan C# project structure (new logic for C# projects)
+    private void ScanCSharpProject(Dictionary<string, (long size, DateTime lastWrite)> newFileInfo)
+    {
+        if (!Directory.Exists(serverDirectory))
+            return;
+
+        // Directories to exclude from scanning
+        string[] excludedDirectories = { "bin", "obj" };
+        
+        foreach (string extension in ScriptExtensions)
+        {
+            try
+            {
+                string[] allFiles = Directory.GetFiles(serverDirectory, "*" + extension, SearchOption.AllDirectories);
+                
+                foreach (string file in allFiles)
+                {
+                    // Check if file is in an excluded directory
+                    string relativePath = Path.GetRelativePath(serverDirectory, file);
+                    bool shouldExclude = false;
+                    
+                    foreach (string excludedDir in excludedDirectories)
+                    {
+                        if (relativePath.StartsWith(excludedDir + Path.DirectorySeparatorChar) || 
+                            relativePath.StartsWith(excludedDir + Path.AltDirectorySeparatorChar))
+                        {
+                            shouldExclude = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!shouldExclude)
+                    {
+                        try
+                        {
+                            var fileInfo = new FileInfo(file);
+                            newFileInfo[file] = (fileInfo.Length, fileInfo.LastWriteTime);
+                        }
+                        catch (IOException ex)
+                        {
+                            if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for file {file}: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Error scanning for {extension} files: {ex.Message}");
+            }
+        }
+    }
+
     public void DetectServerChanges()
     {
         if (!detectServerChanges || string.IsNullOrEmpty(serverDirectory))
@@ -141,89 +256,65 @@ public class ServerDetectionProcess
 
         try
         {
-            string srcDirectory = Path.Combine(serverDirectory, "src");
-            string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
-            
             // Initialize dictionaries if empty
             var newFileInfo = new Dictionary<string, (long size, DateTime lastWrite)>();
             
-            // Check for Cargo.toml existence and add it to tracking
-            if (File.Exists(cargoTomlPath))
+            // Determine project type and scan accordingly
+            bool isRustProject = IsRustProject();
+            bool isCSharpProject = IsCSharpProject();
+            
+            if (debugMode)
             {
-                try 
-                {
-                    var fileInfo = new FileInfo(cargoTomlPath);
-                    newFileInfo[cargoTomlPath] = (fileInfo.Length, fileInfo.LastWriteTime);
-                }
-                catch (IOException ex)
-                {
-                    if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for Cargo.toml: {ex.Message}");
-                }
+                string projectType = isRustProject ? "Rust" : (isCSharpProject ? "C#" : "Unknown");
+                Debug.Log($"[ServerDetectionProcess] Detected {projectType} project in {serverDirectory}");
             }
             
-            // No src directory means we're only tracking Cargo.toml
-            if (!Directory.Exists(srcDirectory))
+            if (isRustProject)
             {
-                if (originalFileInfo.Count > 0 || currentFileInfo.Count > 0 || newFileInfo.Count > 0) 
+                ScanRustProject(newFileInfo);
+            }
+            else if (isCSharpProject)
+            {
+                ScanCSharpProject(newFileInfo);
+            }
+            else
+            {
+                // No recognized project structure
+                if (originalFileInfo.Count > 0 || currentFileInfo.Count > 0)
                 {
-                    // If src dir disappeared but we were tracking files or have Cargo.toml, that's a change
+                    // If we were tracking files but now have no recognized structure, that's a change
                     originalFileInfo.Clear();
                     currentFileInfo.Clear();
-                    if (newFileInfo.Count > 0) 
-                    {
-                        originalFileInfo = new Dictionary<string, (long, DateTime)>(newFileInfo);
-                        currentFileInfo = new Dictionary<string, (long, DateTime)>(newFileInfo);
-                    }
-                    
-                    // Only mark as changed if we lost everything
-                    SetChangesDetected(newFileInfo.Count == 0);
+                    SetChangesDetected(true);
                     initialScanPerformed = true;
                     SaveTrackingState();
                 }
                 return;
             }
 
-            // Scan files in a way that's safe for the main thread, but limit number of files checked per frame
-            // Get all script files (filtered by extensions) from src directory and subdirectories
-            var scriptFiles = new List<string>();
-            foreach (string extension in ScriptExtensions)
-            {
-                try
-                {
-                    string[] filesWithExtension = Directory.GetFiles(srcDirectory, "*" + extension, SearchOption.AllDirectories);
-                    scriptFiles.AddRange(filesWithExtension);
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Error scanning for {extension} files: {ex.Message}");
-                }
-            }
+            // Get all script files from the appropriate scanning method
+            var scriptFiles = newFileInfo.Keys.ToList();
             
             int filesToProcess = Math.Min(scriptFiles.Count, MaxFilesPerScan);
             
             // Update pending file count for multi-frame processing
             pendingFileScanCount = scriptFiles.Count - filesToProcess;
             
-            // Process a subset of script files
-            for (int i = 0; i < filesToProcess; i++)
-            {
-                string file = scriptFiles[i];
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    newFileInfo[file] = (fileInfo.Length, fileInfo.LastWriteTime);
-                }
-                catch (IOException ex)
-                {
-                    if (debugMode) Debug.LogWarning($"[ServerDetectionProcess] Could not get info for file {file}: {ex.Message}");
-                }
-            }
-            
-            // If we've only processed a partial list, we'll process more next time
+            // For large file lists, we might need to process in chunks
             if (filesToProcess < scriptFiles.Count)
             {
                 if (debugMode) Debug.Log($"[ServerDetectionProcess] Partially scanned server directory: {filesToProcess}/{scriptFiles.Count} files");
-                // Process the changes we do have to see if we need to update
+                // Create a subset for processing
+                var processedFileInfo = new Dictionary<string, (long size, DateTime lastWrite)>();
+                for (int i = 0; i < filesToProcess; i++)
+                {
+                    string file = scriptFiles[i];
+                    if (newFileInfo.ContainsKey(file))
+                    {
+                        processedFileInfo[file] = newFileInfo[file];
+                    }
+                }
+                newFileInfo = processedFileInfo;
             }
                     
             // Check for changed/new files
@@ -241,8 +332,9 @@ public class ServerDetectionProcess
             if (filesToProcess >= scriptFiles.Count)
             {
                 // Check for deleted files only on complete scans
-                var filesToRemove = currentFileInfo.Keys.Where(k => 
-                    k != cargoTomlPath && !newFileInfo.ContainsKey(k)).ToList();
+                // For deleted file detection, we need to be careful about project-specific files
+                var expectedFiles = new HashSet<string>(newFileInfo.Keys);
+                var filesToRemove = currentFileInfo.Keys.Where(k => !expectedFiles.Contains(k)).ToList();
                     
                 foreach (var fileToRemove in filesToRemove)
                 {

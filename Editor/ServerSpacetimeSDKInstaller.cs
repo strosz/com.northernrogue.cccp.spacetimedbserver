@@ -10,6 +10,8 @@ namespace NorthernRogue.CCCP.Editor {
     
 public static class ServerSpacetimeSDKInstaller
 {
+    public static bool debugMode = false;
+
     private static ListRequest s_ListRequest;
     private static AddRequest s_AddRequest;
     private static bool s_IsCheckingInstalled = false;
@@ -50,7 +52,7 @@ public static class ServerSpacetimeSDKInstaller
 
         if (s_IsCheckingInstalled)
         {
-            Debug.LogWarning("[SpacetimeDB] Already checking if SDK is installed");
+            if (debugMode) Debug.LogWarning("[SpacetimeDB] Already checking if SDK is installed");
             callback?.Invoke(false);
             return;
         }
@@ -121,7 +123,7 @@ public static class ServerSpacetimeSDKInstaller
     {
         if (s_IsInstalling)
         {
-            Debug.LogWarning("[SpacetimeDB] SDK installation already in progress");
+            if (debugMode) Debug.LogWarning("[SpacetimeDB] SDK installation already in progress");
             callback?.Invoke(false, "Installation already in progress");
             return;
         }

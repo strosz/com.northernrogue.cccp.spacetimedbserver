@@ -1339,6 +1339,12 @@ public class ServerOutputWindow : EditorWindow
                 }
                 else if (trimmedLine.Contains("WARNING") || trimmedLine.Contains("warning:"))
                 {
+                    if (trimmedLine.Contains("some trace filter directives would enable traces that are disabled statically"))
+                    {
+                        // Skip this known warning which informs about debug levels
+                        continue;
+                    }
+
                     UnityEngine.Debug.LogWarning($"[SpacetimeDB {logType}] {trimmedLine}");
                     loggedToConsole.Add(logHash);
                 }
