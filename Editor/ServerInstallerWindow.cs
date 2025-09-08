@@ -2320,10 +2320,12 @@ public class ServerInstallerWindow : EditorWindow
         string dialogTitle = isUpdate ? "SpacetimeDB SDK Update" : "SpacetimeDB SDK Installation";
         string dialogMessage = isUpdate 
             ? $"Updating the SpacetimeDB SDK from v{spacetimeSDKCurrentVersion} to v{spacetimeSDKLatestVersion} will download the latest package from GitHub and may trigger a script reload.\n\n" +
-              "The update process may take up to a minute. Please don't close Unity during this time."
+              "The update process may take up to a minute. Please don't close Unity during this time.\n\n" +
+              "If you encounter any errors or warnings you can safely dismiss them after the update is complete."
             : "Installing the SpacetimeDB SDK will add a package from GitHub and may trigger a script reload.\n\n" +
-              "The installation process may take up to a minute. Please don't close Unity during this time.";
-        
+              "The installation process may take up to a minute. Please don't close Unity during this time.\n\n" +
+              "If you encounter any errors or warnings you can safely dismiss them after the install is complete.";
+
         string actionButton = isUpdate ? "Update" : "Install";
         
         if (EditorUtility.DisplayDialog(dialogTitle, dialogMessage, actionButton, "Cancel"))

@@ -4,6 +4,7 @@ using System;
 using System.Threading.Tasks;
 using UnityEngine;
 using NorthernRogue.CCCP.Editor.Settings;
+using System.Data.Common;
 
 // Runs the methods related to managing and controlling the WSL server and Maincloud ///
 
@@ -1449,7 +1450,7 @@ public class ServerManager
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
                     if (debugMode) LogMessage("Command completed with no output.", 0);
-                    publishing = false;
+                    // Don't reset publishing flag for custom server SSH commands (these are not publish/generate operations)
                 }
                 
                 // Marked as success if the command was run, but may yet contain errors
@@ -1485,14 +1486,24 @@ public class ServerManager
                     if (!string.IsNullOrEmpty(filteredError))
                     {
                         LogMessage(filteredError, -2);
-                        publishing = false;
+                        // Only reset publishing flag for publish/generate command errors
+                        bool isPublishOrGenerateCmd = command.Contains("spacetime publish") || command.Contains("spacetime generate");
+                        if (isPublishOrGenerateCmd)
+                        {
+                            publishing = false;
+                        }
                     }
                 }
                 
                 if (string.IsNullOrEmpty(result.output) && string.IsNullOrEmpty(result.error))
                 {
                     if (debugMode) LogMessage("Command completed with no output.", 0);
-                    publishing = false;
+                    // Only reset publishing flag for publish/generate commands with no output (likely an error)
+                    bool isPublishOrGenerateCmd = command.Contains("spacetime publish") || command.Contains("spacetime generate");
+                    if (isPublishOrGenerateCmd)
+                    {
+                        publishing = false;
+                    }
                 }
                 
                 // Handle special cases for publish and generate
@@ -1506,9 +1517,13 @@ public class ServerManager
                     {
                         PublishResult(result.output, result.error);
                     }
-                    else if (isGenerateCommand && description == "Generating Unity files (auto)")
+                    else if (isGenerateCommand && description == "Generating Unity files")
                     {
-                        GenerateResult(result.output, result.error);
+                        GenerateResult(result.output, result.error, true);
+                    }
+                    else if (isGenerateCommand && description == "Generating Unity files (Publish failed)")
+                    {
+                        GenerateResult(result.output, result.error, false);
                     }
                 }
                 else // if !result.success
@@ -1516,23 +1531,29 @@ public class ServerManager
                     if (isPublishCommand)
                     {
                         LogMessage("Publishing failed!", -1);
+                        publishing = false;
                     }
                     else if (isGenerateCommand)
                     {
                         LogMessage("Generating Unity files failed!", -1);
+                        publishing = false;
                     }
                     else
                     {
                         LogMessage("Command failed to execute.", -2);
                     }
-                    publishing = false;
                 }
             }
         }
         catch (Exception ex)
         {
             LogMessage($"Error running command: {ex.Message}", -1);
-            publishing = false;
+            // Only reset publishing flag for publish/generate command exceptions
+            bool isPublishOrGenerateCmd = command.Contains("spacetime publish") || command.Contains("spacetime generate");
+            if (isPublishOrGenerateCmd)
+            {
+                publishing = false;
+            }
         }
     }
     #endregion
@@ -1552,6 +1573,9 @@ public class ServerManager
             return;
         }
 
+        // Set publishing flag to true at the start of the publish process
+        publishing = true;
+
         // Always trim trailing slashes from CustomServerUrl for all usages
         string customServerUrl = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl.TrimEnd('/') : "";
         
@@ -1561,8 +1585,6 @@ public class ServerManager
                 RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
-
-            UnityEngine.Debug.Log($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y");
         }
         else
         {
@@ -1674,6 +1696,19 @@ public class ServerManager
             successfulPublish = false;
         }
 
+        if (error.Contains("Identity") && error.Contains("is not valid"))
+        {
+            if (serverMode == ServerMode.WSLServer)
+            EditorUtility.DisplayDialog("Invalid Identity", 
+            "Please try to Logout and then Login again on your local WSL mode and then copy and paste the new auth token into your Pre-Requisites."
+            ,"OK");
+            else if (serverMode == ServerMode.CustomServer)
+            EditorUtility.DisplayDialog("Invalid Identity",
+            "Please try to Logout and then Login again on your both your local WSL mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
+            ,"OK");
+            successfulPublish = false;
+        }
+
         // If the output contains the word error and isn't compiling the publish probably has failed. Excluded initial downloading since some packages may contain the word error.
         if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("downloaded", StringComparison.OrdinalIgnoreCase) && !error.Contains("compiling", StringComparison.OrdinalIgnoreCase))
         {
@@ -1683,9 +1718,18 @@ public class ServerManager
         // Go on to Auto-Generate if mode is enabled (continues even if unsuccessful to get all logs)
         if (PublishAndGenerateMode)
         {
-            LogMessage("Publish successful, automatically generating Unity files...", 0);
-            string outDir = GetRelativeClientPath();
-            RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (auto)");
+            if (successfulPublish)
+            {
+                LogMessage("Publish successful, automatically generating Unity files...", 0);
+                string outDir = GetRelativeClientPath();
+                RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files");
+            }
+            else // If unsuccessful Publish
+            {
+                LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
+                string outDir = GetRelativeClientPath();
+                RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (Publish failed)");
+            }
         }
 
         // Reset change detection state after successful publish
@@ -1708,20 +1752,23 @@ public class ServerManager
         publishing = false;
     }
 
-    private async void GenerateResult(string output, string error)
+    private async void GenerateResult(string output, string error, bool publishSuccessful)
     {
         LogMessage("Waiting for generated files to be fully written...", 0);
         await Task.Delay(3000); // Wait 3 seconds for files to be fully generated
-        LogMessage("Requesting script compilation...", 0);
-        UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
-        if (!string.IsNullOrEmpty(error) && error.Contains("Error"))
+        if (!string.IsNullOrEmpty(error) && error.Contains("Error") || !publishSuccessful)
         {
-            LogMessage("Publish and Generate failed!", -1);
+            LogMessage("Publish and Generate failed! Attempted generate to capture all logs", -1);
         }
         else
         {
+            LogMessage("Requesting script compilation...", 0);
+            UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
             LogMessage("Publish and Generate successful!", 1);
         }
+        
+        // Reset publishing flag when generation is complete
+        publishing = false;
     }
 
     #endregion

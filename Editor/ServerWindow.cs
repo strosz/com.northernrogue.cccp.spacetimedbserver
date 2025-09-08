@@ -126,7 +126,7 @@ public class ServerWindow : EditorWindow
     [MenuItem("Window/SpacetimeDB Server Manager/1. Main Window")]
     public static void ShowWindow()
     {
-        ServerWindow window = GetWindow<ServerWindow>("Server Manager");
+        ServerWindow window = GetWindow<ServerWindow>("Server");
         window.minSize = new Vector2(270f, 600f);
     }    
     
@@ -489,7 +489,10 @@ public class ServerWindow : EditorWindow
         }
 
         // Update the publishing state from serverManager
-        publishing = serverManager.Publishing; 
+        if (serverManager != null)
+        {
+            publishing = serverManager.Publishing;
+        } 
         
         // Perform an immediate WSL status check if in WSL mode
         if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
@@ -516,6 +519,14 @@ public class ServerWindow : EditorWindow
     private async void EditorUpdateHandler()
     {
         if (serverManager == null) return;
+        
+        // Continuously sync publishing state with ServerManager
+        bool newPublishingState = serverManager.Publishing;
+        if (publishing != newPublishingState)
+        {
+            publishing = newPublishingState;
+            Repaint(); // Refresh UI when publishing state changes
+        }
         
         // Skip processing if Unity Editor doesn't have focus to prevent accumulating delayed calls
         if (!windowFocused)
@@ -1811,6 +1822,15 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
+            if (GUILayout.Button("Logout", GUILayout.Height(20)))
+            {
+                if (serverMode == ServerMode.WSLServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
+                #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
+                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
+                #pragma warning restore CS4014
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+            }
+
             if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
@@ -2040,7 +2060,6 @@ public class ServerWindow : EditorWindow
             else
             {
                 serverManager.Publish(false); // Publish without a database reset
-                publishing = true; // Set flag to indicate publishing is in progress
                 publishFirstModule = false;
                 CCCPSettingsAdapter.SetPublishFirstModule(false);
             }
