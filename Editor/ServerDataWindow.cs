@@ -27,10 +27,6 @@ public class ServerDataWindow : EditorWindow
     [SerializeField] 
     private string instanceId = System.Guid.NewGuid().ToString();
     
-    // Serialization validation
-    [SerializeField]
-    private bool isValidInstance = true;
-    
     public static bool debugMode = false;
     
     // Static constructor for initialization
@@ -132,7 +128,6 @@ public class ServerDataWindow : EditorWindow
         {
             window.instanceId = System.Guid.NewGuid().ToString();
         }
-        window.isValidInstance = true;
         currentInstance = window;
         
         if (debugMode)
@@ -146,9 +141,6 @@ public class ServerDataWindow : EditorWindow
         {
             instanceId = System.Guid.NewGuid().ToString();
         }
-        
-        // Mark this as a valid instance
-        isValidInstance = true;
         
         // Set this as the current instance
         currentInstance = this;

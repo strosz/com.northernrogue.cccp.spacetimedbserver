@@ -23,10 +23,6 @@ public class ServerReducerWindow : EditorWindow
     [SerializeField] 
     private string instanceId = System.Guid.NewGuid().ToString();
     
-    // Serialization validation
-    [SerializeField]
-    private bool isValidInstance = true;
-    
     public static bool debugMode = false;
     
     // Static constructor for initialization
@@ -198,7 +194,7 @@ public class ServerReducerWindow : EditorWindow
         {
             window.instanceId = System.Guid.NewGuid().ToString();
         }
-        window.isValidInstance = true;
+
         currentInstance = window;
         
         if (debugMode)
@@ -212,9 +208,6 @@ public class ServerReducerWindow : EditorWindow
         {
             instanceId = System.Guid.NewGuid().ToString();
         }
-        
-        // Mark this as a valid instance
-        isValidInstance = true;
         
         // Set this as the current instance
         currentInstance = this;
