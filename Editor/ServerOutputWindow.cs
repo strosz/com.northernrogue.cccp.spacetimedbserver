@@ -12,6 +12,9 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerOutputWindow : EditorWindow
 {
+    // Add unique instance tracking to prevent duplicates
+    private static ServerOutputWindow currentInstance;
+    
     public static bool debugMode = false; // Controlled by ServerWindow    
 
     // Logs
@@ -110,6 +113,13 @@ public class ServerOutputWindow : EditorWindow
     [MenuItem("Window/SpacetimeDB Server Manager/View Logs")]
     public static void ShowWindow()
     {
+        // Check if an instance already exists and close it to prevent duplicates
+        if (currentInstance != null)
+        {
+            currentInstance.Close();
+            currentInstance = null;
+        }
+        
         // Trigger SessionState refresh before opening window
         TriggerSessionStateRefreshIfWindowExists();
         
@@ -117,10 +127,18 @@ public class ServerOutputWindow : EditorWindow
         window.minSize = new Vector2(400, 300);        
         window.Focus(); 
         window.ReloadLogs();
+        currentInstance = window;
     }    
 
     public static void ShowWindow(int tab)
     {
+        // Check if an instance already exists and close it to prevent duplicates
+        if (currentInstance != null)
+        {
+            currentInstance.Close();
+            currentInstance = null;
+        }
+        
         // Trigger SessionState refresh before opening window
         TriggerSessionStateRefreshIfWindowExists();
         
@@ -129,6 +147,7 @@ public class ServerOutputWindow : EditorWindow
         window.selectedTab = Mathf.Clamp(tab, 0, 3); // Ensure tab index is valid
         window.Focus();
         window.ReloadLogs();
+        currentInstance = window;
         
         // If auto-scroll is enabled, scroll to the bottom when opening with a specific tab
         if (window.autoScroll)
@@ -142,6 +161,9 @@ public class ServerOutputWindow : EditorWindow
     #region OnEnable
     private void OnEnable()
     {
+        // Set this as the current instance
+        currentInstance = this;
+        
         // Add this window to the list of open windows
         if (!openWindows.Contains(this))
         {
@@ -327,6 +349,12 @@ public class ServerOutputWindow : EditorWindow
 
     private void OnDisable()
     {
+        // Clear the current instance if this is it
+        if (currentInstance == this)
+        {
+            currentInstance = null;
+        }
+        
         EditorApplication.playModeStateChanged -= PlayModeStateChanged;
         EditorApplication.update -= CheckForLogUpdates;
         isWindowEnabled = false;

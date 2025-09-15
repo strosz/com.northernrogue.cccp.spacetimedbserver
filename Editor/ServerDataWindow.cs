@@ -19,7 +19,25 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerDataWindow : EditorWindow
 {
+    // Use NonSerialized to prevent Unity from trying to serialize the static instance
+    [System.NonSerialized]
+    private static ServerDataWindow currentInstance;
+    
+    // Unique identifier for each window instance
+    [SerializeField] 
+    private string instanceId = System.Guid.NewGuid().ToString();
+    
+    // Serialization validation
+    [SerializeField]
+    private bool isValidInstance = true;
+    
     public static bool debugMode = false;
+    
+    // Static constructor for initialization
+    static ServerDataWindow()
+    {
+        if (debugMode) Debug.Log("[ServerDataWindow] Static constructor called");
+    }
 
     // Configuration
     private string serverURL = "http://127.0.0.1:3000/v1";
@@ -94,21 +112,54 @@ public class ServerDataWindow : EditorWindow
     [MenuItem("Window/SpacetimeDB Server Manager/Browse Database")]
     public static void ShowWindow()
     {
-        ServerDataWindow window = GetWindow<ServerDataWindow>("Database");
+        // Prevent opening windows during compilation
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+        {
+            if (debugMode)
+                Debug.LogWarning("[ServerDataWindow] Prevented ShowWindow during compilation/updating");
+            return;
+        }
+        
+        // Use Unity's proper singleton pattern - GetWindow without utility flag
+        // This reuses existing instances and only creates new ones if needed
+        ServerDataWindow window = GetWindow<ServerDataWindow>();
+        window.titleContent = new GUIContent("Database");
         window.minSize = new Vector2(450, 350);
         window.Show();
+        
+        // Ensure proper initialization
+        if (string.IsNullOrEmpty(window.instanceId))
+        {
+            window.instanceId = System.Guid.NewGuid().ToString();
+        }
+        window.isValidInstance = true;
+        currentInstance = window;
+        
+        if (debugMode)
+            Debug.Log($"[ServerDataWindow] ShowWindow completed for instance {window.instanceId}");
     }
 
     private void OnEnable()
     {
-        // Attempt to find the parent window to access its settings
+        // Set unique instance ID if missing
+        if (string.IsNullOrEmpty(instanceId))
+        {
+            instanceId = System.Guid.NewGuid().ToString();
+        }
+        
+        // Mark this as a valid instance
+        isValidInstance = true;
+        
+        // Set this as the current instance
+        currentInstance = this;
+        
+        if (debugMode)
+            Debug.Log($"[ServerDataWindow] OnEnable called for instance {instanceId}");
+        
+        // Initialize the window
         FindParentWindow();
         LoadSettings();
-        
-        // Load saved column widths
         LoadColumnWidths();
-
-        // Auto-refresh once when opening the window
         RefreshAllData();
     }
 
@@ -160,20 +211,13 @@ public class ServerDataWindow : EditorWindow
     // Ensure column widths are saved when the window closes
     private void OnDisable()
     {
+        // Clear the current instance if this is it
+        if (currentInstance == this)
+        {
+            currentInstance = null;
+        }
+        
         SaveColumnWidths();
-
-        // Use delayCall to update serverwindow states after the window is fully destroyed
-        EditorApplication.delayCall += () => {
-            try 
-            {
-                ServerWindow serverWindow = GetWindow<ServerWindow>();
-                serverWindow.UpdateWindowStates();
-            }
-            catch (System.Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update window states: {ex.Message}");
-            }
-        };
     }
 
     // Helper method to ensure server URL has /v1 suffix if missing

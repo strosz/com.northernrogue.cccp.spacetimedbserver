@@ -15,7 +15,25 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerReducerWindow : EditorWindow
 {
+    // Use NonSerialized to prevent Unity from trying to serialize the static instance
+    [System.NonSerialized]
+    private static ServerReducerWindow currentInstance;
+    
+    // Unique identifier for each window instance
+    [SerializeField] 
+    private string instanceId = System.Guid.NewGuid().ToString();
+    
+    // Serialization validation
+    [SerializeField]
+    private bool isValidInstance = true;
+    
     public static bool debugMode = false;
+    
+    // Static constructor for initialization
+    static ServerReducerWindow()
+    {
+        if (debugMode) Debug.Log("[ServerReducerWindow] Static constructor called");
+    }
 
     private string serverURL = "http://127.0.0.1:3000/v1"; // Default, should be overridden
     private string moduleName = "magical"; // Default, should be overridden
@@ -160,31 +178,61 @@ public class ServerReducerWindow : EditorWindow
     [MenuItem("Window/SpacetimeDB Server Manager/Run Reducer")]
     public static void ShowWindow()
     {
-        ServerReducerWindow window = GetWindow<ServerReducerWindow>("Run Server Reducer");
+        // Prevent opening windows during compilation
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+        {
+            if (debugMode)
+                Debug.LogWarning("[ServerReducerWindow] Prevented ShowWindow during compilation/updating");
+            return;
+        }
+        
+        // Use Unity's proper singleton pattern - GetWindow without utility flag
+        // This reuses existing instances and only creates new ones if needed
+        ServerReducerWindow window = GetWindow<ServerReducerWindow>();
+        window.titleContent = new GUIContent("Run Server Reducer");
         window.minSize = new Vector2(500, 400);
-        window.LoadSettings();
+        window.Show();
+        
+        // Ensure proper initialization
+        if (string.IsNullOrEmpty(window.instanceId))
+        {
+            window.instanceId = System.Guid.NewGuid().ToString();
+        }
+        window.isValidInstance = true;
+        currentInstance = window;
+        
+        if (debugMode)
+            Debug.Log($"[ServerReducerWindow] ShowWindow completed for instance {window.instanceId}");
     }
     
     private void OnEnable()
     {
+        // Set unique instance ID if missing
+        if (string.IsNullOrEmpty(instanceId))
+        {
+            instanceId = System.Guid.NewGuid().ToString();
+        }
+        
+        // Mark this as a valid instance
+        isValidInstance = true;
+        
+        // Set this as the current instance
+        currentInstance = this;
+        
+        if (debugMode)
+            Debug.Log($"[ServerReducerWindow] OnEnable called for instance {instanceId}");
+        
         LoadSettings();
         RefreshReducers();
     }
 
     private void OnDisable()
     {
-        // Use delayCall to update serverwindow states after the window is fully destroyed
-        EditorApplication.delayCall += () => {
-            try 
-            {
-                ServerWindow serverWindow = GetWindow<ServerWindow>();
-                serverWindow.UpdateWindowStates();
-            }
-            catch (System.Exception ex)
-            {
-                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to update window states: {ex.Message}");
-            }
-        };
+        // Clear the current instance if this is it
+        if (currentInstance == this)
+        {
+            currentInstance = null;
+        }
     }
     
     private void OnGUI()

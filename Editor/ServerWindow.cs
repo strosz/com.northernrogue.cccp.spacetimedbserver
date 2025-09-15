@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using NorthernRogue.CCCP.Editor.Settings;
 using ModuleInfo = NorthernRogue.CCCP.Editor.Settings.ModuleInfo;
 
-// The main Comos Cove Control Panel that controls the server and launches all features ///
+// The main Comos Cove Control Panel that controls the server state and launches all features ///
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -150,6 +150,10 @@ public class ServerWindow : EditorWindow
     }
     private int selectedModuleIndex { get => CCCPSettingsAdapter.GetSelectedModuleIndex(); set => CCCPSettingsAdapter.SetSelectedModuleIndex(value); }
     private string newModuleNameInput = ""; // Input field for new module name (UI state)
+
+    // Session state keys for window management
+    private const string SessionKeyBrowseDbOpen = "ServerWindow_BrowseDbOpen";
+    private const string SessionKeyRunReducerOpen = "ServerWindow_RunReducerOpen";
 
     #region OnGUI
 
@@ -440,6 +444,10 @@ public class ServerWindow : EditorWindow
         // Load the currently selected module if any (after initial settings refresh)
         LoadSelectedModuleFromSettings();
         
+        // Restore window states from SessionState
+        browseDbWindowOpen = SessionState.GetBool(SessionKeyBrowseDbOpen, false);
+        runReducerWindowOpen = SessionState.GetBool(SessionKeyRunReducerOpen, false);
+        
         // Also do a delayed refresh to handle any timing issues with asset database
         EditorApplication.delayCall += () => {
             CCCPSettingsAdapter.RefreshSettingsCache();
@@ -537,6 +545,9 @@ public class ServerWindow : EditorWindow
     private async void EditorUpdateHandler()
     {
         if (serverManager == null) return;
+        
+        // Update window states regularly to keep UI in sync
+        UpdateWindowStates();
         
         // Continuously sync publishing state with ServerManager
         bool newPublishingState = serverManager.Publishing;
@@ -1587,9 +1598,10 @@ public class ServerWindow : EditorWindow
             return;
         }
         
-        if (serverMode != ServerMode.MaincloudServer)
+        // Start or Stop Server button
+        if (serverMode != ServerMode.MaincloudServer) // Maincloud is always running
         {
-            serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp;
+            serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp; // Update running state
             if (!serverManager.WslPrerequisitesChecked || !serverManager.HasAllPrerequisites)
             {
                 if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
@@ -1613,6 +1625,7 @@ public class ServerWindow : EditorWindow
                         if (GUILayout.Button("Stop SpacetimeDB WSL", GUILayout.Height(30)))
                         {
                             serverManager.StopServer();
+                            CloseDatabaseAndReducerWindow();
                         }
                     }
                 } else if (serverMode == ServerMode.CustomServer)
@@ -1629,6 +1642,7 @@ public class ServerWindow : EditorWindow
                         if (GUILayout.Button("Stop SpacetimeDB Remote", GUILayout.Height(30)))
                         {
                             serverManager.StopServer();
+                            CloseDatabaseAndReducerWindow();
                         }
                     }
                 }
@@ -2577,6 +2591,12 @@ public class ServerWindow : EditorWindow
         }
     }
 
+    private void CloseDatabaseAndReducerWindow()
+    {
+        ServerUtilityProvider.CloseWindow<ServerDataWindow>();
+        ServerUtilityProvider.CloseWindow<ServerReducerWindow>();
+    }
+
     public bool CLIAvailableLocal()
     {
         if (hasWSL)
@@ -2604,10 +2624,6 @@ public class ServerWindow : EditorWindow
             return false;
         }
     }
-    
-
-    
-
 
     private void HandlePlayModeStateChange(PlayModeStateChange state)
     {
@@ -2783,10 +2799,11 @@ public class ServerWindow : EditorWindow
         viewLogsWindowOpen = ServerUtilityProvider.IsWindowOpen<ServerOutputWindow>();
         browseDbWindowOpen = ServerUtilityProvider.IsWindowOpen<ServerDataWindow>();
         runReducerWindowOpen = ServerUtilityProvider.IsWindowOpen<ServerReducerWindow>();
+        
+        // Persist the state
+        SessionState.SetBool(SessionKeyBrowseDbOpen, browseDbWindowOpen);
+        SessionState.SetBool(SessionKeyRunReducerOpen, runReducerWindowOpen);
     }
-
-
-    
 
     #endregion
 
