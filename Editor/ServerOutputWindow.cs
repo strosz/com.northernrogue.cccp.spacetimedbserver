@@ -15,7 +15,7 @@ public class ServerOutputWindow : EditorWindow
     public static bool debugMode = false; // Controlled by ServerWindow    
 
     // Logs
-    private string outputLogFull = ""; // Module logs
+    private string moduleLogFull = ""; // Module logs
     private string databaseLogFull = ""; // Database logs
     private Vector2 scrollPosition;
     private int selectedTab = 0;
@@ -37,6 +37,19 @@ public class ServerOutputWindow : EditorWindow
     private const string SessionKeyModuleLog = "ServerWindow_ModuleLog";
     private const string SessionKeyCachedModuleLog = "ServerWindow_CachedModuleLog";
     private const string SessionKeyDatabaseLog = "ServerWindow_DatabaseLog";
+    
+    // ServerOutputWindow-specific session state keys for its display variables
+    private const string SessionKeyOutputWindowModuleLogFull = "ServerOutputWindow_ModuleLogFull";
+    private const string SessionKeyOutputWindowDatabaseLogFull = "ServerOutputWindow_DatabaseLogFull";
+    
+    // Compilation detection and state preservation keys
+    private const string SessionKeyCompilationBackupModuleLog = "ServerOutputWindow_CompilationBackup_ModuleLog";
+    private const string SessionKeyCompilationBackupDatabaseLog = "ServerOutputWindow_CompilationBackup_DatabaseLog";
+    private const string SessionKeyCompilationDetected = "ServerOutputWindow_CompilationDetected";
+    
+    // Protection flags to prevent ReloadLogs from overwriting compilation recovery
+    private bool compilationRecoveryActive = false;
+    private double compilationRecoveryTime = 0;
     
     // Performance optimizations
     private bool needsRepaint = false; // Flag to track if content changed and needs repainting
@@ -140,6 +153,12 @@ public class ServerOutputWindow : EditorWindow
         // Subscribe to update
         EditorApplication.update += CheckForLogUpdates;
         
+        // Subscribe to assembly reload events for compilation detection and log state preservation
+        AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
+        
+        // Check if we're recovering from a compilation
+        RestoreLogsAfterCompilation();
+        
         // Load settings from Settings
         autoScroll = CCCPSettingsAdapter.GetAutoscroll();
         echoToConsole = CCCPSettingsAdapter.GetEchoToConsole();
@@ -157,7 +176,44 @@ public class ServerOutputWindow : EditorWindow
         }
 
         // Load the log data
+        // First, try to restore our own log variables from SessionState
+        string restoredModuleLog = SessionState.GetString(SessionKeyOutputWindowModuleLogFull, "");
+        string restoredDatabaseLog = SessionState.GetString(SessionKeyOutputWindowDatabaseLogFull, "");
+        
+        if (!string.IsNullOrEmpty(restoredModuleLog) && restoredModuleLog != "(No Module Log Found.)")
+        {
+            moduleLogFull = restoredModuleLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Restored moduleLogFull from SessionState: {moduleLogFull.Length} chars");
+        }
+        
+        if (!string.IsNullOrEmpty(restoredDatabaseLog) && restoredDatabaseLog != "(No Database Log Found.)")
+        {
+            databaseLogFull = restoredDatabaseLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Restored databaseLogFull from SessionState: {databaseLogFull.Length} chars");
+        }
+        
+        // Then reload from ServerLogProcess SessionState
         ReloadLogs();
+        
+        // Add post-compilation recovery with delay to ensure ServerLogProcess is ready
+        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] OnEnable - Scheduling post-compilation recovery");
+        EditorApplication.delayCall += () =>
+        {
+            // Give ServerLogProcess time to initialize, then reload again
+            EditorApplication.delayCall += () =>
+            {
+                ReloadLogs();
+                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Post-compilation delayed reload completed");
+                
+                // If logs are still empty after SessionState reload, trigger server log continuation
+                if ((string.IsNullOrEmpty(moduleLogFull) || moduleLogFull == "(No Module Log Found.)") && 
+                    (string.IsNullOrEmpty(databaseLogFull) || databaseLogFull == "(No Database Log Found.)"))
+                {
+                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Logs still empty after delayed reload - triggering server refresh");
+                    TriggerSessionStateRefreshIfWindowExists();
+                }
+            };
+        };
         
         isWindowEnabled = true;
         
@@ -276,6 +332,25 @@ public class ServerOutputWindow : EditorWindow
         isWindowEnabled = false;
         openWindows.Remove(this);
         
+        // Save current log state to SessionState before window is disabled
+        if (!string.IsNullOrEmpty(moduleLogFull) && moduleLogFull != "(No Module Log Found.)")
+        {
+            SessionState.SetString(SessionKeyOutputWindowModuleLogFull, moduleLogFull);
+        }
+        
+        if (!string.IsNullOrEmpty(databaseLogFull) && databaseLogFull != "(No Database Log Found.)")
+        {
+            SessionState.SetString(SessionKeyOutputWindowDatabaseLogFull, databaseLogFull);
+        }
+        
+        // Also save as compilation backup in case this is a compilation-triggered disable
+        SaveLogsForCompilationRecovery();
+        
+        if (debugMode && (!string.IsNullOrEmpty(moduleLogFull) || !string.IsNullOrEmpty(databaseLogFull)))
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] OnDisable - Saved log state to SessionState: module {moduleLogFull.Length} chars, database {databaseLogFull.Length} chars");
+        }
+        
         // Use delayCall to update serverwindow states after the window is fully destroyed
         EditorApplication.delayCall += () => {
             try 
@@ -298,6 +373,152 @@ public class ServerOutputWindow : EditorWindow
         // Clear caches to free memory
         formattedLogCache.Clear();        
         visibleLines.Clear();
+        
+        // Unsubscribe from assembly reload events to prevent memory leaks
+        AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
+    }
+    
+    /// <summary>
+    /// Called before assembly reload to save log state for post-compilation recovery
+    /// </summary>
+    private void OnBeforeAssemblyReload()
+    {
+        if (debugMode)
+            UnityEngine.Debug.Log("[ServerOutputWindow] Assembly reload detected - saving log state for recovery...");
+        
+        // Save logs for all open windows
+        SaveAllWindowLogsForCompilation();
+        
+        SaveLogsForCompilationRecovery();
+        
+        // Unregister the event to prevent memory leaks
+        AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
+    }
+    
+    /// <summary>
+    /// Save logs for all open ServerOutputWindow instances
+    /// </summary>
+    private static void SaveAllWindowLogsForCompilation()
+    {
+        foreach (var window in openWindows)
+        {
+            if (window != null)
+            {
+                window.SaveLogsForCompilationRecovery();
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Saves current log state to compilation-specific SessionState keys
+    /// </summary>
+    private void SaveLogsForCompilationRecovery()
+    {
+        // Mark that we detected a compilation
+        SessionState.SetBool(SessionKeyCompilationDetected, true);
+        
+        // Save current log content to compilation backup keys
+        if (!string.IsNullOrEmpty(moduleLogFull) && moduleLogFull != "(No Module Log Found.)")
+        {
+            SessionState.SetString(SessionKeyCompilationBackupModuleLog, moduleLogFull);
+            // Also save to EditorPrefs as additional backup
+            EditorPrefs.SetString("ServerOutputWindow_EditorPrefs_ModuleLog", moduleLogFull);
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Saved moduleLogFull for compilation recovery: {moduleLogFull.Length} chars");
+        }
+        
+        if (!string.IsNullOrEmpty(databaseLogFull) && databaseLogFull != "(No Database Log Found.)")
+        {
+            SessionState.SetString(SessionKeyCompilationBackupDatabaseLog, databaseLogFull);
+            // Also save to EditorPrefs as additional backup
+            EditorPrefs.SetString("ServerOutputWindow_EditorPrefs_DatabaseLog", databaseLogFull);
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Saved databaseLogFull for compilation recovery: {databaseLogFull.Length} chars");
+        }
+        
+        // Also save to regular SessionState keys as backup
+        SessionState.SetString(SessionKeyOutputWindowModuleLogFull, moduleLogFull);
+        SessionState.SetString(SessionKeyOutputWindowDatabaseLogFull, databaseLogFull);
+        
+        // Save compilation timestamp for recovery validation
+        EditorPrefs.SetString("ServerOutputWindow_EditorPrefs_CompilationTime", DateTime.Now.ToBinary().ToString());
+        
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] Compilation backup complete - Module: {moduleLogFull.Length} chars, Database: {databaseLogFull.Length} chars");
+        }
+    }
+    
+    /// <summary>
+    /// Restores logs after compilation if compilation was detected
+    /// </summary>
+    private void RestoreLogsAfterCompilation()
+    {
+        bool compilationWasDetected = SessionState.GetBool(SessionKeyCompilationDetected, false);
+        
+        // Also check EditorPrefs for recent compilation (within last 30 seconds)
+        string compilationTimeStr = EditorPrefs.GetString("ServerOutputWindow_EditorPrefs_CompilationTime", "");
+        bool recentCompilation = false;
+        if (!string.IsNullOrEmpty(compilationTimeStr) && long.TryParse(compilationTimeStr, out long timeBinary))
+        {
+            DateTime compilationTime = DateTime.FromBinary(timeBinary);
+            recentCompilation = (DateTime.Now - compilationTime).TotalSeconds < 30;
+        }
+        
+        if (compilationWasDetected || recentCompilation)
+        {
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Compilation recovery detected - SessionState: {compilationWasDetected}, EditorPrefs: {recentCompilation}");
+            
+            // Try SessionState first
+            string backupModuleLog = SessionState.GetString(SessionKeyCompilationBackupModuleLog, "");
+            string backupDatabaseLog = SessionState.GetString(SessionKeyCompilationBackupDatabaseLog, "");
+            
+            // Fallback to EditorPrefs if SessionState is empty
+            if (string.IsNullOrEmpty(backupModuleLog) || backupModuleLog == "(No Module Log Found.)")
+            {
+                backupModuleLog = EditorPrefs.GetString("ServerOutputWindow_EditorPrefs_ModuleLog", "");
+                if (debugMode && !string.IsNullOrEmpty(backupModuleLog)) UnityEngine.Debug.Log("[ServerOutputWindow] Using EditorPrefs fallback for module log");
+            }
+            
+            if (string.IsNullOrEmpty(backupDatabaseLog) || backupDatabaseLog == "(No Database Log Found.)")
+            {
+                backupDatabaseLog = EditorPrefs.GetString("ServerOutputWindow_EditorPrefs_DatabaseLog", "");
+                if (debugMode && !string.IsNullOrEmpty(backupDatabaseLog)) UnityEngine.Debug.Log("[ServerOutputWindow] Using EditorPrefs fallback for database log");
+            }
+            
+            if (!string.IsNullOrEmpty(backupModuleLog) && backupModuleLog != "(No Module Log Found.)")
+            {
+                moduleLogFull = backupModuleLog;
+                if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Restored moduleLogFull from compilation backup: {moduleLogFull.Length} chars");
+            }
+            
+            if (!string.IsNullOrEmpty(backupDatabaseLog) && backupDatabaseLog != "(No Database Log Found.)")
+            {
+                databaseLogFull = backupDatabaseLog;
+                if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Restored databaseLogFull from compilation backup: {databaseLogFull.Length} chars");
+            }
+            
+            // Set protection flag to prevent ReloadLogs from overwriting recovered logs
+            compilationRecoveryActive = true;
+            compilationRecoveryTime = EditorApplication.timeSinceStartup;
+            
+            // Clear the compilation detection flag and EditorPrefs
+            SessionState.SetBool(SessionKeyCompilationDetected, false);
+            EditorPrefs.DeleteKey("ServerOutputWindow_EditorPrefs_CompilationTime");
+            EditorPrefs.DeleteKey("ServerOutputWindow_EditorPrefs_ModuleLog");
+            EditorPrefs.DeleteKey("ServerOutputWindow_EditorPrefs_DatabaseLog");
+            
+            // Clear the backup keys to prevent stale data
+            SessionState.SetString(SessionKeyCompilationBackupModuleLog, "");
+            SessionState.SetString(SessionKeyCompilationBackupDatabaseLog, "");
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerOutputWindow] Compilation recovery complete - Module: {moduleLogFull.Length} chars, Database: {databaseLogFull.Length} chars. Protection active for 5 seconds.");
+            }
+        }
+        else if (debugMode)
+        {
+            UnityEngine.Debug.Log("[ServerOutputWindow] No compilation detected - skipping compilation recovery");
+        }
     }
     
     // Reload logs when the window gets focus
@@ -349,6 +570,24 @@ public class ServerOutputWindow : EditorWindow
                     if (debugMode)
                     {
                         UnityEngine.Debug.Log("[ServerOutputWindow] SessionState refresh triggered on existing ServerWindow");
+                    }
+                    
+                    // Also trigger log continuation based on server mode to get fresh logs
+                    if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.CustomServer)
+                    {
+                        EditorApplication.delayCall += () => 
+                        {
+                            serverWindow.ForceSSHLogContinuation();
+                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SSH log continuation triggered for post-compilation recovery");
+                        };
+                    }
+                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                    {
+                        EditorApplication.delayCall += () => 
+                        {
+                            serverWindow.ForceWSLLogRefresh();
+                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] WSL log refresh triggered for post-compilation recovery");
+                        };
                     }
                 }
             }
@@ -478,6 +717,18 @@ public class ServerOutputWindow : EditorWindow
                         {
                             serverWindow.ForceRefreshLogsFromSessionState();
                             if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: ServerWindow SessionState refresh triggered");
+                            
+                            // Trigger SSH log continuation to maintain historical logs after compilation
+                            if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.CustomServer)
+                            {
+                                serverWindow.ForceSSHLogContinuation();
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: SSH log continuation triggered");
+                            }
+                            else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                            {
+                                serverWindow.ForceWSLLogRefresh();
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: WSL log refresh triggered");
+                            }
                         }
                     }
                 }
@@ -609,15 +860,40 @@ public class ServerOutputWindow : EditorWindow
         {
             if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ReloadLogs skipped due to compilation.");
             return;
+        }
+        
+        // Check if compilation recovery is active and should be protected
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (compilationRecoveryActive)
+        {
+            // Protect recovered logs for 5 seconds to allow ServerLogProcess to restore and provide content
+            if (currentTime - compilationRecoveryTime < 5.0)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] ReloadLogs skipped - compilation recovery protection active ({5.0 - (currentTime - compilationRecoveryTime):F1}s remaining)");
+                return;
+            }
+            else
+            {
+                // Protection period expired
+                compilationRecoveryActive = false;
+                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Compilation recovery protection expired - resuming normal ReloadLogs");
+            }
         }        
         string newOutputLog = SessionState.GetString(SessionKeyModuleLog, "");
         string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+        
+        // Debug: Log SessionState content length
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] ReloadLogs - SessionState module log: {newOutputLog.Length} chars, cached: {cachedModuleLog.Length} chars, current moduleLogFull: {moduleLogFull.Length} chars");
+        }
         
         // Use the longer log content (current vs cached) to ensure we get the most complete data
         // This helps when server state gets confused after compilation
         if (cachedModuleLog.Length > newOutputLog.Length)
         {
             newOutputLog = cachedModuleLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] Using cached module log ({cachedModuleLog.Length} chars) over current ({newOutputLog.Length} chars)");
         }
         
         // If both are empty, show default message
@@ -627,12 +903,48 @@ public class ServerOutputWindow : EditorWindow
         }
 
         string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found.)");
+        
+        // Debug: Log database content length  
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] ReloadLogs - SessionState database log: {newDatabaseLog.Length} chars, current databaseLogFull: {databaseLogFull.Length} chars");
+        }
 
         // Only update and invalidate cache if log content changed
-        if (newOutputLog != outputLogFull || newDatabaseLog != databaseLogFull)
+        if (newOutputLog != moduleLogFull || newDatabaseLog != databaseLogFull)
         {
-            outputLogFull = newOutputLog;
+            // Check if this is substantial new content
+            bool hasSubstantialContent = (!string.IsNullOrEmpty(newOutputLog) && newOutputLog != "(No Module Log Found.)" && newOutputLog.Length > 100) ||
+                                       (!string.IsNullOrEmpty(newDatabaseLog) && newDatabaseLog != "(No Database Log Found.)" && newDatabaseLog.Length > 100);
+            
+            // If compilation recovery is active, disable it when we get substantial new content
+            if (compilationRecoveryActive && hasSubstantialContent)
+            {
+                compilationRecoveryActive = false;
+                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Disabling compilation recovery protection - ServerLogProcess providing new content");
+            }
+            
+            // Normal log update - ServerLogProcess now handles continuity internally
+            moduleLogFull = newOutputLog;
             databaseLogFull = newDatabaseLog;
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerOutputWindow] Log content updated - moduleLogFull: {moduleLogFull.Length} chars, databaseLogFull: {databaseLogFull.Length} chars");
+            }
+            
+            // Save the updated log variables to SessionState for persistence across compilation
+            SessionState.SetString(SessionKeyOutputWindowModuleLogFull, moduleLogFull);
+            SessionState.SetString(SessionKeyOutputWindowDatabaseLogFull, databaseLogFull);
+            
+            // Also update compilation backup to ensure it's always current
+            SessionState.SetString(SessionKeyCompilationBackupModuleLog, moduleLogFull);
+            SessionState.SetString(SessionKeyCompilationBackupDatabaseLog, databaseLogFull);
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerOutputWindow] Saved log variables to SessionState - module: {moduleLogFull.Length} chars, database: {databaseLogFull.Length} chars");
+            }
             
             // Invalidate the cache for the current tab
             if (formattedLogCache.ContainsKey(selectedTab))
@@ -720,7 +1032,7 @@ public class ServerOutputWindow : EditorWindow
                 if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to clear logs via ServerWindow: {ex.Message}");
             }
             
-            outputLogFull = "";
+            moduleLogFull = "";
             databaseLogFull = "";
             SessionState.SetString(SessionKeyModuleLog, "");
             SessionState.SetString(SessionKeyDatabaseLog, "");
@@ -976,19 +1288,19 @@ public class ServerOutputWindow : EditorWindow
         switch (selectedTab)
         {
             case 0: // Main All
-                if (string.IsNullOrEmpty(outputLogFull)) {
+                if (string.IsNullOrEmpty(moduleLogFull)) {
                     return "(Module log is empty)";
                 }
-                logToShow = outputLogFull;
+                logToShow = moduleLogFull;
                 break;
             
             case 1: // Main Errors Only
-                if (string.IsNullOrEmpty(outputLogFull)) {
+                if (string.IsNullOrEmpty(moduleLogFull)) {
                     return "(Module log is empty)";
                 }
                 
                 try {
-                    var errorLines = outputLogFull.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    var errorLines = moduleLogFull.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                         .Where(line => 
                             line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) || 
                             line.Contains("WARN", StringComparison.OrdinalIgnoreCase) || 
@@ -1218,7 +1530,8 @@ public class ServerOutputWindow : EditorWindow
         lastUpdateTime = Time.realtimeSinceStartup;
         
         // Trigger log processing directly based on logUpdateFrequency instead of waiting for ServerManager's CheckAllStatus
-        TriggerLogProcessing();        // Check main logs (consider both current and cached module logs)
+        TriggerLogProcessing();        
+        // Check main logs (consider both current and cached module logs)
         string currentLog = SessionState.GetString(SessionKeyModuleLog, "");
         string cachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
         
@@ -1433,7 +1746,7 @@ public class ServerOutputWindow : EditorWindow
             
             // Use the displayed content rather than raw logs
             // For raw logs, use the following line instead:
-            // logContent = outputLogFull;
+            // logContent = moduleLogFull;
             // logContent = databaseLogFull;
             logContent = displayedContent;
             

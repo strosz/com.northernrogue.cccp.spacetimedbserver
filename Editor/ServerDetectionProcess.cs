@@ -263,11 +263,11 @@ public class ServerDetectionProcess
             bool isRustProject = IsRustProject();
             bool isCSharpProject = IsCSharpProject();
             
-            if (debugMode)
+            /*if (debugMode)
             {
                 string projectType = isRustProject ? "Rust" : (isCSharpProject ? "C#" : "Unknown");
                 Debug.Log($"[ServerDetectionProcess] Detected {projectType} project in {serverDirectory}");
-            }
+            }*/
             
             if (isRustProject)
             {

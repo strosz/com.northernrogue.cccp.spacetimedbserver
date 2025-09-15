@@ -473,6 +473,15 @@ public class ServerManager
         }
     }
     
+    // Force SSH log continuation after compilation - preserves timestamps to maintain log continuity
+    public void ForceSSHLogContinuation()
+    {
+        if (logProcessor != null && Settings.serverMode == ServerMode.CustomServer)
+        {
+            logProcessor.ForceSSHLogContinuation();
+        }
+    }
+    
     public void SetServerMode(ServerMode mode)
     {
         serverMode = mode;
@@ -506,15 +515,17 @@ public class ServerManager
         // Restore server started state
         bool sessionServerStarted = SessionState.GetBool(SessionKeyServerStarted, false);
         bool sessionIsStartingUp = SessionState.GetBool(SessionKeyIsStartingUp, false);
+        int sessionServerMode = SessionState.GetInt(SessionKeyServerMode, (int)ServerMode.WSLServer);
         
         if (sessionServerStarted || sessionIsStartingUp)
         {
             if (debugMode)
-                LogMessage($"[ServerManager] Restoring server state from SessionState: serverStarted={sessionServerStarted}, isStartingUp={sessionIsStartingUp}", 0);
+                LogMessage($"[ServerManager] Restoring server state from SessionState: serverStarted={sessionServerStarted}, isStartingUp={sessionIsStartingUp}, serverMode={(ServerMode)sessionServerMode}", 0);
             
             // Restore the state
             serverStarted = sessionServerStarted;
             isStartingUp = sessionIsStartingUp;
+            serverMode = (ServerMode)sessionServerMode;
             
             // If server was marked as started, verify it's actually still running
             if (serverStarted)
@@ -537,6 +548,32 @@ public class ServerManager
                         {
                             if (debugMode)
                                 LogMessage("[ServerManager] Server state restored successfully - server is confirmed running.", 0);
+                            
+                            // Restart logging after compilation when server state is confirmed
+                            if (logProcessor != null)
+                            {
+                                // Reconfigure log processor for the restored server mode
+                                if (serverMode == ServerMode.CustomServer)
+                                {
+                                    // Extract SSH details like in normal startup
+                                    string sshHost = ServerUtilityProvider.ExtractHostname(CustomServerUrl);
+                                    
+                                    logProcessor.ConfigureSSH(SSHUserName, sshHost, SSHPrivateKeyPath, true);
+                                    if (debugMode)
+                                        LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
+                                }
+                                else if (serverMode == ServerMode.WSLServer)
+                                {
+                                    logProcessor.ConfigureWSL(true);
+                                    if (debugMode)
+                                        LogMessage("[ServerManager] Reconfigured WSL log processor", 1);
+                                }
+                                
+                                logProcessor.SetServerRunningState(true);
+                                logProcessor.StartLogging();
+                                if (debugMode)
+                                    LogMessage("[ServerManager] Restarted log processor after compilation - server confirmed running.", 1);
+                            }
                         }
                         
                         RepaintCallback?.Invoke();
@@ -774,7 +811,7 @@ public class ServerManager
             if (silentMode && logProcessor != null)
             {
                 // Extract hostname from CustomServerUrl
-                string sshHost = ExtractHostname(CustomServerUrl);
+                string sshHost = ServerUtilityProvider.ExtractHostname(CustomServerUrl);
 
                 // Configure SSH details for the log processor
                 logProcessor.ConfigureSSH(
@@ -1386,7 +1423,7 @@ public class ServerManager
                             if (Settings.serverMode == ServerMode.CustomServer && isActuallyRunning && silentMode && logProcessor != null)
                             {
                                 // Extract hostname from CustomServerUrl
-                                string sshHost = ExtractHostname(CustomServerUrl);
+                                string sshHost = ServerUtilityProvider.ExtractHostname(CustomServerUrl);
                                 
                                 // Configure SSH details for the log processor
                                 logProcessor.ConfigureSSH(
@@ -1437,7 +1474,7 @@ public class ServerManager
                 if (!string.IsNullOrEmpty(result.output))
                 {
                     // Check if this is login info output and apply color formatting
-                    string formattedOutput = FormatLoginInfoOutput(result.output);
+                    string formattedOutput = ServerUtilityProvider.FormatLoginInfoOutput(result.output);
                     LogMessage(formattedOutput, 0);
                 }
                 
@@ -1472,7 +1509,7 @@ public class ServerManager
                 if (!string.IsNullOrEmpty(result.output))
                 {
                     // Check if this is login info output and apply color formatting
-                    string formattedOutput = FormatLoginInfoOutput(result.output);
+                    string formattedOutput = ServerUtilityProvider.FormatLoginInfoOutput(result.output);
                     LogMessage(formattedOutput, 0);
                     if (debugMode) UnityEngine.Debug.Log("Command output: " + formattedOutput);
                 }
@@ -1481,7 +1518,7 @@ public class ServerManager
                 {
                     // Filter out formatting errors for generate commands that don't affect functionality
                     bool isGenerateCmd = command.Contains("spacetime generate");
-                    string filteredError = isGenerateCmd ? FilterGenerateErrors(result.error) : result.error;
+                    string filteredError = isGenerateCmd ? ServerUtilityProvider.FilterGenerateErrors(result.error) : result.error;
                     
                     if (!string.IsNullOrEmpty(filteredError))
                     {
@@ -1721,13 +1758,13 @@ public class ServerManager
             if (successfulPublish)
             {
                 LogMessage("Publish successful, automatically generating Unity files...", 0);
-                string outDir = GetRelativeClientPath();
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files");
             }
             else // If unsuccessful Publish
             {
                 LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
-                string outDir = GetRelativeClientPath();
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (Publish failed)");
             }
         }
@@ -1807,7 +1844,7 @@ public class ServerManager
             return;
         }
 
-        string wslPath = GetWslPath(ServerDirectory);
+        string wslPath = cmdProcessor.GetWslPath(ServerDirectory);
         // Combine cd and init command
         string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
         cmdProcessor.RunWslCommandSilent(command);
@@ -1971,99 +2008,11 @@ public class ServerManager
         });
     }
 
-    private string FilterGenerateErrors(string error)
-    {
-        if (string.IsNullOrEmpty(error))
-            return error;
 
-        // Filter out the formatting error that doesn't affect functionality
-        var lines = error.Split('\n');
-        var filteredLines = new System.Collections.Generic.List<string>();
-        
-        foreach (string line in lines)
-        {
-            string trimmedLine = line.Trim();
-            // Skip the specific formatting error that confuses users but doesn't affect functionality
-            if (trimmedLine.Contains("Could not format generated files: No such file or directory (os error 2)"))
-            {
-                if (DebugMode)
-                {
-                    LogMessage("Filtered out formatting warning: " + trimmedLine, 0);
-                }
-                continue;
-            }
-            
-            // Keep all other error lines
-            if (!string.IsNullOrWhiteSpace(trimmedLine))
-            {
-                filteredLines.Add(line);
-            }
-        }
-        
-        return string.Join("\n", filteredLines).Trim();
-    }
 
-    private string GetWslPath(string windowsPath)
-    {
-        return cmdProcessor.GetWslPath(windowsPath);
-    }
 
-    public string GetRelativeClientPath()
-    {
-        // Default path if nothing else works
-        string defaultPath = "../Assets/Scripts/Server";
-        
-        if (string.IsNullOrEmpty(ClientDirectory))
-        {
-            return defaultPath;
-        }
-        
-        try
-        {
-            // Normalize path to forward slashes
-            string normalizedPath = ClientDirectory.Replace('\\', '/');
-            
-            // If the path already starts with "../Assets", use it directly
-            if (normalizedPath.StartsWith("../Assets"))
-            {
-                return normalizedPath;
-            }
-            
-            // Find the "Assets" directory in the path
-            int assetsIndex = normalizedPath.IndexOf("Assets/");
-            if (assetsIndex < 0)
-            {
-                assetsIndex = normalizedPath.IndexOf("Assets");
-            }
-            
-            if (assetsIndex >= 0)
-            {
-                // Extract from "Assets" to the end and prepend "../"
-                string relativePath = "../" + normalizedPath.Substring(assetsIndex);
-                
-                // Ensure it has proper structure
-                if (!relativePath.Contains("/"))
-                {
-                    relativePath += "/";
-                }
-                
-                // Add quotes if path contains spaces
-                if (relativePath.Contains(" "))
-                {
-                    return $"\"{relativePath}\"";
-                }
-                return relativePath;
-            }
-            
-            // If no "Assets" in path, just return default
-            return defaultPath;
-        }
-        catch (Exception ex)
-        {
-            if (DebugMode) LogMessage($"Error in path handling: {ex.Message}", -1);
-            return defaultPath;
-        }
-    }
+
+
 
     public void BackupServerData()
     {
@@ -2347,66 +2296,14 @@ public class ServerManager
         }
     }
 
-    private string ExtractHostname(string url)
-    {
-        if (string.IsNullOrEmpty(url))
-            return string.Empty;
-            
-        string hostname = url;
-        
-        // Remove protocol if present
-        if (hostname.StartsWith("http://")) 
-            hostname = hostname.Substring(7);
-        else if (hostname.StartsWith("https://")) 
-            hostname = hostname.Substring(8);
-        
-        // Remove path and port if present
-        int colonIndex = hostname.IndexOf(':');
-        if (colonIndex > 0) 
-            hostname = hostname.Substring(0, colonIndex);
-            
-        int slashIndex = hostname.IndexOf('/');
-        if (slashIndex > 0) 
-            hostname = hostname.Substring(0, slashIndex);
-            
-        return hostname;
-    }
 
-    private string FormatLoginInfoOutput(string output)
-    {
-        if (string.IsNullOrEmpty(output))
-            return output;
-        
-        // Color to use for login ID and auth token - Color(0.3f, 0.8f, 0.3f) = #4CCC4C
-        string colorTag = "#4CCC4C";
-        
-        string formattedOutput = output;
-        
-        // Format login ID line: "You are logged in as <username>"
-        string loginPattern = @"(You are logged in as\s+)([^\r\n]+)";
-        formattedOutput = System.Text.RegularExpressions.Regex.Replace(
-            formattedOutput, 
-            loginPattern, 
-            $"$1<color={colorTag}>$2</color>", 
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase
-        );
-        
-        // Format auth token line: "Your auth token (don't share this!) is <token>"
-        string tokenPattern = @"(Your auth token \(don't share this!\) is\s+)([^\r\n]+)";
-        formattedOutput = System.Text.RegularExpressions.Regex.Replace(
-            formattedOutput, 
-            tokenPattern, 
-            $"$1<color={colorTag}>$2</color>", 
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase
-        );
-        
-        return formattedOutput;
-    }
+
+
 
     public void OpenSSHWindow()
     {
         // Extract just the IP/hostname from the CustomServerUrl (remove protocol, port, and path)
-        string serverHost = ExtractHostname(CustomServerUrl);
+        string serverHost = ServerUtilityProvider.ExtractHostname(CustomServerUrl);
         
         // Validate that we have all required values
         if (string.IsNullOrEmpty(serverHost) || string.IsNullOrEmpty(SSHUserName))

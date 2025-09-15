@@ -10,7 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NorthernRogue.CCCP.Editor.Settings;
 
-// Processes the logs when the server is running in silent mode ///
+// Processes the logs of the server for all server modes ///
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -34,6 +34,8 @@ public class ServerLogProcess
     private const string SessionKeyDatabaseLogFreshStartTime = "ServerWindow_DatabaseLogFreshStartTime";
     private const string SessionKeyModuleLogStartFresh = "ServerWindow_ModuleLogStartFresh";
     private const string SessionKeyModuleLogFreshStartTime = "ServerWindow_ModuleLogFreshStartTime";
+    private const string SessionKeySSHModuleLogTimestamp = "ServerWindow_SSHModuleLogTimestamp";
+    private const string SessionKeySSHDatabaseLogTimestamp = "ServerWindow_SSHDatabaseLogTimestamp";
     
     // Settings
     private bool clearModuleLogAtStart = false;
@@ -130,6 +132,53 @@ public class ServerLogProcess
     // Path for remote server logs (kept for fallback/reference)
     public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
 
+    public void SyncSettings()
+    {
+        try
+        {
+            // Server Mode
+            var currentServerMode = CCCPSettingsAdapter.GetServerMode();
+            bool shouldBeCustomServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.CustomServer;
+
+            if (isCustomServer != shouldBeCustomServer)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server mode sync: isCustomServer was {isCustomServer}, should be {shouldBeCustomServer} (ServerMode: {currentServerMode})");
+                isCustomServer = shouldBeCustomServer;
+            }
+
+            // SSH User
+            string sshUser = CCCPSettingsAdapter.GetSSHUserName();
+            if (this.sshUser != sshUser)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH user sync: sshUser was {this.sshUser}, now {sshUser}");
+                this.sshUser = sshUser;
+            }
+
+            // SSH Host
+            string sshHost = ServerUtilityProvider.ExtractHostname(CCCPSettingsAdapter.GetCustomServerUrl());
+            if (this.sshHost != sshHost)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH host sync: sshHost was {this.sshHost}, now {sshHost}");
+                this.sshHost = sshHost;
+            }
+
+            // SSH Key Path
+            string sshKeyPath = CCCPSettingsAdapter.GetSSHPrivateKeyPath();
+            if (this.sshKeyPath != sshKeyPath)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH key path sync: sshKeyPath was {this.sshKeyPath}, now {sshKeyPath}");
+                this.sshKeyPath = sshKeyPath;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerLogProcess] Error syncing server mode flags: {ex.Message}");
+            }
+        }
+    }
+
     #region SSH Logging
     
     // Configure SSH details for custom server log capture
@@ -185,8 +234,18 @@ public class ServerLogProcess
         recentDatabaseLogHashes.Clear();
         
         // Initialize timestamps to 1 hour ago to avoid getting massive historical logs
-        lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
-        lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
+        // Only set if not already restored from SessionState (domain reload)
+        if (lastModuleLogTimestamp == DateTime.MinValue)
+        {
+            lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
+            SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+        }
+        
+        if (lastDatabaseLogTimestamp == DateTime.MinValue)
+        {
+            lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
+            SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+        }
         
         // Ensure we have found the spacetime path
         if (remoteSpacetimePath == "spacetime")
@@ -199,8 +258,9 @@ public class ServerLogProcess
             catch (Exception ex)
             {
                 if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error finding spacetime path: {ex.Message}");
-            }        }
-          if (debugMode) logCallback("Started SSH periodic log reading", 1);
+            }        
+        }
+        if (debugMode) logCallback("Started SSH periodic log reading", 1);
     }
     
     // Clear the module log file on the remote server
@@ -224,14 +284,27 @@ public class ServerLogProcess
             clearProcess.Start();
             clearProcess.WaitForExit(5000); // Wait up to 5 seconds
             
-            // Also clear the in-memory log and cached version
-            moduleLogContent = "";
-            cachedModuleLogContent = "";
-            SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
-            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+            // Also clear the in-memory log and cached version only if no restored content exists
+            bool hasRestoredContent = !string.IsNullOrEmpty(moduleLogContent) && moduleLogContent != "(No Module Log Found.)";
+            if (!hasRestoredContent)
+            {
+                moduleLogContent = "";
+                cachedModuleLogContent = "";
+                SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+                SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+                
+                if (debugMode) logCallback("Cleared in-memory logs and SessionState", 1);
+            }
+            else
+            {
+                if (debugMode) logCallback("Preserving restored logs from compilation - not clearing SessionState", 1);
+            }
             
             // Reset timestamp to start fresh
             lastModuleLogTimestamp = DateTime.UtcNow;
+            
+            // Save updated timestamp to session state
+            SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
             
             if (debugMode) logCallback("SSH log file cleared successfully", 1);
         }
@@ -246,10 +319,21 @@ public class ServerLogProcess
     {
         if (debugMode) logCallback("Clearing SSH database log...", 0);
         
-        databaseLogContent = "";
-        cachedDatabaseLogContent = "";
-        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        // Only clear if no restored content exists
+        bool hasRestoredContent = !string.IsNullOrEmpty(databaseLogContent) && databaseLogContent != "(No Database Log Found.)";
+        if (!hasRestoredContent)
+        {
+            databaseLogContent = "";
+            cachedDatabaseLogContent = "";
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+            
+            if (debugMode) logCallback("Cleared database logs and SessionState", 1);
+        }
+        else
+        {
+            if (debugMode) logCallback("Preserving restored database logs from compilation - not clearing SessionState", 1);
+        }
         
         // Clear deduplication cache
         recentDatabaseLogHashes.Clear();
@@ -257,7 +341,10 @@ public class ServerLogProcess
         // Reset timestamp to start fresh
         lastDatabaseLogTimestamp = DateTime.UtcNow;
         
-        if (debugMode) logCallback("SSH database log cleared successfully", 1);
+        // Save updated timestamp to session state
+        SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+        
+        if (debugMode) logCallback("SSH database log clearing process completed", 1);
     }
     
     // Read module logs from journalctl periodically
@@ -265,15 +352,33 @@ public class ServerLogProcess
     {
         if (string.IsNullOrEmpty(sshUser) || string.IsNullOrEmpty(sshHost) || string.IsNullOrEmpty(sshKeyPath) || !isCustomServer)
         {
+            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] SSH module log read skipped - SSHUser:" + sshUser + ", SSHHost:" + sshHost + ", SSHKeyPath:" + sshKeyPath + ", IsCustomServer:" + isCustomServer);
             return;
         }
         
         try
         {
+            // Validate and fix timestamp if it's invalid
+            if (lastModuleLogTimestamp == DateTime.MinValue || lastModuleLogTimestamp.Year < 2020)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH module timestamp was invalid ({lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss}), resetting to 1 hour ago");
+                lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
+                SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH module timestamp reset to: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            
             // Format timestamp for journalctl --since parameter (correct format)
-            string sinceTimestamp = lastModuleLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
-              // Use journalctl to read logs since last timestamp
+            // Add additional safety check to ensure we never use invalid timestamps
+            DateTime safeTimestamp = lastModuleLogTimestamp;
+            if (safeTimestamp == DateTime.MinValue || safeTimestamp.Year < 2020)
+            {
+                safeTimestamp = DateTime.UtcNow.AddHours(-1);
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Emergency timestamp fix in SSH module logs - using: {safeTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            string sinceTimestamp = safeTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            // Use journalctl to read module logs since last timestamp
             string journalCommand = $"sudo journalctl -u {SpacetimeServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
+            //string journalCommand = $"sudo journalctl -u {SpacetimeServiceName} --no-pager -o short-iso-precise";
             
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Reading SSH module logs since: {sinceTimestamp}");
             if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Full SSH command: ssh -i \"{sshKeyPath}\" {sshUser}@{sshHost} \"{journalCommand}\"");
@@ -378,12 +483,15 @@ public class ServerLogProcess
                     // Update the timestamp
                     lastModuleLogTimestamp = timestampToUse;
                     
+                    // Save timestamp to session state for persistence across domain reloads
+                    SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+                    
                     // Manage log size
                     const int maxLogLength = 75000;
                     const int trimToLength = 50000;
                     if (moduleLogContent.Length > maxLogLength)
                     {
-                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory silent SSH log from {moduleLogContent.Length} chars.");
+                        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Truncating in-memory SSH log from {moduleLogContent.Length} chars.");
                         moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - trimToLength);
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - trimToLength);
                         
@@ -405,6 +513,10 @@ public class ServerLogProcess
                     // Use a larger increment if we had duplicates to help break repetition cycles
                     double advanceSeconds = duplicateCount > 0 ? 3.0 : 1.0;
                     lastModuleLogTimestamp = lastModuleLogTimestamp.AddSeconds(advanceSeconds);
+                    
+                    // Save timestamp to session state for persistence across domain reloads
+                    SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+                    
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH module log lines found, advancing timestamp by {advanceSeconds}s to: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
@@ -444,8 +556,24 @@ public class ServerLogProcess
         
         try
         {
+            // Validate and fix timestamp if it's invalid
+            if (lastDatabaseLogTimestamp == DateTime.MinValue || lastDatabaseLogTimestamp.Year < 2020)
+            {
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH database timestamp was invalid ({lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}), resetting to 1 hour ago");
+                lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
+                SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] SSH database timestamp reset to: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            
             // Format timestamp for journalctl --since parameter (correct format)
-            string sinceTimestamp = lastDatabaseLogTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            // Add additional safety check to ensure we never use invalid timestamps
+            DateTime safeTimestamp = lastDatabaseLogTimestamp;
+            if (safeTimestamp == DateTime.MinValue || safeTimestamp.Year < 2020)
+            {
+                safeTimestamp = DateTime.UtcNow.AddHours(-1);
+                if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Emergency timestamp fix in SSH database logs - using: {safeTimestamp:yyyy-MM-dd HH:mm:ss}");
+            }
+            string sinceTimestamp = safeTimestamp.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
             // Read from the database log service (assuming it will be created by user's script)
             string journalCommand = $"sudo journalctl -u {SpacetimeDatabaseLogServiceName} --since \\\"{sinceTimestamp}\\\" --no-pager -o short-iso-precise";
             
@@ -551,6 +679,9 @@ public class ServerLogProcess
                     // Update the timestamp
                     lastDatabaseLogTimestamp = timestampToUse;
                     
+                    // Save timestamp to session state for persistence across domain reloads
+                    SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+                    
                     // Notify of log update
                     EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
                 }
@@ -560,6 +691,10 @@ public class ServerLogProcess
                     // Use a larger increment if we had duplicates to help break repetition cycles
                     double advanceSeconds = duplicateCount > 0 ? 3.0 : 0.5;
                     lastDatabaseLogTimestamp = lastDatabaseLogTimestamp.AddSeconds(advanceSeconds);
+                    
+                    // Save timestamp to session state for persistence across domain reloads
+                    SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+                    
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] No new SSH database log lines found, advancing timestamp by {advanceSeconds}s to: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
                 }
             }
@@ -594,7 +729,7 @@ public class ServerLogProcess
         {
             return;
         }
-        
+
         // Skip if there's already a scheduled SSH log processing task
         if (isSSHLogProcessingScheduled)
         {
@@ -639,6 +774,10 @@ public class ServerLogProcess
         // Reset timestamps to 1 hour ago to avoid massive log dumps on restart
         lastModuleLogTimestamp = DateTime.UtcNow.AddHours(-1);
         lastDatabaseLogTimestamp = DateTime.UtcNow.AddHours(-1);
+        
+        // Save updated timestamps to session state
+        SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+        SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
         lastLogReadTime = 0;
         
         // Clear deduplication cache
@@ -835,10 +974,21 @@ public class ServerLogProcess
             if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
         }
         
-        moduleLogContent = "";
-        cachedModuleLogContent = "";
-        SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
-        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);        // Reset timestamp to start fresh and reset protection flag
+        // Only clear if no restored content exists
+        bool hasRestoredContent = !string.IsNullOrEmpty(moduleLogContent) && moduleLogContent != "(No Module Log Found.)";
+        if (!hasRestoredContent)
+        {
+            moduleLogContent = "";
+            cachedModuleLogContent = "";
+            SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+            
+            if (debugMode) logCallback("Cleared WSL module logs and SessionState", 1);
+        }
+        else
+        {
+            if (debugMode) logCallback("Preserving restored module logs from compilation - not clearing SessionState", 1);
+        }        // Reset timestamp to start fresh and reset protection flag
         lastWSLModuleLogTimestamp = DateTime.UtcNow;
         isReadingWSLModuleLogs = false;
         moduleLogStartFresh = true; // Flag to prevent historical log fallback
@@ -886,10 +1036,21 @@ public class ServerLogProcess
             if (debugMode) logCallback($"Warning: Could not cleanup orphaned processes: {ex.Message}", 0);
         }
         
-        databaseLogContent = "";
-        cachedDatabaseLogContent = "";
-        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);        // Reset timestamp to start fresh and reset protection flag
+        // Only clear if no restored content exists
+        bool hasRestoredContent = !string.IsNullOrEmpty(databaseLogContent) && databaseLogContent != "(No Database Log Found.)";
+        if (!hasRestoredContent)
+        {
+            databaseLogContent = "";
+            cachedDatabaseLogContent = "";
+            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+            
+            if (debugMode) logCallback("Cleared WSL database logs and SessionState", 1);
+        }
+        else
+        {
+            if (debugMode) logCallback("Preserving restored database logs from compilation - not clearing SessionState", 1);
+        }        // Reset timestamp to start fresh and reset protection flag
         lastWSLDatabaseLogTimestamp = DateTime.UtcNow;
         isReadingWSLDatabaseLogs = false;
         databaseLogStartFresh = true; // Flag to prevent historical log fallback
@@ -1659,12 +1820,78 @@ public class ServerLogProcess
             //UnityEngine.Debug.Log($"[ServerLogProcess] Restored module fresh mode from SessionState - will reject logs before {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
         }
 
+        // Load SSH timestamps from session state to persist across domain reloads
+        string sshModuleTimestampString = SessionState.GetString(SessionKeySSHModuleLogTimestamp, "");
+        if (DateTime.TryParse(sshModuleTimestampString, out DateTime parsedSSHModuleTimestamp))
+        {
+            lastModuleLogTimestamp = parsedSSHModuleTimestamp;
+        }
+        else
+        {
+            lastModuleLogTimestamp = DateTime.MinValue;
+        }
+        
+        string sshDatabaseTimestampString = SessionState.GetString(SessionKeySSHDatabaseLogTimestamp, "");
+        if (DateTime.TryParse(sshDatabaseTimestampString, out DateTime parsedSSHDatabaseTimestamp))
+        {
+            lastDatabaseLogTimestamp = parsedSSHDatabaseTimestamp;
+        }
+        else
+        {
+            lastDatabaseLogTimestamp = DateTime.MinValue;
+        }
+        
+        if (debugMode && lastModuleLogTimestamp != DateTime.MinValue)
+        {
+            UnityEngine.Debug.Log($"[ServerLogProcess] Restored SSH module timestamp from SessionState: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+        }
+        else if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerLogProcess] SSH module timestamp is MinValue - SessionState string: '{sshModuleTimestampString}'");
+        }
+        
+        if (debugMode && lastDatabaseLogTimestamp != DateTime.MinValue)
+        {
+            UnityEngine.Debug.Log($"[ServerLogProcess] Restored SSH database timestamp from SessionState: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+        }
+        else if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerLogProcess] SSH database timestamp is MinValue - SessionState string: '{sshDatabaseTimestampString}'");
+        }
+
+        // Restore log content from SessionState to prevent compilation clearing
+        // This ensures ServerLogProcess maintains log continuity across domain reloads
+        string restoredModuleLog = SessionState.GetString(SessionKeyModuleLog, "");
+        string restoredCachedModuleLog = SessionState.GetString(SessionKeyCachedModuleLog, "");
+        string restoredDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "");
+        
+        if (!string.IsNullOrEmpty(restoredModuleLog) && restoredModuleLog != "(No Module Log Found.)")
+        {
+            moduleLogContent = restoredModuleLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Restored moduleLogContent from SessionState: {moduleLogContent.Length} chars");
+        }
+        
+        if (!string.IsNullOrEmpty(restoredCachedModuleLog) && restoredCachedModuleLog != "(No Module Log Found.)")
+        {
+            cachedModuleLogContent = restoredCachedModuleLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Restored cachedModuleLogContent from SessionState: {cachedModuleLogContent.Length} chars");
+        }
+        
+        if (!string.IsNullOrEmpty(restoredDatabaseLog) && restoredDatabaseLog != "(No Database Log Found.)")
+        {
+            databaseLogContent = restoredDatabaseLog;
+            if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Restored databaseLogContent from SessionState: {databaseLogContent.Length} chars");
+        }
+
         processingCts = new CancellationTokenSource();
         StartLogLimiter();
     }
     
     public void Configure(string moduleName, string serverDirectory, bool clearModuleLogAtStart, bool clearDatabaseLogAtStart, string userName)
     {
+        // Sync server mode flags at configuration time
+        SyncSettings();
+        
         bool moduleChanged = !string.Equals(this.moduleName, moduleName, StringComparison.OrdinalIgnoreCase);
         string oldModuleName = this.moduleName; // Store old module name for logging
 
@@ -1676,19 +1903,28 @@ public class ServerLogProcess
         // Clear old logs from SessionState if requested
         if (clearDatabaseLogAtStart)
         {
-            //if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, clearing old database logs from SessionState and enabling fresh mode");
-            databaseLogContent = "";
-            cachedDatabaseLogContent = "";
-            SessionState.SetString(SessionKeyDatabaseLog, "");
-            SessionState.SetString(SessionKeyCachedDatabaseLog, "");
-            
-            // Enable fresh mode when explicitly requested
-            databaseLogStartFresh = true;
-            databaseLogFreshStartTime = DateTime.UtcNow;
-            SessionState.SetBool(SessionKeyDatabaseLogStartFresh, databaseLogStartFresh);
-            SessionState.SetString(SessionKeyDatabaseLogFreshStartTime, databaseLogFreshStartTime.ToString("O"));
-            
-            //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Fresh mode enabled in Configure - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            // Don't clear logs if we just restored them from a compilation - preserve log continuity
+            bool hasRestoredContent = !string.IsNullOrEmpty(databaseLogContent) && databaseLogContent != "(No Database Log Found.)";
+            if (hasRestoredContent)
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, but preserving restored database logs from compilation");
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearDatabaseLogAtStart is true, clearing old database logs from SessionState and enabling fresh mode");
+                databaseLogContent = "";
+                cachedDatabaseLogContent = "";
+                SessionState.SetString(SessionKeyDatabaseLog, "");
+                SessionState.SetString(SessionKeyCachedDatabaseLog, "");
+                
+                // Enable fresh mode when explicitly requested
+                databaseLogStartFresh = true;
+                databaseLogFreshStartTime = DateTime.UtcNow;
+                SessionState.SetBool(SessionKeyDatabaseLogStartFresh, databaseLogStartFresh);
+                SessionState.SetString(SessionKeyDatabaseLogFreshStartTime, databaseLogFreshStartTime.ToString("O"));
+                
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Fresh mode enabled in Configure - will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            }
         }
         else if (debugMode && databaseLogStartFresh)
         {
@@ -1698,11 +1934,20 @@ public class ServerLogProcess
         
         if (clearModuleLogAtStart)
         {
-            if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearModuleLogAtStart is true, clearing old module logs from SessionState");
-            moduleLogContent = "";
-            cachedModuleLogContent = "";
-            SessionState.SetString(SessionKeyModuleLog, "");
-            SessionState.SetString(SessionKeyCachedModuleLog, "");
+            // Don't clear logs if we just restored them from a compilation - preserve log continuity
+            bool hasRestoredContent = !string.IsNullOrEmpty(moduleLogContent) && moduleLogContent != "(No Module Log Found.)";
+            if (hasRestoredContent)
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearModuleLogAtStart is true, but preserving restored module logs from compilation");
+            }
+            else
+            {
+                if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] clearModuleLogAtStart is true, clearing old module logs from SessionState");
+                moduleLogContent = "";
+                cachedModuleLogContent = "";
+                SessionState.SetString(SessionKeyModuleLog, "");
+                SessionState.SetString(SessionKeyCachedModuleLog, "");
+            }
         }
         
         //if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured with username: {this.userName}, moduleName: {this.moduleName}, serverDirectory: {this.serverDirectory}");
@@ -1733,6 +1978,9 @@ public class ServerLogProcess
 
     public void SwitchModule(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
+        // Sync server mode flags before switching modules
+        SyncSettings();
+        
         if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
         {
             if (debugMode) logCallback($"Module '{newModuleName}' is already active. No switch needed.", 0);
@@ -1793,12 +2041,23 @@ public class ServerLogProcess
     // Force SSH log refresh - triggers new journalctl commands immediately
     public async void ForceSSHLogRefresh()
     {
+        // Sync server mode flags before force refresh
+        SyncSettings();
+        
         if (debugMode) logCallback("Force refreshing SSH logs via journalctl...", 1);
         
         if (isCustomServer && serverRunning)
         {
             try
             {
+                // Reset timestamps to start fresh (for manual refresh)
+                lastModuleLogTimestamp = DateTime.UtcNow;
+                lastDatabaseLogTimestamp = DateTime.UtcNow;
+                
+                // Save updated timestamps to session state
+                SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+                SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+
                 // Force immediate SSH log read
                 await ReadSSHModuleLogsAsync();
                 await ReadSSHDatabaseLogsAsync();
@@ -1813,13 +2072,71 @@ public class ServerLogProcess
         }
         else
         {
-            if (debugMode) logCallback("SSH log refresh skipped - not a custom server or server not running", 0);
+            if (debugMode) logCallback("SSH log refresh skipped - isCustomServer:" + isCustomServer + ", serverRunning:" + serverRunning, 0);
+        }
+    }
+    
+    // Force SSH log continuation after compilation - preserves timestamps to maintain log continuity
+    public async void ForceSSHLogContinuation()
+    {
+        // Sync server mode flags before force refresh
+        SyncSettings();
+        
+        if (debugMode) logCallback("Force continuing SSH logs after compilation...", 1);
+        
+        if (isCustomServer && serverRunning)
+        {
+            try
+            {
+                // Check if timestamps are valid and not too far behind (more than 30 minutes)
+                DateTime now = DateTime.UtcNow;
+                bool moduleTimestampValid = lastModuleLogTimestamp != DateTime.MinValue && lastModuleLogTimestamp.Year >= 2020;
+                bool databaseTimestampValid = lastDatabaseLogTimestamp != DateTime.MinValue && lastDatabaseLogTimestamp.Year >= 2020;
+                
+                // If timestamps are very old (more than 30 minutes behind), adjust them to prevent massive log dumps
+                if (moduleTimestampValid && (now - lastModuleLogTimestamp).TotalMinutes > 30)
+                {
+                    var oldTimestamp = lastModuleLogTimestamp;
+                    lastModuleLogTimestamp = now.AddMinutes(-30); // Go back 30 minutes to get some recent history
+                    SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Adjusted old module timestamp from {oldTimestamp:yyyy-MM-dd HH:mm:ss} to {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss} to prevent massive log dump");
+                }
+                
+                if (databaseTimestampValid && (now - lastDatabaseLogTimestamp).TotalMinutes > 30)
+                {
+                    var oldTimestamp = lastDatabaseLogTimestamp;
+                    lastDatabaseLogTimestamp = now.AddMinutes(-30); // Go back 30 minutes to get some recent history
+                    SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Adjusted old database timestamp from {oldTimestamp:yyyy-MM-dd HH:mm:ss} to {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss} to prevent massive log dump");
+                }
+                
+                // DON'T reset timestamps - continue from where we left off
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Continuing SSH logs from timestamps - Module: {lastModuleLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}, Database: {lastDatabaseLogTimestamp:yyyy-MM-dd HH:mm:ss.fff}");
+
+                // Force immediate SSH log read with existing timestamps
+                await ReadSSHModuleLogsAsync();
+                await ReadSSHDatabaseLogsAsync();
+                
+                if (debugMode) logCallback("SSH log continuation completed", 1);
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error in ForceSSHLogContinuation: {ex.Message}");
+                logCallback($"SSH log continuation failed: {ex.Message}", -1);
+            }
+        }
+        else
+        {
+            if (debugMode) logCallback("SSH log continuation skipped - isCustomServer:" + isCustomServer + ", serverRunning:" + serverRunning, 0);
         }
     }
     
     // Force WSL log refresh - triggers new journalctl commands immediately for WSL
     public void ForceWSLLogRefresh()
     {
+        // Sync server mode flags before force refresh
+        SyncSettings();
+        
         if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Force triggering WSL log refresh");
         
         if (serverRunning && !isCustomServer)
@@ -1843,6 +2160,9 @@ public class ServerLogProcess
     
     public void StartLogging()
     {
+        // Sync server mode flags before starting logging
+        SyncSettings();
+        
         if (isCustomServer)
         {
             StartSSHLogging();
@@ -1855,6 +2175,9 @@ public class ServerLogProcess
     
     public void StopLogging()
     {
+        // Sync server mode flags before stopping logging
+        SyncSettings();
+        
         if (isCustomServer)
         {
             StopSSHLogging();
@@ -1867,6 +2190,9 @@ public class ServerLogProcess
     
     public void CheckLogProcesses(double currentTime)
     {
+        // Sync server mode flags to ensure isCustomServer matches CCCPSettingsAdapter.GetServerMode()
+        SyncSettings();
+        
         if (isCustomServer)
         {
             CheckSSHLogProcesses(currentTime);
@@ -1879,6 +2205,9 @@ public class ServerLogProcess
     
     public void ClearModuleLogFile()
     {
+        // Sync server mode flags before clearing logs
+        SyncSettings();
+        
         if (isCustomServer)
         {
             ClearSSHModuleLogFile();
