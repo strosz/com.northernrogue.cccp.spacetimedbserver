@@ -927,7 +927,7 @@ public class ServerOutputWindow : EditorWindow
         // If both are empty, show default message
         if (string.IsNullOrEmpty(newOutputLog))
         {
-            newOutputLog = "(No Module Log Found.)";
+            newOutputLog = "(Waiting for new Module logs...)";
         }
 
         string newDatabaseLog = SessionState.GetString(SessionKeyDatabaseLog, "(No Database Log Found.)");
@@ -1064,10 +1064,11 @@ public class ServerOutputWindow : EditorWindow
             databaseLogFull = "";
             SessionState.SetString(SessionKeyModuleLog, "");
             SessionState.SetString(SessionKeyDatabaseLog, "");
-            ServerOutputWindow.loggedToConsoleModule.Clear();
-            ServerOutputWindow.loggedToConsoleDatabase.Clear();
+            loggedToConsoleModule.Clear();
+            loggedToConsoleDatabase.Clear();
             formattedLogCache.Clear();
             scrollPosition = Vector2.zero;
+            // Reset auto-scroll when clearing logs
             autoScroll = true;
             CCCPSettingsAdapter.SetAutoscroll(true);
             needsRepaint = true;
@@ -1317,14 +1318,14 @@ public class ServerOutputWindow : EditorWindow
         {
             case 0: // Main All
                 if (string.IsNullOrEmpty(moduleLogFull)) {
-                    return "(Module log is empty)";
+                    return "(Waiting for new Module logs...)";
                 }
                 logToShow = moduleLogFull;
                 break;
             
             case 1: // Main Errors Only
                 if (string.IsNullOrEmpty(moduleLogFull)) {
-                    return "(Module log is empty)";
+                    return "(Waiting for new Module logs...)";
                 }
                 
                 try {
@@ -1341,7 +1342,7 @@ public class ServerOutputWindow : EditorWindow
                     logToShow = string.Join("\n", errorLines);
                     
                     if (string.IsNullOrWhiteSpace(logToShow)) {
-                        return "(No errors/warnings detected in log)";
+                        return "(No errors detected in Module log)";
                     }
                 } catch (Exception ex) {
                     return $"Error filtering logs: {ex.Message}";
@@ -1350,14 +1351,14 @@ public class ServerOutputWindow : EditorWindow
             
             case 2: // Database All
                 if (string.IsNullOrEmpty(databaseLogFull)) {
-                    return "(Database log is empty)";
+                    return "(Waiting for new Database logs...)";
                 }
                 logToShow = databaseLogFull;
                 break;
                 
             case 3: // Database Errors Only
                 if (string.IsNullOrEmpty(databaseLogFull)) {
-                    return "(Database log is empty)";
+                    return "(Waiting for new Database logs...)";
                 }
                 
                 try {
@@ -1374,7 +1375,7 @@ public class ServerOutputWindow : EditorWindow
                     logToShow = string.Join("\n", errorLines);
                     
                     if (string.IsNullOrWhiteSpace(logToShow)) {
-                        return "(No errors/warnings detected in database log)";
+                        return "(No errors detected in Database log)";
                     }
                 } catch (Exception ex) {
                     return $"Error filtering database logs: {ex.Message}";

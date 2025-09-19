@@ -284,29 +284,38 @@ public class ServerLogProcess
             clearProcess.Start();
             clearProcess.WaitForExit(5000); // Wait up to 5 seconds
             
-            // Also clear the in-memory log and cached version only if no restored content exists
-            bool hasRestoredContent = !string.IsNullOrEmpty(moduleLogContent) && moduleLogContent != "(No Module Log Found.)";
-            if (!hasRestoredContent)
-            {
-                moduleLogContent = "";
-                cachedModuleLogContent = "";
-                SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
-                SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
-                
-                if (debugMode) logCallback("Cleared in-memory logs and SessionState", 1);
-            }
-            else
-            {
-                if (debugMode) logCallback("Preserving restored logs from compilation - not clearing SessionState", 1);
-            }
+            // Always clear the in-memory log and cached version when explicitly called from Clear Logs button
+            // This ensures the clearing works regardless of restored content
+            moduleLogContent = "";
+            cachedModuleLogContent = "";
+            SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+            SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+            
+            // Clear deduplication cache for fresh start
+            recentModuleLogHashes.Clear();
+            
+            if (debugMode) logCallback("Cleared SSH module logs and SessionState", 1);
             
             // Reset timestamp to start fresh
             lastModuleLogTimestamp = DateTime.UtcNow;
             
+            // Enable fresh start mode to prevent historical log fallback (similar to WSL implementation)
+            moduleLogStartFresh = true;
+            // Set fresh start time a few seconds back to ensure we capture any immediate messages
+            moduleLogFreshStartTime = DateTime.UtcNow.AddSeconds(-5); // Allow 5 seconds back to capture immediate logs
+            
+            // Save fresh mode state to SessionState
+            SessionState.SetBool(SessionKeyModuleLogStartFresh, moduleLogStartFresh);
+            SessionState.SetString(SessionKeyModuleLogFreshStartTime, moduleLogFreshStartTime.ToString("O"));
+            
             // Save updated timestamp to session state
             SessionState.SetString(SessionKeySSHModuleLogTimestamp, lastModuleLogTimestamp.ToString("O"));
             
-            if (debugMode) logCallback("SSH log file cleared successfully", 1);
+            if (debugMode) 
+            {
+                logCallback($"SSH module log cleared successfully - fresh mode enabled, will reject logs before {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss} (5 seconds back from clear)", 1);
+                UnityEngine.Debug.Log($"[ServerLogProcess] Manual SSH module clear - enabled fresh mode, will reject all logs before {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+            }
         }
         catch (Exception ex)
         {
@@ -414,6 +423,25 @@ public class ServerLogProcess
                 {
                     if (!string.IsNullOrEmpty(line.Trim()) && !line.Trim().Equals("-- No entries --"))
                     {
+                        // Extract timestamp before formatting to ensure we can track progression
+                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        
+                        // If module fresh start mode is enabled, filter out logs before the fresh start time
+                        if (moduleLogStartFresh && logTimestamp != DateTime.MinValue && logTimestamp < moduleLogFreshStartTime)
+                        {
+                            if (debugMode && lineCount < 3) // Only log first few rejections to avoid spam
+                            {
+                                UnityEngine.Debug.Log($"[ServerLogProcess] Rejecting SSH module log from {logTimestamp:yyyy-MM-dd HH:mm:ss} (before fresh start time {moduleLogFreshStartTime:yyyy-MM-dd HH:mm:ss})");
+                            }
+                            
+                            // Still track the timestamp progression even if we skip the log content
+                            if (logTimestamp > latestTimestamp)
+                            {
+                                latestTimestamp = logTimestamp;
+                            }
+                            continue; // Skip processing this log line
+                        }
+                        
                         // Create a hash for deduplication (using raw line to avoid format changes affecting dedup)
                         string lineHash = GenerateLogLineHash(line.Trim());
                         
@@ -446,8 +474,7 @@ public class ServerLogProcess
                         hasNewLogs = true;
                         lineCount++;
                         
-                        // Extract and track the actual timestamp from this log line
-                        DateTime logTimestamp = ExtractTimestampFromJournalLine(line.Trim());
+                        // Track the latest timestamp even if the line was processed
                         if (logTimestamp != DateTime.MinValue && logTimestamp > latestTimestamp)
                         {
                             latestTimestamp = logTimestamp;
@@ -988,7 +1015,8 @@ public class ServerLogProcess
         else
         {
             if (debugMode) logCallback("Preserving restored module logs from compilation - not clearing SessionState", 1);
-        }        // Reset timestamp to start fresh and reset protection flag
+        }
+        // Reset timestamp to start fresh and reset protection flag
         lastWSLModuleLogTimestamp = DateTime.UtcNow;
         isReadingWSLModuleLogs = false;
         moduleLogStartFresh = true; // Flag to prevent historical log fallback
