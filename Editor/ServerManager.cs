@@ -1745,6 +1745,25 @@ public class ServerManager
             successfulPublish = false;
         }
 
+        if (error.Contains("Permission denied"))
+        {
+            EditorUtility.DisplayDialog("Permission Denied", 
+            "Your currently logged in user does not have permission to publish this module to this server.\n" + 
+            "Either log out and login with the user that originally created the module OR\n" +
+            "Run the Clear Server Data command which clears the database for this module and allows you to republish with the currently logged in user."
+            ,"OK");
+            successfulPublish = false;
+        }
+
+        if (error.Contains("error sending request for url"))
+        {
+            EditorUtility.DisplayDialog("Server Not Found", 
+            "Could not find a server running at the specified URL.\n" + 
+            "Please check that the URL is correct and that your server is running and accessible from your network."
+            ,"OK");
+            successfulPublish = false;
+        }
+
         // If the output contains the word error and isn't compiling the publish probably has failed. Excluded initial downloading since some packages may contain the word error.
         if (!string.IsNullOrEmpty(error) && error.Contains("error", StringComparison.OrdinalIgnoreCase) && !error.Contains("downloaded", StringComparison.OrdinalIgnoreCase) && !error.Contains("compiling", StringComparison.OrdinalIgnoreCase))
         {
@@ -1794,7 +1813,7 @@ public class ServerManager
         await Task.Delay(3000); // Wait 3 seconds for files to be fully generated
         if (!string.IsNullOrEmpty(error) && error.Contains("Error") || !publishSuccessful)
         {
-            LogMessage("Publish and Generate failed! Attempted generate to capture all logs", -1);
+            LogMessage("Publish and Generate failed! Attempted to anyhow generate the client files to capture all the error logs.", -1);
         }
         else
         {
@@ -2007,15 +2026,14 @@ public class ServerManager
         });
     }
 
-
-
-
-
-
-
     public void BackupServerData()
     {
         versionProcessor.BackupServerData(BackupDirectory, UserName);
+    }
+
+    public void ClearServerData()
+    {
+        versionProcessor.ClearServerData(UserName);
     }
 
     public void RestoreServerData()

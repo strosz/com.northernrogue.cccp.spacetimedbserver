@@ -78,6 +78,32 @@ public class ServerVersionProcess
 
     #endregion
 
+    #region Clear Server Data
+
+    public async void ClearServerData(string userName)
+    {
+        if (string.IsNullOrEmpty(userName))
+        {
+            logCallback("Error: Username is not set or invalid.", -1);
+            return;
+        }
+
+        string spacetimePath = $"/home/{userName}/.local/share/spacetime/data";
+        
+        // Construct the clear command to remove all files in the data directory
+        string clearCommand = $"rm -rf {spacetimePath}/*";
+        
+        logCallback($"Clearing server data from {spacetimePath}...", 0);
+        var result = await cmdProcessor.RunServerCommandAsync(clearCommand);
+        
+        if (result.success)
+            logCallback("Server data cleared successfully.", 1);
+        else
+            logCallback($"Clear operation may have failed: {result.error}", -1);
+    }
+
+    #endregion
+
     #region Restore Server Data
 
     public async void RestoreServerData(string backupDirectory, string userName, string backupFilePath = null)

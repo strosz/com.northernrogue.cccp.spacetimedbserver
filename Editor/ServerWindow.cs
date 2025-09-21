@@ -1928,13 +1928,30 @@ public class ServerWindow : EditorWindow
 
             if (serverMode == ServerMode.WSLServer)
             {
-                string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.";
+                string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
                 if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
                 {
                     serverManager.BackupServerData();
                 }
                 EditorGUI.EndDisabledGroup();
+
+                string clearTooltip = "WARNING: This will clear your server database and all its contents will be lost. Please do a backup before if you wish to be able to restore the current database.";
+                if (GUILayout.Button(new GUIContent("Clear Server Data", clearTooltip), GUILayout.Height(20)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Clear Server Data",
+                        "WARNING: This will clear your server database and all its contents will be lost. Please do a backup before if you wish to be able to restore the current database.\n\n"+
+                        "This can be helpful if you want to start fresh or have a new user claim ownership of the database.\n\n"+
+                        "Do you wish to continue to clear the current database? Remember to do a new publish afterwards.",
+                        "Clear Database",
+                        "Cancel"))
+                    {
+                        serverManager.StopServer();
+                        CloseDatabaseAndReducerWindow();
+                        serverManager.ClearServerData();
+                    }
+                }
             }
 
             if (debugMode && serverMode == ServerMode.WSLServer)
