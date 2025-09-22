@@ -70,7 +70,7 @@ public class ServerVersionProcess
         string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}";
         var result = await cmdProcessor.RunServerCommandAsync(backupCommand);
         
-        if (result.success)
+        if (result.success && debugMode)
             logCallback("Server backup created successfully.", 1);
         else
             logCallback($"Backup may have failed: {result.error}", -1);

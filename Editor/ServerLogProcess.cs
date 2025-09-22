@@ -328,32 +328,38 @@ public class ServerLogProcess
     {
         if (debugMode) logCallback("Clearing SSH database log...", 0);
         
-        // Only clear if no restored content exists
-        bool hasRestoredContent = !string.IsNullOrEmpty(databaseLogContent) && databaseLogContent != "(No Database Log Found.)";
-        if (!hasRestoredContent)
-        {
-            databaseLogContent = "";
-            cachedDatabaseLogContent = "";
-            SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
-            SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
-            
-            if (debugMode) logCallback("Cleared database logs and SessionState", 1);
-        }
-        else
-        {
-            if (debugMode) logCallback("Preserving restored database logs from compilation - not clearing SessionState", 1);
-        }
+        // Always clear the in-memory log and cached version when explicitly called from Clear Logs button
+        // This ensures the clearing works regardless of restored content
+        databaseLogContent = "";
+        cachedDatabaseLogContent = "";
+        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
         
         // Clear deduplication cache
         recentDatabaseLogHashes.Clear();
         
+        if (debugMode) logCallback("Cleared SSH database logs and SessionState", 1);
+        
         // Reset timestamp to start fresh
         lastDatabaseLogTimestamp = DateTime.UtcNow;
+        
+        // Enable fresh start mode to prevent historical log fallback (similar to WSL and module implementation)
+        databaseLogStartFresh = true;
+        // Set fresh start time a few seconds back to ensure we capture any immediate messages
+        databaseLogFreshStartTime = DateTime.UtcNow.AddSeconds(-5); // Allow 5 seconds back to capture immediate logs
+        
+        // Save fresh mode state to SessionState
+        SessionState.SetBool(SessionKeyDatabaseLogStartFresh, databaseLogStartFresh);
+        SessionState.SetString(SessionKeyDatabaseLogFreshStartTime, databaseLogFreshStartTime.ToString("O"));
         
         // Save updated timestamp to session state
         SessionState.SetString(SessionKeySSHDatabaseLogTimestamp, lastDatabaseLogTimestamp.ToString("O"));
         
-        if (debugMode) logCallback("SSH database log clearing process completed", 1);
+        if (debugMode) 
+        {
+            logCallback($"SSH database log cleared successfully - fresh mode enabled, will reject logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss} (5 seconds back from clear)", 1);
+            UnityEngine.Debug.Log($"[ServerLogProcess] Manual SSH database clear - enabled fresh mode, will reject all logs before {databaseLogFreshStartTime:yyyy-MM-dd HH:mm:ss}");
+        }
     }
     
     // Read module logs from journalctl periodically

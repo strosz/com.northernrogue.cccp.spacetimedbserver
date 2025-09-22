@@ -24,6 +24,7 @@ public class ServerWindow : EditorWindow
     
     // Server mode
     private ServerMode serverMode = ServerMode.WSLServer;
+    private ServerMode previousServerMode = ServerMode.WSLServer;
 
     // Pre-requisites WSL - Direct property access to settings
     private bool hasWSL { get => CCCPSettingsAdapter.GetHasWSL(); set => CCCPSettingsAdapter.SetHasWSL(value); }
@@ -96,15 +97,13 @@ public class ServerWindow : EditorWindow
     private bool publishing = false;
     private bool isUpdatingCCCP = false;
     private double cccpUpdateStartTime = 0;
-
-    // Scroll tracking for autoscroll behavior
     private bool wasAutoScrolling = false;
     private bool needsScrollToBottom = false; // Flag to control when to apply autoscroll
     private Texture2D logoTexture;
     private GUIStyle connectedStyle;
     private GUIStyle buttonStyle;
     private bool stylesInitialized = false;    // UI optimization
-    private const double changeCheckInterval = 3.0; // More responsive interval when window is in focus
+    private const double statusUICheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
     
     // Window toggle states
@@ -529,10 +528,14 @@ public class ServerWindow : EditorWindow
         {
             try
             {
-                if (serverManager != null)
+                serverRunning = serverManager.IsServerStarted;
+                Repaint();
+
+                // Update SSH connection status
+                if (serverMode == ServerMode.CustomServer)
                 {
-                    serverRunning = serverManager.IsServerStarted;
-                    Repaint();
+                    serverManager.SSHConnectionStatusAsync();
+                    isConnected = serverManager.IsSSHConnectionActive;
                 }
             }
             catch (Exception ex)
@@ -540,6 +543,7 @@ public class ServerWindow : EditorWindow
                 if (serverManager != null && serverManager.DebugMode) UnityEngine.Debug.LogWarning($"Error in Custom Server running check: {ex.Message}");
             }
         }
+
     }
 
     private async void EditorUpdateHandler()
@@ -582,11 +586,24 @@ public class ServerWindow : EditorWindow
             await CheckStatusAsync(statusCheckCTS.Token);
         }
         
-        // For Custom Server mode, ensure UI is refreshed periodically to update connection status
-        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.CustomServer && windowFocused)
+        // Background status checks to update the UI without having to interact with it
+        if (windowFocused)
         {
-            if (currentTime - lastCheckTime > changeCheckInterval)
+            if (currentTime - lastCheckTime > statusUICheckInterval)
             {
+                if (serverMode == ServerMode.CustomServer) 
+                {
+                    // Update connection status asynchronously to avoid blocking UI
+                    if (serverMode == ServerMode.CustomServer)
+                    {
+                        serverManager.SSHConnectionStatusAsync();
+                        isConnected = serverManager.IsSSHConnectionActive;
+                    }
+                    else
+                    {
+                        isConnected = false;
+                    }
+                }
                 Repaint();
             }
         }
@@ -723,9 +740,11 @@ public class ServerWindow : EditorWindow
             string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
             if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WSLServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
+                if (serverMode == ServerMode.MaincloudServer) // Maincloud is always started so we don't have to check for serverStarted
                 {
-                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your Maincloud log process and change the server mode to WSL Local server?","OK","Cancel");
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
+                    "Do you want to stop your Maincloud log process and change the server mode to WSL Local server?",
+                    "OK","Cancel");
                     if (modeChange)
                     {
                         serverManager.StopMaincloudLog();
@@ -734,41 +753,43 @@ public class ServerWindow : EditorWindow
                         serverMode = ServerMode.WSLServer;
                         UpdateServerModeState();
                     }
-                } else // If server is not started or in Custom mode, just switch to WSL
+                } 
+                else if (serverMode == ServerMode.CustomServer)
                 {
+                    ClearModuleLogFile();
+                    ClearDatabaseLog();
                     serverMode = ServerMode.WSLServer;
                     UpdateServerModeState();
                 }
+                // Else we are already in WSL mode and don't have to do anything
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.WSLServer)
+                if (serverMode == ServerMode.MaincloudServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                 }
-                else if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.MaincloudServer)
+                else if (serverMode == ServerMode.WSLServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                 }
-                else // If server is not started just switch to Custom
-                {
-                    serverMode = ServerMode.CustomServer;
-                    UpdateServerModeState();
-                }
+                // Else we are already in Custom mode and don't have to do anything
             }
             string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.WSLServer)
+                if (serverMode == ServerMode.WSLServer)
                 {
-                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", "Do you want to stop your WSL Local server and change the server mode to Maincloud server?","OK","Cancel");
+                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
+                    "Do you want to stop your WSL Local server and change the server mode to Maincloud server?",
+                    "OK","Cancel");
                     if (modeChange)
                     {
                         serverManager.StopServer();
@@ -776,18 +797,14 @@ public class ServerWindow : EditorWindow
                         UpdateServerModeState();
                     }
                 } 
-                if (serverManager != null && serverManager.serverStarted && serverMode == ServerMode.CustomServer)
+                else if (serverMode == ServerMode.CustomServer)
                 {
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                     serverMode = ServerMode.MaincloudServer;
                     UpdateServerModeState();
                 }
-                else // If server is not started just switch to Maincloud
-                {
-                    serverMode = ServerMode.MaincloudServer;
-                    UpdateServerModeState();
-                }
+                // Else we are already in Maincloud mode and don't have to do anything
             }
             EditorGUILayout.EndHorizontal();
             
@@ -2560,7 +2577,8 @@ public class ServerWindow : EditorWindow
             needsScrollToBottom = true;
         }
         
-        Repaint();
+        // Use EditorApplication.delayCall to ensure Repaint runs on main thread
+        EditorApplication.delayCall += Repaint;
     }
     #endregion
     
@@ -2654,8 +2672,6 @@ public class ServerWindow : EditorWindow
         }
     }
 
-
-
     private void UpdateServerModeState()
     {       
         // Ensure serverManager is initialized before proceeding
@@ -2665,31 +2681,54 @@ public class ServerWindow : EditorWindow
             return;
         }
         
-        // Set the appropriate flag based on the current serverMode
+        // Only run set-default commands when there's an actual mode transition
+        if (previousServerMode != serverMode)
+        {
+            if (debugMode) LogMessage($"Server mode transition: {previousServerMode} -> {serverMode}", 0);
+            
+            // Determine if we need to run a set-default command based on the transition
+            bool needsMaincloudSetDefault = (previousServerMode == ServerMode.WSLServer || previousServerMode == ServerMode.CustomServer) && serverMode == ServerMode.MaincloudServer;
+            bool needsLocalSetDefault = previousServerMode == ServerMode.MaincloudServer && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.CustomServer);
+            
+            if (needsMaincloudSetDefault)
+            {
+                if (debugMode) LogMessage("Setting SpacetimeDB CLI default to maincloud", 0);
+                serverManager.RunServerCommand("spacetime server set-default maincloud", "Configuring SpacetimeDB CLI for Maincloud");
+            }
+            else if (needsLocalSetDefault)
+            {
+                if (debugMode) LogMessage("Setting SpacetimeDB CLI default to local", 0);
+                serverManager.RunServerCommand("spacetime server set-default local", "Configuring SpacetimeDB CLI for Local/Custom server");
+            }
+            else
+            {
+                // Transitioning between WSL and Custom modes doesn't require set-default changes
+                if (debugMode) LogMessage("No set-default command needed for this transition", 0);
+            }
+            
+            // Update previous mode tracking
+            previousServerMode = serverMode;
+        }
+        
+        // Handle mode-specific setup
         switch (serverMode)
         {
             case ServerMode.WSLServer:
-                if (debugMode) LogMessage("Server mode set-default config: Local", 0);
+                if (debugMode) LogMessage("Server mode: WSL Local", 0);
                 EditorUpdateHandler();
-                // Configure SpacetimeDB CLI for local server
-                serverManager.RunServerCommand("spacetime server set-default local", "");
                 break;
             case ServerMode.CustomServer:
-                if (debugMode) LogMessage("Server mode set to: Custom Remote (local in config)", 0);
+                if (debugMode) LogMessage("Server mode: Custom Remote", 0);
                 EditorUpdateHandler();
                 if (serverCustomProcess == null)
                 {
                     serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
                     serverCustomProcess.LoadSettings();
                 }
-                // Configure SpacetimeDB CLI for local server (for publish and generate)
-                serverManager.RunServerCommand("spacetime server set-default local", "");
                 break;
             case ServerMode.MaincloudServer:
-                if (debugMode) LogMessage("Server mode set-default config: Maincloud", 0);
+                if (debugMode) LogMessage("Server mode: Maincloud", 0);
                 EditorUpdateHandler();
-                // Configure SpacetimeDB CLI for maincloud server
-                serverManager.RunServerCommand("spacetime server set-default maincloud", "");
                 break;
         }
 
@@ -2698,7 +2737,7 @@ public class ServerWindow : EditorWindow
 
         // Use string representation for consistency with ServerManager
         CCCPSettingsAdapter.SetServerMode((ServerManager.ServerMode)serverMode);
-        Repaint();
+        EditorApplication.delayCall += Repaint;
     }
 
     private void LoadServerModeFromSettings()
@@ -2708,11 +2747,13 @@ public class ServerWindow : EditorWindow
         if (Enum.TryParse(modeName, out ServerMode mode))
         {
             serverMode = mode;
+            previousServerMode = mode; // Initialize previous mode to current mode
         }
         else
         {
             UnityEngine.Debug.Log($"Unknown server mode in preferences: {modeName}. Defaulting to WSLServer.");
             serverMode = ServerMode.WSLServer;
+            previousServerMode = ServerMode.WSLServer; // Initialize previous mode to default
         }
         
         // Only update server mode state if serverManager is initialized
@@ -2768,14 +2809,14 @@ public class ServerWindow : EditorWindow
                     // User manually scrolled up while autoscroll was on - turn it off
                     autoscroll = false;
                     CCCPSettingsAdapter.SetAutoscroll(autoscroll);
-                    Repaint();
+                    EditorApplication.delayCall += Repaint;
                 }
                 else if (!autoscroll && isAtBottom)
                 {
                     // User scrolled to the bottom while autoscroll was off - turn it on
                     autoscroll = true;
                     CCCPSettingsAdapter.SetAutoscroll(autoscroll);
-                    Repaint();
+                    EditorApplication.delayCall += Repaint;
                 }
             }
             

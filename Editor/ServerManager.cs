@@ -391,11 +391,19 @@ public class ServerManager
         AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
     }
 
+    // Migration from EditorPrefs is handled automatically in CCCPSettingsProvider.GetOrCreateSettings()
     public void LoadSettings()
     {
         var settings = CCCPSettings.Instance;
-        
-        // Migration from EditorPrefs is handled automatically in CCCPSettingsProvider.GetOrCreateSettings()
+    }
+
+    // Repaint method which safely queues repaints
+    private void SafeRepaint()
+    {
+        if (RepaintCallback != null)
+        {
+            EditorApplication.delayCall += () => RepaintCallback();
+        }
     }
 
     // Needed for the ServerDetectionProcess
@@ -575,7 +583,7 @@ public class ServerManager
                             }
                         }
                         
-                        RepaintCallback?.Invoke();
+                        SafeRepaint();
                     }
                     catch (Exception ex)
                     {
@@ -627,7 +635,7 @@ public class ServerManager
     {
         // Update UI when changes are detected
         serverChangesDetected = changesDetected;
-        RepaintCallback?.Invoke();
+        SafeRepaint();
         
         // Trigger auto-publish if changes are detected and auto-publish is enabled
         if (serverChangesDetected && autoPublishMode && serverStarted && !string.IsNullOrEmpty(moduleName))
@@ -768,7 +776,7 @@ public class ServerManager
             }
             finally
             {
-                RepaintCallback?.Invoke();
+                SafeRepaint();
             }
         };
     }
@@ -825,7 +833,7 @@ public class ServerManager
                 if (debugMode) LogMessage("Custom server log processors started successfully.", 1);
             }
         }
-        RepaintCallback?.Invoke();
+        SafeRepaint();
     }
 
     private void StartMaincloudServer()
@@ -857,8 +865,8 @@ public class ServerManager
         {
             logProcessor = new ServerLogProcess(
                 LogMessage,
-                () => { RepaintCallback?.Invoke(); },
-                () => { RepaintCallback?.Invoke(); },
+                () => { SafeRepaint(); },
+                () => { SafeRepaint(); },
                 cmdProcessor,
                 debugMode
             );
@@ -874,7 +882,7 @@ public class ServerManager
         }
         
         // Call the repaint callback to update the UI
-        RepaintCallback?.Invoke();
+        SafeRepaint();
     }
 
     #endregion    
@@ -902,7 +910,7 @@ public class ServerManager
             EditorApplication.delayCall += async () => {
                 await StopCustomServer();
             };
-            RepaintCallback?.Invoke();
+            SafeRepaint();
             return;
         }
         else if (Settings.serverMode == ServerMode.WSLServer)
@@ -910,13 +918,13 @@ public class ServerManager
             EditorApplication.delayCall += async () => {
                 await StopWSLServer();
             };
-            RepaintCallback?.Invoke();
+            SafeRepaint();
             return;
         }
         else if (Settings.serverMode == ServerMode.MaincloudServer)
         {
             StopMaincloudLog();
-            RepaintCallback?.Invoke();
+            SafeRepaint();
             return;
         }
     }    
@@ -1001,7 +1009,7 @@ public class ServerManager
         {
             // Always clear the stopping flag
             isStopping = false;
-            RepaintCallback?.Invoke();
+            SafeRepaint();
         }
     }
 
@@ -1038,7 +1046,7 @@ public class ServerManager
             // Update log processor state
             logProcessor.SetServerRunningState(false);
             
-            RepaintCallback?.Invoke();
+            SafeRepaint();
         }
     }
 
@@ -1060,7 +1068,7 @@ public class ServerManager
         // Update log processor state
         logProcessor.SetServerRunningState(false);
         
-        RepaintCallback?.Invoke();
+        SafeRepaint();
     }
 
     #endregion
@@ -1166,7 +1174,7 @@ public class ServerManager
                             detectionProcess.ResetTrackingAfterPublish();
                         }
                     }
-                    RepaintCallback?.Invoke();
+                    SafeRepaint();
                     return;                }                // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
                 {
@@ -1186,7 +1194,7 @@ public class ServerManager
                             justStopped = false;
                             consecutiveFailedChecks = 0;
                             logProcessor.SetServerRunningState(true);
-                            RepaintCallback?.Invoke();
+                            SafeRepaint();
                             return;
                         }
                     }
@@ -1208,7 +1216,7 @@ public class ServerManager
                     if (serverProcess != null && !serverProcess.HasExited) { try { serverProcess.Kill(); } catch {} }
                     serverProcess = null;
                     
-                    RepaintCallback?.Invoke();
+                    SafeRepaint();
                     return; // Failed, skip further checks
                 }
                 else
@@ -1218,13 +1226,13 @@ public class ServerManager
                     {
                         LogMessage($"Startup in progress... elapsed: {elapsedTime:F1}s / {serverStartupGracePeriod}s", 0);
                     }
-                    RepaintCallback?.Invoke();
+                    SafeRepaint();
                     return;
                 }
             }
             catch (Exception ex) {
                 if (DebugMode) LogMessage($"Error during server status check: {ex.Message}", -1);
-                RepaintCallback?.Invoke();
+                SafeRepaint();
                 return;
             }
         }
@@ -1301,7 +1309,7 @@ public class ServerManager
                         // Update logProcessor state
                         logProcessor.SetServerRunningState(true);
                         
-                        RepaintCallback?.Invoke();
+                        SafeRepaint();
                     }
                     else
                     {
@@ -1320,7 +1328,7 @@ public class ServerManager
                                 consecutiveFailedChecks = 0;
                                 serverConfirmedRunning = true;
                                 if (DebugMode) LogMessage("Final ping check succeeded - server is actually running, resetting failure counter", 1);
-                                RepaintCallback?.Invoke();
+                                SafeRepaint();
                                 return;
                             }
                             
@@ -1336,7 +1344,7 @@ public class ServerManager
                             logProcessor.SetServerRunningState(false);
 
                             if (DebugMode) LogMessage("Server state updated to stopped.", -1);
-                            RepaintCallback?.Invoke();
+                            SafeRepaint();
                         }
                         else
                         {
@@ -1437,7 +1445,7 @@ public class ServerManager
                             }
                         }
 
-                        RepaintCallback?.Invoke();
+                        SafeRepaint();
                     }
                 }
             }
@@ -1465,7 +1473,8 @@ public class ServerManager
             LogMessage($"{description}...", 0);
 
             // Publish and Generate uses the local CLI and is not run on SSH, so this is for all other SSH commands
-            if (Settings.serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate"))
+            // Also exclude "spacetime server set-default" commands as these should always run locally
+            if (Settings.serverMode == ServerMode.CustomServer && !command.Contains("spacetime publish") && !command.Contains("spacetime generate") && !command.Contains("spacetime server set-default"))
             {
                 var result = await serverCustomProcess.RunSpacetimeDBCommandAsync(command); // SSH command
                 
@@ -2021,7 +2030,7 @@ public class ServerManager
                     pingShowsOnline = false;
                 }
                 
-                RepaintCallback?.Invoke();
+                SafeRepaint();
             };
         });
     }
@@ -2184,7 +2193,7 @@ public class ServerManager
                     EditorApplication.delayCall += () =>
                     {
                         cachedSSHConnectionStatus = status;
-                        RepaintCallback?.Invoke();
+                        SafeRepaint();
                     };
                 }
                 catch (Exception ex)
@@ -2195,7 +2204,7 @@ public class ServerManager
                         {
                             LogMessage($"Connection check failed: {ex.Message}", -1);
                             cachedSSHConnectionStatus = false;
-                            RepaintCallback?.Invoke();
+                            SafeRepaint();
                         };
                     }
                     else
@@ -2203,7 +2212,7 @@ public class ServerManager
                         EditorApplication.delayCall += () =>
                         {
                             cachedSSHConnectionStatus = false;
-                            RepaintCallback?.Invoke();
+                            SafeRepaint();
                         };
                     }
                 }
@@ -2227,7 +2236,7 @@ public class ServerManager
             {
                 if (DebugMode) LogMessage("No module name set, can't check Maincloud connectivity", 0);
                 isMaincloudConnected = false;
-                RepaintCallback?.Invoke();
+                SafeRepaint();
                 return;
             }
 
@@ -2291,7 +2300,7 @@ public class ServerManager
                     }
                     
                     // Trigger UI update
-                    RepaintCallback?.Invoke();
+                    SafeRepaint();
                 }
             }
         }
@@ -2299,7 +2308,7 @@ public class ServerManager
         {
             if (DebugMode) LogMessage($"Exception in CheckMaincloudConnectivity: {ex.Message}", -1);
             isMaincloudConnected = false;
-            RepaintCallback?.Invoke();
+            SafeRepaint();
         }
     }
 

@@ -273,12 +273,26 @@ public class ServerCustomProcess
             process.ErrorDataReceived += (sender, args) => {
                 if (!string.IsNullOrEmpty(args.Data))
                 {
-                    // Ignore specific warnings
-                    if (!args.Data.Contains("Pseudo-terminal will not be allocated"))
+                    // Ignore specific warnings that are not real errors
+                    if (args.Data.Contains("Pseudo-terminal will not be allocated"))
                     {
-                        errorBuilder.AppendLine(args.Data);
-                        if (debugMode) Log($"SSH Error: {args.Data}", 0);
+                        // Treat as non-fatal warning; log at normal level if debug
+                        if (debugMode) Log($"SSH Warning: {args.Data}", 0);
+                        return;
                     }
+
+                    // Treat "Saving config" messages as informational output, not errors
+                    if (args.Data.Contains("Saving config"))
+                    {
+                        // Append to standard output builder so callers see it as normal output
+                        outputBuilder.AppendLine(args.Data);
+                        if (debugMode) Log($"SSH Info: {args.Data}", 0);
+                        return;
+                    }
+
+                    // For all other messages, treat as real errors
+                    errorBuilder.AppendLine(args.Data);
+                    if (debugMode) Log($"SSH Error: {args.Data}", 0);
                 }
             };
             
@@ -415,7 +429,6 @@ public class ServerCustomProcess
         if (debugMode) Log($"Running SpacetimeDB command on custom server: {spacetimeCmd}", 0);
         return await RunCustomCommandAsync(spacetimeCmd, timeoutMs);
     }
-    
 
     // Execute a command on the custom server
     public async Task<(bool success, string output, string error)> RunCustomCommandAsync(string command, int timeoutMs = 5000)

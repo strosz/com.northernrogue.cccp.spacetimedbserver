@@ -1,8 +1,7 @@
 # Cosmos Cove Control Panel for SpacetimeDB
 <p align="center">
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity"></a>
-<a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/github/v/release/strosz/com.northernrogue.cccp.spacetimedbserver?color=%23ff00a0&include_prereleases&label=version&sort=semver&style=flat-square"></a>
-<a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/buy%20me%20a%20ko-fi-8A2BE2"></a>
+<a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/donate%20a%20cup%20of%20ko-fi-8A2BE2"></a>
 </p>
 <img src="https://northernrogue.se/cosmos_cover_newupdate.png" alt="Alt text" width="900">
 
