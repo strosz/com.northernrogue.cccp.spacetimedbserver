@@ -756,10 +756,10 @@ public class ServerWindow : EditorWindow
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
-                    ClearModuleLogFile();
-                    ClearDatabaseLog();
                     serverMode = ServerMode.WSLServer;
                     UpdateServerModeState();
+                    ClearModuleLogFile();
+                    ClearDatabaseLog();
                 }
                 // Else we are already in WSL mode and don't have to do anything
             }
@@ -768,17 +768,17 @@ public class ServerWindow : EditorWindow
             {
                 if (serverMode == ServerMode.MaincloudServer)
                 {
-                    ClearModuleLogFile();
-                    ClearDatabaseLog();
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
+                    ClearModuleLogFile();
+                    ClearDatabaseLog();
                 }
                 else if (serverMode == ServerMode.WSLServer)
                 {
-                    ClearModuleLogFile();
-                    ClearDatabaseLog();
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
+                    ClearModuleLogFile();
+                    ClearDatabaseLog();
                 }
                 // Else we are already in Custom mode and don't have to do anything
             }
@@ -799,10 +799,10 @@ public class ServerWindow : EditorWindow
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
-                    ClearModuleLogFile();
-                    ClearDatabaseLog();
                     serverMode = ServerMode.MaincloudServer;
                     UpdateServerModeState();
+                    ClearModuleLogFile();
+                    ClearDatabaseLog();
                 }
                 // Else we are already in Maincloud mode and don't have to do anything
             }

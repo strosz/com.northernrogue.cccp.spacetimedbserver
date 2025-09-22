@@ -2242,6 +2242,15 @@ public class ServerLogProcess
         // Sync server mode flags before clearing logs
         SyncSettings();
         
+        // Clear all module logs regardless of mode to ensure clean slate when switching
+        moduleLogContent = "";
+        cachedModuleLogContent = "";
+        SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+        
+        // Clear deduplication cache for fresh start
+        recentModuleLogHashes.Clear();
+        
         if (isCustomServer)
         {
             ClearSSHModuleLogFile();
@@ -2250,10 +2259,21 @@ public class ServerLogProcess
         {
             ClearWSLModuleLog();
         }
+        
+        if (debugMode) logCallback($"Module logs cleared for mode: {(isCustomServer ? "CustomServer" : "WSL")}", 1);
     }
     
     public void ClearDatabaseLog()
     {
+        // Clear all database logs regardless of mode to ensure clean slate when switching
+        databaseLogContent = "";
+        cachedDatabaseLogContent = "";
+        SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+        SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+        
+        // Clear deduplication cache for fresh start
+        recentDatabaseLogHashes.Clear();
+        
         if (isCustomServer)
         {
             ClearSSHDatabaseLog();
@@ -2262,6 +2282,8 @@ public class ServerLogProcess
         {
             ClearWSLDatabaseLog();
         }
+        
+        if (debugMode) logCallback($"Database logs cleared for mode: {(isCustomServer ? "CustomServer" : "WSL")}", 1);
     }
     #endregion
     
