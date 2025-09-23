@@ -113,12 +113,12 @@ public class CCCPSettings : ScriptableObject
     public bool serviceMode = true;
     public bool firstTimeOpenInstaller = true;
 
-    [Header("UI Settings")]
+    [Header("Main Server Window UI Settings")]
     public bool autoscroll = true;
     public bool colorLogo = false;
     public bool showPrerequisites = false;
-    public bool showSettingsWindow = false;
-    public bool showUtilityCommands = false;
+    public bool showSettings = false;
+    public bool showCommands = false;
     
     [Header("Detection Settings")]
     public bool serverChangesDetected = false;
@@ -264,9 +264,9 @@ public class CCCPSettings : ScriptableObject
         autoscroll = true;
         colorLogo = false;
         showPrerequisites = false;
-        showSettingsWindow = false;
-        showUtilityCommands = false;
-        
+        showSettings = false;
+        showCommands = false;
+
         serverChangesDetected = false;
         originalFileInfo = "";
         currentFileInfo = "";

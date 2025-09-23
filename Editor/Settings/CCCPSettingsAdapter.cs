@@ -1015,23 +1015,23 @@ public static class CCCPSettingsAdapter
             MarkUISettingsDirty(); 
         }
     }
-    
-    public static bool GetShowSettingsWindow() => Settings.showSettingsWindow;
-    public static void SetShowSettingsWindow(bool value) 
+
+    public static bool GetShowSettings() => Settings.showSettings;
+    public static void SetShowSettings(bool value) 
     { 
-        if (Settings.showSettingsWindow != value)
+        if (Settings.showSettings != value)
         {
-            Settings.showSettingsWindow = value; 
+            Settings.showSettings = value; 
             MarkUISettingsDirty(); 
         }
     }
-    
-    public static bool GetShowUtilityCommands() => Settings.showUtilityCommands;
-    public static void SetShowUtilityCommands(bool value) 
+
+    public static bool GetShowCommands() => Settings.showCommands;
+    public static void SetShowCommands(bool value) 
     { 
-        if (Settings.showUtilityCommands != value)
+        if (Settings.showCommands != value)
         {
-            Settings.showUtilityCommands = value; 
+            Settings.showCommands = value; 
             MarkUISettingsDirty(); 
         }
     }
@@ -1306,8 +1306,8 @@ public static class CCCPSettingsAdapter
             case "Autoscroll": return GetAutoscroll();
             case "ColorLogo": return GetColorLogo();
             case "ShowPrerequisites": return GetShowPrerequisites();
-            case "ShowSettingsWindow": return GetShowSettingsWindow();
-            case "ShowUtilityCommands": return GetShowUtilityCommands();
+            case "ShowSettingsWindow": return GetShowSettings();
+            case "ShowUtilityCommands": return GetShowCommands();
             case "ServerChangesDetected": return GetServerChangesDetected();
             case "ServerWelcomeWindow_WelcomeWindowShown": return GetWelcomeWindowShown();
             default:
@@ -1377,8 +1377,8 @@ public static class CCCPSettingsAdapter
             case "Autoscroll": SetAutoscroll(value); break;
             case "ColorLogo": SetColorLogo(value); break;
             case "ShowPrerequisites": SetShowPrerequisites(value); break;
-            case "ShowSettingsWindow": SetShowSettingsWindow(value); break;
-            case "ShowUtilityCommands": SetShowUtilityCommands(value); break;
+            case "ShowSettingsWindow": SetShowSettings(value); break;
+            case "ShowUtilityCommands": SetShowCommands(value); break;
             case "ServerChangesDetected": SetServerChangesDetected(value); break;
             case "ServerWelcomeWindow_WelcomeWindowShown": SetWelcomeWindowShown(value); break;
             default:

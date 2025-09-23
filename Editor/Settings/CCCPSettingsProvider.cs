@@ -1010,8 +1010,8 @@ public static class CCCPSettingsProvider
         settings.autoscroll = EditorPrefs.GetBool(PrefsKeyPrefix + "Autoscroll", settings.autoscroll);
         settings.colorLogo = EditorPrefs.GetBool(PrefsKeyPrefix + "ColorLogo", settings.colorLogo);
         settings.showPrerequisites = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowPrerequisites", settings.showPrerequisites);
-        settings.showSettingsWindow = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", settings.showSettingsWindow);
-        settings.showUtilityCommands = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", settings.showUtilityCommands);
+        settings.showSettings = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowSettingsWindow", settings.showSettings);
+        settings.showCommands = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowUtilityCommands", settings.showCommands);
         settings.showLocalTime = EditorPrefs.GetBool(PrefsKeyPrefix + "ShowLocalTime", settings.showLocalTime);
         settings.welcomeWindowShown = EditorPrefs.GetBool(PrefsKeyPrefix + "WelcomeWindowShown", settings.welcomeWindowShown);
         

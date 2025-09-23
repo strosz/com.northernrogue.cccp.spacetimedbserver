@@ -137,6 +137,20 @@ public class ServerWindow : EditorWindow
         MaincloudServer,
     }
 
+    public enum DrawerType
+    {
+        Prerequisites,
+        Settings,
+        Commands
+    }
+
+    public enum AuthTokenType
+    {
+        WSL,
+        Custom,
+        Maincloud
+    }
+
     // Saved modules list - Direct property access to settings
     private List<ModuleInfo> savedModules 
     { 
@@ -709,11 +723,11 @@ public class ServerWindow : EditorWindow
         // Pre Requisites foldout state
         bool previousShowPrerequisites = CCCPSettingsAdapter.GetShowPrerequisites();
         bool showPrerequisites = EditorGUILayout.Foldout(previousShowPrerequisites, prerequisitesTitle, true);
-        CCCPSettingsAdapter.SetShowPrerequisites(showPrerequisites);
-
-        // Trigger repaint when foldout state changes
+        
+        // Handle mutually exclusive drawer state
         if (showPrerequisites != previousShowPrerequisites)
         {
+            SetDrawerState(DrawerType.Prerequisites, showPrerequisites);
             Repaint();
         }
 
@@ -1368,10 +1382,16 @@ public class ServerWindow : EditorWindow
     private void DrawSettingsSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool showSettingsWindow = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowSettingsWindow(), "Settings", true);
-        CCCPSettingsAdapter.SetShowSettingsWindow(showSettingsWindow);
+        bool previousShowSettings = CCCPSettingsAdapter.GetShowSettings();
+        bool showSettings = EditorGUILayout.Foldout(previousShowSettings, "Settings", true);
+        
+        // Handle mutually exclusive drawer state
+        if (showSettings != previousShowSettings)
+        {
+            SetDrawerState(DrawerType.Settings, showSettings);
+        }
 
-        if (showSettingsWindow && serverManager != null)
+        if (showSettings && serverManager != null)
         {   
             Color recommendedColor = Color.green;
             Color warningColor;
@@ -1853,10 +1873,16 @@ public class ServerWindow : EditorWindow
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);       
 
-        bool showUtilityCommands = EditorGUILayout.Foldout(CCCPSettingsAdapter.GetShowUtilityCommands(), "Commands", true);
-        CCCPSettingsAdapter.SetShowUtilityCommands(showUtilityCommands);
+        bool previousShowCommands = CCCPSettingsAdapter.GetShowCommands();
+        bool showCommands = EditorGUILayout.Foldout(previousShowCommands, "Commands", true);
+        
+        // Handle mutually exclusive drawer state
+        if (showCommands != previousShowCommands)
+        {
+            SetDrawerState(DrawerType.Commands, showCommands);
+        }
 
-        if (showUtilityCommands && serverManager != null)
+        if (showCommands && serverManager != null)
         {
             EditorGUILayout.Space(-10);
 
@@ -2226,7 +2252,7 @@ public class ServerWindow : EditorWindow
                     else 
                     {
                         // Open the pre-requisites drawer
-                        CCCPSettingsAdapter.SetShowPrerequisites(true);
+                        SetDrawerState(DrawerType.Prerequisites, true);
                         Repaint();
                     }
 
@@ -2584,11 +2610,51 @@ public class ServerWindow : EditorWindow
     
     #region Utility Methods
 
-    public enum AuthTokenType
+    /// <summary>
+    /// Manages mutually exclusive drawer states. When one drawer is set to true, others are automatically set to false.
+    /// </summary>
+    /// <param name="drawerType">The drawer type to set</param>
+    /// <param name="value">True to open the drawer, false to close it</param>
+    private void SetDrawerState(DrawerType drawerType, bool value)
     {
-        WSL,
-        Custom,
-        Maincloud
+        if (value)
+        {
+            // Close all other drawers when opening one
+            switch (drawerType)
+            {
+                case DrawerType.Prerequisites:
+                    CCCPSettingsAdapter.SetShowPrerequisites(true);
+                    CCCPSettingsAdapter.SetShowSettings(false);
+                    CCCPSettingsAdapter.SetShowCommands(false);
+                    break;
+                case DrawerType.Settings:
+                    CCCPSettingsAdapter.SetShowPrerequisites(false);
+                    CCCPSettingsAdapter.SetShowSettings(true);
+                    CCCPSettingsAdapter.SetShowCommands(false);
+                    break;
+                case DrawerType.Commands:
+                    CCCPSettingsAdapter.SetShowPrerequisites(false);
+                    CCCPSettingsAdapter.SetShowSettings(false);
+                    CCCPSettingsAdapter.SetShowCommands(true);
+                    break;
+            }
+        }
+        else
+        {
+            // Just close the specified drawer
+            switch (drawerType)
+            {
+                case DrawerType.Prerequisites:
+                    CCCPSettingsAdapter.SetShowPrerequisites(false);
+                    break;
+                case DrawerType.Settings:
+                    CCCPSettingsAdapter.SetShowSettings(false);
+                    break;
+                case DrawerType.Commands:
+                    CCCPSettingsAdapter.SetShowCommands(false);
+                    break;
+            }
+        }
     }
 
     // Helper method to format auth token tooltip with first and last 20 characters
