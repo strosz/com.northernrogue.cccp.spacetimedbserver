@@ -1973,11 +1973,16 @@ public class ServerWindow : EditorWindow
 
             if (serverMode == ServerMode.WSLServer)
             {
-                string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
+                string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
                 if (GUILayout.Button(new GUIContent("Backup Server Data", backupTooltip), GUILayout.Height(20)))
                 {
                     serverManager.BackupServerData();
+                }
+                string restoreTooltip = "Restores the DATA folder in your SpacetimeDB server from a backup tar archive.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
+                if (GUILayout.Button(new GUIContent("Restore Server Data", restoreTooltip), GUILayout.Height(20)))
+                {
+                    serverManager.RestoreServerData();
                 }
                 EditorGUI.EndDisabledGroup();
 
