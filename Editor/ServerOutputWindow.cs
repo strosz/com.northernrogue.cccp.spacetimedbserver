@@ -1471,7 +1471,9 @@ public class ServerOutputWindow : EditorWindow
         // Add CMD-style color formatting for error/warning messages
         strippedLog = strippedLog.Replace("ERROR", "<color=#FF6666>ERROR</color>");
         strippedLog = strippedLog.Replace("error:", "<color=#FF6666>error:</color>");
+        strippedLog = strippedLog.Replace("Error:", "<color=#FF6666>Error:</color>");
         strippedLog = strippedLog.Replace("WARN", "<color=#FFCC66>WARN</color>");
+        strippedLog = strippedLog.Replace("WARNING", "<color=#FFCC66>WARNING</color>");
         strippedLog = strippedLog.Replace("warning:", "<color=#FFCC66>warning:</color>");
         strippedLog = strippedLog.Replace("INFO", "<color=#66CCFF>INFO</color>");
         strippedLog = strippedLog.Replace("DEBUG", "<color=#66CCFF>DEBUG</color>");

@@ -1332,7 +1332,7 @@ public class ServerWindow : EditorWindow
                     {
                         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
                     }
-                    LoginMaincloud();
+                    LogoutAndLogin();
                 }
                 EditorGUILayout.EndHorizontal();                
 
@@ -2122,9 +2122,9 @@ public class ServerWindow : EditorWindow
 
         string buttonText;
         if (serverMode == ServerMode.MaincloudServer)
-        buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module to Maincloud";
+            buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module to Maincloud";
         else
-        buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
+            buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
 
         if (publishing) 
         {
@@ -2153,6 +2153,10 @@ public class ServerWindow : EditorWindow
             }
             else
             {
+                if (!serverRunning)
+                {
+                    serverManager.StartServer();
+                }
                 serverManager.Publish(false); // Publish without a database reset
                 publishFirstModule = false;
                 CCCPSettingsAdapter.SetPublishFirstModule(false);
@@ -2263,13 +2267,25 @@ public class ServerWindow : EditorWindow
                 }
                 else if (essentialSoftware && essentialUserSettings)
                 {
-                    EditorUtility.DisplayDialog(
+                    bool initModuleAndLogout = EditorUtility.DisplayDialog(
                         "All Software Installed", 
-                        "You have everything necessary to run SpacetimeDB on your server. \n\n" +
-                        "Please proceed to init your module (if creating a new server) and then publish your module.\n\n" +
+                        "You have everything necessary to run SpacetimeDB! \n\n" +
+                        "Please proceed to Init New Module (if using a new module)\n\n" +
+                        "Recommended: Logout and then Login again to switch to an online Login which is safer.\n\n" +
                         "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                        "OK"
+                        "Init Module and Refresh Login", "Only Refresh Login"
                     );
+                    if (initModuleAndLogout)
+                    {
+                        InitNewModule();
+                        // Also logout and login again to ensure a safe online login
+                        LogoutAndLogin();
+                    } 
+                    else
+                    {
+                        // Only logout and login again to ensure a safe online login
+                        LogoutAndLogin();
+                    }
                     hasAllPrerequisites = true;
                     CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
@@ -2448,11 +2464,25 @@ public class ServerWindow : EditorWindow
         }
     }
 
-    public async void LoginMaincloud()
+    public async void LogoutAndLogin()
     {
-        serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible local login...");
+        if (serverManager == null)
+        {
+            LogMessage("[LogoutAndLogin] Server Manager not initialized. Please restart Unity.", -1);
+            return;
+        }
+        if (serverRunning)
+        {
+            serverManager.StopServer();
+        }
+        await Task.Delay(2000); // Wait for server to stop
+        serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
         await Task.Delay(1000); // Wait for logout to complete
-        serverManager.RunServerCommand("spacetime login", "Launching Maincloud login...");
+        serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
+        if (!serverRunning)
+        {
+            serverManager.StartServer();
+        }
     }
 
     private async void CheckServiceStatus()

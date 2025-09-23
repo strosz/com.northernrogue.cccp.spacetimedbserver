@@ -1248,6 +1248,7 @@ public class ServerInstallerWindow : EditorWindow
 
         // Update UI
         UpdateInstallerItemsStatus();
+        Repaint(); // Ensure UI is updated after async checks
         
         isCustomRefreshing = false;
         SetStatus("Remote installation status check complete.", Color.green);
