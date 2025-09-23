@@ -1487,31 +1487,28 @@ public class ServerWindow : EditorWindow
             }
             EditorGUILayout.EndHorizontal();
 
-            if (serverMode == ServerMode.WSLServer)
+            // WSL Auto Close toggle
+            EditorGUILayout.Space(5);
+            EditorGUILayout.BeginHorizontal();
+            string wslCloseTooltip = 
+            "Close WSL at Unity Quit: The WSL CLI will close WSL when Unity is closed. \n"+
+            "Saves resources when WSL is not in use. WSL may otherwise leave several processes running.\n\n"+
+            "Keep Running: The WSL CLI will keep the WSL process running after Unity is closed.\n\n"+
+            "Recommended: Close WSL at Unity Quit";
+            EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
+            GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
+            if (serverManager.AutoCloseWsl)
             {
-                // WSL Auto Close toggle
-                EditorGUILayout.Space(5);
-                EditorGUILayout.BeginHorizontal();
-                string wslCloseTooltip = 
-                "Close WSL at Unity Quit: The WSL CLI will close WSL when Unity is closed. \n"+
-                "Saves resources when WSL is not in use. WSL may otherwise leave several processes running.\n\n"+
-                "Keep Running: The WSL CLI will keep the WSL process running after Unity is closed.\n\n"+
-                "Recommended: Close WSL at Unity Quit";
-                EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
-                GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
-                if (serverManager.AutoCloseWsl)
-                {
-                    wslCloseStyle.normal.textColor = warningColor;
-                    wslCloseStyle.hover.textColor = warningColor;
-                }
-                if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
-                {
-                    bool newAutoClose = !serverManager.AutoCloseWsl;
-                    serverManager.autoCloseWsl = newAutoClose;
-                    autoCloseWsl = newAutoClose; // Keep local field in sync
-                }
-                EditorGUILayout.EndHorizontal();
+                wslCloseStyle.normal.textColor = warningColor;
+                wslCloseStyle.hover.textColor = warningColor;
             }
+            if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
+            {
+                bool newAutoClose = !serverManager.AutoCloseWsl;
+                serverManager.autoCloseWsl = newAutoClose;
+                autoCloseWsl = newAutoClose; // Keep local field in sync
+            }
+            EditorGUILayout.EndHorizontal();
 
             // Clear Module and Database Log at Start toggle buttons
             if ((serverManager.SilentMode && serverMode == ServerMode.WSLServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
@@ -1886,7 +1883,12 @@ public class ServerWindow : EditorWindow
         {
             EditorGUILayout.Space(-10);
 
-            EditorGUILayout.LabelField("SpacetimeDB Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            if (serverMode == ServerMode.WSLServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.CustomServer)
+                EditorGUILayout.LabelField("SpacetimeDB Remote", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.MaincloudServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local (Maincloud)", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
@@ -1947,7 +1949,7 @@ public class ServerWindow : EditorWindow
             // Service Status button (only in Custom Server mode)
             if (serverMode == ServerMode.CustomServer)
             {
-                EditorGUILayout.LabelField("Custom Server Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("Custom Server Utility Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
                 if (GUILayout.Button("Service Status", buttonStyle))
                 {
