@@ -1786,6 +1786,79 @@ public class ServerInstallerWindow : EditorWindow
             "sudo systemctl is-active spacetimedb.service && echo \"SpacetimeDB service is active\" || echo \"SpacetimeDB service is not active\"\n" +
             "sudo systemctl is-enabled spacetimedb.service && echo \"SpacetimeDB service is enabled\" || echo \"SpacetimeDB service is not enabled\"\n\n" +
             
+            "# Create the database logs wrapper script for dynamic module switching\n" +
+            "echo \"Creating SpacetimeDB database logs wrapper script...\"\n" +
+            $"sudo tee /home/{userName}/.local/bin/spacetime-database-logs-switching.sh << 'EOF'\n" +
+            "#!/bin/bash\n" +
+            "# SpacetimeDB Database Logs Service Wrapper\n" +
+            "# Dynamically reads current module from config file\n" +
+            "\n" +
+            "# Remove strict error handling to prevent unnecessary exits\n" +
+            "set -u  # Only exit on undefined variables, not on all errors\n" +
+            "\n" +
+            $"CURRENT_MODULE_FILE=\"/home/{userName}/.local/current_spacetime_module\"\n" +
+            $"SPACETIME_PATH=\"/home/{userName}/.local/bin/spacetime\"\n" +
+            "LOG_FILE=\"/tmp/spacetime-logs-wrapper.log\"\n" +
+            "\n" +
+            "# Function to log with timestamp (only to file, not stdout to avoid spam)\n" +
+            "log_debug() {\n" +
+            "    echo \"$(date '+%Y-%m-%d %H:%M:%S') - $1\" >> \"$LOG_FILE\"\n" +
+            "}\n" +
+            "\n" +
+            "# Function to handle script termination gracefully\n" +
+            "cleanup() {\n" +
+            "    log_debug \"Wrapper script received termination signal\"\n" +
+            "    exit 0\n" +
+            "}\n" +
+            "\n" +
+            "# Set up signal handlers\n" +
+            "trap cleanup SIGTERM SIGINT\n" +
+            "\n" +
+            "# Validate config file exists and is readable\n" +
+            "if [ ! -f \"$CURRENT_MODULE_FILE\" ]; then\n" +
+            "    log_debug \"ERROR: Module config file does not exist: $CURRENT_MODULE_FILE\"\n" +
+            "    sleep 30  # Wait before exiting to prevent rapid restarts\n" +
+            "    exit 1\n" +
+            "fi\n" +
+            "\n" +
+            "if [ ! -r \"$CURRENT_MODULE_FILE\" ]; then\n" +
+            "    log_debug \"ERROR: Cannot read module config file: $CURRENT_MODULE_FILE\"\n" +
+            "    sleep 30\n" +
+            "    exit 1\n" +
+            "fi\n" +
+            "\n" +
+            "# Read and validate module name\n" +
+            "MODULE=$(cat \"$CURRENT_MODULE_FILE\" | tr -d '\\n\\r' | xargs)\n" +
+            "\n" +
+            "if [ -z \"$MODULE\" ]; then\n" +
+            "    log_debug \"ERROR: Module config file is empty: $CURRENT_MODULE_FILE\"\n" +
+            "    sleep 30\n" +
+            "    exit 1\n" +
+            "fi\n" +
+            "\n" +
+            "# Validate spacetime binary exists\n" +
+            "if [ ! -x \"$SPACETIME_PATH\" ]; then\n" +
+            "    log_debug \"ERROR: SpacetimeDB binary not found or not executable: $SPACETIME_PATH\"\n" +
+            "    sleep 30\n" +
+            "    exit 1\n" +
+            "fi\n" +
+            "\n" +
+            "# Log start (only once to debug file, not to systemd logs)\n" +
+            "log_debug \"Starting database logs for module: $MODULE\"\n" +
+            "\n" +
+            "# Start logging - use exec to replace shell process\n" +
+            "exec \"$SPACETIME_PATH\" logs \"$MODULE\" -f\n" +
+            "EOF\n\n" +
+            
+            "# Make the wrapper script executable\n" +
+            $"sudo chmod +x /home/{userName}/.local/bin/spacetime-database-logs-switching.sh\n\n" +
+            
+            "# Create initial module config file with expected module\n" +
+            $"mkdir -p /home/{userName}/.local\n" +
+            $"echo '{expectedModuleName}' > /home/{userName}/.local/current_spacetime_module\n" +
+            $"chmod 644 /home/{userName}/.local/current_spacetime_module\n" +
+            $"chown {userName}:{userName} /home/{userName}/.local/current_spacetime_module\n\n" +
+            
             "# Create the database logs service file\n" +
             "echo \"Creating SpacetimeDB database logs service...\"\n" +
             "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
@@ -1797,9 +1870,11 @@ public class ServerInstallerWindow : EditorWindow
             $"User={userName}\n" +
             $"Environment=HOME=/home/{userName}\n" +
             "Type=simple\n" +
-            "Restart=always\n" +
-            "RestartSec=5\n" +
-            $"ExecStart=/home/{userName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
+            "Restart=on-failure\n" +
+            "RestartSec=30\n" +
+            "StartLimitIntervalSec=300\n" +
+            "StartLimitBurst=3\n" +
+            $"ExecStart=/home/{userName}/.local/bin/spacetime-database-logs-switching.sh\n" +
             $"WorkingDirectory=/home/{userName}\n\n" +
             "[Install]\n" +
             "WantedBy=multi-user.target\n" +
@@ -1823,6 +1898,7 @@ public class ServerInstallerWindow : EditorWindow
             $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
             $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl start spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
             $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
+            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl restart spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
             $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
             $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
             "sudo chmod 440 /etc/sudoers.d/spacetimedb\n" +
@@ -3009,6 +3085,79 @@ public class ServerInstallerWindow : EditorWindow
                 "echo \"Checking service status...\"\n" +
                 "sudo systemctl status spacetimedb.service\n\n" +
                 
+                "# Create the database logs wrapper script for dynamic module switching\n" +
+                "echo \"Creating SpacetimeDB database logs wrapper script...\"\n" +
+                $"sudo tee /home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh << 'EOF'\n" +
+                "#!/bin/bash\n" +
+                "# SpacetimeDB Database Logs Service Wrapper\n" +
+                "# Dynamically reads current module from config file\n" +
+                "\n" +
+                "# Remove strict error handling to prevent unnecessary exits\n" +
+                "set -u  # Only exit on undefined variables, not on all errors\n" +
+                "\n" +
+                $"CURRENT_MODULE_FILE=\"/home/{sshUserName}/.local/current_spacetime_module\"\n" +
+                $"SPACETIME_PATH=\"/home/{sshUserName}/.local/bin/spacetime\"\n" +
+                "LOG_FILE=\"/tmp/spacetime-logs-wrapper.log\"\n" +
+                "\n" +
+                "# Function to log with timestamp (only to file, not stdout to avoid spam)\n" +
+                "log_debug() {\n" +
+                "    echo \"$(date '+%Y-%m-%d %H:%M:%S') - $1\" >> \"$LOG_FILE\"\n" +
+                "}\n" +
+                "\n" +
+                "# Function to handle script termination gracefully\n" +
+                "cleanup() {\n" +
+                "    log_debug \"Wrapper script received termination signal\"\n" +
+                "    exit 0\n" +
+                "}\n" +
+                "\n" +
+                "# Set up signal handlers\n" +
+                "trap cleanup SIGTERM SIGINT\n" +
+                "\n" +
+                "# Validate config file exists and is readable\n" +
+                "if [ ! -f \"$CURRENT_MODULE_FILE\" ]; then\n" +
+                "    log_debug \"ERROR: Module config file does not exist: $CURRENT_MODULE_FILE\"\n" +
+                "    sleep 30  # Wait before exiting to prevent rapid restarts\n" +
+                "    exit 1\n" +
+                "fi\n" +
+                "\n" +
+                "if [ ! -r \"$CURRENT_MODULE_FILE\" ]; then\n" +
+                "    log_debug \"ERROR: Cannot read module config file: $CURRENT_MODULE_FILE\"\n" +
+                "    sleep 30\n" +
+                "    exit 1\n" +
+                "fi\n" +
+                "\n" +
+                "# Read and validate module name\n" +
+                "MODULE=$(cat \"$CURRENT_MODULE_FILE\" | tr -d '\\n\\r' | xargs)\n" +
+                "\n" +
+                "if [ -z \"$MODULE\" ]; then\n" +
+                "    log_debug \"ERROR: Module config file is empty: $CURRENT_MODULE_FILE\"\n" +
+                "    sleep 30\n" +
+                "    exit 1\n" +
+                "fi\n" +
+                "\n" +
+                "# Validate spacetime binary exists\n" +
+                "if [ ! -x \"$SPACETIME_PATH\" ]; then\n" +
+                "    log_debug \"ERROR: SpacetimeDB binary not found or not executable: $SPACETIME_PATH\"\n" +
+                "    sleep 30\n" +
+                "    exit 1\n" +
+                "fi\n" +
+                "\n" +
+                "# Log start (only once to debug file, not to systemd logs)\n" +
+                "log_debug \"Starting database logs for module: $MODULE\"\n" +
+                "\n" +
+                "# Start logging - use exec to replace shell process\n" +
+                "exec \"$SPACETIME_PATH\" logs \"$MODULE\" -f\n" +
+                "EOF\n\n" +
+                
+                "# Make the wrapper script executable\n" +
+                $"sudo chmod +x /home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh\n\n" +
+                
+                "# Create initial module config file with expected module\n" +
+                $"mkdir -p /home/{sshUserName}/.local\n" +
+                $"echo '{expectedModuleName}' > /home/{sshUserName}/.local/current_spacetime_module\n" +
+                $"chmod 644 /home/{sshUserName}/.local/current_spacetime_module\n" +
+                $"chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/current_spacetime_module\n\n" +
+                
                 "# Create the database logs service file\n" +
                 "echo \"Creating SpacetimeDB database logs service...\"\n" +
                 "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
@@ -3020,9 +3169,11 @@ public class ServerInstallerWindow : EditorWindow
                 $"User={sshUserName}\n" +
                 $"Environment=HOME=/home/{sshUserName}\n" +
                 "Type=simple\n" +
-                "Restart=always\n" +
-                "RestartSec=5\n" +
-                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime logs {expectedModuleName} -f\n" +
+                "Restart=on-failure\n" +
+                "RestartSec=30\n" +
+                "StartLimitIntervalSec=300\n" +
+                "StartLimitBurst=3\n" +
+                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh\n" +
                 $"WorkingDirectory=/home/{sshUserName}\n\n" +
                 "[Install]\n" +
                 "WantedBy=multi-user.target\n" +

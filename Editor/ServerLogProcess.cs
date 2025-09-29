@@ -56,6 +56,9 @@ public class ServerLogProcess
     
     // Reference to the CMD processor for executing commands
     private ServerCMDProcess cmdProcessor;
+    
+    // Reference to the Custom processor for executing SSH commands
+    private ServerCustomProcess customProcessor;
 
     // Thread-safe queue and processing fields
     private readonly ConcurrentQueue<string> databaseLogQueue = new ConcurrentQueue<string>();
@@ -131,6 +134,79 @@ public class ServerLogProcess
 
     // Path for remote server logs (kept for fallback/reference)
     public const string CustomServerCombinedLogPath = "/var/log/spacetimedb/spacetimedb.log";
+
+    // Config file paths for dynamic module switching (using persistent user home locations)
+    private string GetWSLModuleConfigFile() => $"/home/{userName}/.local/current_spacetime_module";
+    private string GetSSHModuleConfigFile() => $"/home/{sshUser}/.local/current_spacetime_module";
+    
+    // Read current module from WSL config file
+    private async Task<string> GetCurrentWSLModuleAsync()
+    {
+        if (cmdProcessor == null || string.IsNullOrEmpty(userName))
+            return null;
+            
+        try
+        {
+            string configFile = GetWSLModuleConfigFile();
+            string readCommand = $"cat {configFile} 2>/dev/null || echo ''";
+            
+            // Use a synchronous approach since we don't have async WSL commands
+            var tempFile = System.IO.Path.GetTempFileName();
+            string wslCommand = $"wsl -d Debian -u {userName} bash -c \"{readCommand}\" > \"{tempFile}\"";
+            
+            var process = new System.Diagnostics.Process()
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo()
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/C {wslCommand}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            
+            process.Start();
+            await Task.Run(() => process.WaitForExit());
+            
+            if (System.IO.File.Exists(tempFile))
+            {
+                string content = await System.IO.File.ReadAllTextAsync(tempFile);
+                System.IO.File.Delete(tempFile);
+                return content.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Error reading WSL config file: {ex.Message}", -1);
+        }
+        
+        return null;
+    }
+    
+    // Read current module from SSH config file
+    private async Task<string> GetCurrentSSHModuleAsync()
+    {
+        if (customProcessor == null || string.IsNullOrEmpty(sshUser))
+            return null;
+            
+        try
+        {
+            string configFile = GetSSHModuleConfigFile();
+            string readCommand = $"cat {configFile} 2>/dev/null || echo ''";
+            
+            var result = await customProcessor.RunCustomCommandAsync(readCommand);
+            if (result.success)
+            {
+                return result.output.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Error reading SSH config file: {ex.Message}", -1);
+        }
+        
+        return null;
+    }
 
     public void SyncSettings()
     {
@@ -825,19 +901,36 @@ public class ServerLogProcess
         if (debugMode) logCallback("SSH log reading stopped", 0);
     }
 
-    public void SwitchModuleSSH(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    public async void SwitchModuleSSH(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
-        if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
+        if (debugMode) logCallback($"[SSH] Starting module switch to: {newModuleName}", 0);
+        
+        // Read current module from config file to verify actual state
+        string currentModuleFromFile = await GetCurrentSSHModuleAsync();
+        
+        if (debugMode) 
+        {
+            logCallback($"[SSH] Module in memory: '{this.moduleName}'", 0);
+            logCallback($"[SSH] Module from config file: '{currentModuleFromFile}'", 0);
+        }
+        
+        // Use config file as source of truth for current module
+        string actualCurrentModule = !string.IsNullOrEmpty(currentModuleFromFile) ? currentModuleFromFile : this.moduleName;
+        
+        if (string.Equals(actualCurrentModule, newModuleName, StringComparison.OrdinalIgnoreCase))
         {
             if (debugMode) logCallback($"SSH: Module '{newModuleName}' is already active. No switch needed.", 0);
             return;
         }
 
-        if (debugMode) logCallback($"Switching SSH database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+        if (debugMode) logCallback($"Switching SSH database logs from module '{actualCurrentModule}' to '{newModuleName}'", 0);
 
         // Update the module name
-        string oldModuleName = this.moduleName;
+        string oldModuleName = actualCurrentModule;
         this.moduleName = newModuleName;
+
+        // Update the database log service configuration
+        UpdateSSHDatabaseLogService(newModuleName);
 
         // Clear database logs if requested
         if (clearDatabaseLogOnSwitch)
@@ -846,7 +939,7 @@ public class ServerLogProcess
 
             // Add a separator message to indicate the switch
             string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-            string switchMessage = $"{timestamp} [MODULE SWITCHED - SSH] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
+            string switchMessage = $"{timestamp} [MODULE SWITCHED - SSH] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\n";
             
             databaseLogContent += switchMessage;
             cachedDatabaseLogContent += switchMessage;
@@ -871,6 +964,77 @@ public class ServerLogProcess
         // Notify of log update
         onDatabaseLogUpdated?.Invoke();
     }
+
+    // Update the module config file and restart the database logs service for SSH
+    public async void UpdateSSHDatabaseLogService(string newModuleName)
+    {
+        if (customProcessor == null)
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] Custom processor not available for SSH service update", 0);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(newModuleName))
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] Module name is empty, cannot update service", -1);
+            return;
+        }
+
+        try
+        {
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Updating SSH database log service to module: {newModuleName}", 0);
+
+            string configFile = GetSSHModuleConfigFile();
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Writing module '{newModuleName}' to config file: {configFile}", 0);
+
+            // Write module name to config file
+            string updateConfigCommand = $"echo '{newModuleName}' > {configFile}";
+            var configResult = await customProcessor.RunCustomCommandAsync(updateConfigCommand);
+            
+            if (!configResult.success)
+            {
+                logCallback?.Invoke($"Failed to update module config file: {configResult.output}", -1);
+                return;
+            }
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Config file updated successfully", 0);
+            
+            // Verify the file was written correctly
+            string verifyCommand = $"cat {configFile}";
+            var verifyResult = await customProcessor.RunCustomCommandAsync(verifyCommand);
+            
+            if (debugMode) 
+            {
+                if (verifyResult.success)
+                {
+                    logCallback?.Invoke($"[ServerLogProcess] Config file content: '{verifyResult.output.Trim()}'", 0);
+                }
+                else
+                {
+                    logCallback?.Invoke($"[ServerLogProcess] Failed to verify config file: {verifyResult.output}", -1);
+                }
+            }
+
+            // Restart the service to pick up new module
+            string restartCommand = "sudo systemctl restart spacetimedb-logs.service";
+            var restartResult = await customProcessor.RunCustomCommandAsync(restartCommand);
+            
+            if (restartResult.success)
+            {
+                if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Successfully updated database log service to module: {newModuleName}", 1);
+            }
+            else
+            {
+                logCallback?.Invoke($"Failed to restart database log service: {restartResult.output}", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            logCallback?.Invoke($"Error updating SSH database log service: {ex.Message}", -1);
+        }
+    }
+
+
     #endregion
     
     #region WSL Journalctl Logging
@@ -1720,19 +1884,36 @@ public class ServerLogProcess
         if (debugMode) logCallback("WSL log reading stopped", 0);
     }
 
-    public void SwitchModuleWSL(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    public async void SwitchModuleWSL(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
-        if (string.Equals(this.moduleName, newModuleName, StringComparison.OrdinalIgnoreCase))
+        if (debugMode) logCallback($"[WSL] Starting module switch to: {newModuleName}", 0);
+        
+        // Read current module from config file to verify actual state
+        string currentModuleFromFile = await GetCurrentWSLModuleAsync();
+        
+        if (debugMode) 
+        {
+            logCallback($"[WSL] Module in memory: '{this.moduleName}'", 0);
+            logCallback($"[WSL] Module from config file: '{currentModuleFromFile}'", 0);
+        }
+        
+        // Use config file as source of truth for current module
+        string actualCurrentModule = !string.IsNullOrEmpty(currentModuleFromFile) ? currentModuleFromFile : this.moduleName;
+        
+        if (string.Equals(actualCurrentModule, newModuleName, StringComparison.OrdinalIgnoreCase))
         {
             if (debugMode) logCallback($"WSL: Module '{newModuleName}' is already active. No switch needed.", 0);
             return;
         }
 
-        if (debugMode) logCallback($"Switching WSL database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+        if (debugMode) logCallback($"Switching WSL database logs from module '{actualCurrentModule}' to '{newModuleName}'", 0);
 
         // Update the module name
-        string oldModuleName = this.moduleName;
+        string oldModuleName = actualCurrentModule;
         this.moduleName = newModuleName;
+
+        // Update the database log service configuration
+        UpdateWSLDatabaseLogService(newModuleName);
 
         // Clear database logs if requested
         if (clearDatabaseLogOnSwitch)
@@ -1741,7 +1922,7 @@ public class ServerLogProcess
 
             // Add a separator message to indicate the switch
             string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
-            string switchMessage = $"{timestamp} [MODULE SWITCHED - WSL] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\\n";
+            string switchMessage = $"{timestamp} [MODULE SWITCHED - WSL] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\n";
             
             databaseLogContent += switchMessage;
             cachedDatabaseLogContent += switchMessage;
@@ -1765,6 +1946,80 @@ public class ServerLogProcess
 
         // Notify of log update
         onDatabaseLogUpdated?.Invoke();
+    }
+
+    // Update the module config file and restart the database logs service for WSL
+    public async void UpdateWSLDatabaseLogService(string newModuleName)
+    {
+        if (string.IsNullOrEmpty(newModuleName))
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] Module name is empty, cannot update WSL service", -1);
+            return;
+        }
+
+        if (cmdProcessor == null)
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] CMD processor not available for WSL service update", 0);
+            return;
+        }
+
+        try
+        {
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Updating WSL database log service to module: {newModuleName}", 0);
+            
+            string configFile = GetWSLModuleConfigFile();
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Writing module '{newModuleName}' to config file: {configFile}", 0);
+
+            // Ensure the directory exists and has proper permissions
+            string setupCommand = $"mkdir -p $(dirname {configFile}) && chmod 755 $(dirname {configFile})";
+            int setupResult = cmdProcessor.RunWslCommandSilent(setupCommand);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Directory setup exit code: {setupResult}", 0);
+
+            // Write module name to config file
+            string updateConfigCommand = $"echo '{newModuleName}' > {configFile}";
+            int configResult = cmdProcessor.RunWslCommandSilent(updateConfigCommand);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Config update command exit code: {configResult}", 0);
+            
+            // Verify the file was written correctly by reading it back
+            await Task.Delay(100); // Brief delay to ensure file system sync
+            string actualContent = await GetCurrentWSLModuleAsync();
+            
+            if (debugMode) 
+            {
+                logCallback?.Invoke($"[ServerLogProcess] Config file content after write: '{actualContent}'", 0);
+                logCallback?.Invoke($"[ServerLogProcess] Expected content: '{newModuleName}'", 0);
+            }
+            
+            if (!string.Equals(actualContent, newModuleName, StringComparison.OrdinalIgnoreCase))
+            {
+                logCallback?.Invoke($"[ServerLogProcess] WARNING: Config file content '{actualContent}' does not match expected '{newModuleName}'", -1);
+                
+                // Try alternative method with explicit permissions
+                string altCommand = $"echo '{newModuleName}' | tee {configFile} > /dev/null && chmod 644 {configFile}";
+                int altResult = cmdProcessor.RunWslCommandSilent(altCommand);
+                
+                if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Alternative write command exit code: {altResult}", 0);
+                
+                // Verify again
+                await Task.Delay(100);
+                actualContent = await GetCurrentWSLModuleAsync();
+                if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Config file content after retry: '{actualContent}'", 0);
+            }
+
+            // Restart the service to pick up new module
+            string restartCommand = "sudo systemctl restart spacetimedb-logs.service";
+            int restartResult = cmdProcessor.RunWslCommandSilent(restartCommand);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Service restart command exit code: {restartResult}", 0);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] WSL database log service update completed for module: {newModuleName}", 1);
+        }
+        catch (Exception ex)
+        {
+            logCallback?.Invoke($"Error updating WSL database log service: {ex.Message}", -1);
+        }
     }
     #endregion
     
@@ -1800,12 +2055,14 @@ public class ServerLogProcess
         Action onModuleLogUpdated,
         Action onDatabaseLogUpdated,
         ServerCMDProcess cmdProcessor = null,
+        ServerCustomProcess customProcessor = null,
         bool debugMode = false)
     {
         this.logCallback = logCallback;
         this.onModuleLogUpdated = onModuleLogUpdated;
         this.onDatabaseLogUpdated = onDatabaseLogUpdated;
         this.cmdProcessor = cmdProcessor;
+        this.customProcessor = customProcessor;
         ServerLogProcess.debugMode = debugMode;
         
         // Load username from Settings
@@ -2548,13 +2805,21 @@ public class ServerLogProcess
         // Check if this is a journalctl format line (SSH logs)
         // Format 1: "May 29 20:16:31 LoreMagic spacetime[51367]: 2025-05-29T20:16:31.212054Z  INFO: src/lib.rs:140: Player 4 reconnected."
         // Format 2: "2025-05-29T20:32:45.845810+00:00 LoreMagic spacetime[74350]: 2025-05-29T20:16:31.212054Z  INFO: src/lib.rs:140: Player 4 reconnected."
+        // Format 3: "2025-09-29T23:32:17.533355+02:00 M spacetime-database-logs-switching.sh[3239]:   INFO: src/lib.rs:33: Hello, World!"
         var journalMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+\w+\s+spacetime\[\d+\]:\s*(.*)$");
         var journalIsoMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+\d{2}:\d{2})\s+\w+\s+spacetime\[\d+\]:\s*(.*)$");
+        var switchingScriptMatch = System.Text.RegularExpressions.Regex.Match(logLine, @"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+\d{2}:\d{2})\s+\w+\s+spacetime-database-logs-switching\.sh\[\d+\]:\s*(.*)$");
         
-        if (journalMatch.Success || journalIsoMatch.Success)
+        if (journalMatch.Success || journalIsoMatch.Success || switchingScriptMatch.Success)
         {
             // Extract the actual log content after the journalctl prefix
-            string actualLogContent = journalMatch.Success ? journalMatch.Groups[2].Value.Trim() : journalIsoMatch.Groups[2].Value.Trim();
+            string actualLogContent = "";
+            if (journalMatch.Success)
+                actualLogContent = journalMatch.Groups[2].Value.Trim();
+            else if (journalIsoMatch.Success)
+                actualLogContent = journalIsoMatch.Groups[2].Value.Trim();
+            else if (switchingScriptMatch.Success)
+                actualLogContent = switchingScriptMatch.Groups[2].Value.Trim();
             // Now look for SpacetimeDB timestamp in the actual content
             var timestampMatch = System.Text.RegularExpressions.Regex.Match(actualLogContent, @"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)");
             string timestampPrefix = "";

@@ -141,7 +141,20 @@ public static class CCCPSettingsAdapter
     {
         if (_pendingUISave && _cachedSettings != null)
         {
-            AssetDatabase.SaveAssets();
+            // Only save if we're not in the middle of asset processing or compilation
+            if (!EditorApplication.isCompiling && !EditorApplication.isUpdating && 
+                !AssetDatabase.IsAssetImportWorkerProcess())
+            {
+                try
+                {
+                    AssetDatabase.SaveAssets();
+                }
+                catch (System.Exception e)
+                {
+                    // Log but don't throw - UI settings save failures shouldn't break the workflow
+                    UnityEngine.Debug.LogWarning($"Failed to save UI settings: {e.Message}");
+                }
+            }
             _pendingUISave = false;
         }
     }

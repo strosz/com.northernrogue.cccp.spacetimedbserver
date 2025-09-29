@@ -352,6 +352,7 @@ public class ServerManager
         
         // Initialize the processors
         cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+        serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
         
         // Initialize LogProcessor with callbacks
         logProcessor = new ServerLogProcess(
@@ -359,6 +360,7 @@ public class ServerManager
             () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
             () => ServerOutputWindow.RefreshDatabaseLogs(), // Database log update callback - uses high-priority refresh
             cmdProcessor,
+            serverCustomProcess,
             debugMode
         );
         
@@ -381,8 +383,6 @@ public class ServerManager
             () => StartServer(),  // StartServer
             () => StopServer()    // StopServer
         );
-
-        serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
         
         // Configure
         Configure();
@@ -868,6 +868,7 @@ public class ServerManager
                 () => { SafeRepaint(); },
                 () => { SafeRepaint(); },
                 cmdProcessor,
+                serverCustomProcess,
                 debugMode
             );
             logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, UserName);
