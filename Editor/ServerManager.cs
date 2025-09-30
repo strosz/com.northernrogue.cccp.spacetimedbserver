@@ -1627,26 +1627,21 @@ public class ServerManager
         
         if (resetDatabase)
         {
-            if (Settings.serverMode == ServerMode.WSLServer)
-                RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            if (Settings.serverMode == ServerMode.MaincloudServer)
+                RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            else if (Settings.serverMode == ServerMode.WSLServer)
+                RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
         }
         else
         {
             if (Settings.serverMode == ServerMode.MaincloudServer)
-            {
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
-            }
             else if (Settings.serverMode == ServerMode.CustomServer)
-            {
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
-            }
-            else
-            {
-                // Default to local server for WSL and CustomServer modes
+            else if (Settings.serverMode == ServerMode.WSLServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
-            }
         }
 
         // Reset change detection after publishing

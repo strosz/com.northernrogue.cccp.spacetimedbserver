@@ -23,7 +23,9 @@ public class ServerOutputWindow : EditorWindow
     private Vector2 scrollPosition;
     private int selectedTab = 0;
     private string[] tabs = { "Module All", "Module Errors", "Database All", "Database Errors" };
+    private string[] databaseOnlyTabs = { "Database All", "Database Errors" };
     private bool autoScroll = true; // Start with auto-scroll enabled
+    private string currentServerMode = ""; // Track current server mode for tab visibility
     private bool isWindowEnabled = false; // Guard flag
     private int lastKnownLogHash; // For detecting changes
     private int lastKnownDbLogHash; // For detecting database log changes
@@ -109,6 +111,90 @@ public class ServerOutputWindow : EditorWindow
     
     // Track compilation state to force refresh after compilation
     private static bool wasCompiling = false;
+
+    /// <summary>
+    /// Updates tab visibility based on server mode - called by ServerWindow when mode changes
+    /// </summary>
+    public static void UpdateTabVisibilityForServerMode(string serverMode)
+    {
+        if (currentInstance != null)
+        {
+            currentInstance.UpdateTabsForServerMode(serverMode);
+        }
+        
+        // Update all open windows
+        for (int i = openWindows.Count - 1; i >= 0; i--)
+        {
+            if (openWindows[i] != null)
+            {
+                openWindows[i].UpdateTabsForServerMode(serverMode);
+            }
+            else
+            {
+                openWindows.RemoveAt(i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates the tabs array based on the current server mode
+    /// </summary>
+    private void UpdateTabsForServerMode(string serverMode)
+    {
+        if (currentServerMode == serverMode) return; // No change needed
+        
+        string previousServerMode = currentServerMode; // Store previous mode before updating
+        currentServerMode = serverMode;
+        int previousSelectedTab = selectedTab;
+        
+        if (serverMode.Equals("MaincloudServer", StringComparison.OrdinalIgnoreCase))
+        {
+            tabs = databaseOnlyTabs;
+            // Map previous tab selection to database tabs
+            if (previousSelectedTab >= 2) // Was on Database All or Database Errors
+            {
+                selectedTab = previousSelectedTab - 2; // Map to 0 or 1
+            }
+            else // Was on Module tabs
+            {
+                selectedTab = 0; // Default to Database All
+            }
+        }
+        else
+        {
+            tabs = new string[] { "Module All", "Module Errors", "Database All", "Database Errors" };
+            // Map previous database-only tab selection back to full tabs
+            if (previousServerMode.Equals("MaincloudServer", StringComparison.OrdinalIgnoreCase) && previousSelectedTab < 2)
+            {
+                selectedTab = previousSelectedTab + 2; // Map back to Database tabs (2 or 3)
+            }
+            // Otherwise keep the same tab index if it's valid
+            else if (selectedTab >= tabs.Length)
+            {
+                selectedTab = 0; // Reset to first tab if invalid
+            }
+        }
+        
+        // Ensure selectedTab is valid for the current tabs array
+        if (selectedTab >= tabs.Length || selectedTab < 0)
+        {
+            selectedTab = 0;
+        }
+        
+        // Trigger scroll to bottom if auto-scroll is enabled
+        if (autoScroll)
+        {
+            scrollToBottom = true;
+        }
+        
+        needsRepaint = true;
+        Repaint();
+        
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"ServerOutputWindow: Updated tabs for server mode '{serverMode}'. Tab count: {tabs.Length}, Selected tab: {selectedTab}");
+        }
+    }
 
     [MenuItem("Window/SpacetimeDB Server Manager/View Logs")]
     public static void ShowWindow()
@@ -259,6 +345,13 @@ public class ServerOutputWindow : EditorWindow
         
         // Initialize server processes based on mode
         string modeName = CCCPSettingsAdapter.GetServerMode().ToString();
+        
+        // Set initial tab visibility based on current server mode
+        // Force update even if currentServerMode seems the same (it's empty on first run)
+        string tempCurrentMode = currentServerMode;
+        currentServerMode = ""; // Reset to force update
+        UpdateTabsForServerMode(modeName);
+        
         if (modeName.Equals("CustomServer", StringComparison.OrdinalIgnoreCase))
         {
             InitializeServerCustomProcess();
@@ -1302,7 +1395,20 @@ public class ServerOutputWindow : EditorWindow
     // Public method to select the Database Errors tab
     public void SelectDatabaseErrorsTab()
     {
-        selectedTab = 3; // Index for "Database Errors" tab
+        // Find the Database Errors tab in the current tabs array
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            if (tabs[i] == "Database Errors")
+            {
+                selectedTab = i;
+                needsRepaint = true;
+                Repaint();
+                return;
+            }
+        }
+        
+        // Fallback: if Database Errors tab not found, select the last tab (likely Database All)
+        selectedTab = tabs.Length - 1;
         needsRepaint = true;
         Repaint();
     }
@@ -1314,16 +1420,34 @@ public class ServerOutputWindow : EditorWindow
     {
         string logToShow = "";
         
-        switch (selectedTab)
+        // Validate selectedTab is within bounds
+        if (selectedTab < 0 || selectedTab >= tabs.Length)
         {
-            case 0: // Main All
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Invalid selectedTab {selectedTab}, tabs.Length={tabs.Length}. Resetting to 0.");
+            }
+            selectedTab = 0;
+        }
+        
+        // Determine actual tab type based on current tabs configuration
+        string currentTabName = tabs[selectedTab];
+        
+        if (debugMode)
+        {
+            UnityEngine.Debug.Log($"[ServerOutputWindow] GetLogForCurrentTab: selectedTab={selectedTab}, currentTabName='{currentTabName}', serverMode='{currentServerMode}'");
+        }
+        
+        switch (currentTabName)
+        {
+            case "Module All":
                 if (string.IsNullOrEmpty(moduleLogFull)) {
                     return "(Waiting for new Module logs...)";
                 }
                 logToShow = moduleLogFull;
                 break;
             
-            case 1: // Main Errors Only
+            case "Module Errors":
                 if (string.IsNullOrEmpty(moduleLogFull)) {
                     return "(Waiting for new Module logs...)";
                 }
@@ -1349,14 +1473,14 @@ public class ServerOutputWindow : EditorWindow
                 }
                 break;
             
-            case 2: // Database All
+            case "Database All":
                 if (string.IsNullOrEmpty(databaseLogFull)) {
                     return "(Waiting for new Database logs...)";
                 }
                 logToShow = databaseLogFull;
                 break;
                 
-            case 3: // Database Errors Only
+            case "Database Errors":
                 if (string.IsNullOrEmpty(databaseLogFull)) {
                     return "(Waiting for new Database logs...)";
                 }
@@ -1381,10 +1505,18 @@ public class ServerOutputWindow : EditorWindow
                     return $"Error filtering database logs: {ex.Message}";
                 }
                 break;
+                
+            default:
+                if (debugMode)
+                {
+                    UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Unknown tab selected: '{currentTabName}' (index {selectedTab})");
+                }
+                return $"(Unknown tab selected: '{currentTabName}')";
         }
         
         // Limit log size for performance: more aggressive for database logs
-        int maxLogLength = selectedTab == 2 ? 40000 : MAX_TEXT_LENGTH;
+        bool isDatabaseTab = currentTabName.Contains("Database");
+        int maxLogLength = isDatabaseTab ? 40000 : MAX_TEXT_LENGTH;
         
         if (logToShow.Length > maxLogLength) {
             logToShow = "[... Log Truncated for Performance ...]\n" + 

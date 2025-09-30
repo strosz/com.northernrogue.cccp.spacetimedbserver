@@ -1354,9 +1354,11 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.Space(3);
 
                 if (GUILayout.Button("Launch Official Webpanel"))
-                        Application.OpenURL("https://spacetimedb.com/login");
+                    Application.OpenURL("https://spacetimedb.com/login");
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesMaincloud();
+                if (GUILayout.Button("Launch WSL CLI Installer"))
+                    ServerInstallerWindow.ShowWindow();
 
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
@@ -2840,6 +2842,10 @@ public class ServerWindow : EditorWindow
 
         // Use string representation for consistency with ServerManager
         CCCPSettingsAdapter.SetServerMode((ServerManager.ServerMode)serverMode);
+        
+        // Update ServerOutputWindow tab visibility if window is open
+        ServerOutputWindow.UpdateTabVisibilityForServerMode(serverMode.ToString());
+        
         EditorApplication.delayCall += Repaint;
     }
 
