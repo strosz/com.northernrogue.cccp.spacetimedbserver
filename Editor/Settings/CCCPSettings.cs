@@ -9,6 +9,8 @@ namespace NorthernRogue.CCCP.Editor.Settings {
 [System.Serializable]
 public class CCCPSettings : ScriptableObject
 {
+    public static bool debug = false;
+
     [Header("Server Configuration")]
     public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
     public string userName = "";
@@ -165,24 +167,24 @@ public class CCCPSettings : ScriptableObject
                 {
                     _hasTriedRetryLoad = true;
                     
-                    Debug.LogWarning("Cosmos Cove Control Panel: Initial settings load failed. Scheduling retry after editor initialization...");
+                    if (debug) Debug.LogWarning("Cosmos Cove Control Panel: Initial settings load failed. Scheduling retry after editor initialization...");
                     
                     // Schedule retry after Unity is fully initialized
                     UnityEditor.EditorApplication.delayCall += () => {
                         if (_instance == null) // Only retry if still null
                         {
-                            Debug.Log("Cosmos Cove Control Panel: Retrying settings load...");
+                            if (debug) Debug.Log("Cosmos Cove Control Panel: Retrying settings load...");
                             var retrySettings = CCCPSettingsProvider.GetOrCreateSettings();
                             
                             if (retrySettings != null)
                             {
                                 _instance = retrySettings;
-                                Debug.Log("Cosmos Cove Control Panel: Successfully loaded settings on retry.");
+                                if (debug) Debug.Log("Cosmos Cove Control Panel: Successfully loaded settings on retry.");
                             }
                             else
                             {
-                                Debug.LogWarning("Cosmos Cove Control Panel: Unable to load settings asset after retry. Using temporary in-memory settings.");
-                                Debug.LogWarning("Cosmos Cove Control Panel: Please check if the settings file exists and has a valid .meta file, then restart Unity.");
+                                if (debug) Debug.LogWarning("Cosmos Cove Control Panel: Unable to load settings asset after retry. Using temporary in-memory settings.");
+                                if (debug) Debug.LogWarning("Cosmos Cove Control Panel: Please check if the settings file exists and has a valid .meta file, then restart Unity.");
                                 _instance = ScriptableObject.CreateInstance<CCCPSettings>();
                                 _instance.name = "CCCP Settings (Temporary)";
                             }
@@ -191,16 +193,16 @@ public class CCCPSettings : ScriptableObject
                     
                     // For immediate access, create a temporary instance
                     // This will be replaced by the retry if successful
-                    Debug.Log("Cosmos Cove Control Panel: Using temporary settings instance until retry completes...");
+                    if (debug) Debug.Log("Cosmos Cove Control Panel: Using temporary settings instance until retry completes...");
                     _instance = ScriptableObject.CreateInstance<CCCPSettings>();
                     _instance.name = "CCCP Settings (Temporary - Retry Scheduled)";
                 }
                 else if (_instance == null)
                 {
                     // Final fallback after retry failed
-                    Debug.LogError("Cosmos Cove Control Panel: Unable to create or load settings asset after all attempts.");
-                    Debug.LogError("Cosmos Cove Control Panel: Using temporary in-memory settings. Changes will not be saved.");
-                    Debug.LogError("Cosmos Cove Control Panel: Please check your settings file and .meta file, then restart Unity.");
+                    if (debug) Debug.LogError("Cosmos Cove Control Panel: Unable to create or load settings asset after all attempts.");
+                    if (debug) Debug.LogError("Cosmos Cove Control Panel: Using temporary in-memory settings. Changes will not be saved.");
+                    if (debug) Debug.LogError("Cosmos Cove Control Panel: Please check your settings file and .meta file, then restart Unity.");
                     _instance = ScriptableObject.CreateInstance<CCCPSettings>();
                     _instance.name = "CCCP Settings (Temporary)";
                 }

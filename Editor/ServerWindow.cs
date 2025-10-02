@@ -1590,6 +1590,7 @@ public class ServerWindow : EditorWindow
                 ServerReducerWindow.debugMode = newDebugMode;
                 ServerDetectionProcess.debugMode = newDebugMode;
                 ServerSpacetimeSDKInstaller.debugMode = newDebugMode;
+                CCCPSettings.debug = newDebugMode;
                 CCCPSettingsProvider.debugMode = newDebugMode;
                 CCCPSettingsAdapter.debugMode = newDebugMode;
             }
