@@ -1590,6 +1590,8 @@ public class ServerWindow : EditorWindow
                 ServerReducerWindow.debugMode = newDebugMode;
                 ServerDetectionProcess.debugMode = newDebugMode;
                 ServerSpacetimeSDKInstaller.debugMode = newDebugMode;
+                CCCPSettingsProvider.debugMode = newDebugMode;
+                CCCPSettingsAdapter.debugMode = newDebugMode;
             }
             
             // Debug: Refresh Settings Cache button - only show in debug mode

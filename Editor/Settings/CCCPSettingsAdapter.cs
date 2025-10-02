@@ -16,6 +16,8 @@ namespace NorthernRogue.CCCP.Editor.Settings {
 /// </summary>
 public static class CCCPSettingsAdapter
 {
+    public static bool debugMode = false;
+
     private const string PrefsKeyPrefix = "CCCP_";
     
     // Cached settings instance
@@ -70,7 +72,7 @@ public static class CCCPSettingsAdapter
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"CCCP Settings: Failed to save settings: {ex.Message}");
+                if (debugMode) Debug.LogWarning($"CCCP Settings: Failed to save settings: {ex.Message}");
                 _pendingSave = false;
                 _pendingUISave = false;
             }
@@ -126,7 +128,7 @@ public static class CCCPSettingsAdapter
         catch (System.Exception ex)
         {
             // Log the error but don't let it break the application
-            Debug.LogWarning($"CCCP Settings: Failed to save assets in deferred call: {ex.Message}");
+            if (debugMode) Debug.LogWarning($"CCCP Settings: Failed to save assets in deferred call: {ex.Message}");
             _pendingSave = false; // Reset the flag even if save failed
         }
     }
@@ -162,7 +164,7 @@ public static class CCCPSettingsAdapter
                 catch (System.Exception e)
                 {
                     // Log but don't throw - UI settings save failures shouldn't break the workflow
-                    UnityEngine.Debug.LogWarning($"Failed to save UI settings: {e.Message}");
+                    if (debugMode) Debug.LogWarning($"Failed to save UI settings: {e.Message}");
                 }
             }
             _pendingUISave = false;
@@ -1154,7 +1156,7 @@ public static class CCCPSettingsAdapter
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"Failed to parse modules JSON: {e.Message}");
+            if (debugMode) Debug.LogError($"Failed to parse modules JSON: {e.Message}");
         }
     }
     
@@ -1215,7 +1217,7 @@ public static class CCCPSettingsAdapter
             case "SavedModules": return GetSavedModulesJson();
             case "ServerMode": return GetServerMode().ToString();
             default:
-                Debug.LogWarning($"CCCP: Unknown string key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown string key '{key}' in settings adapter");
                 return defaultValue;
         }
     }
@@ -1264,7 +1266,7 @@ public static class CCCPSettingsAdapter
                     SetServerMode(mode);
                 break;
             default:
-                Debug.LogWarning($"CCCP: Unknown string key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown string key '{key}' in settings adapter");
                 break;
         }
     }
@@ -1334,7 +1336,7 @@ public static class CCCPSettingsAdapter
             case "ServerChangesDetected": return GetServerChangesDetected();
             case "ServerWelcomeWindow_WelcomeWindowShown": return GetWelcomeWindowShown();
             default:
-                Debug.LogWarning($"CCCP: Unknown boolean key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown boolean key '{key}' in settings adapter");
                 return defaultValue;
         }
     }
@@ -1405,7 +1407,7 @@ public static class CCCPSettingsAdapter
             case "ServerChangesDetected": SetServerChangesDetected(value); break;
             case "ServerWelcomeWindow_WelcomeWindowShown": SetWelcomeWindowShown(value); break;
             default:
-                Debug.LogWarning($"CCCP: Unknown boolean key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown boolean key '{key}' in settings adapter");
                 break;
         }
     }
@@ -1425,7 +1427,7 @@ public static class CCCPSettingsAdapter
             case "CustomServerPort": return GetCustomServerPort();
             case "ServerMode": return (int)GetServerMode();
             default:
-                Debug.LogWarning($"CCCP: Unknown integer key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown integer key '{key}' in settings adapter");
                 return defaultValue;
         }
     }
@@ -1445,7 +1447,7 @@ public static class CCCPSettingsAdapter
             case "CustomServerPort": SetCustomServerPort(value); break;
             case "ServerMode": SetServerMode((NorthernRogue.CCCP.Editor.ServerManager.ServerMode)value); break;
             default:
-                Debug.LogWarning($"CCCP: Unknown integer key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown integer key '{key}' in settings adapter");
                 break;
         }
     }
@@ -1462,7 +1464,7 @@ public static class CCCPSettingsAdapter
         {
             case "LogUpdateFrequency": return GetLogUpdateFrequency();
             default:
-                Debug.LogWarning($"CCCP: Unknown float key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown float key '{key}' in settings adapter");
                 return defaultValue;
         }
     }
@@ -1479,7 +1481,7 @@ public static class CCCPSettingsAdapter
         {
             case "LogUpdateFrequency": SetLogUpdateFrequency(value); break;
             default:
-                Debug.LogWarning($"CCCP: Unknown float key '{key}' in settings adapter");
+                if (debugMode) Debug.LogWarning($"CCCP: Unknown float key '{key}' in settings adapter");
                 break;
         }
     }

@@ -9,6 +9,8 @@ namespace NorthernRogue.CCCP.Editor.Settings {
 
 public static class CCCPSettingsProvider
 {
+    public static bool debugMode = false;
+
     private const string DefaultSettingsPath = "Assets/Cosmos Cove Control Panel Settings/CCCPSettings.asset"; // Default settings asset path if not user set
     private const string SettingsPathKey = "CCCP_SettingsPath"; // Where the settings asset is located
     private const string PrefsKeyPrefix = "CCCP_"; // For backwards compatibility with EditorPrefs
@@ -625,7 +627,7 @@ public static class CCCPSettingsProvider
     {
         if (string.IsNullOrEmpty(directoryPath))
         {
-            Debug.LogWarning("Cosmos Cove Control Panel: Directory path is null or empty");
+            if (debugMode) Debug.LogWarning("Cosmos Cove Control Panel: Directory path is null or empty");
             return false;
         }
         
@@ -655,7 +657,7 @@ public static class CCCPSettingsProvider
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create directory using System.IO: {e.Message}");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create directory using System.IO: {e.Message}");
             }
         }
         
@@ -674,7 +676,7 @@ public static class CCCPSettingsProvider
             // Verify we're starting with Assets
             if (currentPath != "Assets")
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Invalid path structure, must start with 'Assets'. Got: {directoryPath}");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Invalid path structure, must start with 'Assets'. Got: {directoryPath}");
                 return false;
             }
             
@@ -682,16 +684,16 @@ public static class CCCPSettingsProvider
             string fullPhysicalPath = Path.Combine(Application.dataPath, directoryPath.Substring("Assets/".Length));
             if (Directory.Exists(fullPhysicalPath))
             {
-                Debug.Log($"Cosmos Cove Control Panel: Directory already exists physically, refreshing AssetDatabase: {directoryPath}");
+                if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Directory already exists physically, refreshing AssetDatabase: {directoryPath}");
                 AssetDatabase.Refresh();
                 System.Threading.Thread.Sleep(200);
                 
                 if (AssetDatabase.IsValidFolder(directoryPath))
                 {
-                    Debug.Log($"Cosmos Cove Control Panel: Directory now recognized by AssetDatabase: {directoryPath}");
+                    if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Directory now recognized by AssetDatabase: {directoryPath}");
                     return true;
                 }
-                Debug.LogWarning($"Cosmos Cove Control Panel: Directory exists physically but not recognized by AssetDatabase: {directoryPath}");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Directory exists physically but not recognized by AssetDatabase: {directoryPath}");
                 // Continue with AssetDatabase.CreateFolder approach
             }
             
@@ -700,25 +702,25 @@ public static class CCCPSettingsProvider
                 string nextPath = currentPath + "/" + pathParts[i];
                 if (!AssetDatabase.IsValidFolder(nextPath))
                 {
-                    Debug.Log($"Cosmos Cove Control Panel: Creating folder: {nextPath}");
+                    if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Creating folder: {nextPath}");
                     string guid = AssetDatabase.CreateFolder(currentPath, pathParts[i]);
                     if (string.IsNullOrEmpty(guid))
                     {
-                        Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create settings folder: {nextPath}");
+                        if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create settings folder: {nextPath}");
                         return false;
                     }
-                    Debug.Log($"Cosmos Cove Control Panel: Successfully created folder: {nextPath} (GUID: {guid})");
+                    if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Successfully created folder: {nextPath} (GUID: {guid})");
                     
                     // Immediately verify the creation was successful
                     if (!AssetDatabase.IsValidFolder(nextPath))
                     {
-                        Debug.LogWarning($"Cosmos Cove Control Panel: Folder creation reported success but validation failed immediately: {nextPath}");
+                        if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Folder creation reported success but validation failed immediately: {nextPath}");
                         // Don't return false here, continue with the process as the folder might exist physically
                     }
                 }
                 else
                 {
-                    Debug.Log($"Cosmos Cove Control Panel: Folder already exists: {nextPath}");
+                    if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Folder already exists: {nextPath}");
                 }
                 currentPath = nextPath;
             }
@@ -734,18 +736,18 @@ public static class CCCPSettingsProvider
             
             if (assetDbValid || physicalExists)
             {
-                Debug.Log($"Cosmos Cove Control Panel: Directory structure successfully created: {directoryPath} (AssetDB: {assetDbValid}, Physical: {physicalExists})");
+                if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Directory structure successfully created: {directoryPath} (AssetDB: {assetDbValid}, Physical: {physicalExists})");
                 return true;
             }
             else
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Directory still doesn't exist after creation attempt: {directoryPath} (AssetDB: {assetDbValid}, Physical: {physicalExists})");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Directory still doesn't exist after creation attempt: {directoryPath} (AssetDB: {assetDbValid}, Physical: {physicalExists})");
                 return false;
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"Cosmos Cove Control Panel: Error creating directory structure: {e.Message}");
+            if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Error creating directory structure: {e.Message}");
             return false;
         }
     }
@@ -769,7 +771,7 @@ public static class CCCPSettingsProvider
             // Check if the file physically exists
             if (File.Exists(physicalPath))
             {
-                Debug.Log($"Cosmos Cove Control Panel: Settings file exists at {physicalPath}, but AssetDatabase hasn't loaded it yet. Attempting to refresh and reload...");
+                if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Settings file exists at {physicalPath}, but AssetDatabase hasn't loaded it yet. Attempting to refresh and reload...");
                 
                 // File exists but AssetDatabase can't load it yet - try refreshing
                 AssetDatabase.Refresh();
@@ -782,7 +784,7 @@ public static class CCCPSettingsProvider
                     
                     if (settings != null)
                     {
-                        Debug.Log($"Cosmos Cove Control Panel: Successfully loaded existing settings after {attempt + 1} attempt(s).");
+                        if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Successfully loaded existing settings after {attempt + 1} attempt(s).");
                         
                         // Check if migration is needed for existing settings that haven't been migrated
                         if (!settings.migratedFromEditorPrefs && HasEditorPrefsSettings())
@@ -804,14 +806,14 @@ public static class CCCPSettingsProvider
                 
                 // If we get here, the file exists but AssetDatabase still can't load it
                 // This is a critical error - we should NOT create a new asset
-                Debug.LogWarning($"Cosmos Cove Control Panel: Settings file exists at {physicalPath} but AssetDatabase cannot load it after {maxAttempts} attempts.");
-                Debug.LogWarning("Cosmos Cove Control Panel: This may indicate a corrupted asset or meta file. Please check the .meta file exists and is valid.");
-                Debug.LogWarning("Cosmos Cove Control Panel: Returning null to prevent overwriting existing settings. Please restart Unity or manually fix the asset.");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Settings file exists at {physicalPath} but AssetDatabase cannot load it after {maxAttempts} attempts.");
+                if (debugMode) Debug.LogWarning("Cosmos Cove Control Panel: This may indicate a corrupted asset or meta file. Please check the .meta file exists and is valid.");
+                if (debugMode) Debug.LogWarning("Cosmos Cove Control Panel: Returning null to prevent overwriting existing settings. Please restart Unity or manually fix the asset.");
                 return null;
             }
             
             // File doesn't exist - we need to create a new settings asset
-            Debug.Log("Cosmos Cove Control Panel: No existing settings file found. Creating new settings asset...");
+            if (debugMode) Debug.Log("Cosmos Cove Control Panel: No existing settings file found. Creating new settings asset...");
             settings = ScriptableObject.CreateInstance<CCCPSettings>();
             
             // Ensure the directory structure exists for the settings file
@@ -821,27 +823,27 @@ public static class CCCPSettingsProvider
             
             if (!EnsureDirectoryExists(directoryPath))
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create directory structure for settings at: {directoryPath}.");
-                Debug.LogWarning("Cosmos Cove Control Panel: Please manually create the directory in your Project window, or change the settings path in Project Settings > Cosmos Cove Control Panel.");
-                Debug.LogWarning($"Cosmos Cove Control Panel: Expected directory: {directoryPath}");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create directory structure for settings at: {directoryPath}.");
+                if (debugMode) Debug.LogWarning("Cosmos Cove Control Panel: Please manually create the directory in your Project window, or change the settings path in Project Settings > Cosmos Cove Control Panel.");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Expected directory: {directoryPath}");
                 return null;
             }
             
             try
             {
                 AssetDatabase.CreateAsset(settings, SettingsPath);
-                Debug.Log($"Cosmos Cove Control Panel: Created new settings asset at {SettingsPath}");
+                if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Created new settings asset at {SettingsPath}");
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Cosmos Cove Control Panel: Error creating settings asset at {SettingsPath}: {e.Message}. Please try to set it manually in the Project Settings.");
+                if (debugMode) Debug.LogError($"Cosmos Cove Control Panel: Error creating settings asset at {SettingsPath}: {e.Message}. Please try to set it manually in the Project Settings.");
                 return null;
             }
             
             // Check if migration is needed for new settings
             if (HasEditorPrefsSettings())
             {
-                Debug.Log("Cosmos Cove Control Panel: Migrating settings from EditorPrefs...");
+                if (debugMode) Debug.Log("Cosmos Cove Control Panel: Migrating settings from EditorPrefs...");
                 MigrateFromEditorPrefs(settings);
                 EditorUtility.SetDirty(settings); // Mark as dirty after migration
             }
@@ -854,7 +856,7 @@ public static class CCCPSettingsProvider
             // Check if migration is needed for existing settings that haven't been migrated
             if (!settings.migratedFromEditorPrefs && HasEditorPrefsSettings())
             {
-                Debug.Log("Cosmos Cove Control Panel: Migrating existing settings from EditorPrefs...");
+                if (debugMode) Debug.Log("Cosmos Cove Control Panel: Migrating existing settings from EditorPrefs...");
                 MigrateFromEditorPrefs(settings);
                 EditorUtility.SetDirty(settings); // Mark as dirty after migration
                 AssetDatabase.SaveAssets();
@@ -884,20 +886,20 @@ public static class CCCPSettingsProvider
             string moveResult = AssetDatabase.MoveAsset(oldPath, newPath);
             if (!string.IsNullOrEmpty(moveResult))
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Failed to move settings file: {moveResult}. Please try to set it manually in the Project Settings.");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Failed to move settings file: {moveResult}. Please try to set it manually in the Project Settings.");
                 EditorUtility.DisplayDialog("Move Failed", 
                     $"Failed to move settings file:\n{moveResult}", "OK");
             }
             else
             {
-                Debug.Log($"Cosmos Cove Control Panel: Settings file moved from {oldPath} to {newPath}");
+                if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Settings file moved from {oldPath} to {newPath}");
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"Cosmos Cove Control Panel: Exception while moving settings file: {e.Message}. Please try to set it manually in the Project Settings.");
+            if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Exception while moving settings file: {e.Message}. Please try to set it manually in the Project Settings.");
             EditorUtility.DisplayDialog("Move Failed", 
                 $"Exception while moving settings file:\n{e.Message}", "OK");
         }
@@ -922,7 +924,7 @@ public static class CCCPSettingsProvider
     /// </summary>
     private static void MigrateFromEditorPrefs(CCCPSettings settings)
     {
-        Debug.Log("Cosmos Cove Control Panel: Migrating settings from EditorPrefs to Settings Provider...");
+        if (debugMode) Debug.Log("Cosmos Cove Control Panel: Migrating settings from EditorPrefs to Settings Provider...");
         
         // Server Configuration
         if (EditorPrefs.HasKey(PrefsKeyPrefix + "ServerMode"))
@@ -963,7 +965,7 @@ public static class CCCPSettingsProvider
                 if (oldFormatWrapper != null && oldFormatWrapper.items != null)
                 {
                     settings.savedModules = oldFormatWrapper.items.ToList();
-                    Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (old format)");
+                    if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (old format)");
                 }
                 else
                 {
@@ -972,13 +974,13 @@ public static class CCCPSettingsProvider
                     if (moduleWrapper != null && moduleWrapper.modules != null)
                     {
                         settings.savedModules = moduleWrapper.modules.ToList();
-                        Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (new format)");
+                        if (debugMode) Debug.Log($"Cosmos Cove Control Panel: Migrated {settings.savedModules.Count} modules from EditorPrefs (new format)");
                     }
                 }
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"Cosmos Cove Control Panel: Failed to migrate saved modules: {e.Message}");
+                if (debugMode) Debug.LogWarning($"Cosmos Cove Control Panel: Failed to migrate saved modules: {e.Message}");
             }
         }
         
@@ -1097,7 +1099,7 @@ public static class CCCPSettingsProvider
         CCCPSettingsAdapter.RefreshSettingsCache();
         CCCPSettings.RefreshInstance();
         
-        Debug.Log("Cosmos Cove Control Panel: Settings migration completed successfully!");
+        if (debugMode) Debug.Log("Cosmos Cove Control Panel: Settings migration completed successfully!");
     }
     
     [System.Serializable]
