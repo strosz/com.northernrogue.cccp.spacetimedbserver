@@ -753,8 +753,65 @@ public static class CCCPSettingsProvider
     public static CCCPSettings GetOrCreateSettings()
     {
         var settings = AssetDatabase.LoadAssetAtPath<CCCPSettings>(SettingsPath);
+        
+        // If settings is null, it could be because:
+        // 1. The asset doesn't exist
+        // 2. AssetDatabase isn't ready yet (common after Library clearing)
+        // 3. The asset path is invalid
         if (settings == null)
         {
+            // Construct physical path properly - handle both Windows and Unity path separators
+            string projectPath = Application.dataPath; // Points to "ProjectRoot/Assets"
+            string projectRoot = Directory.GetParent(projectPath).FullName; // Get "ProjectRoot"
+            string normalizedSettingsPath = SettingsPath.Replace('/', Path.DirectorySeparatorChar);
+            string physicalPath = Path.Combine(projectRoot, normalizedSettingsPath);
+            
+            // Check if the file physically exists
+            if (File.Exists(physicalPath))
+            {
+                Debug.Log($"Cosmos Cove Control Panel: Settings file exists at {physicalPath}, but AssetDatabase hasn't loaded it yet. Attempting to refresh and reload...");
+                
+                // File exists but AssetDatabase can't load it yet - try refreshing
+                AssetDatabase.Refresh();
+                
+                // Try multiple times with small delays to give AssetDatabase time to index
+                const int maxAttempts = 5;
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    settings = AssetDatabase.LoadAssetAtPath<CCCPSettings>(SettingsPath);
+                    
+                    if (settings != null)
+                    {
+                        Debug.Log($"Cosmos Cove Control Panel: Successfully loaded existing settings after {attempt + 1} attempt(s).");
+                        
+                        // Check if migration is needed for existing settings that haven't been migrated
+                        if (!settings.migratedFromEditorPrefs && HasEditorPrefsSettings())
+                        {
+                            MigrateFromEditorPrefs(settings);
+                            EditorUtility.SetDirty(settings);
+                            AssetDatabase.SaveAssets();
+                        }
+                        return settings;
+                    }
+                    
+                    // Wait a bit for AssetDatabase to catch up (only if not the last attempt)
+                    if (attempt < maxAttempts - 1)
+                    {
+                        System.Threading.Thread.Sleep(100); // 100ms delay
+                        AssetDatabase.Refresh(); // Refresh again
+                    }
+                }
+                
+                // If we get here, the file exists but AssetDatabase still can't load it
+                // This is a critical error - we should NOT create a new asset
+                Debug.LogWarning($"Cosmos Cove Control Panel: Settings file exists at {physicalPath} but AssetDatabase cannot load it after {maxAttempts} attempts.");
+                Debug.LogWarning("Cosmos Cove Control Panel: This may indicate a corrupted asset or meta file. Please check the .meta file exists and is valid.");
+                Debug.LogWarning("Cosmos Cove Control Panel: Returning null to prevent overwriting existing settings. Please restart Unity or manually fix the asset.");
+                return null;
+            }
+            
+            // File doesn't exist - we need to create a new settings asset
+            Debug.Log("Cosmos Cove Control Panel: No existing settings file found. Creating new settings asset...");
             settings = ScriptableObject.CreateInstance<CCCPSettings>();
             
             // Ensure the directory structure exists for the settings file
@@ -764,16 +821,16 @@ public static class CCCPSettingsProvider
             
             if (!EnsureDirectoryExists(directoryPath))
             {
-                Debug.LogError($"Cosmos Cove Control Panel: Failed to create directory structure for settings at: {directoryPath}.");
-                Debug.LogError("Cosmos Cove Control Panel: This may be due to Unity's AssetDatabase not being ready during initialization.");
-                Debug.LogError("Cosmos Cove Control Panel: Please manually create the directory in your Project window, or change the settings path in Project Settings > Cosmos Cove Control Panel.");
-                Debug.LogError($"Cosmos Cove Control Panel: Expected directory: {directoryPath}");
+                Debug.LogWarning($"Cosmos Cove Control Panel: Failed to create directory structure for settings at: {directoryPath}.");
+                Debug.LogWarning("Cosmos Cove Control Panel: Please manually create the directory in your Project window, or change the settings path in Project Settings > Cosmos Cove Control Panel.");
+                Debug.LogWarning($"Cosmos Cove Control Panel: Expected directory: {directoryPath}");
                 return null;
             }
             
             try
             {
                 AssetDatabase.CreateAsset(settings, SettingsPath);
+                Debug.Log($"Cosmos Cove Control Panel: Created new settings asset at {SettingsPath}");
             }
             catch (System.Exception e)
             {
@@ -784,6 +841,7 @@ public static class CCCPSettingsProvider
             // Check if migration is needed for new settings
             if (HasEditorPrefsSettings())
             {
+                Debug.Log("Cosmos Cove Control Panel: Migrating settings from EditorPrefs...");
                 MigrateFromEditorPrefs(settings);
                 EditorUtility.SetDirty(settings); // Mark as dirty after migration
             }
@@ -792,9 +850,11 @@ public static class CCCPSettingsProvider
         }
         else
         {
+            // Successfully loaded existing settings
             // Check if migration is needed for existing settings that haven't been migrated
             if (!settings.migratedFromEditorPrefs && HasEditorPrefsSettings())
             {
+                Debug.Log("Cosmos Cove Control Panel: Migrating existing settings from EditorPrefs...");
                 MigrateFromEditorPrefs(settings);
                 EditorUtility.SetDirty(settings); // Mark as dirty after migration
                 AssetDatabase.SaveAssets();

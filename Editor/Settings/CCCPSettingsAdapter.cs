@@ -20,6 +20,16 @@ public static class CCCPSettingsAdapter
     
     // Cached settings instance
     private static CCCPSettings _cachedSettings;
+    
+    // Domain reload handler to refresh cached settings
+    static CCCPSettingsAdapter()
+    {
+        AssemblyReloadEvents.beforeAssemblyReload += () => {
+            // Clear the cached instance so it gets reloaded properly after domain reload
+            _cachedSettings = null;
+        };
+    }
+    
     private static CCCPSettings Settings
     {
         get
