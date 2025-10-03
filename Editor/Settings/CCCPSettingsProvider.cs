@@ -112,19 +112,6 @@ public static class CCCPSettingsProvider
                 {
                     var serializedObject = new SerializedObject(settings);
                     
-                    // Migration section
-                    if (!settings.migratedFromEditorPrefs)
-                    {
-                        EditorGUILayout.HelpBox("Migration from EditorPrefs detected. Click 'Migrate Settings' to transfer your existing settings.", MessageType.Info);
-                        if (GUILayout.Button("Migrate Settings from EditorPrefs"))
-                        {
-                            MigrateFromEditorPrefs(settings);
-                            EditorUtility.SetDirty(settings);
-                            AssetDatabase.SaveAssets();
-                        }
-                        EditorGUILayout.Space();
-                    }
-
                     EditorGUI.indentLevel++;
                     
                     EditorGUILayout.BeginHorizontal();
