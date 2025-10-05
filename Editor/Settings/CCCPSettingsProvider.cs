@@ -120,7 +120,7 @@ public static class CCCPSettingsProvider
                     EditorGUILayout.TextField(SettingsPath);
                     EditorGUI.EndDisabledGroup();
                     
-                    if (GUILayout.Button("Browse...", GUILayout.Width(80)))
+                    if (GUILayout.Button("Save As...", GUILayout.Width(80)))
                     {
                         string currentDirectory = Path.GetDirectoryName(SettingsPath);
                         if (!Directory.Exists(currentDirectory))
@@ -129,7 +129,7 @@ public static class CCCPSettingsProvider
                         }
                         
                         string selectedPath = EditorUtility.SaveFilePanel(
-                            "Select Settings File Location",
+                            "Save Settings As",
                             currentDirectory,
                             "CCCPSettings.asset",
                             "asset"
@@ -141,22 +141,27 @@ public static class CCCPSettingsProvider
                             string relativePath = FileUtil.GetProjectRelativePath(selectedPath);
                             if (!string.IsNullOrEmpty(relativePath))
                             {
-                                // Check if we need to move the existing settings file
-                                if (SettingsPath != relativePath && AssetExists(SettingsPath))
+                                // Check if a file already exists at the target location
+                                if (AssetExists(relativePath))
                                 {
-                                    if (EditorUtility.DisplayDialog("Move Settings File", 
-                                        $"Move existing settings file from:\n{SettingsPath}\n\nto:\n{relativePath}?", 
-                                        "Move", "Keep Current"))
+                                    EditorUtility.DisplayDialog("File Already Exists", 
+                                        $"A settings file already exists at:\n{relativePath}\n\nUse 'Set New Location' if you want to point to an existing settings file.", 
+                                        "OK");
+                                }
+                                else
+                                {
+                                    // Move existing settings to new location
+                                    if (AssetExists(SettingsPath))
                                     {
                                         MoveSettingsFile(SettingsPath, relativePath);
                                     }
+                                    
+                                    SettingsPath = relativePath;
+                                    
+                                    // Refresh the settings reference
+                                    settings = GetOrCreateSettings();
+                                    serializedObject = new SerializedObject(settings);
                                 }
-                                
-                                SettingsPath = relativePath;
-                                
-                                // Refresh the settings reference
-                                settings = GetOrCreateSettings();
-                                serializedObject = new SerializedObject(settings);
                             }
                             else
                             {
@@ -166,24 +171,58 @@ public static class CCCPSettingsProvider
                         }
                     }
                     
-                    if (GUILayout.Button("Reset", GUILayout.Width(60)))
+                    if (GUILayout.Button("Set New Location", GUILayout.Width(120)))
                     {
-                        if (EditorUtility.DisplayDialog("Reset Settings Path", 
-                            "Reset settings path to default location?", "Reset", "Cancel"))
+                        string currentDirectory = Path.GetDirectoryName(SettingsPath);
+                        if (!Directory.Exists(currentDirectory))
                         {
-                            if (SettingsPath != DefaultSettingsPath && AssetExists(SettingsPath))
+                            currentDirectory = Application.dataPath;
+                        }
+                        
+                        string selectedPath = EditorUtility.OpenFilePanel(
+                            "Select Existing Settings File",
+                            currentDirectory,
+                            "asset"
+                        );
+                        
+                        if (!string.IsNullOrEmpty(selectedPath))
+                        {
+                            // Convert absolute path to relative path
+                            string relativePath = FileUtil.GetProjectRelativePath(selectedPath);
+                            if (!string.IsNullOrEmpty(relativePath))
                             {
-                                if (EditorUtility.DisplayDialog("Move Settings File", 
-                                    $"Move existing settings file to default location?\n{DefaultSettingsPath}", 
-                                    "Move", "Keep Current"))
+                                // Check if the selected file is a valid CCCPSettings asset
+                                var testSettings = AssetDatabase.LoadAssetAtPath<CCCPSettings>(relativePath);
+                                if (testSettings != null)
                                 {
-                                    MoveSettingsFile(SettingsPath, DefaultSettingsPath);
+                                    // Ask what to do with the old settings file
+                                    if (SettingsPath != relativePath && AssetExists(SettingsPath))
+                                    {
+                                        if (EditorUtility.DisplayDialog("Delete Old Settings?", 
+                                            $"Delete the old settings file at:\n{SettingsPath}\n\nThe new location will be:\n{relativePath}", 
+                                            "Delete Old", "Keep Old"))
+                                        {
+                                            AssetDatabase.DeleteAsset(SettingsPath);
+                                        }
+                                    }
+                                    
+                                    SettingsPath = relativePath;
+                                    
+                                    // Refresh the settings reference
+                                    settings = GetOrCreateSettings();
+                                    serializedObject = new SerializedObject(settings);
+                                }
+                                else
+                                {
+                                    EditorUtility.DisplayDialog("Invalid Settings File", 
+                                        "The selected file is not a valid CCCP Settings asset.", "OK");
                                 }
                             }
-                            
-                            SettingsPath = DefaultSettingsPath;
-                            settings = GetOrCreateSettings();
-                            serializedObject = new SerializedObject(settings);
+                            else
+                            {
+                                EditorUtility.DisplayDialog("Invalid Path", 
+                                    "The selected path must be within the Assets folder.", "OK");
+                            }
                         }
                     }
                     
