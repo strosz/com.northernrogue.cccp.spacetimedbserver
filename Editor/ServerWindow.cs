@@ -117,6 +117,9 @@ public class ServerWindow : EditorWindow
 
     // Track WSL status
     private bool isWslRunning = false;
+    
+    // Track Docker status
+    private bool isDockerRunning = false;
 
     // Cancellation token source for status checks
     private System.Threading.CancellationTokenSource statusCheckCTS;
@@ -216,7 +219,7 @@ public class ServerWindow : EditorWindow
             subTitleStyle.alignment = TextAnchor.MiddleCenter;
 
             //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
-            if (serverMode == ServerMode.WSLServer)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 EditorGUILayout.LabelField("Local Server Mode", subTitleStyle);
             else if (serverMode == ServerMode.CustomServer)
                 EditorGUILayout.LabelField("Remote Server Mode", subTitleStyle);
@@ -518,7 +521,7 @@ public class ServerWindow : EditorWindow
         } 
         
         // Status checks (awaited)
-        if (serverManager != null && serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
+        if (serverManager != null && (serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer || serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer))
         {
             EditorApplication.delayCall += async () =>
             {
@@ -526,14 +529,26 @@ public class ServerWindow : EditorWindow
                 {
                     if (serverManager != null)
                     {
-                        await serverManager.CheckWslStatus();
-                        isWslRunning = serverManager.IsWslRunning;
+                        if (serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer)
+                        {
+                            await serverManager.CheckDockerStatus();
+                            isDockerRunning = serverManager.IsDockerRunning;
+                        }
+                        else if (serverManager.CurrentServerMode == ServerManager.ServerMode.WSLServer)
+                        {
+                            await serverManager.CheckWslStatus();
+                            isWslRunning = serverManager.IsWslRunning;
+                        }
                         Repaint();
                     }
                 }
                 catch (Exception ex)
                 {
-                    if (serverManager != null && serverManager.DebugMode) UnityEngine.Debug.LogWarning($"Error in WSL status check: {ex.Message}");
+                    if (serverManager != null && serverManager.DebugMode) 
+                    {
+                        string serviceType = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? "Docker" : "WSL";
+                        UnityEngine.Debug.LogWarning($"Error in {serviceType} status check: {ex.Message}");
+                    }
                 }
             };
         }
@@ -1180,15 +1195,18 @@ public class ServerWindow : EditorWindow
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
-                // WSL Status display - add after the Check Pre-requisites button
+                // Status display - show WSL/Docker status based on server mode
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("WSL:", GUILayout.Width(110));
-                Color originalWslColor = connectedStyle.normal.textColor;
-                connectedStyle.normal.textColor = isWslRunning ? originalWslColor : Color.gray;
-                string wslStatusText = isWslRunning ? "RUNNING" : "STOPPED";
-                EditorGUILayout.LabelField(wslStatusText, connectedStyle);
+                string statusLabel = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? "Docker:" : "WSL:";
+                EditorGUILayout.LabelField(statusLabel, GUILayout.Width(110));
+                Color originalStatusColor = connectedStyle.normal.textColor;
+                
+                bool serviceRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
+                connectedStyle.normal.textColor = serviceRunning ? originalStatusColor : Color.gray;
+                string statusText = serviceRunning ? "RUNNING" : "STOPPED";
+                EditorGUILayout.LabelField(statusText, connectedStyle);
                 // Restore the original color after using it
-                connectedStyle.normal.textColor = originalWslColor;
+                connectedStyle.normal.textColor = originalStatusColor;
                 EditorGUILayout.EndHorizontal();
             }
             #endregion
@@ -1539,7 +1557,7 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.EndHorizontal();
 
             // Clear Module and Database Log at Start toggle buttons
-            if ((serverManager.SilentMode && serverMode == ServerMode.WSLServer) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
+            if ((serverManager.SilentMode && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)) || serverMode == ServerMode.CustomServer && serverMode != ServerMode.MaincloudServer)
             {
                 // Module clear log at start toggle button in Silent Mode
                 EditorGUILayout.Space(5);
@@ -1923,20 +1941,24 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
-                if (serverMode == ServerMode.WSLServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
+                if ((serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer) && CLIAvailableLocal()) 
+                    serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
                 #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
-                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
+                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
+                    serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Logout", GUILayout.Height(20)))
             {
-                if (serverMode == ServerMode.WSLServer && CLIAvailableLocal()) serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
+                if ((serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer) && CLIAvailableLocal()) 
+                    serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
                 #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
-                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
+                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
+                    serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))

@@ -702,12 +702,21 @@ public class ServerOutputWindow : EditorWindow
                             if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] SSH log continuation triggered for post-compilation recovery");
                         };
                     }
-                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer || 
+                            serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
                     {
                         EditorApplication.delayCall += () => 
                         {
-                            serverWindow.ForceWSLLogRefresh();
-                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] WSL log refresh triggered for post-compilation recovery");
+                            if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                            {
+                                serverWindow.ForceWSLLogRefresh();
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] WSL log refresh triggered for post-compilation recovery");
+                            }
+                            else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
+                            {
+                                // For Docker mode, we could add ForceDockerLogRefresh if needed
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Docker log refresh triggered for post-compilation recovery");
+                            }
                         };
                     }
                 }
@@ -845,10 +854,19 @@ public class ServerOutputWindow : EditorWindow
                                 serverWindow.ForceSSHLogContinuation();
                                 if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: SSH log continuation triggered");
                             }
-                            else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                            else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer ||
+                                    serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
                             {
-                                serverWindow.ForceWSLLogRefresh();
-                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: WSL log refresh triggered");
+                                if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                                {
+                                    serverWindow.ForceWSLLogRefresh();
+                                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: WSL log refresh triggered");
+                                }
+                                else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
+                                {
+                                    // For Docker mode, we could add ForceDockerLogRefresh if needed
+                                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] ForceRefreshAfterCompilation: Docker log refresh triggered");
+                                }
                             }
                         }
                     }
@@ -1121,13 +1139,25 @@ public class ServerOutputWindow : EditorWindow
                         // Update log size when refresh button is clicked for custom server
                         UpdateLogSizeForCustomServer();
                     }
-                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                    else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer ||
+                            serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
                     {
-                        serverWindow.ForceWSLLogRefresh();
-                        if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered WSL log refresh for WSL server");
-                        
-                        // Update log size when refresh button is clicked for WSL server
-                        UpdateLogSizeForWSLServer();
+                        if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.WSLServer)
+                        {
+                            serverWindow.ForceWSLLogRefresh();
+                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered WSL log refresh for WSL server");
+                            
+                            // Update log size when refresh button is clicked for WSL server
+                            UpdateLogSizeForWSLServer();
+                        }
+                        else if (serverWindow.GetCurrentServerMode() == ServerWindow.ServerMode.DockerServer)
+                        {
+                            // For Docker mode, we could add ForceDockerLogRefresh if needed
+                            if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered Docker log refresh for Docker server");
+                            
+                            // Update log size when refresh button is clicked for Docker server
+                            // UpdateLogSizeForDockerServer(); // Could be added later
+                        }
                     }
                 }
             }

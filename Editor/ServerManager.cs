@@ -18,6 +18,7 @@ public class ServerManager
     
     // Process Handlers
     private ServerWSLProcess wslProcessor;
+    private ServerDockerProcess dockerProcessor;
     private ServerLogProcess logProcessor;
     private ServerVersionProcess versionProcessor;
     private ServerCustomProcess serverCustomProcess;
@@ -314,6 +315,9 @@ public class ServerManager
     // WSL Connection Status
     public bool IsWslRunning => isWslRunning;
     private bool isWslRunning = false;
+    
+    public bool IsDockerRunning => isDockerRunning;
+    private bool isDockerRunning = false;
     private double lastWslCheckTime = 0;
     private const double wslCheckInterval = 5.0;
 
@@ -353,6 +357,7 @@ public class ServerManager
         
         // Initialize the processors
         wslProcessor = new ServerWSLProcess(LogMessage, debugMode);
+        dockerProcessor = new ServerDockerProcess(LogMessage, debugMode);
         serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
         
         // Initialize LogProcessor with callbacks
@@ -661,6 +666,9 @@ public class ServerManager
             case ServerMode.WSLServer:
                 StartWSLServer();
                 break;
+            case ServerMode.DockerServer:
+                StartDockerServer();
+                break;
             case ServerMode.CustomServer:
                 EditorApplication.delayCall += async () => { await StartCustomServer(); };
                 break;
@@ -771,6 +779,114 @@ public class ServerManager
                 isStartingUp = false;
                 SaveServerStateToSessionState(); // Persist state across domain reloads
                 logProcessor.StopLogging();
+                
+                // Update log processor state
+                logProcessor.SetServerRunningState(false);
+            }
+            finally
+            {
+                SafeRepaint();
+            }
+        };
+    }
+
+    private void StartDockerServer()
+    {
+        LogMessage("Start sequence initiated for Docker server. Waiting for confirmation...", 0);
+        
+        EditorApplication.delayCall += async () => {
+            try
+            {
+                // Configure log processor with current settings
+                logProcessor.Configure(ModuleName, ServerDirectory, ClearModuleLogAtStart, ClearDatabaseLogAtStart, "docker");
+                
+                // Check if Docker service is running first
+                bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                if (!dockerServiceRunning)
+                {
+                    LogMessage("Docker service is not running. Attempting to start Docker Desktop...", 0);
+                    bool started = await dockerProcessor.StartDockerService();
+                    if (!started)
+                    {
+                        throw new Exception("Failed to start Docker service. Please start Docker Desktop manually.");
+                    }
+                    
+                    // Wait a moment for Docker service to fully initialize
+                    await Task.Delay(3000);
+                }
+
+                // Start Docker container
+                if (DebugMode) LogMessage("Starting SpacetimeDB Docker container...", 0);
+                Process containerProcess;
+                if (silentMode)
+                {
+                    containerProcess = dockerProcessor.StartSilentServerProcess(ServerDirectory);
+                }
+                else
+                {
+                    containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory);
+                }
+
+                if (containerProcess == null)
+                {
+                    throw new Exception("Failed to start Docker container");
+                }
+
+                LogMessage("Docker Container Started Successfully!", 1);
+                
+                // Wait a moment for container to initialize
+                await Task.Delay(2000);
+                
+                bool containerRunning = await dockerProcessor.CheckDockerProcessAsync(true);
+                
+                if (DebugMode) LogMessage($"Immediate startup verification - Container: {(containerRunning ? "running" : "not running")}", 0);
+                
+                if (containerRunning)
+                {
+                    if (DebugMode) LogMessage("Docker container confirmed running immediately!", 1);
+                    serverStarted = true;
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
+                    serverConfirmedRunning = true;
+                    isStartingUp = false; // Skip the startup grace period since we confirmed container is running
+                    
+                    // Update log processor state
+                    logProcessor.SetServerRunningState(true);
+                    
+                    if (silentMode)
+                    {
+                        // Note: Docker logs would be handled differently than WSL logs
+                        if (debugMode) LogMessage("Docker server started in silent mode.", 1);
+                    }
+                    
+                    // Check ping in background for additional confirmation
+                    _ = Task.Run(async () => {
+                        await Task.Delay(3000); // Give HTTP endpoint time to initialize
+                        bool pingResponding = await PingServerStatusAsync();
+                        if (DebugMode)
+                        {
+                            LogMessage($"Background ping check result: {(pingResponding ? "responding" : "not responding")}", 0);
+                        }
+                    });
+                }
+                else
+                {
+                    LogMessage("Container started, waiting for server to become ready...", 0);
+                    // Mark server as starting up for grace period monitoring
+                    isStartingUp = true;
+                    startupTime = (float)EditorApplication.timeSinceStartup;
+                    serverStarted = true; // Assume starting, CheckServerStatus will verify
+                    SaveServerStateToSessionState(); // Persist state across domain reloads
+                    
+                    // Update log processor state
+                    logProcessor.SetServerRunningState(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error during Docker server start sequence: {ex.Message}", -1);
+                serverStarted = false;
+                isStartingUp = false;
+                SaveServerStateToSessionState(); // Persist state across domain reloads
                 
                 // Update log processor state
                 logProcessor.SetServerRunningState(false);
@@ -923,6 +1039,14 @@ public class ServerManager
             SafeRepaint();
             return;
         }
+        else if (Settings.serverMode == ServerMode.DockerServer)
+        {
+            EditorApplication.delayCall += async () => {
+                await StopDockerServer();
+            };
+            SafeRepaint();
+            return;
+        }
         else if (Settings.serverMode == ServerMode.MaincloudServer)
         {
             StopMaincloudLog();
@@ -1006,6 +1130,82 @@ public class ServerManager
         catch (Exception ex)
         {
             LogMessage($"Error during server stop sequence: {ex.Message}", -1);
+        }
+        finally
+        {
+            // Always clear the stopping flag
+            isStopping = false;
+            SafeRepaint();
+        }
+    }
+
+    private async Task StopDockerServer()
+    {
+        // Set the stopping flag to prevent concurrent stops
+        isStopping = true;
+        
+        try
+        {
+            LogMessage("Stopping SpacetimeDB Docker container...", 0);
+            
+            // Use the dockerProcessor to stop the container
+            bool stopSuccessful = await dockerProcessor.StopServer();
+            
+            if (stopSuccessful)
+            {
+                if (debugMode) LogMessage("Stop commands completed. Verifying container is fully stopped...", 0);
+                
+                // Wait a moment for container to fully stop
+                await Task.Delay(2000);
+                
+                // Verify container is stopped and ping is not responding
+                bool stillRunning = await dockerProcessor.CheckDockerProcessAsync(await dockerProcessor.IsDockerServiceRunning());
+                bool pingStillResponding = await PingServerStatusAsync();
+                
+                if (!stillRunning && !pingStillResponding)
+                {
+                    // Clean shutdown confirmed
+                    serverStarted = false;
+                    isStartingUp = false;
+                    serverConfirmedRunning = false;
+                    serverProcess = null;
+                    justStopped = true;
+                    stopInitiatedTime = EditorApplication.timeSinceStartup;
+                    consecutiveFailedChecks = 0;
+
+                    LogMessage("Docker SpacetimeDB Server Successfully Stopped!", 1);
+                    logProcessor.StopLogging();
+                    logProcessor.SetServerRunningState(false);
+                }
+                else
+                {
+                    if (stillRunning)
+                        LogMessage("Warning: Docker container may still be running.", -1);
+                    if (pingStillResponding)
+                        LogMessage("Warning: Server is still responding to ping requests.", -1);
+                        
+                    // Still mark as stopped since we did our best
+                    serverStarted = false;
+                    isStartingUp = false;
+                    serverConfirmedRunning = false;
+                    serverProcess = null;
+                    justStopped = true;
+                    stopInitiatedTime = EditorApplication.timeSinceStartup;
+                    consecutiveFailedChecks = 0;
+
+                    LogMessage("Stop sequence completed. Check Docker container status manually if needed.", 0);
+                    logProcessor.StopLogging();
+                    logProcessor.SetServerRunningState(false);
+                }
+            }
+            else
+            {
+                LogMessage("Docker stop commands failed or timed out. Container may still be running.", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Error during Docker server stop sequence: {ex.Message}", -1);
         }
         finally
         {
@@ -1306,7 +1506,9 @@ public class ServerManager
                         serverConfirmedRunning = true;
                         justStopped = false;
                         
-                        if (DebugMode) LogMessage($"Server running confirmed ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})", 1);
+                        string serverTypeDesc = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                               Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                        if (DebugMode) LogMessage($"Server running confirmed ({serverTypeDesc})", 1);
 
                         // Update logProcessor state
                         logProcessor.SetServerRunningState(true);
@@ -1318,7 +1520,9 @@ public class ServerManager
                         // Server appears to have stopped - increment failure counter
                         consecutiveFailedChecks++;
                         
-                        if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")}", 0);
+                        string serverTypeDesc = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                               Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                        if (DebugMode) LogMessage($"Server check failed ({consecutiveFailedChecks}/{maxConsecutiveFailuresBeforeStop}) - {serverTypeDesc}", 0);
                           // Only mark as stopped after multiple consecutive failures
                         if (consecutiveFailedChecks >= maxConsecutiveFailuresBeforeStop)
                         {
@@ -1334,7 +1538,9 @@ public class ServerManager
                                 return;
                             }
                             
-                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks and final ping verification ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})";
+                            string serverType = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                                   Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                            string msg = $"SpacetimeDB Server confirmed stopped after {maxConsecutiveFailuresBeforeStop} consecutive failed checks and final ping verification ({serverType})";
                             if (DebugMode) LogMessage(msg, -2);
                             
                             // Update state
@@ -1378,26 +1584,52 @@ public class ServerManager
                     await serverCustomProcess.CheckServerRunning(true);
                     isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                 }                
-                else // WSL and other modes
+                else // WSL, Docker and other modes
                 {
-                    // Use both process check and ping for external recovery detection
-                    bool processRunning = await wslProcessor.CheckWslProcessAsync(IsWslRunning);
-                    bool pingResponding = false;
-                    if (processRunning)
+                    if (Settings.serverMode == ServerMode.DockerServer)
                     {
-                        // If process is running, verify with ping for complete confirmation
-                        pingResponding = await PingServerStatusAsync();
-                        isActuallyRunning = pingResponding; // Only consider it running if both process exists AND ping responds
-                        
-                        if (DebugMode)
+                        // Use Docker process check
+                        bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                        bool processRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                        bool pingResponding = false;
+                        if (processRunning)
                         {
-                            LogMessage($"External recovery check - Process: {(processRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}", 0);
+                            // If Docker container is running, verify with ping for complete confirmation
+                            pingResponding = await PingServerStatusAsync();
+                            isActuallyRunning = pingResponding; // Only consider it running if both container exists AND ping responds
+                            
+                            if (DebugMode)
+                            {
+                                LogMessage($"External recovery check - Docker Container: {(processRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}", 0);
+                            }
+                        }
+                        else
+                        {
+                            isActuallyRunning = false;
+                            if (DebugMode) LogMessage("External recovery check - No spacetimedb Docker container found", 0);
                         }
                     }
-                    else
+                    else // WSL mode
                     {
-                        isActuallyRunning = false;
-                        if (DebugMode) LogMessage("External recovery check - No spacetimedb process found", 0);
+                        // Use both process check and ping for external recovery detection
+                        bool processRunning = await wslProcessor.CheckWslProcessAsync(IsWslRunning);
+                        bool pingResponding = false;
+                        if (processRunning)
+                        {
+                            // If process is running, verify with ping for complete confirmation
+                            pingResponding = await PingServerStatusAsync();
+                            isActuallyRunning = pingResponding; // Only consider it running if both process exists AND ping responds
+                            
+                            if (DebugMode)
+                            {
+                                LogMessage($"External recovery check - Process: {(processRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}", 0);
+                            }
+                        }
+                        else
+                        {
+                            isActuallyRunning = false;
+                            if (DebugMode) LogMessage("External recovery check - No spacetimedb process found", 0);
+                        }
                     }
                 }
 
@@ -1416,7 +1648,9 @@ public class ServerManager
                         if (confirmed)
                         {                            
                             // Detected server running, probably it was already running when Unity started
-                            if (debugMode) LogMessage($"Detected SpacetimeDB running ({(Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : "WSL Server")})", 1);
+                            string serverTypeDesc = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                                   Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                            if (debugMode) LogMessage($"Detected SpacetimeDB running ({serverTypeDesc})", 1);
                             serverStarted = true;
                             SaveServerStateToSessionState(); // Persist state across domain reloads
                             serverConfirmedRunning = true;
@@ -2162,6 +2396,38 @@ public class ServerManager
         {
             if (debugMode) LogMessage($"Exception in CheckWslStatus: {ex.Message}", -1);
             isWslRunning = false;
+        }
+    }
+
+    public async Task CheckDockerStatus()
+    {
+        // Only check periodically to avoid excessive checks
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (currentTime - lastWslCheckTime < wslCheckInterval) // Reuse the same interval
+            return;
+        
+        try
+        {
+            if (dockerProcessor == null)
+            {
+                isDockerRunning = false;
+                return;
+            }
+            
+            // Check if Docker service is running
+            bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+            
+            // Update running status
+            if (isDockerRunning != dockerServiceRunning)
+            {
+                isDockerRunning = dockerServiceRunning;
+                if (debugMode) LogMessage($"Docker status updated to: {(isDockerRunning ? "Running" : "Stopped")}", 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) LogMessage($"Exception in CheckDockerStatus: {ex.Message}", -1);
+            isDockerRunning = false;
         }
     }
 
