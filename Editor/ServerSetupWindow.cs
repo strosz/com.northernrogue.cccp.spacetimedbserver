@@ -17,6 +17,7 @@ public class ServerSetupWindow : EditorWindow
 
     private List<InstallerItem> installerItems = new List<InstallerItem>();
     private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
+    private List<InstallerItem> dockerInstallerItems = new List<InstallerItem>();
     private ServerWSLProcess wslProcess;
     private ServerCustomProcess customProcess;
     private ServerManager serverManager;
@@ -32,8 +33,10 @@ public class ServerSetupWindow : EditorWindow
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Tab selection
-    private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
-    private readonly string[] tabNames = { "WSL Local Setup", "Custom Remote Setup" };
+    private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer, 2 = Docker Setup
+    private string[] tabNames;
+    private bool isAssetStoreBuild => ServerUpdateProcess.IsAssetStoreVersion();
+    private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
 
     // Settings access - no longer store in private variables
     private CCCPSettings Settings => CCCPSettings.Instance;
@@ -99,6 +102,13 @@ public class ServerSetupWindow : EditorWindow
 
     private bool isConnectedSSH = false;
     
+    // Docker installation states
+    private bool isDockerRefreshing = false;
+    private bool hasDocker = false;
+    private bool hasDockerCompose = false;
+    private bool hasDockerImage = false;
+    private ServerDockerProcess dockerProcess;
+    
     // WSL 1 requires unique install logic for Debian apps
     private bool WSL1Installed;
 
@@ -117,7 +127,8 @@ public class ServerSetupWindow : EditorWindow
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 0; // Default to WSL tab
+        window.InitializeTabNames();
+        window.currentTab = 0; // Default to first tab
         window.InitializeInstallerItems();
         window.CheckInstallationStatus();
     }
@@ -126,17 +137,52 @@ public class ServerSetupWindow : EditorWindow
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 1; // Set to Custom SSH tab
+        window.InitializeTabNames();
+        // Set to Custom SSH tab (index depends on distribution type)
+        window.currentTab = window.isAssetStoreBuild ? 0 : 1; // Asset Store: Docker(0) then Custom(0+1), Github: WSL(0), Custom(1), Docker(2)
         window.InitializeInstallerItems();
-        window.CheckCustomInstallationStatus();
+        if (window.currentTab == 1 || (window.isAssetStoreBuild && window.currentTab == 0))
+        {
+            window.CheckCustomInstallationStatus();
+        }
+    }
+    
+    public static void ShowDockerWindow()
+    {
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
+        window.minSize = new Vector2(500, 400);
+        window.InitializeTabNames();
+        // Set to Docker tab (index depends on distribution type)
+        window.currentTab = window.isAssetStoreBuild ? 1 : 2; // Asset Store: Docker(1), Github: Docker(2)
+        window.InitializeInstallerItems();
+        window.CheckDockerPrerequisites();
+    }
+
+    private void InitializeTabNames()
+    {
+        // Initialize tab names based on distribution type
+        if (isAssetStoreBuild)
+        {
+            // Asset Store build: Only Docker and Custom (no WSL for cross-platform compatibility)
+            tabNames = new string[] { "Custom Remote Setup", "Docker Setup" };
+        }
+        else
+        {
+            // GitHub build: All options available
+            tabNames = new string[] { "WSL Local Setup", "Custom Remote Setup", "Docker Setup" };
+        }
     }
 
     #region OnEnable
     private void OnEnable()
     {
+        // Initialize tab names based on distribution type
+        InitializeTabNames();
+        
         // Initialize both processes
         wslProcess = new ServerWSLProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
+        dockerProcess = new ServerDockerProcess(LogMessage, false);
         serverManager = new ServerManager(LogMessage, () => Repaint());
         
         // Check if this is the first time the window is opened
@@ -453,14 +499,72 @@ public class ServerSetupWindow : EditorWindow
                 sectionHeader = "Required Unity Plugin"
             }
         };
+        
+        // Initialize Docker installer items
+        dockerInstallerItems = new List<InstallerItem>
+        {
+            new InstallerItem
+            {
+                title = "Install Docker Desktop",
+                description = "Docker Desktop provides containerization for running SpacetimeDB\n"+
+                "Note: Available for Windows, macOS, and Linux\n"+
+                "Note: Docker Desktop includes Docker Compose",
+                isInstalled = hasDocker,
+                isEnabled = true,
+                installAction = InstallDocker,
+                sectionHeader = "Required Docker Software"
+            },
+            new InstallerItem
+            {
+                title = "Pull SpacetimeDB Docker Image",
+                description = "Downloads the official SpacetimeDB Docker image from Docker Hub\n"+
+                "Note: This may take a few minutes depending on your internet connection",
+                isInstalled = hasDockerImage,
+                isEnabled = hasDocker && hasDockerCompose,
+                installAction = PullSpacetimeDBImage
+            },
+            new InstallerItem
+            {
+                title = "Generate Docker Compose YAML",
+                description = "Creates a docker-compose.yml file with your SpacetimeDB configuration\n"+
+                "Includes module directory mounting and port configuration",
+                isInstalled = false, // Always show as available to regenerate
+                isEnabled = hasDocker && hasDockerCompose,
+                installAction = GenerateDockerComposeYAML
+            },
+            new InstallerItem
+            {
+                title = "Install SpacetimeDB Unity SDK",
+                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
+                "Examples include a network manager that syncs the client state with the database",
+                isInstalled = hasSpacetimeDBUnitySDK,
+                isEnabled = true, // Always enabled as it doesn't depend on Docker
+                installAction = InstallSpacetimeDBUnitySDK,
+                sectionHeader = "Required Unity Plugin"
+            }
+        };
     }
 
     private void UpdateInstallerItemsStatus()
     {
         bool repaintNeeded = false;
 
+        // Determine which tab we're on based on distribution type
+        int wslTabIndex = isAssetStoreBuild ? -1 : 0;
+        int customTabIndex = isAssetStoreBuild ? 0 : 1;
+        int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
+        
         // Update the correct list based on current tab
-        List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+        List<InstallerItem> itemsToUpdate;
+        if (currentTab == wslTabIndex && !isAssetStoreBuild) {
+            itemsToUpdate = installerItems;
+        } else if (currentTab == customTabIndex) {
+            itemsToUpdate = customInstallerItems;
+        } else if (currentTab == dockerTabIndex) {
+            itemsToUpdate = dockerInstallerItems;
+        } else {
+            return; // Invalid tab
+        }
 
         // Reload version information from Settings to ensure we have the latest data
         spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
@@ -631,10 +735,16 @@ public class ServerSetupWindow : EditorWindow
         {
             currentTab = newTab;
             // When switching tabs, check the appropriate installation status
-            if (currentTab == 0) {
+            int wslTabIndex = isAssetStoreBuild ? -1 : 0; // WSL not available in Asset Store
+            int customTabIndex = isAssetStoreBuild ? 0 : 1;
+            int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
+            
+            if (currentTab == wslTabIndex) {
                 CheckInstallationStatus();
-            } else {
+            } else if (currentTab == customTabIndex) {
                 CheckCustomInstallationStatus();
+            } else if (currentTab == dockerTabIndex) {
+                CheckDockerPrerequisites();
             }
             UpdateInstallerItemsStatus();
         }
@@ -685,14 +795,24 @@ public class ServerSetupWindow : EditorWindow
     {
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         
+        // Determine which tab we're on
+        int wslTabIndex = isAssetStoreBuild ? -1 : 0;
+        int customTabIndex = isAssetStoreBuild ? 0 : 1;
+        int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
+        
         // Refresh Button
-        EditorGUI.BeginDisabledGroup(currentTab == 0 ? isRefreshing : isCustomRefreshing);
+        bool isRefreshingCurrentTab = (currentTab == wslTabIndex && isRefreshing) || 
+                                       (currentTab == customTabIndex && isCustomRefreshing) ||
+                                       (currentTab == dockerTabIndex && isDockerRefreshing);
+        EditorGUI.BeginDisabledGroup(isRefreshingCurrentTab);
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(60)))
         {
-            if (currentTab == 0) {
+            if (currentTab == wslTabIndex) {
                 CheckInstallationStatus();
-            } else {
+            } else if (currentTab == customTabIndex) {
                 CheckCustomInstallationStatus();
+            } else if (currentTab == dockerTabIndex) {
+                CheckDockerPrerequisites();
             }
             UpdateInstallerItemsStatus();
         }
@@ -750,26 +870,55 @@ public class ServerSetupWindow : EditorWindow
         // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        GUILayout.Label(currentTab == 0 ? "SpacetimeDB Local WSL Server Installer" : "SpacetimeDB Remote Custom Server Installer", titleStyle);
+        // Determine which tab we're on
+        int wslTabIndex = isAssetStoreBuild ? -1 : 0;
+        int customTabIndex = isAssetStoreBuild ? 0 : 1;
+        int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
         
-        string description = currentTab == 0 ? 
-            "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
-            "You get a local WSL CLI for spacetime commands.\n" +
-            "Required for all server modes to be able to publish your server." :
-            "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
-            "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
-            "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
+        string title;
+        string description;
+        
+        if (currentTab == wslTabIndex) {
+            title = "SpacetimeDB Local WSL Server Installer";
+            description = "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
+                         "You get a local WSL CLI for spacetime commands.\n" +
+                         "Required for all server modes to be able to publish your server.";
+        } else if (currentTab == customTabIndex) {
+            title = "SpacetimeDB Remote Custom Server Installer";
+            description = "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
+                         "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
+                         "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
+        } else if (currentTab == dockerTabIndex) {
+            title = "SpacetimeDB Docker Setup";
+            description = "Setup Docker to run SpacetimeDB in containers.\n" +
+                         "Works on Windows, macOS, and Linux.\n" +
+                         "Includes tools to generate docker-compose.yml with your configuration.";
+        } else {
+            title = "Unknown Tab";
+            description = "";
+        }
 
+        GUILayout.Label(title, titleStyle);
+        
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
 
-        // Show usernameprompt for clarity before SpacetimeDB install
+        // Show usernameprompt for clarity before SpacetimeDB install (WSL and Custom only, not Docker)
         bool showUsernamePrompt = String.IsNullOrEmpty(userName) && 
-            (currentTab == 0 ? (hasWSL && hasDebian) : customProcess.IsSessionActive());
+            ((currentTab == wslTabIndex && hasWSL && hasDebian) || 
+             (currentTab == customTabIndex && customProcess.IsSessionActive()));
         
         if (showUsernamePrompt)
         {
-            List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+            List<InstallerItem> itemsToUpdate;
+            if (currentTab == wslTabIndex) {
+                itemsToUpdate = installerItems;
+            } else if (currentTab == customTabIndex) {
+                itemsToUpdate = customInstallerItems;
+            } else {
+                itemsToUpdate = new List<InstallerItem>(); // Fallback
+            }
+            
             foreach (var item in itemsToUpdate) item.isEnabled = false;
             userNamePrompt = true;
 
@@ -804,9 +953,9 @@ public class ServerSetupWindow : EditorWindow
                 // Use the current event to prevent it from propagating
                 e.Use();
 
-                if (currentTab == 0) {
+                if (currentTab == wslTabIndex) {
                     CheckInstallationStatus();
-                } else {
+                } else if (currentTab == customTabIndex) {
                     CheckCustomInstallationStatus();
                 }
             }
@@ -819,9 +968,9 @@ public class ServerSetupWindow : EditorWindow
                 foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
 
-                if (currentTab == 0) {
+                if (currentTab == wslTabIndex) {
                     CheckInstallationStatus();
-                } else {
+                } else if (currentTab == customTabIndex) {
                     CheckCustomInstallationStatus();
                 }
             }
@@ -839,7 +988,20 @@ public class ServerSetupWindow : EditorWindow
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         
         // Get the appropriate list based on current tab
-        List<InstallerItem> displayItems = currentTab == 0 ? installerItems : customInstallerItems;
+        int wslTabIndex = isAssetStoreBuild ? -1 : 0;
+        int customTabIndex = isAssetStoreBuild ? 0 : 1;
+        int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
+        
+        List<InstallerItem> displayItems;
+        if (currentTab == wslTabIndex && !isAssetStoreBuild) {
+            displayItems = installerItems;
+        } else if (currentTab == customTabIndex) {
+            displayItems = customInstallerItems;
+        } else if (currentTab == dockerTabIndex) {
+            displayItems = dockerInstallerItems;
+        } else {
+            displayItems = new List<InstallerItem>(); // Fallback
+        }
         
         if (displayItems.Count == 0)
         {
@@ -984,12 +1146,17 @@ public class ServerSetupWindow : EditorWindow
         // Add username field for installers that need it
         if (item.hasUsernameField || item.title.Contains("SpacetimeDB Server"))
         {
+            // Determine which tab we're on
+            int wslTabIndex = isAssetStoreBuild ? -1 : 0;
+            int customTabIndex = isAssetStoreBuild ? 0 : 1;
+            int dockerTabIndex = isAssetStoreBuild ? 1 : 2;
+            
             EditorGUILayout.BeginHorizontal();
             string labelText = item.hasUsernameField ? item.usernameLabel : "Install as Username:";
             EditorGUILayout.LabelField(labelText, GUILayout.Width(120));
             EditorGUI.BeginChangeCheck();
             
-            if (currentTab == 0) // For WSL mode, use the regular username
+            if (currentTab == wslTabIndex) // For WSL mode, use the regular username
             {
                 string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
                 if (EditorGUI.EndChangeCheck() && newUserName != userName)
@@ -997,7 +1164,7 @@ public class ServerSetupWindow : EditorWindow
                     CCCPSettingsAdapter.SetUserName(newUserName);
                 }
             }
-            else if (currentTab == 1)
+            else if (currentTab == customTabIndex)
             {
                 if (item.title == "Install User") // Use temp name for Install User
                 {
@@ -1252,6 +1419,49 @@ public class ServerSetupWindow : EditorWindow
         
         isCustomRefreshing = false;
         SetStatus("Remote installation status check complete.", Color.green);
+    }
+    
+    private void CheckDockerPrerequisites()
+    {
+        if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
+        
+        isDockerRefreshing = true;
+        SetStatus("Checking Docker prerequisites...", Color.yellow);
+        
+        // Check Docker prerequisites asynchronously
+        dockerProcess.CheckPrerequisites((docker, compose, image) =>
+        {
+            hasDocker = docker;
+            hasDockerCompose = compose;
+            hasDockerImage = image;
+            
+            // Save to settings
+            CCCPSettingsAdapter.SetHasDocker(hasDocker);
+            CCCPSettingsAdapter.SetHasDockerCompose(hasDockerCompose);
+            CCCPSettingsAdapter.SetHasDockerImage(hasDockerImage);
+            
+            UpdateInstallerItemsStatus();
+            Repaint();
+            
+            isDockerRefreshing = false;
+            
+            if (hasDocker && hasDockerCompose)
+            {
+                SetStatus("Docker prerequisites check complete.", Color.green);
+            }
+            else if (!hasDocker)
+            {
+                SetStatus("Docker is not installed. Please install Docker Desktop.", Color.yellow);
+            }
+            else if (!hasDockerCompose)
+            {
+                SetStatus("Docker Compose is not available.", Color.yellow);
+            }
+            else
+            {
+                SetStatus("Docker prerequisites check complete. SpacetimeDB image not found locally.", Color.yellow);
+            }
+        });
     }
     #endregion
     
@@ -3228,6 +3438,158 @@ public class ServerSetupWindow : EditorWindow
             await customProcess.RefreshSessionStatus();
         }
     }
+    #endregion
+    
+    #region Docker Installation Methods
+    
+    private void InstallDocker()
+    {
+        SetStatus("Opening Docker Desktop download page...", Color.yellow);
+        
+        // Open Docker Desktop download page based on platform
+        string dockerUrl = "https://www.docker.com/products/docker-desktop/";
+        
+        EditorUtility.DisplayDialog("Install Docker Desktop",
+            "Docker Desktop provides containerization for running SpacetimeDB.\n\n" +
+            "You will be redirected to the Docker Desktop download page.\n\n" +
+            "After installation, please restart this window and click Refresh to verify the installation.",
+            "OK");
+        
+        Application.OpenURL(dockerUrl);
+        
+        SetStatus("Docker Desktop download page opened. Please install and restart.", Color.green);
+    }
+    
+    private async void PullSpacetimeDBImage()
+    {
+        SetStatus("Pulling SpacetimeDB Docker image...", Color.yellow);
+        
+        bool result = await dockerProcess.RunPowerShellInstallCommand(
+            "docker pull spacetimedb/spacetimedb:latest",
+            LogMessage,
+            visibleProcess: visibleInstallProcesses,
+            keepWindowOpenForDebug: keepWindowOpenForDebug
+        );
+        
+        if (result)
+        {
+            SetStatus("SpacetimeDB Docker image pulled successfully!", Color.green);
+            hasDockerImage = true;
+            CCCPSettingsAdapter.SetHasDockerImage(true);
+        }
+        else
+        {
+            SetStatus("Failed to pull SpacetimeDB Docker image. Check Docker Desktop is running.", Color.red);
+        }
+        
+        UpdateInstallerItemsStatus();
+        Repaint();
+    }
+    
+    private void GenerateDockerComposeYAML()
+    {
+        SetStatus("Generating Docker Compose YAML...", Color.yellow);
+        
+        // Get server directory from settings or prompt user
+        string serverDir = serverDirectory;
+        if (string.IsNullOrEmpty(serverDir))
+        {
+            serverDir = EditorUtility.OpenFolderPanel("Select SpacetimeDB Server Directory", "", "");
+            if (string.IsNullOrEmpty(serverDir))
+            {
+                SetStatus("Docker Compose generation cancelled.", Color.yellow);
+                return;
+            }
+            CCCPSettingsAdapter.SetServerDirectory(serverDir);
+        }
+        
+        // Create docker-compose.yml content based on SpacetimeDB requirements
+        string dockerComposeContent = GenerateDockerComposeContent(serverDir);
+        
+        // Prompt user for save location
+        string savePath = EditorUtility.SaveFilePanel(
+            "Save Docker Compose File",
+            serverDir,
+            "docker-compose.yml",
+            "yml"
+        );
+        
+        if (string.IsNullOrEmpty(savePath))
+        {
+            SetStatus("Docker Compose generation cancelled.", Color.yellow);
+            return;
+        }
+        
+        try
+        {
+            System.IO.File.WriteAllText(savePath, dockerComposeContent);
+            SetStatus($"Docker Compose file saved to: {savePath}", Color.green);
+            
+            // Show a dialog with next steps
+            EditorUtility.DisplayDialog("Docker Compose Generated",
+                "Docker Compose file has been generated successfully!\n\n" +
+                "Next steps:\n" +
+                "1. Navigate to the directory containing docker-compose.yml\n" +
+                "2. Run: docker-compose up -d\n" +
+                "3. Your SpacetimeDB server will be running on port 3000\n\n" +
+                "To stop: docker-compose down",
+                "OK");
+        }
+        catch (System.Exception ex)
+        {
+            SetStatus($"Error saving Docker Compose file: {ex.Message}", Color.red);
+        }
+    }
+    
+    private string GenerateDockerComposeContent(string serverDir)
+    {
+        // Based on SpacetimeDB requirements from installer items:
+        // - SpacetimeDB Server
+        // - Port 3000
+        // - Volume mounting for server directory
+        // - Optional: Language support (Rust, .NET, TypeScript via Node.js)
+        
+        string normalizedPath = serverDir.Replace("\\", "/");
+        
+        string content = @"version: '3.8'
+
+services:
+  spacetimedb:
+    image: spacetimedb/spacetimedb:latest
+    container_name: spacetimedb-server
+    ports:
+      - ""3000:3000""
+    volumes:
+      - " + normalizedPath + @":/app
+      - spacetimedb-data:/root/.spacetime
+    environment:
+      - SPACETIMEDB_LOG_LEVEL=info
+    restart: unless-stopped
+    command: start --listen-addr 0.0.0.0:3000
+
+volumes:
+  spacetimedb-data:
+    driver: local
+
+# SpacetimeDB Docker Compose Configuration
+# Generated by SpacetimeDB Unity Server Manager
+#
+# Requirements installed in container:
+# - SpacetimeDB Server (included in official image)
+# - Language support varies by module
+#
+# To start: docker-compose up -d
+# To stop: docker-compose down
+# To view logs: docker-compose logs -f
+# To rebuild: docker-compose up -d --build
+#
+# Modules should be placed in: " + normalizedPath + @"
+# Access SpacetimeDB on: http://localhost:3000
+";
+        
+        return content;
+    }
+    
     #endregion
 
     #region Log Messages

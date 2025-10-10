@@ -67,6 +67,11 @@ public class CCCPSettings : ScriptableObject
     public bool hasCustomSpacetimeDBService = false;
     public bool hasCustomSpacetimeDBLogsService = false;
     
+    [Header("Docker Prerequisites Status")]
+    public bool hasDocker = false;
+    public bool hasDockerCompose = false;
+    public bool hasDockerImage = false;
+    
     [Header("Workflow Settings")]
     public bool wslPrerequisitesChecked = false;
     public bool initializedFirstModule = false;

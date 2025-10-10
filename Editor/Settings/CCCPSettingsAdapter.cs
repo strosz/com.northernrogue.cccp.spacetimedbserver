@@ -751,6 +751,36 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static bool GetHasDocker() => Settings.hasDocker;
+    public static void SetHasDocker(bool value) 
+    { 
+        if (Settings.hasDocker != value)
+        {
+            Settings.hasDocker = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static bool GetHasDockerCompose() => Settings.hasDockerCompose;
+    public static void SetHasDockerCompose(bool value) 
+    { 
+        if (Settings.hasDockerCompose != value)
+        {
+            Settings.hasDockerCompose = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static bool GetHasDockerImage() => Settings.hasDockerImage;
+    public static void SetHasDockerImage(bool value) 
+    { 
+        if (Settings.hasDockerImage != value)
+        {
+            Settings.hasDockerImage = value; 
+            SaveSettings(); 
+        }
+    }
+    
     public static bool GetHideWarnings() => Settings.hideWarnings;
     public static void SetHideWarnings(bool value) 
     { 
