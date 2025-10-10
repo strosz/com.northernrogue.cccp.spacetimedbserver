@@ -99,7 +99,7 @@ public class ServerOutputWindow : EditorWindow
     private double lastLogSizeUpdateTime = 0;
     private const double LOG_SIZE_UPDATE_INTERVAL = 10.0; // Update log size every 10 seconds
     private ServerCustomProcess serverCustomProcess;
-    private ServerCMDProcess serverCMDProcess;
+    private ServerWSLProcess wslProcess;
     private ServerManager serverManager;
     
     // Track data changes
@@ -360,7 +360,7 @@ public class ServerOutputWindow : EditorWindow
         }
         else if (modeName.Equals("WslServer", StringComparison.OrdinalIgnoreCase))
         {
-            InitializeServerCMDProcess();
+            InitializewslProcess();
             // Update log size on window open
             UpdateLogSizeForWSLServer();
         }
@@ -418,25 +418,25 @@ public class ServerOutputWindow : EditorWindow
         }
     }
 
-    private void InitializeServerCMDProcess()
+    private void InitializewslProcess()
     {
         try
         {
-            // Get ServerCMDProcess from ServerManager if available
+            // Get wslProcess from ServerManager if available
             if (serverManager != null)
             {
-                serverCMDProcess = serverManager.GetCmdProcessor();
-                if (debugMode && serverCMDProcess != null) 
-                    UnityEngine.Debug.Log("[ServerOutputWindow] ServerCMDProcess instance obtained from ServerManager");
+                wslProcess = serverManager.GetWSLProcessor();
+                if (debugMode && wslProcess != null) 
+                    UnityEngine.Debug.Log("[ServerOutputWindow] wslProcess instance obtained from ServerManager");
             }
             else
             {
-                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerManager not available, cannot get ServerCMDProcess");
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerManager not available, cannot get wslProcess");
             }
         }
         catch (Exception ex)
         {
-            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to initialize ServerCMDProcess: {ex.Message}");
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerOutputWindow] Failed to initialize wslProcess: {ex.Message}");
         }
     }
 
@@ -2050,13 +2050,13 @@ public class ServerOutputWindow : EditorWindow
         
         try
         {
-            // Use the ServerCMDProcess instance from ServerManager
-            if (serverCMDProcess != null)
+            // Use the wslProcess instance from ServerManager
+            if (wslProcess != null)
             {
                 if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Calling WSL log size methods...");
                 
-                float logSize = await serverCMDProcess.GetWSLJournalSize();
-                (float spacetimedbModuleLogsSizeMB, float spacetimedbDatabaseLogsSizeMB) = await serverCMDProcess.GetWSLSpacetimeLogSizes();
+                float logSize = await wslProcess.GetWSLJournalSize();
+                (float spacetimedbModuleLogsSizeMB, float spacetimedbDatabaseLogsSizeMB) = await wslProcess.GetWSLSpacetimeLogSizes();
                 
                 if (debugMode) UnityEngine.Debug.Log($"[ServerOutputWindow] WSL log size results: Journal={logSize:F2}MB, Module={spacetimedbModuleLogsSizeMB:F2}MB, Database={spacetimedbDatabaseLogsSizeMB:F2}MB");
                 
@@ -2079,7 +2079,7 @@ public class ServerOutputWindow : EditorWindow
             }
             else
             {
-                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] ServerCMDProcess is null, cannot get WSL log size");
+                if (debugMode) UnityEngine.Debug.LogWarning("[ServerOutputWindow] wslProcess is null, cannot get WSL log size");
             }
         }
         catch (Exception ex)

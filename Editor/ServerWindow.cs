@@ -18,7 +18,7 @@ public class ServerWindow : EditorWindow
     private ServerManager serverManager;
     
     // Process Handlers
-    private ServerCMDProcess cmdProcessor;
+    private ServerWSLProcess wslProcess;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
     
@@ -133,6 +133,7 @@ public class ServerWindow : EditorWindow
     public enum ServerMode
     {
         WSLServer,
+        DockerServer,
         CustomServer,
         MaincloudServer,
     }
@@ -216,9 +217,9 @@ public class ServerWindow : EditorWindow
 
             //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
             if (serverMode == ServerMode.WSLServer)
-                EditorGUILayout.LabelField("WSL Server Mode", subTitleStyle);
+                EditorGUILayout.LabelField("Local Server Mode", subTitleStyle);
             else if (serverMode == ServerMode.CustomServer)
-                EditorGUILayout.LabelField("Custom Server Mode", subTitleStyle);
+                EditorGUILayout.LabelField("Remote Server Mode", subTitleStyle);
             else if (serverMode == ServerMode.MaincloudServer)
                 EditorGUILayout.LabelField("Maincloud Server Mode", subTitleStyle);
 
@@ -445,10 +446,10 @@ public class ServerWindow : EditorWindow
         serverManager.LoadSettings();
         serverManager.Configure();
         
-        // Initialize cmdProcessor to avoid null reference exceptions
-        if (cmdProcessor == null)
+        // Initialize wslProcess to avoid null reference exceptions
+        if (wslProcess == null)
         {
-            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+            wslProcess = new ServerWSLProcess(LogMessage, debugMode);
         }
 
         // Load server mode from Settings
@@ -751,34 +752,35 @@ public class ServerWindow : EditorWindow
             inactiveToolbarButton.normal.textColor = Color.gray;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            string wslModeTooltip = "Run a local server with SpacetimeDB on Debian WSL";
-            if (GUILayout.Button(new GUIContent("WSL Local", wslModeTooltip), serverMode == ServerMode.WSLServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            string localModeTooltip = "Run a local server with SpacetimeDB";
+            bool isLocalMode = (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer);
+            if (GUILayout.Button(new GUIContent("Local", localModeTooltip), isLocalMode ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverMode == ServerMode.MaincloudServer) // Maincloud is always started so we don't have to check for serverStarted
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
-                    "Do you want to stop your Maincloud log process and change the server mode to WSL Local server?",
+                    "Do you want to stop your Maincloud log process and change the server mode to Local server?",
                     "OK","Cancel");
                     if (modeChange)
                     {
                         serverManager.StopMaincloudLog();
                         if (debugMode) LogMessage("Stopped Maincloud log process before mode switch", 0);
 
-                        serverMode = ServerMode.WSLServer;
+                        serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
                         UpdateServerModeState();
                     }
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
-                    serverMode = ServerMode.WSLServer;
+                    serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
                     UpdateServerModeState();
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                 }
-                // Else we are already in WSL mode and don't have to do anything
+                // Else we are already in Local mode and don't have to do anything
             }
             string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
-            if (GUILayout.Button(new GUIContent("Custom Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverMode == ServerMode.MaincloudServer)
                 {
@@ -787,7 +789,7 @@ public class ServerWindow : EditorWindow
                     ClearModuleLogFile();
                     ClearDatabaseLog();
                 }
-                else if (serverMode == ServerMode.WSLServer)
+                else if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
@@ -799,10 +801,10 @@ public class ServerWindow : EditorWindow
             string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
             if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
-                if (serverMode == ServerMode.WSLServer)
+                if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
                     bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
-                    "Do you want to stop your WSL Local server and change the server mode to Maincloud server?",
+                    "Do you want to stop your Local server and change the server mode to Maincloud server?",
                     "OK","Cancel");
                     if (modeChange)
                     {
@@ -835,6 +837,29 @@ public class ServerWindow : EditorWindow
             #region Shared Settings
             // Shared settings
             GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
+
+            // CLI Provider dropdown (only shown in Local mode)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
+            {
+                EditorGUILayout.BeginHorizontal();
+                string cliProviderTooltip = 
+                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally. \n\n"+
+                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally. Docker is available for Linux, MacOS or Windows. \n\n"+
+                "Both options provide a local development environment.";
+                EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
+                string[] cliProviderOptions = new string[] { "WSL (Windows)", "Docker (Any OS)" };
+                int cliProviderSelectedIndex = serverMode == ServerMode.WSLServer ? 0 : 1;
+                int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions, GUILayout.Width(150));
+                if (newCliProviderSelectedIndex != cliProviderSelectedIndex)
+                {
+                    ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.WSLServer : ServerMode.DockerServer;
+                    serverMode = newMode;
+                    UpdateServerModeState();
+                    LogMessage($"CLI Provider changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
+                }
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(true), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+            }
 
             // Unity Autogenerated files Language dropdown
             EditorGUILayout.BeginHorizontal();
@@ -881,8 +906,8 @@ public class ServerWindow : EditorWindow
             // Module Language dropdown
             EditorGUILayout.BeginHorizontal();
             string serverLangTooltip = 
-            "Rust: The default programming language for SpacetimeDB server modules. You need to install Rust in the Installer Window to be able to Publish.\n\n"+
-            "C-Sharp: The C# programming language for SpacetimeDB server modules. You need to install the .NET SDK in the Installer Window to be able to Publish.\n\n"+
+            "Rust: The default programming language for SpacetimeDB server modules. You need to install Rust in the Setup Window to be able to Publish.\n\n"+
+            "C-Sharp: The C# programming language for SpacetimeDB server modules. You need to install the .NET SDK in the Setup Window to be able to Publish.\n\n"+
             "Recommended: Rust which can be up to 2x faster than C#. If you are more comfortable with C# it will work fine as well.";
             EditorGUILayout.LabelField(new GUIContent("Module Language:", serverLangTooltip), GUILayout.Width(110));
             string[] serverLangOptions = new string[] { "Rust", "C-Sharp"};
@@ -1047,7 +1072,7 @@ public class ServerWindow : EditorWindow
                         InitNewModule();
                         EditorUtility.DisplayDialog("Module Initialized", "The new module has been initialized successfully.", "OK");
                     } else {
-                        EditorUtility.DisplayDialog("Missing Prerequisites", "Please ensure all prerequisites are met and all necessary software has been installed in the Installer Window before initializing a new module.", "OK");
+                        EditorUtility.DisplayDialog("Missing Prerequisites", "Please ensure all prerequisites are met and all necessary software has been installed in the Setup Window before initializing a new module.", "OK");
                     }
                 }
             }
@@ -1055,11 +1080,12 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.EndHorizontal();
             #endregion
 
-            #region WSL Mode
-            if (serverMode == ServerMode.WSLServer)
+            #region Local Mode (WSL or Docker)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
-                // WSL Settings
-                GUILayout.Label("WSL Server Settings", EditorStyles.centeredGreyMiniLabel);
+                // Local Server Settings
+                string modeLabel = serverMode == ServerMode.WSLServer ? "WSL Server Settings" : "Docker Server Settings";
+                GUILayout.Label(modeLabel, EditorStyles.centeredGreyMiniLabel);
 
                 // Backup Directory setting
                 EditorGUILayout.BeginHorizontal();
@@ -1149,8 +1175,8 @@ public class ServerWindow : EditorWindow
                 
                 EditorGUILayout.Space(3);
 
-                if (GUILayout.Button("Launch WSL Server Installer"))
-                        ServerInstallerWindow.ShowWindow();
+                if (GUILayout.Button("Server Setup Window"))
+                        ServerSetupWindow.ShowWindow();
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
@@ -1178,15 +1204,15 @@ public class ServerWindow : EditorWindow
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
                 EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
                 {
-                    if (cmdProcessor == null)
+                    if (wslProcess == null)
                     {
-                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                        wslProcess = new ServerWSLProcess(LogMessage, debugMode);
                     }
                     // Generate SSH key pair with default path and empty passphrase non-interactively
                     string sshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
                     string defaultKeyPath = Path.Combine(sshDir, "id_ed25519");
                     // Create .ssh directory first, then generate the key pair
-                    cmdProcessor.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
+                    wslProcess.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
                 }
                 EditorGUILayout.EndHorizontal();
                 
@@ -1286,8 +1312,8 @@ public class ServerWindow : EditorWindow
                 
                 EditorGUILayout.Space(3);
 
-                if (GUILayout.Button("Launch Custom Server Installer"))
-                    ServerInstallerWindow.ShowCustomWindow();
+                if (GUILayout.Button("Server Setup Window"))
+                    ServerSetupWindow.ShowCustomWindow();
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesCustom();
 
@@ -1328,9 +1354,9 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.LabelField(new GUIContent("Login:",loginTooltip), GUILayout.Width(110));
                 if (GUILayout.Button("Login to Maincloud", GUILayout.Width(150)))
                 {
-                    if (cmdProcessor == null)
+                    if (wslProcess == null)
                     {
-                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                        wslProcess = new ServerWSLProcess(LogMessage, debugMode);
                     }
                     LogoutAndLogin();
                 }
@@ -1357,8 +1383,8 @@ public class ServerWindow : EditorWindow
                     Application.OpenURL("https://spacetimedb.com/login");
                 if (GUILayout.Button("Check Pre-Requisites and Connect", GUILayout.Height(20)))
                     CheckPrerequisitesMaincloud();
-                if (GUILayout.Button("Launch WSL CLI Installer"))
-                    ServerInstallerWindow.ShowWindow();
+                if (GUILayout.Button("Server Setup Window"))
+                    ServerSetupWindow.ShowWindow();
 
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
@@ -1579,12 +1605,12 @@ public class ServerWindow : EditorWindow
                 debugMode = newDebugMode;
                 
                 // Update other components that need to know about debug mode
-                ServerInstallerWindow.debugMode = newDebugMode;
+                ServerSetupWindow.debugMode = newDebugMode;
                 ServerOutputWindow.debugMode = newDebugMode;
                 ServerWindowInitializer.debugMode = newDebugMode;
                 ServerUpdateProcess.debugMode = newDebugMode;
                 ServerLogProcess.debugMode = newDebugMode;
-                ServerCMDProcess.debugMode = newDebugMode;
+                ServerWSLProcess.debugMode = newDebugMode;
                 ServerCustomProcess.debugMode = newDebugMode;
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
@@ -1654,14 +1680,14 @@ public class ServerWindow : EditorWindow
                 {
                     if (!serverRunning)
                     {
-                        if (GUILayout.Button("Start SpacetimeDB WSL", GUILayout.Height(30)))
+                        if (GUILayout.Button("Start SpacetimeDB Local", GUILayout.Height(30)))
                         {
                             serverManager.StartServer();
                         }
                     }
                     else
                     {
-                        if (GUILayout.Button("Stop SpacetimeDB WSL", GUILayout.Height(30)))
+                        if (GUILayout.Button("Stop SpacetimeDB Local", GUILayout.Height(30)))
                         {
                             serverManager.StopServer();
                             CloseDatabaseAndReducerWindow();
@@ -2013,9 +2039,9 @@ public class ServerWindow : EditorWindow
             {
                 if (GUILayout.Button("Test Server Running", GUILayout.Height(20)))
                 {
-                    if (cmdProcessor == null)
+                    if (wslProcess == null)
                     {
-                        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+                        wslProcess = new ServerWSLProcess(LogMessage, debugMode);
                     }
                     // Run the async check and handle result via continuation
                     TestServerRunningAsync();
@@ -2194,13 +2220,13 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        // Ensure cmdProcessor is initialized before use
-        if (cmdProcessor == null)
+        // Ensure wslProcess is initialized before use
+        if (wslProcess == null)
         {
-            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+            wslProcess = new ServerWSLProcess(LogMessage, debugMode);
         }
         
-        cmdProcessor.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
+        wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
             EditorApplication.delayCall += () => {
                 // Update local state for UI
                 hasWSL = wsl;
@@ -2259,11 +2285,11 @@ public class ServerWindow : EditorWindow
                         string.Join("\n", missingSoftware) + "\n" +
                         "Please set the following Pre-Requisites:\n" +
                         string.Join("\n", missingUserSettings),
-                        "Server Installer Window", "Pre-Requisites"
+                        "Server Setup Window", "Pre-Requisites"
                     );
                     if (needsInstallation)
                     {
-                        ServerInstallerWindow.ShowWindow();
+                        ServerSetupWindow.ShowWindow();
                     }
                     else 
                     {
@@ -2949,11 +2975,11 @@ public class ServerWindow : EditorWindow
     // Async helper for Test Server Running button
     private async void TestServerRunningAsync()
     {
-        if (cmdProcessor == null)
+        if (wslProcess == null)
         {
-            cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+            wslProcess = new ServerWSLProcess(LogMessage, debugMode);
         }
-        bool isRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+        bool isRunning = await wslProcess.CheckServerRunning(instantCheck: true);
         if (isRunning)
         {
             LogMessage("SpacetimeDB WSL server is running.", 1);

@@ -17,7 +17,7 @@ public class ServerManager
     private const string SessionKeyIsStartingUp = "ServerManager_IsStartingUp";
     
     // Process Handlers
-    private ServerCMDProcess cmdProcessor;
+    private ServerWSLProcess wslProcessor;
     private ServerLogProcess logProcessor;
     private ServerVersionProcess versionProcessor;
     private ServerCustomProcess serverCustomProcess;
@@ -305,7 +305,7 @@ public class ServerManager
     public bool HasAllPrerequisites => hasAllPrerequisites;
 
     // Process getters
-    public ServerCMDProcess GetCmdProcessor() => cmdProcessor;
+    public ServerWSLProcess GetWSLProcessor() => wslProcessor;
 
     // Callbacks
     public Action<string, int> LogCallback { get; set; }
@@ -335,6 +335,7 @@ public class ServerManager
     public enum ServerMode
     {
         WSLServer,
+        DockerServer,
         CustomServer,
         MaincloudServer,
     }
@@ -351,7 +352,7 @@ public class ServerManager
         RestoreServerStateFromSessionState();
         
         // Initialize the processors
-        cmdProcessor = new ServerCMDProcess(LogMessage, debugMode);
+        wslProcessor = new ServerWSLProcess(LogMessage, debugMode);
         serverCustomProcess = new ServerCustomProcess(LogMessage, debugMode);
         
         // Initialize LogProcessor with callbacks
@@ -359,13 +360,13 @@ public class ServerManager
             LogMessage,
             () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
             () => ServerOutputWindow.RefreshDatabaseLogs(), // Database log update callback - uses high-priority refresh
-            cmdProcessor,
+            wslProcessor,
             serverCustomProcess,
             debugMode
         );
         
         // Initialize VersionProcessor
-        versionProcessor = new ServerVersionProcess(cmdProcessor, LogMessage, debugMode);
+        versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
         
         // Initialize ServerDetectionProcess
         detectionProcess = new ServerDetectionProcess();
@@ -495,9 +496,9 @@ public class ServerManager
         CCCPSettingsAdapter.SetServerMode(mode);
         
         // Clear status cache when changing server modes
-        if (cmdProcessor != null)
+        if (wslProcessor != null)
         {
-            cmdProcessor.ClearStatusCache();
+            wslProcessor.ClearStatusCache();
         }
     }
 
@@ -687,9 +688,9 @@ public class ServerManager
         LogMessage("Start sequence initiated for WSL server. Waiting for confirmation...", 0);
         
         // Clear the status cache since we're starting the server
-        if (cmdProcessor != null)
+        if (wslProcessor != null)
         {
-            cmdProcessor.ClearStatusCache();
+            wslProcessor.ClearStatusCache();
         }
         
         EditorApplication.delayCall += async () => {
@@ -700,7 +701,7 @@ public class ServerManager
                 
                 // Start SpacetimeDB services using systemctl
                 if (DebugMode) LogMessage("Starting SpacetimeDB service...", 0);
-                bool serviceStarted = await cmdProcessor.StartSpacetimeDBServices();
+                bool serviceStarted = await wslProcessor.StartSpacetimeDBServices();
                 if (!serviceStarted)
                 {
                     throw new Exception("Failed to start SpacetimeDB services");
@@ -708,7 +709,7 @@ public class ServerManager
 
                 LogMessage("Server Successfully Started!", 1);
                 
-                bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                bool serviceRunning = await wslProcessor.CheckServerRunning(instantCheck: true);
                 
                 if (DebugMode) LogMessage($"Immediate startup verification - Service: {(serviceRunning ? "active" : "inactive")}", 0);
                 
@@ -867,7 +868,7 @@ public class ServerManager
                 LogMessage,
                 () => { SafeRepaint(); },
                 () => { SafeRepaint(); },
-                cmdProcessor,
+                wslProcessor,
                 serverCustomProcess,
                 debugMode
             );
@@ -938,25 +939,25 @@ public class ServerManager
         try
         {
             // Clear the status cache since we're stopping the server
-            if (cmdProcessor != null)
+            if (wslProcessor != null)
             {
-                cmdProcessor.ClearStatusCache();
+                wslProcessor.ClearStatusCache();
             }
             
             LogMessage("Stopping SpacetimeDB services and processes...", 0);
             
-            // Use the cmdProcessor to stop the services
-            bool stopSuccessful = await cmdProcessor.StopSpacetimeDBServices();
+            // Use the wslProcessor to stop the services
+            bool stopSuccessful = await wslProcessor.StopSpacetimeDBServices();
             
             if (stopSuccessful)
             {
                 if (debugMode) LogMessage("Stop commands completed. Verifying server is fully stopped...", 0);
                 
                 // Clear status cache again and force immediate status check
-                cmdProcessor.ClearStatusCache();
+                wslProcessor.ClearStatusCache();
                 
                 // Check if server is actually stopped (with instant check to bypass cache)
-                bool stillRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                bool stillRunning = await wslProcessor.CheckServerRunning(instantCheck: true);
                 bool pingStillResponding = await PingServerStatusAsync();
                 
                 if (!stillRunning && !pingStillResponding)
@@ -1114,7 +1115,7 @@ public class ServerManager
                 else // WSL and other modes
                 {
                     // Use instantCheck=true to bypass cache during startup for immediate status verification
-                    bool serviceRunning = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                    bool serviceRunning = await wslProcessor.CheckServerRunning(instantCheck: true);
                     
                     // During startup phase, prioritize service status since it's more reliable
                     // Ping can be slow or fail temporarily even when server is actually running
@@ -1184,7 +1185,7 @@ public class ServerManager
                     // Before giving up, do one final service check to be absolutely sure
                     try
                     {
-                        bool finalServiceCheck = await cmdProcessor.CheckServerRunning(instantCheck: true);
+                        bool finalServiceCheck = await wslProcessor.CheckServerRunning(instantCheck: true);
                         if (finalServiceCheck)
                         {
                             LogMessage("Final service check shows server is actually running - recovering!", 1);
@@ -1264,7 +1265,7 @@ public class ServerManager
                 else // WSL and other modes
                 {
                     // Use a combination of service check and HTTP ping for better reliability
-                    bool serviceRunning = await cmdProcessor.CheckServerRunning();
+                    bool serviceRunning = await wslProcessor.CheckServerRunning();
                     bool pingResponding = await PingServerStatusAsync();
                     
                     // Special handling for recently stopped servers
@@ -1380,7 +1381,7 @@ public class ServerManager
                 else // WSL and other modes
                 {
                     // Use both process check and ping for external recovery detection
-                    bool processRunning = await cmdProcessor.CheckWslProcessAsync(IsWslRunning);
+                    bool processRunning = await wslProcessor.CheckWslProcessAsync(IsWslRunning);
                     bool pingResponding = false;
                     if (processRunning)
                     {
@@ -1512,7 +1513,7 @@ public class ServerManager
             else // WSL local commands, Custom Remote publish or Maincloud commands
             {
                 // Errors which causes the command to fail may be needed to be procesed directly in RunServerCommandAsync
-                var result = await cmdProcessor.RunServerCommandAsync(command, ServerDirectory);
+                var result = await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
                 // Display the results in the output log
                 if (!string.IsNullOrEmpty(result.output))
@@ -1867,10 +1868,10 @@ public class ServerManager
             return;
         }
 
-        string wslPath = cmdProcessor.GetWslPath(ServerDirectory);
+        string wslPath = wslProcessor.GetWslPath(ServerDirectory);
         // Combine cd and init command
         string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
-        cmdProcessor.RunWslCommandSilent(command);
+        wslProcessor.RunWslCommandSilent(command);
         LogMessage("New module initialized", 1);
         
         // Reset the detection process tracking
@@ -1910,7 +1911,7 @@ public class ServerManager
                 dbLogProcess.StartInfo.FileName = "cmd.exe";
                 
                 // Build command to show database logs
-                string wslPath = cmdProcessor.GetWslPath(ServerDirectory);
+                string wslPath = wslProcessor.GetWslPath(ServerDirectory);
                 string logCommand = $"cd \"{wslPath}\" && spacetime logs {ModuleName} -f";
                 
                 // Build full command with appropriate escaping
@@ -1938,7 +1939,7 @@ public class ServerManager
     public void OpenDebianWindow()
     {
         bool userNameReq = false;
-        cmdProcessor.OpenDebianWindow(userNameReq);
+        wslProcessor.OpenDebianWindow(userNameReq);
     }
 
     public bool PingServerStatus()
@@ -1970,9 +1971,9 @@ public class ServerManager
 
         try
         {
-            // Use cmdProcessor's synchronous ping method for immediate result with timeout
+            // Use wslProcessor's synchronous ping method for immediate result with timeout
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-            cmdProcessor.PingServer(url, (isOnline, message) => {
+            wslProcessor.PingServer(url, (isOnline, message) => {
                 tcs.TrySetResult(isOnline); // Use TrySetResult to avoid exceptions if timeout occurs
             });
             
@@ -2013,7 +2014,7 @@ public class ServerManager
         }
         if (DebugMode) LogMessage($"Pinging server at {url}...", 0);
         
-        cmdProcessor.PingServer(url, (isOnline, message) => {
+        wslProcessor.PingServer(url, (isOnline, message) => {
             EditorApplication.delayCall += () => {
                 if (isOnline)
                 {
@@ -2412,7 +2413,7 @@ public class ServerManager
         }
         
         // Use RunServerCommandAsync to run the spacetime --version command (mark as status check for silent mode)
-        var result = await cmdProcessor.RunServerCommandAsync("spacetime --version", serverDirectory, true);
+        var result = await wslProcessor.RunServerCommandAsync("spacetime --version", serverDirectory, true);
         
         if (string.IsNullOrEmpty(result.output))
         {
@@ -2451,7 +2452,7 @@ public class ServerManager
             }
         }
 
-        // Also save the tool version for cargo.toml version update in Installer Window
+        // Also save the tool version for cargo.toml version update in Setup Window
         System.Text.RegularExpressions.Match toolMatch = 
             System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
 
@@ -2477,7 +2478,7 @@ public class ServerManager
                 // Only show the update message once per editor session (persists across script recompilations)
                 if (!SessionState.GetBool("SpacetimeDBWSLUpdateMessageShown", false))
                 {
-                    LogMessage($"SpacetimeDB update available for WSL! Click on the Installer Window update button to install. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                    LogMessage($"SpacetimeDB update available for WSL! Click on the Setup Window update button to install. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
                     SessionState.SetBool("SpacetimeDBWSLUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
@@ -2525,7 +2526,7 @@ public class ServerManager
             
             if (updateAvailable && !string.IsNullOrEmpty(latestSDKVersion) && currentSDKVersion != latestSDKVersion)
             {
-                LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Installer Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
             }
             else if (!string.IsNullOrEmpty(latestSDKVersion))
             {
@@ -2552,7 +2553,7 @@ public class ServerManager
         }
         
         // Use RunServerCommandAsync to run the rustup check command (mark as status check for silent mode)
-        var result = await cmdProcessor.RunServerCommandAsync("rustup check", serverDirectory, true);
+        var result = await wslProcessor.RunServerCommandAsync("rustup check", serverDirectory, true);
         
         if (string.IsNullOrEmpty(result.output))
         {
@@ -2643,7 +2644,7 @@ public class ServerManager
             
             if (rustUpdateAvailable)
             {
-                LogMessage($"Rust update available for WSL! Click on the Installer Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
+                LogMessage($"Rust update available for WSL! Click on the Setup Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
                 CCCPSettingsAdapter.SetRustUpdateAvailable(true);
             }
             else
@@ -2659,7 +2660,7 @@ public class ServerManager
             
             if (rustupUpdateAvailable)
             {
-                //LogMessage($"Rustup update available for WSL! Click on the Installer Window update button to install the latest version: {rustupCurrentVersion}", 1);
+                //LogMessage($"Rustup update available for WSL! Click on the Setup Window update button to install the latest version: {rustupCurrentVersion}", 1);
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
             }
             else

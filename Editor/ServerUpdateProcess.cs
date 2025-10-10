@@ -676,8 +676,49 @@ public class ServerUpdateProcess
     #region SpacetimeSDK Update
     public static bool CheckForSpacetimeSDKUpdate()
     {
+        // First, sync the cached latest version with the current installed version
+        // This handles cases where the SDK was updated via Package Manager
+        SyncSpacetimeSDKVersionCache();
+        
+        // Then fetch the latest version from GitHub
         FetchSpacetimeSDKVersionAsync();
         return CCCPSettingsAdapter.GetSpacetimeSDKUpdateAvailable();
+    }
+    
+    /// <summary>
+    /// Syncs the cached latest version with the current installed version.
+    /// If the installed version is newer than the cached latest, updates the cache.
+    /// </summary>
+    private static void SyncSpacetimeSDKVersionCache()
+    {
+        string currentSDKVersion = GetCurrentSDKVersion();
+        string cachedLatestVersion = CCCPSettingsAdapter.GetSpacetimeSDKLatestVersion();
+        
+        if (!string.IsNullOrEmpty(currentSDKVersion) && !string.IsNullOrEmpty(cachedLatestVersion))
+        {
+            int comparison = CompareVersions(currentSDKVersion, cachedLatestVersion);
+            
+            if (comparison > 0)
+            {
+                // Current installed version is newer than cached latest
+                // Update the cache to match (handles Package Manager updates)
+                if (debugMode) Debug.Log($"Syncing SpacetimeDB SDK version cache: Current ({currentSDKVersion}) > Cached ({cachedLatestVersion}). Updating cache.");
+                CCCPSettingsAdapter.SetSpacetimeSDKLatestVersion(currentSDKVersion);
+                CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
+            }
+            else if (comparison == 0)
+            {
+                // Versions match - no update needed
+                CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
+            }
+        }
+        else if (!string.IsNullOrEmpty(currentSDKVersion) && string.IsNullOrEmpty(cachedLatestVersion))
+        {
+            // No cached version, set it to current
+            if (debugMode) Debug.Log($"Initializing SpacetimeDB SDK version cache with current version: {currentSDKVersion}");
+            CCCPSettingsAdapter.SetSpacetimeSDKLatestVersion(currentSDKVersion);
+            CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
+        }
     }
 
     private static void FetchSpacetimeSDKVersionAsync()
@@ -718,17 +759,51 @@ public class ServerUpdateProcess
                     version = version.Substring(1);
                 }
                 
-                spacetimeSDKLatestVersion = version;
-                CCCPSettingsAdapter.SetSpacetimeSDKLatestVersion(spacetimeSDKLatestVersion);
-
-                if (debugMode) Debug.Log($"Latest SpacetimeDB SDK version: {spacetimeSDKLatestVersion}");
-                
-                // Compare with current installed version
+                // Get current installed version
                 string currentSDKVersion = GetCurrentSDKVersion();
-                if (!string.IsNullOrEmpty(currentSDKVersion) && currentSDKVersion != spacetimeSDKLatestVersion)
+                
+                // If the current installed version is newer than or equal to the fetched latest,
+                // update the cached latest to match the current (handles manual Package Manager updates)
+                if (!string.IsNullOrEmpty(currentSDKVersion))
                 {
-                    if (debugMode) Debug.Log($"SpacetimeDB SDK update available! Current: {currentSDKVersion}, Latest: {spacetimeSDKLatestVersion}");
-                    CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(true);
+                    int comparison = CompareVersions(currentSDKVersion, version);
+                    
+                    if (comparison >= 0)
+                    {
+                        // Current version is newer or equal to GitHub latest
+                        // Update cached latest to match current installed version
+                        spacetimeSDKLatestVersion = currentSDKVersion;
+                        if (debugMode) Debug.Log($"Current SpacetimeDB SDK version ({currentSDKVersion}) is up to date or newer than GitHub latest ({version}). Updating cached latest version.");
+                    }
+                    else
+                    {
+                        // GitHub has a newer version
+                        spacetimeSDKLatestVersion = version;
+                        if (debugMode) Debug.Log($"Latest SpacetimeDB SDK version from GitHub: {spacetimeSDKLatestVersion}");
+                    }
+                }
+                else
+                {
+                    // No SDK installed, use the version from GitHub
+                    spacetimeSDKLatestVersion = version;
+                    if (debugMode) Debug.Log($"Latest SpacetimeDB SDK version from GitHub: {spacetimeSDKLatestVersion}");
+                }
+                
+                CCCPSettingsAdapter.SetSpacetimeSDKLatestVersion(spacetimeSDKLatestVersion);
+                
+                // Compare with current installed version for update availability
+                if (!string.IsNullOrEmpty(currentSDKVersion))
+                {
+                    if (CompareVersions(currentSDKVersion, spacetimeSDKLatestVersion) < 0)
+                    {
+                        if (debugMode) Debug.Log($"SpacetimeDB SDK update available! Current: {currentSDKVersion}, Latest: {spacetimeSDKLatestVersion}");
+                        CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(true);
+                    }
+                    else
+                    {
+                        if (debugMode) Debug.Log($"SpacetimeDB SDK is up to date (version {currentSDKVersion})");
+                        CCCPSettingsAdapter.SetSpacetimeSDKUpdateAvailable(false);
+                    }
                 }
                 else
                 {

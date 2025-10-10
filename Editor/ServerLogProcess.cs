@@ -55,7 +55,7 @@ public class ServerLogProcess
     private string serverDirectory = "";
     
     // Reference to the CMD processor for executing commands
-    private ServerCMDProcess cmdProcessor;
+    private ServerWSLProcess wslProcess;
     
     // Reference to the Custom processor for executing SSH commands
     private ServerCustomProcess customProcessor;
@@ -142,7 +142,7 @@ public class ServerLogProcess
     // Read current module from WSL config file
     private async Task<string> GetCurrentWSLModuleAsync()
     {
-        if (cmdProcessor == null || string.IsNullOrEmpty(userName))
+        if (wslProcess == null || string.IsNullOrEmpty(userName))
             return null;
             
         try
@@ -1957,7 +1957,7 @@ public class ServerLogProcess
             return;
         }
 
-        if (cmdProcessor == null)
+        if (wslProcess == null)
         {
             if (debugMode) logCallback?.Invoke("[ServerLogProcess] CMD processor not available for WSL service update", 0);
             return;
@@ -1972,13 +1972,13 @@ public class ServerLogProcess
 
             // Ensure the directory exists and has proper permissions
             string setupCommand = $"mkdir -p $(dirname {configFile}) && chmod 755 $(dirname {configFile})";
-            int setupResult = cmdProcessor.RunWslCommandSilent(setupCommand);
+            int setupResult = wslProcess.RunWslCommandSilent(setupCommand);
             
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Directory setup exit code: {setupResult}", 0);
 
             // Write module name to config file
             string updateConfigCommand = $"echo '{newModuleName}' > {configFile}";
-            int configResult = cmdProcessor.RunWslCommandSilent(updateConfigCommand);
+            int configResult = wslProcess.RunWslCommandSilent(updateConfigCommand);
             
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Config update command exit code: {configResult}", 0);
             
@@ -1998,7 +1998,7 @@ public class ServerLogProcess
                 
                 // Try alternative method with explicit permissions
                 string altCommand = $"echo '{newModuleName}' | tee {configFile} > /dev/null && chmod 644 {configFile}";
-                int altResult = cmdProcessor.RunWslCommandSilent(altCommand);
+                int altResult = wslProcess.RunWslCommandSilent(altCommand);
                 
                 if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Alternative write command exit code: {altResult}", 0);
                 
@@ -2010,7 +2010,7 @@ public class ServerLogProcess
 
             // Restart the service to pick up new module
             string restartCommand = "sudo systemctl restart spacetimedb-logs.service";
-            int restartResult = cmdProcessor.RunWslCommandSilent(restartCommand);
+            int restartResult = wslProcess.RunWslCommandSilent(restartCommand);
             
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Service restart command exit code: {restartResult}", 0);
             
@@ -2054,14 +2054,14 @@ public class ServerLogProcess
         Action<string, int> logCallback, 
         Action onModuleLogUpdated,
         Action onDatabaseLogUpdated,
-        ServerCMDProcess cmdProcessor = null,
+        ServerWSLProcess wslProcess = null,
         ServerCustomProcess customProcessor = null,
         bool debugMode = false)
     {
         this.logCallback = logCallback;
         this.onModuleLogUpdated = onModuleLogUpdated;
         this.onDatabaseLogUpdated = onDatabaseLogUpdated;
-        this.cmdProcessor = cmdProcessor;
+        this.wslProcess = wslProcess;
         this.customProcessor = customProcessor;
         ServerLogProcess.debugMode = debugMode;
         

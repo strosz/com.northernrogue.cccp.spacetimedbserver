@@ -22,10 +22,10 @@ public static class ServerWindowInitializer
         if (autoCloseWsl)
         {
             if (debugMode) UnityEngine.Debug.Log("[ServerWindowInitializer] AutoCloseWsl is enabled. Attempting to close WSL.");
-            ServerCMDProcess cmdProcessor = new ServerCMDProcess((msg, level) => {
+            ServerWSLProcess wslProcess = new ServerWSLProcess((msg, level) => {
                 if (debugMode) UnityEngine.Debug.Log($"[ServerWindowInitializer] {msg}");
             }, debugMode);
-            cmdProcessor.ShutdownWsl();
+            wslProcess.ShutdownWsl();
         }
         return true;
     }

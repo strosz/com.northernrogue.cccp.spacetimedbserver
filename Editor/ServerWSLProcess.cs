@@ -12,7 +12,7 @@ using NorthernRogue.CCCP.Editor.Settings;
 
 namespace NorthernRogue.CCCP.Editor {
 
-public class ServerCMDProcess
+public class ServerWSLProcess
 {
     public static bool debugMode = false;
     
@@ -39,14 +39,14 @@ public class ServerCMDProcess
     // Public property to access cached server status
     public bool cachedServerRunningStatus_Public => cachedServerRunningStatus;
     
-    public ServerCMDProcess(Action<string, int> logCallback, bool debugMode = false)
+    public ServerWSLProcess(Action<string, int> logCallback, bool debugMode = false)
     {
         this.logCallback = logCallback;
-        ServerCMDProcess.debugMode = debugMode;
+        ServerWSLProcess.debugMode = debugMode;
         
         // Load username from Settings
         CCCPSettingsAdapter.GetUserName();
-        if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Initialized with username from Settings: {this.userName}");
+        if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Initialized with username from Settings: {this.userName}");
     }
     
     #region Installation
@@ -56,7 +56,7 @@ public class ServerCMDProcess
         Process process = null;
         try
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug} | RequiresElevation: {requiresElevation}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug} | RequiresElevation: {requiresElevation}");
             
             process = new Process();
             
@@ -100,7 +100,7 @@ public class ServerCMDProcess
                 
                 process.StartInfo.Arguments = $"/C \"{tempBatchFile}\"";
                 
-                if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Created batch file: {tempBatchFile} with command: {command}");
+                if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Created batch file: {tempBatchFile} with command: {command}");
             }
             else // Hidden execution
             {
@@ -123,7 +123,7 @@ public class ServerCMDProcess
 
                     // $ProgressPreference ensures Start-Process doesn't hang on progress bars for some commands
                     commandToExecute = $"$ProgressPreference = 'SilentlyContinue'; try {{ $process = Start-Process -FilePath '{escapedExe}' -ArgumentList '{escapedArgs}' -Verb RunAs -Wait -PassThru; exit $process.ExitCode; }} catch {{ Write-Error $_; exit 1; }}";
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Elevated command for hidden execution: {commandToExecute}");
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Elevated command for hidden execution: {commandToExecute}");
                 }
                 
                 // Important: Escape double quotes for the -Command argument string itself
@@ -148,8 +148,8 @@ public class ServerCMDProcess
             int exitCode = process.ExitCode;
 
             if (debugMode && !visibleProcess) {
-                if (!string.IsNullOrEmpty(outputLog)) UnityEngine.Debug.Log($"[ServerCMDProcess] Output: {outputLog}");
-                if (!string.IsNullOrEmpty(errorLog)) UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Error: {errorLog}");
+                if (!string.IsNullOrEmpty(outputLog)) UnityEngine.Debug.Log($"[ServerWSLProcess] Output: {outputLog}");
+                if (!string.IsNullOrEmpty(errorLog)) UnityEngine.Debug.LogWarning($"[ServerWSLProcess] Error: {errorLog}");
             }
             
             if (exitCode == 0)
@@ -164,16 +164,16 @@ public class ServerCMDProcess
                 if (visibleProcess)
                 {
                     if (debugMode) statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' window was closed. Check installation status to verify success.", 0);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Visible process exited with code {exitCode} - likely manual window closure");
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Visible process exited with code {exitCode} - likely manual window closure");
                     return true; // Return true to avoid error messages, let the caller verify actual installation status
                 }
                 else
                 {
                     if (debugMode) statusCallback?.Invoke($"Command '{command.Split(' ')[0]}...' failed with exit code {exitCode}. Check console/window for details.", -1);
                     if (!string.IsNullOrEmpty(errorLog)) {
-                         UnityEngine.Debug.LogError($"[ServerCMDProcess] Hidden command failed. Error stream: {errorLog}");
+                         UnityEngine.Debug.LogError($"[ServerWSLProcess] Hidden command failed. Error stream: {errorLog}");
                     } else if (!string.IsNullOrEmpty(outputLog)) {
-                         UnityEngine.Debug.LogWarning($"[ServerCMDProcess] Hidden command failed. Output stream: {outputLog}");
+                         UnityEngine.Debug.LogWarning($"[ServerWSLProcess] Hidden command failed. Output stream: {outputLog}");
                     }
                     return false;
                 }
@@ -183,7 +183,7 @@ public class ServerCMDProcess
         {
             string commandExcerpt = command.Length > 50 ? command.Substring(0, 50) + "..." : command;
             statusCallback?.Invoke($"Error executing command '{commandExcerpt}': {ex.Message}", -1);
-            UnityEngine.Debug.LogError($"[ServerCMDProcess] Exception: {ex}");
+            UnityEngine.Debug.LogError($"[ServerWSLProcess] Exception: {ex}");
             return false;
         }
         finally
@@ -212,7 +212,7 @@ public class ServerCMDProcess
             
             if (!shouldSuppressErrors)
             {
-                logCallback("[ServerCMDProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
+                logCallback("[ServerWSLProcess] No Debian username set. Please set a valid username in the Server Window.", -1);
             }
             return false;
         }
@@ -1033,7 +1033,7 @@ public class ServerCMDProcess
             // Combine output and error for parsing
             string fullOutput = output + error;
             
-            //if (debugMode) UnityEngine.Debug.Log($"[ServerCMDProcess] Ping result: {fullOutput}");
+            //if (debugMode) UnityEngine.Debug.Log($"[ServerWSLProcess] Ping result: {fullOutput}");
             
             // Check if server is online by looking for "Server is online" in the output
             bool isOnline = fullOutput.Contains("Server is online");
@@ -1059,7 +1059,7 @@ public class ServerCMDProcess
         }
         catch (Exception ex)
         {
-            if (debugMode) UnityEngine.Debug.LogError($"[ServerCMDProcess] Error pinging server: {ex.Message}");
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerWSLProcess] Error pinging server: {ex.Message}");
             callback(false, $"Error pinging server: {ex.Message}");
         }
     }

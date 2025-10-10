@@ -7,17 +7,17 @@ using System.IO;
 using System.Text.RegularExpressions;
 using NorthernRogue.CCCP.Editor.Settings;
 
-// Check and install everything necessary to run SpacetimeDB with this window ///
+// Check and setup everything necessary to run SpacetimeDB with this window ///
 
 namespace NorthernRogue.CCCP.Editor {
 
-public class ServerInstallerWindow : EditorWindow
+public class ServerSetupWindow : EditorWindow
 {
     public static bool debugMode = false; // Set in ServerWindow
 
     private List<InstallerItem> installerItems = new List<InstallerItem>();
     private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
-    private ServerCMDProcess cmdProcess;
+    private ServerWSLProcess wslProcess;
     private ServerCustomProcess customProcess;
     private ServerManager serverManager;
 
@@ -33,7 +33,7 @@ public class ServerInstallerWindow : EditorWindow
     
     // Tab selection
     private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
-    private readonly string[] tabNames = { "WSL Local Installer", "Custom Remote Installer" };
+    private readonly string[] tabNames = { "WSL Local Setup", "Custom Remote Setup" };
 
     // Settings access - no longer store in private variables
     private CCCPSettings Settings => CCCPSettings.Instance;
@@ -112,10 +112,10 @@ public class ServerInstallerWindow : EditorWindow
     // Settings
     private bool updateCargoToml = false;
 
-    [MenuItem("Window/SpacetimeDB Server Manager/2. Installer Window")]
+    [MenuItem("Window/SpacetimeDB Server Manager/2. Setup Window")]
     public static void ShowWindow()
     {
-        ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
         window.currentTab = 0; // Default to WSL tab
         window.InitializeInstallerItems();
@@ -124,7 +124,7 @@ public class ServerInstallerWindow : EditorWindow
     
     public static void ShowCustomWindow()
     {
-        ServerInstallerWindow window = GetWindow<ServerInstallerWindow>("Server Installer");
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
         window.currentTab = 1; // Set to Custom SSH tab
         window.InitializeInstallerItems();
@@ -135,7 +135,7 @@ public class ServerInstallerWindow : EditorWindow
     private void OnEnable()
     {
         // Initialize both processes
-        cmdProcess = new ServerCMDProcess(LogMessage, false);
+        wslProcess = new ServerWSLProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
         serverManager = new ServerManager(LogMessage, () => Repaint());
         
@@ -145,8 +145,8 @@ public class ServerInstallerWindow : EditorWindow
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
                 bool continuePressed = EditorUtility.DisplayDialog(
-                    "SpacetimeDB Automatic Installer",
-                    "Welcome to the installer window that checks and installs everything needed for your Windows PC to run SpacetimeDB from the ground up.\n\n" +
+                    "SpacetimeDB Setup Window",
+                    "Welcome to the setup window that checks and installs everything needed for your Windows PC to run SpacetimeDB from the ground up.\n\n" +
                     "All named software in this window is official and publicly available software owned by their respective parties.\n" +
                     "By proceeding, you agree to the terms and licenses of each installed component. For detailed licensing information, see 'Third Party Notices.md' in your package folder.\n" +
                     "A manual installation process is in the documentation.",
@@ -753,12 +753,12 @@ public class ServerInstallerWindow : EditorWindow
         GUILayout.Label(currentTab == 0 ? "SpacetimeDB Local WSL Server Installer" : "SpacetimeDB Remote Custom Server Installer", titleStyle);
         
         string description = currentTab == 0 ? 
-            "Install all the required software to run your local SpacetimeDB Server in WSL from the ground up.\n" +
-            "You get a local CLI for spacetime commands.\n" +
+            "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
+            "You get a local WSL CLI for spacetime commands.\n" +
             "Required for all server modes to be able to publish your server." :
-            "Install all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
+            "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
             "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
-            "Note: The Local WSL installation is required to be able to publish to your remote server.";
+            "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
 
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
@@ -1104,7 +1104,7 @@ public class ServerInstallerWindow : EditorWindow
             UpdateInstallerItemsStatus();
         });
         
-        cmdProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk) => {
+        wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netsdk) => {
             hasWSL = wsl;
             hasDebian = debian;
             hasDebianTrixie = trixie;
@@ -1291,11 +1291,11 @@ public class ServerInstallerWindow : EditorWindow
                 string dismCommand = "powershell.exe -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'\"";
                 string wsl1SetupCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 1 && wsl --install -d Debian\"";
 
-                bool dismSuccess = await cmdProcess.RunPowerShellInstallCommand(dismCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                bool dismSuccess = await wslProcess.RunPowerShellInstallCommand(dismCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 if (dismSuccess)
                 {
                     SetStatus("DISM successful. Proceeding with WSL1 setup...", Color.yellow);
-                    installedSuccessfully = await cmdProcess.RunPowerShellInstallCommand(wsl1SetupCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                    installedSuccessfully = await wslProcess.RunPowerShellInstallCommand(wsl1SetupCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 }
                 else
                 {
@@ -1324,7 +1324,7 @@ public class ServerInstallerWindow : EditorWindow
                         );
                         // Launch visible Debian window without username required
                         bool userNameReq = false;
-                        cmdProcess.OpenDebianWindow(userNameReq);
+                        wslProcess.OpenDebianWindow(userNameReq);
                     }
                     else
                     {
@@ -1354,7 +1354,7 @@ public class ServerInstallerWindow : EditorWindow
             "Yes", "No"))
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
-                await cmdProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
+                await wslProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
                 CheckInstallationStatus();
                 if (hasWSL && hasDebian)
                 {
@@ -1370,7 +1370,7 @@ public class ServerInstallerWindow : EditorWindow
                     {
                         // If the user proceeds, we will open Debian without username required
                         bool userNameReq = false;
-                        cmdProcess.OpenDebianWindow(userNameReq);
+                        wslProcess.OpenDebianWindow(userNameReq);
                     }
 
                     SetStatus("WSL2 with Debian installed successfully.", Color.green);
@@ -1418,7 +1418,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // Step 1: Update
         string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateSuccess)
         {
             SetStatus("Failed to update Debian. Trixie installation aborted.", Color.red);
@@ -1429,7 +1429,7 @@ public class ServerInstallerWindow : EditorWindow
         // Step 2: Upgrade
         SetStatus("Installing Debian Trixie Update - Step 2: apt upgrade", Color.yellow);
         string upgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt upgrade -y\"";
-        bool upgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool upgradeSuccess = await wslProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!upgradeSuccess)
         {
             // It's common to get a failed install here, but the install process will work anyway
@@ -1440,7 +1440,7 @@ public class ServerInstallerWindow : EditorWindow
         // Step 3: Install update-manager-core
         SetStatus("Installing Debian Trixie Update - Step 3: install update-manager-core", Color.yellow);
         string coreCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y update-manager-core\"";
-        bool coreSuccess = await cmdProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool coreSuccess = await wslProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!coreSuccess)
         {
             // It's common to get a failed install here, but the install process will work anyway
@@ -1451,7 +1451,7 @@ public class ServerInstallerWindow : EditorWindow
         // Step 4: Change sources.list to trixie
         SetStatus("Installing Debian Trixie Update - Step 4: update sources to Trixie", Color.yellow);
         string sourcesCommand = "wsl -d Debian -u root bash -c \"sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
-        bool sourcesSuccess = await cmdProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool sourcesSuccess = await wslProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!sourcesSuccess)
         {
             SetStatus("Failed to update sources.list. Trixie installation aborted.", Color.red);
@@ -1462,7 +1462,7 @@ public class ServerInstallerWindow : EditorWindow
         // Step 5: Update again for Trixie
         SetStatus("Installing Debian Trixie Update - Step 5: update package lists for Trixie", Color.yellow);
         string updateTrixieCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateTrixieSuccess = await cmdProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool updateTrixieSuccess = await wslProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateTrixieSuccess)
         {
             SetStatus("Failed to update package lists for Trixie. Installation aborted.", Color.red);
@@ -1473,7 +1473,7 @@ public class ServerInstallerWindow : EditorWindow
         // Step 6: Full upgrade
         SetStatus("Installing Debian Trixie Update - Step 6: performing full upgrade to Trixie", Color.yellow);
         string fullUpgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt full-upgrade -y\"";
-        bool fullUpgradeSuccess = await cmdProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool fullUpgradeSuccess = await wslProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!fullUpgradeSuccess)
         {
             CheckInstallationStatus();
@@ -1490,11 +1490,11 @@ public class ServerInstallerWindow : EditorWindow
         SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
 
         // WSL Shutdown
-        cmdProcess.ShutdownWsl();
+        wslProcess.ShutdownWsl();
         await Task.Delay(3000); // Longer wait for shutdown
 
         // Restart WSL
-        cmdProcess.StartWsl();
+        wslProcess.StartWsl();
         SetStatus("WSL restarted. Checking installation status...", Color.green);
         await Task.Delay(5000); // Longer wait for startup
         CheckInstallationStatus();
@@ -1524,7 +1524,7 @@ public class ServerInstallerWindow : EditorWindow
         
         string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
         SetStatus("Running: apt update", Color.yellow);
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(
+        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(
             updateCommand, 
             LogMessage, 
             visibleInstallProcesses, 
@@ -1542,7 +1542,7 @@ public class ServerInstallerWindow : EditorWindow
         // Now install curl
         string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing curl...' && sudo apt install -y curl\"";
         SetStatus("Running: apt install -y curl", Color.yellow);
-        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
             installCommand, 
             LogMessage, 
             visibleInstallProcesses, 
@@ -1616,8 +1616,8 @@ public class ServerInstallerWindow : EditorWindow
         // Command to install SpacetimeDB Server
         string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"echo y | curl -sSf https://install.spacetimedb.com | sh\"";
 
-        // Use the ServerCMDProcess method to run the PowerShell command
-        bool success = await cmdProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        // Use the ServerwslProcess method to run the PowerShell command
+        bool success = await wslProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         
         if (success)
         {
@@ -1659,12 +1659,12 @@ public class ServerInstallerWindow : EditorWindow
         
         SetStatus("Installing SpacetimeDB PATH...", Color.green);
         
-        // Use the ServerCMDProcess method to run the PowerShell command
+        // Use the ServerwslProcess method to run the PowerShell command
         string command = string.Format(
             "wsl -d Debian -u {0} bash -c \"echo \\\"export PATH=/home/{0}/.local/bin:\\$PATH\\\" >> ~/.bashrc\"",
             userName
         );
-        bool success = await cmdProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool success = await wslProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
 
         if (success)
         {
@@ -1923,7 +1923,7 @@ public class ServerInstallerWindow : EditorWindow
             
             // Execute the script via WSL
             string command = $"wsl -d Debian -u {userName} bash {wslScriptPath}";
-              bool success = await cmdProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+              bool success = await wslProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
             
             if (success)
             {
@@ -2003,7 +2003,7 @@ public class ServerInstallerWindow : EditorWindow
         {
             SetStatus($"Updating Rust from v{rustCurrentVersion} to v{rustLatestVersion} - Running rustup update", Color.yellow);
             string rustUpdateCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\" && rustup update\"";
-            bool rustUpdateSuccess = await cmdProcess.RunPowerShellInstallCommand(rustUpdateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+            bool rustUpdateSuccess = await wslProcess.RunPowerShellInstallCommand(rustUpdateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
             
             if (rustUpdateSuccess)
             {
@@ -2030,7 +2030,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // First update package list
         string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateSuccess)
         {
             SetStatus("Failed to update package list. Rust installation aborted.", Color.red);
@@ -2041,7 +2041,7 @@ public class ServerInstallerWindow : EditorWindow
         // Then install Rust using rustup
         SetStatus("Installing Rust - Step 2: Installing rustup", Color.yellow);
         string rustInstallCommand = $"wsl -d Debian -u {userName} bash -c \"echo 1 | curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\"";
-        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installSuccess)
         {
             if (WSL1Installed)
@@ -2056,7 +2056,7 @@ public class ServerInstallerWindow : EditorWindow
         // Source the cargo environment
         SetStatus("Installing Rust - Step 3: Setting up Rust environment", Color.yellow);
         string sourceCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\"\"";
-        bool sourceSuccess = await cmdProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool sourceSuccess = await wslProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!sourceSuccess)
         {   
             if (WSL1Installed)
@@ -2071,7 +2071,7 @@ public class ServerInstallerWindow : EditorWindow
         // Install build-essential package
         SetStatus("Installing Rust - Step 4: Installing build-essential", Color.yellow);
         string buildEssentialCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y build-essential\"";
-        bool buildEssentialSuccess = await cmdProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool buildEssentialSuccess = await wslProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!buildEssentialSuccess)
         {
             CheckInstallationStatus(); // If failed to install build-essential, we still check if Rust is installed
@@ -2126,7 +2126,7 @@ public class ServerInstallerWindow : EditorWindow
         
         // First update package list
         string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateSuccess)
         {
             SetStatus("Failed to update package list. .NET SDK 8.0 installation aborted.", Color.red);
@@ -2137,7 +2137,7 @@ public class ServerInstallerWindow : EditorWindow
         // Install required packages for .NET SDK
         SetStatus("Installing .NET SDK 8.0 - Step 2: Installing required packages", Color.yellow);
         string prereqCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y wget\"";
-        bool prereqSuccess = await cmdProcess.RunPowerShellInstallCommand(prereqCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool prereqSuccess = await wslProcess.RunPowerShellInstallCommand(prereqCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!prereqSuccess)
         {
             SetStatus("Failed to install prerequisites for .NET SDK 8.0. Installation aborted.", Color.red);
@@ -2148,7 +2148,7 @@ public class ServerInstallerWindow : EditorWindow
         // Download Microsoft package signing key
         SetStatus("Installing .NET SDK 8.0 - Step 3: Adding Microsoft package signing key", Color.yellow);
         string keyCommand = $"wsl -d Debian -u {userName} bash -c \"wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb\"";
-        bool keySuccess = await cmdProcess.RunPowerShellInstallCommand(keyCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool keySuccess = await wslProcess.RunPowerShellInstallCommand(keyCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!keySuccess)
         {
             if (WSL1Installed) // WSL1 continues despite if some commands are unsuccessful
@@ -2164,7 +2164,7 @@ public class ServerInstallerWindow : EditorWindow
         // Install Microsoft package
         SetStatus("Installing .NET SDK 8.0 - Step 4: Installing Microsoft package repository", Color.yellow);
         string installMSPackageCommand = $"wsl -d Debian -u {userName} bash -c \"sudo dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb\"";
-        bool installMSPackageSuccess = await cmdProcess.RunPowerShellInstallCommand(installMSPackageCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool installMSPackageSuccess = await wslProcess.RunPowerShellInstallCommand(installMSPackageCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!installMSPackageSuccess)
         {
             if (WSL1Installed)
@@ -2180,7 +2180,7 @@ public class ServerInstallerWindow : EditorWindow
         // Update package list again with Microsoft repository
         SetStatus("Installing .NET SDK 8.0 - Step 5: Updating package list with Microsoft repository", Color.yellow);
         string updateMSCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateMSSuccess = await cmdProcess.RunPowerShellInstallCommand(updateMSCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool updateMSSuccess = await wslProcess.RunPowerShellInstallCommand(updateMSCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!updateMSSuccess)
         {
             SetStatus("Failed to update package list with Microsoft repository. Installation aborted.", Color.red);
@@ -2191,7 +2191,7 @@ public class ServerInstallerWindow : EditorWindow
         // Install .NET SDK 8.0
         SetStatus("Installing .NET SDK 8.0 - Step 6: Installing .NET SDK 8.0", Color.yellow);
         string netSDKInstallCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y dotnet-sdk-8.0\"";
-        bool netSDKInstallSuccess = await cmdProcess.RunPowerShellInstallCommand(netSDKInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool netSDKInstallSuccess = await wslProcess.RunPowerShellInstallCommand(netSDKInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!netSDKInstallSuccess)
         {
             CheckInstallationStatus();
@@ -2208,7 +2208,7 @@ public class ServerInstallerWindow : EditorWindow
         // Install WASI experimental workload
         SetStatus("Installing .NET SDK 8.0 - Step 7: Installing WASI experimental workload", Color.yellow);
         string wasiWorkloadCommand = "wsl -d Debian -- sudo dotnet workload install wasi-experimental";
-        bool wasiWorkloadSuccess = await cmdProcess.RunPowerShellInstallCommand(wasiWorkloadCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
+        bool wasiWorkloadSuccess = await wslProcess.RunPowerShellInstallCommand(wasiWorkloadCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!wasiWorkloadSuccess)
         {
             if (WSL1Installed)
@@ -2262,7 +2262,7 @@ public class ServerInstallerWindow : EditorWindow
                 "curl -L \\\"https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz\\\" | " +
                 "sudo tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_123/bin\"";
             
-            bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+            bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
                 installCommand, 
                 LogMessage, 
                 visibleInstallProcesses, 
@@ -2319,7 +2319,7 @@ public class ServerInstallerWindow : EditorWindow
         
         string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
         SetStatus("Running: apt update", Color.yellow);
-        bool updateSuccess = await cmdProcess.RunPowerShellInstallCommand(
+        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(
             updateCommand, 
             LogMessage, 
             visibleInstallProcesses, 
@@ -2337,7 +2337,7 @@ public class ServerInstallerWindow : EditorWindow
         // Now install git
         string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing git...' && sudo apt install -y git\"";
         SetStatus("Running: apt install -y git", Color.yellow);
-        bool installSuccess = await cmdProcess.RunPowerShellInstallCommand(
+        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
             installCommand, 
             LogMessage, 
             visibleInstallProcesses, 

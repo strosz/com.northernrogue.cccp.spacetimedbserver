@@ -11,7 +11,7 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerVersionProcess
 {
-    private ServerCMDProcess cmdProcessor;
+    private ServerWSLProcess wslProcess;
     private bool debugMode;
     private Action<string, int> logCallback;
     
@@ -22,9 +22,9 @@ public class ServerVersionProcess
     private Action startServerDelegate;
     private Action stopServerDelegate;
 
-    public ServerVersionProcess(ServerCMDProcess cmdProcessor, Action<string, int> logCallback, bool debugMode = false)
+    public ServerVersionProcess(ServerWSLProcess wslProcess, Action<string, int> logCallback, bool debugMode = false)
     {
-        this.cmdProcessor = cmdProcessor;
+        this.wslProcess = wslProcess;
         this.logCallback = logCallback;
         this.debugMode = debugMode;
     }
@@ -56,7 +56,7 @@ public class ServerVersionProcess
             return;
         }
 
-        string wslBackupPath = cmdProcessor.GetWslPath(backupDirectory);
+        string wslBackupPath = wslProcess.GetWslPath(backupDirectory);
         string spacetimePath = $"/home/{userName}/.local/share/spacetime/data";
         
         // Ensure the converted path is valid
@@ -68,7 +68,7 @@ public class ServerVersionProcess
 
         // Construct the backup command with timestamp
         string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}";
-        var result = await cmdProcessor.RunServerCommandAsync(backupCommand);
+        var result = await wslProcess.RunServerCommandAsync(backupCommand);
         
         if (result.success && debugMode)
             logCallback("Server backup created successfully.", 1);
@@ -94,7 +94,7 @@ public class ServerVersionProcess
         string clearCommand = $"rm -rf {spacetimePath}/*";
         
         logCallback($"Clearing server data from {spacetimePath}...", 0);
-        var result = await cmdProcessor.RunServerCommandAsync(clearCommand);
+        var result = await wslProcess.RunServerCommandAsync(clearCommand);
         
         if (result.success)
             logCallback("Server data cleared successfully.", 1);
@@ -108,7 +108,7 @@ public class ServerVersionProcess
 
     public async void RestoreServerData(string backupDirectory, string userName, string backupFilePath = null)
     {
-        string wslBackupPath = cmdProcessor.GetWslPath(backupDirectory);
+        string wslBackupPath = wslProcess.GetWslPath(backupDirectory);
         
         // Ensure the backup directory is valid
         if (string.IsNullOrEmpty(backupDirectory) || wslBackupPath == "~")
@@ -129,7 +129,7 @@ public class ServerVersionProcess
         }
 
         // Convert Windows path to WSL path for the selected backup file
-        string wslBackupFilePath = cmdProcessor.GetWslPath(backupFilePath);
+        string wslBackupFilePath = wslProcess.GetWslPath(backupFilePath);
         
         // Display confirmation dialog due to overwrite risk
         if (EditorUtility.DisplayDialog(
@@ -205,7 +205,7 @@ public class ServerVersionProcess
     {
         logCallback("Creating backup of current data before restoring...", 0);
         
-        string wslBackupPath = cmdProcessor.GetWslPath(backupDirectory);
+        string wslBackupPath = wslProcess.GetWslPath(backupDirectory);
         string spacetimeDataPath = $"/home/{userName}/.local/share/spacetime/data";
         
         // Ensure the converted path is valid
@@ -229,7 +229,7 @@ public class ServerVersionProcess
         
         // Create backup with timestamp
         string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_pre_restore_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimeDataPath}";
-        var result = await cmdProcessor.RunServerCommandAsync(backupCommand);
+        var result = await wslProcess.RunServerCommandAsync(backupCommand);
         
         if (result.success)
             logCallback("Pre-restore backup created successfully in your backup directory.", 1);
