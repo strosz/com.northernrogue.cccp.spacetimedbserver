@@ -1711,6 +1711,23 @@ public class ServerWindow : EditorWindow
                             CloseDatabaseAndReducerWindow();
                         }
                     }
+                } else if (serverMode == ServerMode.DockerServer)
+                {
+                    if (!serverRunning)
+                    {
+                        if (GUILayout.Button("Start SpacetimeDB Docker", GUILayout.Height(30)))
+                        {
+                            serverManager.StartServer();
+                        }
+                    }
+                    else
+                    {
+                        if (GUILayout.Button("Stop SpacetimeDB Docker", GUILayout.Height(30)))
+                        {
+                            serverManager.StopServer();
+                            CloseDatabaseAndReducerWindow();
+                        }
+                    }
                 } else if (serverMode == ServerMode.CustomServer)
                 {
                     if (!serverRunning)
@@ -1735,6 +1752,8 @@ public class ServerWindow : EditorWindow
         // Activation of Server Windows
         bool WSLServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WSLServer;
         bool WSLServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WSLServer;
+        bool dockerServerActive = serverManager.IsServerStarted && serverMode == ServerMode.DockerServer;
+        bool dockerServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.DockerServer;
         bool customServerActive = serverManager.IsServerStarted && serverMode == ServerMode.CustomServer;
         bool customServerActiveSilent = serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
@@ -1743,7 +1762,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!WSLServerActiveSilent && !customServerActiveSilent && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActiveSilent && !dockerServerActiveSilent && !customServerActiveSilent && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1778,7 +1797,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                
         // Browse Database
-        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !dockerServerActive && !customServerActive && !maincloudActive);
         var dbIcon = EditorGUIUtility.IconContent("d_VerticalLayoutGroup Icon").image;
         GUIContent dbContent = new GUIContent("Browse DB", "Browse and query the SpacetimeDB database");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1813,7 +1832,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                 
         // Run Reducer
-        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !dockerServerActive && !customServerActive && !maincloudActive);
         var playIcon = EditorGUIUtility.IconContent("d_PlayButton").image;
         GUIContent reducerContent = new GUIContent("Run Reducer", "Run database reducers");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
