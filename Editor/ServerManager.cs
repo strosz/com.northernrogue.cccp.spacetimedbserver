@@ -1825,10 +1825,12 @@ public class ServerManager
                     if (debugMode) LogMessage("Custom Remote mode command failed to execute.", -2);
                 }
             }
-            else // WSL local commands, Custom Remote publish or Maincloud commands
+            else // WSL local commands, Docker commands, Custom Remote publish or Maincloud commands
             {
                 // Errors which causes the command to fail may be needed to be procesed directly in RunServerCommandAsync
-                var result = await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
+                var result = Settings.serverMode == ServerMode.DockerServer 
+                    ? await dockerProcessor.RunServerCommandAsync(command, ServerDirectory)
+                    : await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
                 // Display the results in the output log
                 if (!string.IsNullOrEmpty(result.output))

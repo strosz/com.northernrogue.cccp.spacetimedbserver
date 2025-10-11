@@ -1,8 +1,6 @@
 using UnityEngine;
 using System.Diagnostics;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -191,16 +189,59 @@ public class ServerDockerProcess
     {
         try 
         {
+            // Get the configured port from settings
+            int hostPort = CCCPSettings.Instance.serverPort;
+            
+            // Check if container already exists and is running
+            var (exists, isRunning) = CheckContainerStatus(ContainerName);
+            
+            if (exists && isRunning)
+            {
+                if (debugMode) logCallback($"Container '{ContainerName}' is already running. Reusing existing container.", 0);
+                
+                // Just open a window to the existing container
+                Process logProcess = new Process();
+                logProcess.StartInfo.FileName = "cmd.exe";
+                logProcess.StartInfo.Arguments = $"/k docker logs -f {ContainerName}";
+                logProcess.StartInfo.UseShellExecute = true;
+                logProcess.Start();
+                return logProcess;
+            }
+            
+            if (exists && !isRunning)
+            {
+                if (debugMode) logCallback($"Container '{ContainerName}' exists but is stopped. Starting it...", 0);
+                
+                // Start existing stopped container
+                Process startProcess = new Process();
+                startProcess.StartInfo.FileName = "cmd.exe";
+                startProcess.StartInfo.Arguments = $"/c docker start {ContainerName}";
+                startProcess.StartInfo.UseShellExecute = false;
+                startProcess.StartInfo.CreateNoWindow = true;
+                startProcess.Start();
+                startProcess.WaitForExit();
+                
+                // Now show logs
+                Process logProcess = new Process();
+                logProcess.StartInfo.FileName = "cmd.exe";
+                logProcess.StartInfo.Arguments = $"/k docker logs -f {ContainerName}";
+                logProcess.StartInfo.UseShellExecute = true;
+                logProcess.Start();
+                return logProcess;
+            }
+            
+            // Container doesn't exist, create new one
             Process process = new Process();
             process.StartInfo.FileName = "cmd.exe";
             
             // Start Docker container with interactive mode
-            string dockerCommand = $"docker run -it --rm --name {ContainerName} -p 3000:3000 -v \"{serverDirectory}:/app\" {ImageName}";
+            // Note: NOT using --rm so container persists and can be stopped/restarted
+            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 -v \"{serverDirectory}:/app\" {ImageName} start";
             
             process.StartInfo.Arguments = $"/k {dockerCommand}";
             process.StartInfo.UseShellExecute = true;
             
-            if (debugMode) logCallback("Starting SpacetimeDB Server (Docker Visible CMD)...", 0);
+            if (debugMode) logCallback($"Starting SpacetimeDB Server on port {hostPort} (Docker Visible CMD)...", 0);
             process.Start();
             serverProcess = process;
             return process;
@@ -216,8 +257,51 @@ public class ServerDockerProcess
     {
         try 
         {
+            // Get the configured port from settings
+            int hostPort = CCCPSettings.Instance.serverPort;
+            
+            // Check if container already exists and is running
+            var (exists, isRunning) = CheckContainerStatus(ContainerName);
+            
+            if (exists && isRunning)
+            {
+                if (debugMode) logCallback($"Container '{ContainerName}' is already running. No need to start.", 1);
+                return null; // Return null but this is not an error - container is already running
+            }
+            
+            if (exists && !isRunning)
+            {
+                if (debugMode) logCallback($"Container '{ContainerName}' exists but is stopped. Starting it...", 0);
+                
+                // Start existing stopped container
+                Process startProcess = new Process();
+                startProcess.StartInfo.FileName = "cmd.exe";
+                startProcess.StartInfo.Arguments = $"/c docker start {ContainerName}";
+                startProcess.StartInfo.UseShellExecute = false;
+                startProcess.StartInfo.CreateNoWindow = true;
+                startProcess.StartInfo.RedirectStandardOutput = true;
+                startProcess.StartInfo.RedirectStandardError = true;
+                startProcess.Start();
+                
+                string startOutput = startProcess.StandardOutput.ReadToEnd();
+                string startError = startProcess.StandardError.ReadToEnd();
+                startProcess.WaitForExit();
+                
+                if (startProcess.ExitCode == 0)
+                {
+                    if (debugMode) logCallback($"Existing container started successfully.", 1);
+                    return startProcess;
+                }
+                else
+                {
+                    logCallback($"Failed to start existing container. Error: {startError}", -1);
+                    return null;
+                }
+            }
+            
+            // Container doesn't exist, create new one
             // Start Docker container in detached mode
-            string dockerCommand = $"docker run -d --name {ContainerName} -p 3000:3000 -v \"{serverDirectory}:/app\" {ImageName}";
+            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 -v \"{serverDirectory}:/app\" {ImageName} start";
             
             if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
             
@@ -229,7 +313,7 @@ public class ServerDockerProcess
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
             
-            if (debugMode) logCallback("Attempting to launch Docker server process...", 0);
+            if (debugMode) logCallback($"Creating new Docker container on port {hostPort}...", 0);
             process.Start();
             
             string output = process.StandardOutput.ReadToEnd();
@@ -676,6 +760,12 @@ public class ServerDockerProcess
     {
         try
         {
+            // Invalidate cache immediately
+            lock (statusUpdateLock)
+            {
+                lastStatusCacheTime = 0; // Force fresh check next time
+            }
+            
             var stopResult = await Task.Run(() =>
             {
                 try
@@ -689,15 +779,31 @@ public class ServerDockerProcess
                         process.StartInfo.UseShellExecute = false;
                         process.StartInfo.CreateNoWindow = true;
                         
+                        if (debugMode)
+                        {
+                            UnityEngine.Debug.Log($"[ServerDockerProcess] Executing: docker stop {containerName}");
+                        }
+                        
                         process.Start();
                         string output = process.StandardOutput.ReadToEnd();
                         string error = process.StandardError.ReadToEnd();
                         
-                        bool finished = process.WaitForExit(15000); // 15 second timeout
+                        bool finished = process.WaitForExit(30000); // 30 second timeout for graceful stop
                         if (!finished)
                         {
+                            if (debugMode)
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Stop command timed out, forcing kill...");
+                            }
                             try { process.Kill(); } catch { }
                             return (false, "Stop command timed out");
+                        }
+                        
+                        if (debugMode)
+                        {
+                            UnityEngine.Debug.Log($"[ServerDockerProcess] Stop command exit code: {process.ExitCode}");
+                            if (!string.IsNullOrEmpty(output)) UnityEngine.Debug.Log($"[ServerDockerProcess] Stop output: {output}");
+                            if (!string.IsNullOrEmpty(error)) UnityEngine.Debug.Log($"[ServerDockerProcess] Stop error: {error}");
                         }
                         
                         if (process.ExitCode == 0)
@@ -706,7 +812,7 @@ public class ServerDockerProcess
                         }
                         else
                         {
-                            return (false, $"Stop failed: {error}");
+                            return (false, $"Stop failed with exit code {process.ExitCode}: {error}");
                         }
                     }
                 }
@@ -721,10 +827,17 @@ public class ServerDockerProcess
                 logCallback($"[ServerDockerProcess] Stop container error: {stopResult.Item2}", -1);
             }
 
-            // Also remove the container
+            // Update cache to reflect stopped state
             if (stopResult.Item1)
             {
-                await RemoveDockerContainer(containerName);
+                lock (statusUpdateLock)
+                {
+                    cachedServerRunningStatus = false;
+                    lastStatusCacheTime = EditorApplication.timeSinceStartup;
+                }
+                
+                // Note: We're NOT removing the container so it can be restarted
+                // await RemoveDockerContainer(containerName);
             }
 
             return stopResult.Item1;
@@ -788,36 +901,34 @@ public class ServerDockerProcess
             }
         }
         
-        // Otherwise perform fresh check synchronously
+        // Otherwise perform fresh check using CheckContainerStatus
         try
         {
-            using (Process process = new Process())
+            var (exists, isRunning) = CheckContainerStatus(ContainerName);
+            
+            lock (statusUpdateLock)
             {
-                process.StartInfo.FileName = "docker";
-                process.StartInfo.Arguments = $"ps --filter name={ContainerName} --format \"{{{{.Names}}}}\"";
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.RedirectStandardError = true;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.CreateNoWindow = true;
-                
-                process.Start();
-                string output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit(3000);
-                
-                bool isRunning = process.ExitCode == 0 && output.Trim().Contains(ContainerName);
-                
-                lock (statusUpdateLock)
-                {
-                    cachedServerRunningStatus = isRunning;
-                    lastStatusCacheTime = currentTime;
-                }
-                
-                return isRunning;
+                cachedServerRunningStatus = exists && isRunning;
+                lastStatusCacheTime = currentTime;
             }
+            
+            if (debugMode)
+            {
+                logCallback($"[ServerDockerProcess] Container status check - Exists: {exists}, Running: {isRunning}", 0);
+            }
+            
+            return exists && isRunning;
         }
         catch (Exception ex)
         {
             if (debugMode) logCallback($"[ServerDockerProcess] Error checking if server running: {ex.Message}", -1);
+            
+            // Invalidate cache on error
+            lock (statusUpdateLock)
+            {
+                lastStatusCacheTime = 0;
+            }
+            
             return false;
         }
     }
@@ -941,6 +1052,64 @@ public class ServerDockerProcess
     #endregion
     
     #region Helper Methods
+    
+    /// <summary>
+    /// Check if a Docker container exists and if it's running
+    /// </summary>
+    /// <param name="containerName">Name of the container to check</param>
+    /// <returns>Tuple of (exists, isRunning)</returns>
+    private (bool exists, bool isRunning) CheckContainerStatus(string containerName)
+    {
+        try
+        {
+            // Check if container exists (running or stopped)
+            using (Process checkProcess = new Process())
+            {
+                checkProcess.StartInfo.FileName = "docker";
+                checkProcess.StartInfo.Arguments = $"ps -a --filter name={containerName} --format {{{{.Names}}}}";
+                checkProcess.StartInfo.UseShellExecute = false;
+                checkProcess.StartInfo.RedirectStandardOutput = true;
+                checkProcess.StartInfo.CreateNoWindow = true;
+                
+                checkProcess.Start();
+                string output = checkProcess.StandardOutput.ReadToEnd().Trim();
+                checkProcess.WaitForExit();
+                
+                bool exists = !string.IsNullOrWhiteSpace(output) && output == containerName;
+                
+                if (!exists)
+                {
+                    return (false, false);
+                }
+                
+                // Container exists, now check if it's running
+                using (Process runningCheck = new Process())
+                {
+                    runningCheck.StartInfo.FileName = "docker";
+                    runningCheck.StartInfo.Arguments = $"ps --filter name={containerName} --format {{{{.Names}}}}";
+                    runningCheck.StartInfo.UseShellExecute = false;
+                    runningCheck.StartInfo.RedirectStandardOutput = true;
+                    runningCheck.StartInfo.CreateNoWindow = true;
+                    
+                    runningCheck.Start();
+                    string runningOutput = runningCheck.StandardOutput.ReadToEnd().Trim();
+                    runningCheck.WaitForExit();
+                    
+                    bool isRunning = !string.IsNullOrWhiteSpace(runningOutput) && runningOutput == containerName;
+                    
+                    return (true, isRunning);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerDockerProcess] Error checking container status: {ex.Message}");
+            }
+            return (false, false);
+        }
+    }
     
     private (string executable, string arguments) SplitCommandForProcess(string command)
     {

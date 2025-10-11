@@ -1961,12 +1961,14 @@ public class ServerWindow : EditorWindow
         {
             EditorGUILayout.Space(-10);
 
-            if (serverMode == ServerMode.WSLServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            if (serverMode == ServerMode.DockerServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local Docker", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.WSLServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local WSL", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.CustomServer)
                 EditorGUILayout.LabelField("SpacetimeDB Remote", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.MaincloudServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local (Maincloud)", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Maincloud", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
