@@ -20,6 +20,11 @@ public class CCCPSettings : ScriptableObject
     public int serverPort = 3000;
     public string authToken = "";
     
+    [Header("Docker Server Configuration")]
+    public string serverUrlDocker = "http://0.0.0.0:3011/";
+    public int serverPortDocker = 3011;
+    public string authTokenDocker = "";
+    
     [Header("Directory Settings")]
     public string backupDirectory = "";
     public string serverDirectory = "";
@@ -236,6 +241,11 @@ public class CCCPSettings : ScriptableObject
         serverUrl = "http://0.0.0.0:3000/";
         serverPort = 3000;
         authToken = "";
+        
+        serverUrlDocker = "http://0.0.0.0:3011/";
+        serverPortDocker = 3011;
+        authTokenDocker = "";
+        
         backupDirectory = "";
         serverDirectory = "";
         clientDirectory = "";

@@ -203,6 +203,26 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetServerUrlDocker() => Settings.serverUrlDocker;
+    public static void SetServerUrlDocker(string value) 
+    { 
+        if (Settings.serverUrlDocker != value)
+        {
+            Settings.serverUrlDocker = value; 
+            SaveSettings(); // Important setting - save immediately
+        }
+    }
+    
+    public static string GetAuthTokenDocker() => Settings.authTokenDocker;
+    public static void SetAuthTokenDocker(string value) 
+    { 
+        if (Settings.authTokenDocker != value)
+        {
+            Settings.authTokenDocker = value; 
+            SaveSettings(); // Important setting - save immediately
+        }
+    }
+    
     public static string GetBackupDirectory() => Settings.backupDirectory;
     public static void SetBackupDirectory(string value) 
     { 
@@ -483,6 +503,16 @@ public static class CCCPSettingsAdapter
         if (Settings.serverPort != value)
         {
             Settings.serverPort = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static int GetServerPortDocker() => Settings.serverPortDocker;
+    public static void SetServerPortDocker(int value) 
+    { 
+        if (Settings.serverPortDocker != value)
+        {
+            Settings.serverPortDocker = value; 
             SaveSettings(); 
         }
     }
@@ -1239,6 +1269,8 @@ public static class CCCPSettingsAdapter
             case "UserName": return GetUserName();
             case "ServerURL": return GetServerUrl();
             case "AuthToken": return GetAuthToken();
+            case "ServerURLDocker": return GetServerUrlDocker();
+            case "AuthTokenDocker": return GetAuthTokenDocker();
             case "BackupDirectory": return GetBackupDirectory();
             case "ServerDirectory": return GetServerDirectory();
             case "ClientDirectory": return GetClientDirectory();
@@ -1285,6 +1317,8 @@ public static class CCCPSettingsAdapter
             case "UserName": SetUserName(value); break;
             case "ServerURL": SetServerUrl(value); break;
             case "AuthToken": SetAuthToken(value); break;
+            case "ServerURLDocker": SetServerUrlDocker(value); break;
+            case "AuthTokenDocker": SetAuthTokenDocker(value); break;
             case "BackupDirectory": SetBackupDirectory(value); break;
             case "ServerDirectory": SetServerDirectory(value); break;
             case "ClientDirectory": SetClientDirectory(value); break;
@@ -1473,6 +1507,7 @@ public static class CCCPSettingsAdapter
         switch (key.Replace(PrefsKeyPrefix, ""))
         {
             case "ServerPort": return GetServerPort();
+            case "ServerPortDocker": return GetServerPortDocker();
             case "SelectedModuleIndex": return GetSelectedModuleIndex();
             case "CustomServerPort": return GetCustomServerPort();
             case "ServerMode": return (int)GetServerMode();
@@ -1493,6 +1528,7 @@ public static class CCCPSettingsAdapter
         switch (key.Replace(PrefsKeyPrefix, ""))
         {
             case "ServerPort": SetServerPort(value); break;
+            case "ServerPortDocker": SetServerPortDocker(value); break;
             case "SelectedModuleIndex": SetSelectedModuleIndex(value); break;
             case "CustomServerPort": SetCustomServerPort(value); break;
             case "ServerMode": SetServerMode((NorthernRogue.CCCP.Editor.ServerManager.ServerMode)value); break;

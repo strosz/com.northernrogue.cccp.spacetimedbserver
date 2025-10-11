@@ -278,6 +278,11 @@ public class ServerManager
     public string ServerUrl => Settings.serverUrl;
     public int ServerPort => Settings.serverPort;
     public string AuthToken => Settings.authToken;
+    
+    // Docker server properties
+    public string ServerUrlDocker => Settings.serverUrlDocker;
+    public int ServerPortDocker => Settings.serverPortDocker;
+    public string AuthTokenDocker => Settings.authTokenDocker;
 
     // Status properties
     public bool IsServerStarted => serverStarted;

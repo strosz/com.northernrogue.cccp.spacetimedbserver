@@ -57,6 +57,11 @@ public class ServerWindow : EditorWindow
     private int serverPort { get => CCCPSettingsAdapter.GetServerPort(); set => CCCPSettingsAdapter.SetServerPort(value); }
     private string authToken { get => CCCPSettingsAdapter.GetAuthToken(); set => CCCPSettingsAdapter.SetAuthToken(value); }
 
+    // Docker Server Configuration - Direct property access to settings
+    private string serverUrlDocker { get => CCCPSettingsAdapter.GetServerUrlDocker(); set => CCCPSettingsAdapter.SetServerUrlDocker(value); }
+    private int serverPortDocker { get => CCCPSettingsAdapter.GetServerPortDocker(); set => CCCPSettingsAdapter.SetServerPortDocker(value); }
+    private string authTokenDocker { get => CCCPSettingsAdapter.GetAuthTokenDocker(); set => CCCPSettingsAdapter.SetAuthTokenDocker(value); }
+
     // Pre-requisites Custom Server - Direct property access to settings
     private string sshUserName { get => CCCPSettingsAdapter.GetSSHUserName(); set => CCCPSettingsAdapter.SetSSHUserName(value); }
     private string customServerUrl { get => CCCPSettingsAdapter.GetCustomServerUrl(); set => CCCPSettingsAdapter.SetCustomServerUrl(value); }
@@ -151,6 +156,7 @@ public class ServerWindow : EditorWindow
 
     public enum AuthTokenType
     {
+        Docker,
         WSL,
         Custom,
         Maincloud
@@ -1113,7 +1119,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.EndHorizontal();
             #endregion
 
-            #region Local Mode (WSL or Docker)
+            #region Local Modes
+            // Settings for local modes (WSL and Docker)
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 // Local Server Settings
@@ -1140,7 +1147,63 @@ public class ServerWindow : EditorWindow
                 }
                 GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
+            }
+            #endregion
 
+            #region Local Docker
+            if (serverMode == ServerMode.DockerServer)
+            {
+                // Local Docker URL
+                string dockerUrlTooltip = "The URL of the Docker server.\n" +
+                    "Example: http://0.0.0.0:3011/\n" +
+                    "Note: The port number is required.";
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(new GUIContent("URL:", dockerUrlTooltip), GUILayout.Width(110));
+                string newUrlDocker = EditorGUILayout.DelayedTextField(serverUrlDocker, GUILayout.Width(150));
+                if (newUrlDocker != serverUrlDocker)
+                {
+                    serverUrlDocker = newUrlDocker;
+                    // Extract port from Docker URL
+                    int extractedPort = ServerUtilityProvider.ExtractPortFromUrl(serverUrlDocker);
+                    if (extractedPort > 0)
+                    {
+                        if (extractedPort != serverPortDocker)
+                        {
+                            serverPortDocker = extractedPort;
+                            
+                            if (debugMode) UnityEngine.Debug.Log($"[ServerWindow] Docker port updated to {serverPortDocker}");
+                        }
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogWarning("[ServerWindow] Could not extract port from Docker URL");
+                    }
+                }
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(serverUrlDocker)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
+                // Local Docker Auth Token                
+                string tokenTooltip = GetAuthTokenTooltip(AuthTokenType.Docker,
+                "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Important: Keep this token secret and do not share it with anyone outside of your team.");
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
+                string newAuthTokenDocker = EditorGUILayout.TextField(authTokenDocker, GUILayout.Width(150));
+                if (newAuthTokenDocker != authTokenDocker)
+                {
+                    authTokenDocker = newAuthTokenDocker;
+                }
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(authTokenDocker)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.Space(5);
+            }
+            #endregion
+
+            #region Local WSL
+            if (serverMode == ServerMode.WSLServer)
+            {
                 // Debian Username setting
                 EditorGUILayout.BeginHorizontal();
                 string userNameTooltip = 
@@ -1207,9 +1270,13 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.EndHorizontal();
                 
                 EditorGUILayout.Space(3);
+            }
 
+            // Status and Setup for local modes (WSL and Docker)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
+            {
                 if (GUILayout.Button("Server Setup Window"))
-                        ServerSetupWindow.ShowWindow();
+                    ServerSetupWindow.ShowWindow();
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
@@ -2802,6 +2869,9 @@ public class ServerWindow : EditorWindow
         string storedToken = "";
         switch (tokenType)
         {
+            case AuthTokenType.Docker:
+                storedToken = CCCPSettingsAdapter.GetAuthTokenDocker();
+                break;
             case AuthTokenType.WSL:
                 storedToken = CCCPSettingsAdapter.GetAuthToken();
                 break;

@@ -19,6 +19,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerDataWindow : EditorWindow
 {
+    public static bool debugMode = false;
+    
     // Use NonSerialized to prevent Unity from trying to serialize the static instance
     [System.NonSerialized]
     private static ServerDataWindow currentInstance;
@@ -26,9 +28,7 @@ public class ServerDataWindow : EditorWindow
     // Unique identifier for each window instance
     [SerializeField] 
     private string instanceId = System.Guid.NewGuid().ToString();
-    
-    public static bool debugMode = false;
-    
+        
     // Static constructor for initialization
     static ServerDataWindow()
     {
@@ -41,7 +41,11 @@ public class ServerDataWindow : EditorWindow
     private string authToken = ""; // Required to be authenticated to access all of the SQL API
     private string backupDirectory = "";
     private string customServerUrl = "";
+    private string customServerAuthToken = "";
     private string maincloudUrl = "";
+    private string maincloudAuthToken = "";
+    private string serverUrlDocker = "";
+    private string authTokenDocker = "";
     private string serverMode = "";
 
     // Data Storage
@@ -248,9 +252,15 @@ public class ServerDataWindow : EditorWindow
 
         string rawMaincloudUrl = CCCPSettingsAdapter.GetMaincloudUrl();
         maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
+        maincloudAuthToken = CCCPSettingsAdapter.GetMaincloudAuthToken();
 
         string rawCustomServerUrl = CCCPSettingsAdapter.GetCustomServerUrl();
         customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
+        customServerAuthToken = CCCPSettingsAdapter.GetCustomServerAuthToken();
+        
+        string rawServerUrlDocker = CCCPSettingsAdapter.GetServerUrlDocker();
+        serverUrlDocker = GetApiBaseUrl(rawServerUrlDocker);
+        authTokenDocker = CCCPSettingsAdapter.GetAuthTokenDocker();
 
         serverMode = CCCPSettingsAdapter.GetServerMode().ToString();
 
@@ -832,7 +842,16 @@ public class ServerDataWindow : EditorWindow
             return;
         }
         
-        if (string.IsNullOrEmpty(authToken))
+        // Determine the correct auth token based on server mode
+        string currentAuthToken = authToken;
+        if (serverMode == "DockerServer")
+            currentAuthToken = authTokenDocker;
+        else if (serverMode == "CustomServer")
+            currentAuthToken = customServerAuthToken;
+        else if (serverMode == "MaincloudServer")
+            currentAuthToken = maincloudAuthToken;
+        
+        if (string.IsNullOrEmpty(currentAuthToken))
         {
             SetStatus("Error: Authorization Token not set. DML operations require owner permissions.", Color.red);
             EditorUtility.DisplayDialog("Authorization Required", 
@@ -844,8 +863,10 @@ public class ServerDataWindow : EditorWindow
         Repaint();
         
         // Use GetApiBaseUrl to ensure URL has /v1
-        if (serverMode == "WSLServer" || serverMode == "DockerServer")
+        if (serverMode == "WSLServer")
             urlBase = GetApiBaseUrl(serverURL);
+        else if (serverMode == "DockerServer")
+            urlBase = GetApiBaseUrl(serverUrlDocker);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
         else if (serverMode == "MaincloudServer")
@@ -865,7 +886,7 @@ public class ServerDataWindow : EditorWindow
                 {
                     // Add the authorization header
                     // SpacetimeDB uses Bearer token authentication per docs
-                    requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken);
+                    requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", currentAuthToken);
                     
                     // Add the SQL as content
                     HttpContent content = new StringContent(sqlQuery, Encoding.UTF8, "text/plain");
@@ -1085,16 +1106,31 @@ public class ServerDataWindow : EditorWindow
         SetStatus($"Fetching schema for '{moduleName}'...", Color.yellow);
         Repaint();
 
-        // Log the values being used for the request (URL base already logged)
-        string tokenSnippet = string.IsNullOrEmpty(authToken) ? "None" : authToken.Substring(0, Math.Min(authToken.Length, 5)) + "...";
-        // if (debugMode) Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
-
-        if (serverMode == "WSLServer" || serverMode == "DockerServer")
+        // Determine the correct auth token and URL based on server mode
+        string currentAuthToken = authToken;
+        if (serverMode == "DockerServer")
+        {
+            currentAuthToken = authTokenDocker;
+            urlBase = GetApiBaseUrl(serverUrlDocker);
+        }
+        else if (serverMode == "WSLServer")
+        {
             urlBase = GetApiBaseUrl(serverURL);
+        }
         else if (serverMode == "CustomServer")
+        {
+            currentAuthToken = customServerAuthToken;
             urlBase = GetApiBaseUrl(customServerUrl);
+        }
         else if (serverMode == "MaincloudServer")
+        {
+            currentAuthToken = maincloudAuthToken;
             urlBase = GetApiBaseUrl(maincloudUrl);
+        }
+
+        // Log the values being used for the request (URL base already logged)
+        string tokenSnippet = string.IsNullOrEmpty(currentAuthToken) ? "None" : currentAuthToken.Substring(0, Math.Min(currentAuthToken.Length, 5)) + "...";
+        // if (debugMode) Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {urlBase}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(currentAuthToken)}, Token start: {tokenSnippet}");
 
         schemaUrl = $"{urlBase}/database/{moduleName}/schema?version=9";
 

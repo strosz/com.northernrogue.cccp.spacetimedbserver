@@ -15,6 +15,8 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerReducerWindow : EditorWindow
 {
+    public static bool debugMode = false;
+    
     // Use NonSerialized to prevent Unity from trying to serialize the static instance
     [System.NonSerialized]
     private static ServerReducerWindow currentInstance;
@@ -22,8 +24,6 @@ public class ServerReducerWindow : EditorWindow
     // Unique identifier for each window instance
     [SerializeField] 
     private string instanceId = System.Guid.NewGuid().ToString();
-    
-    public static bool debugMode = false;
     
     // Static constructor for initialization
     static ServerReducerWindow()
@@ -36,7 +36,11 @@ public class ServerReducerWindow : EditorWindow
     private string authToken = ""; // Required for authentication, to be able to run reducers and not just read schema
 
     private string customServerUrl = "";
+    private string customServerAuthToken = "";
     private string maincloudUrl = "";
+    private string maincloudAuthToken = "";
+    private string serverUrlDocker = "";
+    private string authTokenDocker = "";
     private string serverMode = "";
 
     private string schemaUrl = "";
@@ -518,9 +522,15 @@ public class ServerReducerWindow : EditorWindow
 
         string rawMaincloudUrl = CCCPSettingsAdapter.GetMaincloudUrl();
         maincloudUrl = GetApiBaseUrl(rawMaincloudUrl);
+        maincloudAuthToken = CCCPSettingsAdapter.GetMaincloudAuthToken();
 
         string rawCustomServerUrl = CCCPSettingsAdapter.GetCustomServerUrl();
         customServerUrl = GetApiBaseUrl(rawCustomServerUrl);
+        customServerAuthToken = CCCPSettingsAdapter.GetCustomServerAuthToken();
+        
+        string rawServerUrlDocker = CCCPSettingsAdapter.GetServerUrlDocker();
+        serverUrlDocker = GetApiBaseUrl(rawServerUrlDocker);
+        authTokenDocker = CCCPSettingsAdapter.GetAuthTokenDocker();
 
         serverMode = CCCPSettingsAdapter.GetServerMode().ToString();
     }
@@ -531,14 +541,23 @@ public class ServerReducerWindow : EditorWindow
 
         LoadSettings();
 
-        if (serverMode == "WSLServer" || serverMode == "DockerServer")
+        if (serverMode == "WSLServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
             {
                 SetStatus("Server URL and Module Name are required.", Color.red);
                 return;
             }
-        } else if (serverMode == "CustomServer")
+        }
+        else if (serverMode == "DockerServer")
+        {
+            if (string.IsNullOrEmpty(serverUrlDocker) || string.IsNullOrEmpty(moduleName))
+            {
+                SetStatus("Docker Server URL and Module Name are required.", Color.red);
+                return;
+            }
+        }
+        else if (serverMode == "CustomServer")
         {
             if (string.IsNullOrEmpty(customServerUrl) || string.IsNullOrEmpty(moduleName))
             {
@@ -576,20 +595,38 @@ public class ServerReducerWindow : EditorWindow
         // Move try-catch outside of the iterator
         // Add version parameter to match ServerDataWindow's schema request
 
-        if (serverMode == "WSLServer" || serverMode == "DockerServer"){
+        if (serverMode == "WSLServer")
+        {
             schemaUrl = $"{serverURL}/database/{moduleName}/schema?version=9";
-        } else if (serverMode == "CustomServer") {
+        }
+        else if (serverMode == "DockerServer")
+        {
+            schemaUrl = $"{serverUrlDocker}/database/{moduleName}/schema?version=9";
+        }
+        else if (serverMode == "CustomServer")
+        {
             schemaUrl = $"{customServerUrl}/database/{moduleName}/schema?version=9";
-        } else if (serverMode == "MaincloudServer") {
+        }
+        else if (serverMode == "MaincloudServer")
+        {
             schemaUrl = $"{maincloudUrl}/database/{moduleName}/schema?version=9";
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, schemaUrl);
         
+        // Determine the correct auth token based on server mode
+        string currentAuthToken = authToken;
+        if (serverMode == "DockerServer")
+            currentAuthToken = authTokenDocker;
+        else if (serverMode == "CustomServer")
+            currentAuthToken = customServerAuthToken;
+        else if (serverMode == "MaincloudServer")
+            currentAuthToken = maincloudAuthToken;
+        
         // Add authorization if token is available
-        if (!string.IsNullOrEmpty(authToken))
+        if (!string.IsNullOrEmpty(currentAuthToken))
         {
-            request.Headers.Add("Authorization", $"Bearer {authToken}");
+            request.Headers.Add("Authorization", $"Bearer {currentAuthToken}");
         }
         
         // Send the request - keep yield outside try-catch
@@ -796,18 +833,37 @@ public class ServerReducerWindow : EditorWindow
     
     private IEnumerator RunReducerCoroutine(string reducerName, List<object> parameters, Action<bool, string> callback)
     {
-        if (serverMode == "WSLServer" || serverMode == "DockerServer"){
+        if (serverMode == "WSLServer")
+        {
             reducerUrl = $"{serverURL}/database/{moduleName}/call/{reducerName}";
-        } else if (serverMode == "CustomServer") {
+        }
+        else if (serverMode == "DockerServer")
+        {
+            reducerUrl = $"{serverUrlDocker}/database/{moduleName}/call/{reducerName}";
+        }
+        else if (serverMode == "CustomServer")
+        {
             reducerUrl = $"{customServerUrl}/database/{moduleName}/call/{reducerName}";
-        } else if (serverMode == "MaincloudServer") {
+        }
+        else if (serverMode == "MaincloudServer")
+        {
             reducerUrl = $"{maincloudUrl}/database/{moduleName}/call/{reducerName}";
         }
+        
         // Prepare request
         var request = new HttpRequestMessage(HttpMethod.Post, reducerUrl);
         
+        // Determine the correct auth token based on server mode
+        string currentAuthToken = authToken;
+        if (serverMode == "DockerServer")
+            currentAuthToken = authTokenDocker;
+        else if (serverMode == "CustomServer")
+            currentAuthToken = customServerAuthToken;
+        else if (serverMode == "MaincloudServer")
+            currentAuthToken = maincloudAuthToken;
+        
         // Add authorization header
-        request.Headers.Add("Authorization", $"Bearer {authToken}");
+        request.Headers.Add("Authorization", $"Bearer {currentAuthToken}");
         
         // Add parameters as JSON array in request body
         string jsonParameters;
