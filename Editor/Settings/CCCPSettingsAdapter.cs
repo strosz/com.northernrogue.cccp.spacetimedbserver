@@ -1139,6 +1139,16 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetLocalCLIProvider() => Settings.localCLIProvider;
+    public static void SetLocalCLIProvider(string value) 
+    { 
+        if (Settings.localCLIProvider != value)
+        {
+            Settings.localCLIProvider = value; 
+            SaveSettings();
+        }
+    }
+    
     #endregion
     
     #region Module Management

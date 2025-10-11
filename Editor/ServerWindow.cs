@@ -25,6 +25,7 @@ public class ServerWindow : EditorWindow
     // Server mode
     private ServerMode serverMode = ServerMode.WSLServer;
     private ServerMode previousServerMode = ServerMode.WSLServer;
+    private string localCLIProvider { get => CCCPSettingsAdapter.GetLocalCLIProvider(); set => CCCPSettingsAdapter.SetLocalCLIProvider(value); }
 
     // Pre-requisites WSL - Direct property access to settings
     private bool hasWSL { get => CCCPSettingsAdapter.GetHasWSL(); set => CCCPSettingsAdapter.SetHasWSL(value); }
@@ -458,6 +459,12 @@ public class ServerWindow : EditorWindow
         // Load server mode from Settings
         LoadServerModeFromSettings();
         
+        // Initialize localCLIProvider based on current serverMode
+        if (string.IsNullOrEmpty(localCLIProvider))
+        {
+            localCLIProvider = serverMode == ServerMode.DockerServer ? "Docker" : "WSL";
+        }
+        
         // Load the currently selected module if any (after initial settings refresh)
         LoadSelectedModuleFromSettings();
         
@@ -878,6 +885,8 @@ public class ServerWindow : EditorWindow
                     serverMode = newMode;
                     // Save the selected CLI provider as the last local mode
                     CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)newMode);
+                    // Update localCLIProvider variable
+                    localCLIProvider = newCliProviderSelectedIndex == 0 ? "Docker" : "WSL";
                     UpdateServerModeState();
                     LogMessage($"Local server mode changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
                 }
@@ -2048,11 +2057,20 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            EditorGUILayout.LabelField("WSL Local Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField("Local CLI", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+            if (localCLIProvider == "WSL")
             {
-                serverManager.OpenDebianWindow();
+                if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+                {
+                    serverManager.OpenDebianWindow();
+                }
+            } else if (localCLIProvider == "Docker")
+            {
+                if (GUILayout.Button("Open Docker Window", GUILayout.Height(20)))
+                {
+                    serverManager.OpenDockerWindow();
+                }
             }
 
             if (serverMode == ServerMode.WSLServer)

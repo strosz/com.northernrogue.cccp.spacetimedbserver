@@ -575,11 +575,11 @@ public class ServerManager
                                     if (debugMode)
                                         LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
                                 }
-                                else if (serverMode == ServerMode.WSLServer)
+                                else if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                                 {
                                     logProcessor.ConfigureWSL(true);
                                     if (debugMode)
-                                        LogMessage("[ServerManager] Reconfigured WSL log processor", 1);
+                                        LogMessage($"[ServerManager] Reconfigured {serverMode} log processor", 1);
                                 }
                                 
                                 logProcessor.SetServerRunningState(true);
@@ -1949,7 +1949,7 @@ public class ServerManager
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
-            else if (Settings.serverMode == ServerMode.WSLServer)
+            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
         }
         else
@@ -1958,7 +1958,7 @@ public class ServerManager
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
-            else if (Settings.serverMode == ServerMode.WSLServer)
+            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
         }
 
@@ -2057,13 +2057,13 @@ public class ServerManager
 
         if (error.Contains("Identity") && error.Contains("is not valid"))
         {
-            if (serverMode == ServerMode.WSLServer)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             EditorUtility.DisplayDialog("Invalid Identity", 
-            "Please try to Logout and then Login again on your local WSL mode and then copy and paste the new auth token into your Pre-Requisites."
+            "Please try to Logout and then Login again on your local mode and then copy and paste the new auth token into your Pre-Requisites."
             ,"OK");
             else if (serverMode == ServerMode.CustomServer)
             EditorUtility.DisplayDialog("Invalid Identity",
-            "Please try to Logout and then Login again on your both your local WSL mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
+            "Please try to Logout and then Login again on your both your local mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
             ,"OK");
             successfulPublish = false;
         }
@@ -2185,11 +2185,21 @@ public class ServerManager
             return;
         }
 
-        string wslPath = wslProcessor.GetWslPath(ServerDirectory);
-        // Combine cd and init command
-        string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
-        wslProcessor.RunWslCommandSilent(command);
-        LogMessage("New module initialized", 1);
+        if (Settings.serverMode == ServerMode.DockerServer)
+        {
+            // For Docker, the directory is mounted into the container, use the mount path directly
+            string command = $"cd /app && spacetime init --lang {ServerLang} .";
+            dockerProcessor.RunDockerCommandSilent($"exec {ServerDockerProcess.ContainerName} bash -c \"{command}\"");
+            LogMessage("New module initialized", 1);
+        }
+        else // WSL mode
+        {
+            string wslPath = wslProcessor.GetWslPath(ServerDirectory);
+            // Combine cd and init command
+            string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
+            wslProcessor.RunWslCommandSilent(command);
+            LogMessage("New module initialized", 1);
+        }
         
         // Reset the detection process tracking
         if (detectionProcess != null)
@@ -2257,6 +2267,11 @@ public class ServerManager
     {
         bool userNameReq = false;
         wslProcessor.OpenDebianWindow(userNameReq);
+    }
+
+    public void OpenDockerWindow()
+    {
+        dockerProcessor.OpenDockerWindow();
     }
 
     public bool PingServerStatus()
@@ -2385,9 +2400,9 @@ public class ServerManager
         // For journalctl-based approach, database logs are part of the main logging
         if (serverStarted && silentMode)
         {
-            if (Settings.serverMode == ServerMode.WSLServer)
+            if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
             {
-                // Configure WSL and start logging for journalctl-based approach
+                // Configure WSL/Docker and start logging for journalctl-based approach
                 logProcessor.ConfigureWSL(true);
                 logProcessor.StartLogging();
             }
