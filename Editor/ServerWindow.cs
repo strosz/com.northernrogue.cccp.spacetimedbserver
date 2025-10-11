@@ -657,6 +657,7 @@ public class ServerWindow : EditorWindow
                         serverChangesDetected = newServerChangesDetected;
                     }
                     isWslRunning = serverManager.IsWslRunning;
+                    isDockerRunning = serverManager.IsDockerRunning;
                 }
             }
         }
@@ -868,12 +869,12 @@ public class ServerWindow : EditorWindow
                 "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally. Docker is available for Linux, MacOS or Windows. \n\n"+
                 "Both options provide a local development environment.";
                 EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
-                string[] cliProviderOptions = new string[] { "WSL (Windows)", "Docker (Any OS)" };
-                int cliProviderSelectedIndex = serverMode == ServerMode.WSLServer ? 0 : 1;
+                string[] cliProviderOptions = new string[] { "Docker (Any OS)", "WSL (Windows)" };
+                int cliProviderSelectedIndex = serverMode == ServerMode.DockerServer ? 0 : 1;
                 int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions, GUILayout.Width(150));
                 if (newCliProviderSelectedIndex != cliProviderSelectedIndex)
                 {
-                    ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.WSLServer : ServerMode.DockerServer;
+                    ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.DockerServer : ServerMode.WSLServer;
                     serverMode = newMode;
                     // Save the selected CLI provider as the last local mode
                     CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)newMode);

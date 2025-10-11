@@ -18,7 +18,8 @@ public class ServerDockerProcess
     
     // Docker container name for SpacetimeDB
     public const string ContainerName = "spacetimedb-server";
-    public const string ImageName = "spacetimedb/spacetimedb";
+    // Official SpacetimeDB Docker image name (as per documentation)
+    public const string ImageName = "clockworklabs/spacetime";
     
     // Async Port Check State
     private readonly object statusUpdateLock = new object();

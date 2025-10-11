@@ -39,9 +39,9 @@ public class ServerSetupWindow : EditorWindow
     private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
     
     // Tab indices - always 3 tabs
-    private int wslTabIndex => 0;
-    private int customTabIndex => 1;
-    private int dockerTabIndex => 2;
+    private int dockerTabIndex => 0;
+    private int wslTabIndex => 1;
+    private int customTabIndex => 2;
 
     // Settings access - no longer store in private variables
     private CCCPSettings Settings => CCCPSettings.Instance;
@@ -145,7 +145,7 @@ public class ServerSetupWindow : EditorWindow
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 1; // Custom tab is always index 1
+        window.currentTab = 2; // Custom tab is always index 2
         window.InitializeInstallerItems();
         window.CheckCustomInstallationStatus();
     }
@@ -154,7 +154,7 @@ public class ServerSetupWindow : EditorWindow
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 2; // Docker tab is always index 2
+        window.currentTab = 0; // Docker tab is always index 0
         window.InitializeInstallerItems();
         window.CheckDockerPrerequisites();
     }
@@ -162,7 +162,7 @@ public class ServerSetupWindow : EditorWindow
     private void InitializeTabNames()
     {
         // Always show all three tabs
-        tabNames = new string[] { "WSL Local Setup", "Custom Remote Setup", "Docker Local Setup" };
+        tabNames = new string[] { "Docker Local Setup", "WSL Local Setup", "Custom Remote Setup" };
     }
 
     #region OnEnable
@@ -181,7 +181,7 @@ public class ServerSetupWindow : EditorWindow
         }
         
         // Check if this is the first time the window is opened
-        if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
+        /*if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
         {
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
@@ -199,7 +199,7 @@ public class ServerSetupWindow : EditorWindow
 
                 CCCPSettingsAdapter.SetFirstTimeOpenInstaller(false);
             };
-        }
+        }*/
         
         // Load WSL installation status from Settings
         hasWSL = CCCPSettingsAdapter.GetHasWSL();
@@ -517,7 +517,8 @@ public class ServerSetupWindow : EditorWindow
             new InstallerItem
             {
                 title = "Pull SpacetimeDB Docker Image",
-                description = "Downloads the official SpacetimeDB Docker image from Docker Hub\n"+
+                description = "Downloads the official SpacetimeDB Docker image (clockworklabs/spacetime) from Docker Hub\n"+
+                "Uses: docker run --rm --pull always -p 3000:3000 clockworklabs/spacetime start\n"+
                 "Note: This may take a few minutes depending on your internet connection",
                 isInstalled = hasDockerImage,
                 isEnabled = hasDocker && hasDockerCompose,
@@ -1608,20 +1609,130 @@ public class ServerSetupWindow : EditorWindow
     
     private async void PullSpacetimeDBImage()
     {
-        SetStatus("Pulling SpacetimeDB Docker image...", Color.yellow);
+        SetStatus("Pulling and testing SpacetimeDB Docker image...", Color.yellow);
         
-        bool result = await dockerProcess.RunPowerShellInstallCommand(
-            "docker pull spacetimedb/spacetimedb:latest",
-            LogMessage,
-            visibleProcess: visibleInstallProcesses,
-            keepWindowOpenForDebug: keepWindowOpenForDebug
-        );
+        // Use the official SpacetimeDB command which pulls the latest image and starts a test container
+        // This is the recommended way from SpacetimeDB documentation
+        // The --rm flag ensures the test container is removed after stopping
+        // The --pull always flag ensures we always get the latest image
+        string pullCommand = "docker run --rm --pull always -p 3000:3000 clockworklabs/spacetime start";
         
-        if (result)
+        if (debugMode)
         {
-            SetStatus("SpacetimeDB Docker image pulled successfully!", Color.green);
-            hasDockerImage = true;
-            CCCPSettingsAdapter.SetHasDockerImage(true);
+            LogMessage("Pulling SpacetimeDB image using: " + pullCommand, 0);
+        }
+        
+        // Start the docker pull and run process in the background
+        SetStatus("Pulling image (this may take a few minutes)...", Color.yellow);
+        
+        // Run the command - this will pull the image and start a test container
+        // We'll run it silently and stop it after confirming the image is available
+        var pullTask = Task.Run(async () =>
+        {
+            try
+            {
+                using (System.Diagnostics.Process process = new System.Diagnostics.Process())
+                {
+                    process.StartInfo.FileName = "docker";
+                    process.StartInfo.Arguments = "run --rm --pull always -p 3000:3000 clockworklabs/spacetime start";
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = !visibleInstallProcesses;
+                    
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.Log("[ServerSetupWindow] Starting Docker pull and test run...");
+                    }
+                    
+                    process.Start();
+                    
+                    // Wait a bit for the image to pull and container to start
+                    await Task.Delay(5000); // Give it 5 seconds to start
+                    
+                    // Kill the test container since we just wanted to pull the image
+                    if (!process.HasExited)
+                    {
+                        if (debugMode)
+                        {
+                            UnityEngine.Debug.Log("[ServerSetupWindow] Stopping test container...");
+                        }
+                        process.Kill();
+                        process.WaitForExit();
+                    }
+                    
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode)
+                {
+                    UnityEngine.Debug.LogError($"[ServerSetupWindow] Error during pull: {ex.Message}");
+                }
+                return false;
+            }
+        });
+        
+        bool pullResult = await pullTask;
+        
+        if (pullResult)
+        {
+            SetStatus("Verifying image availability...", Color.yellow);
+            await Task.Delay(2000); // Wait for Docker to update its image list
+            
+            // Now verify the image is actually available
+            bool imageExists = await Task.Run(() =>
+            {
+                try
+                {
+                    using (System.Diagnostics.Process checkProcess = new System.Diagnostics.Process())
+                    {
+                        checkProcess.StartInfo.FileName = "docker";
+                        checkProcess.StartInfo.Arguments = "images -q clockworklabs/spacetime";
+                        checkProcess.StartInfo.RedirectStandardOutput = true;
+                        checkProcess.StartInfo.RedirectStandardError = true;
+                        checkProcess.StartInfo.UseShellExecute = false;
+                        checkProcess.StartInfo.CreateNoWindow = true;
+                        
+                        checkProcess.Start();
+                        string output = checkProcess.StandardOutput.ReadToEnd();
+                        checkProcess.WaitForExit();
+                        
+                        bool exists = !string.IsNullOrWhiteSpace(output);
+                        
+                        if (debugMode)
+                        {
+                            UnityEngine.Debug.Log($"[ServerSetupWindow] Image check result: {(exists ? "Found" : "Not found")}");
+                            if (exists)
+                            {
+                                UnityEngine.Debug.Log($"[ServerSetupWindow] Image ID: {output.Trim()}");
+                            }
+                        }
+                        
+                        return exists;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode)
+                    {
+                        UnityEngine.Debug.LogError($"[ServerSetupWindow] Error checking image: {ex.Message}");
+                    }
+                    return false;
+                }
+            });
+            
+            if (imageExists)
+            {
+                SetStatus("SpacetimeDB Docker image pulled and verified successfully!", Color.green);
+                hasDockerImage = true;
+                CCCPSettingsAdapter.SetHasDockerImage(true);
+            }
+            else
+            {
+                SetStatus("Image pull completed but verification failed. Try refreshing.", Color.yellow);
+            }
         }
         else
         {
