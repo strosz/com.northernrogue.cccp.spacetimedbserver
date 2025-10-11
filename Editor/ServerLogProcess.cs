@@ -113,7 +113,7 @@ public class ServerLogProcess
     private double lastDockerLogReadTime = 0;
     private double dockerLogReadInterval = 1.0;
     private bool isReadingDockerLogs = false;
-    private int lastDockerLogLineCount = 0; // Track how many lines we've seen to get only new ones
+    private HashSet<string> recentDockerLogHashes = new HashSet<string>(); // Track logs we've already processed
     private bool isDockerServer = false;
     
     // Prevention of multiple simultaneous Docker log processing tasks
@@ -1093,7 +1093,7 @@ public class ServerLogProcess
         
         // Reset Docker-specific flags
         isReadingDockerLogs = false;
-        lastDockerLogLineCount = 0;
+        recentDockerLogHashes.Clear();
         lastDockerLogReadTime = 0;
     }
 
@@ -2073,8 +2073,8 @@ public class ServerLogProcess
             ClearDockerLogs();
         }
         
-        // Reset line count to start fresh
-        lastDockerLogLineCount = 0;
+        // Reset hash set to start fresh
+        recentDockerLogHashes.Clear();
         lastDockerLogReadTime = 0;
     }
     
@@ -2129,54 +2129,71 @@ public class ServerLogProcess
                 return;
             }
             
-            // Parse logs and separate module vs database logs if needed
-            // For now, treat all Docker logs as combined (both module and database)
+            // Split into individual log lines
             string[] logLines = newLogs.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             
-            // Track current line count
-            int currentLineCount = logLines.Length;
+            // Process each line and filter out duplicates
+            List<string> newUniqueLines = new List<string>();
             
-            // Only process new lines
-            if (currentLineCount > lastDockerLogLineCount)
+            foreach (string line in logLines)
             {
-                int newLineCount = currentLineCount - lastDockerLogLineCount;
-                string[] newLines = logLines.Skip(Math.Max(0, logLines.Length - newLineCount)).ToArray();
+                if (string.IsNullOrWhiteSpace(line)) continue;
                 
-                if (newLines.Length > 0)
+                // Generate hash for this log line
+                string logHash = GenerateLogHash(line);
+                
+                // Only add if we haven't seen this log before
+                if (!recentDockerLogHashes.Contains(logHash))
                 {
-                    string combinedNewLogs = string.Join(Environment.NewLine, newLines);
+                    recentDockerLogHashes.Add(logHash);
+                    newUniqueLines.Add(line);
                     
-                    // In Docker, all logs come from container output
-                    // We'll treat them as module logs primarily
-                    lock (logLock)
+                    // Maintain hash set size limit
+                    if (recentDockerLogHashes.Count > MAX_RECENT_LOG_HASHES)
                     {
-                        moduleLogContent += combinedNewLogs + Environment.NewLine;
-                        cachedModuleLogContent += combinedNewLogs + Environment.NewLine;
-                        
-                        // Apply size limiting
-                        if (moduleLogContent.Length > BUFFER_SIZE)
+                        // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
+                        var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
+                        recentDockerLogHashes.Clear();
+                        foreach (var recentLine in recentLines)
                         {
-                            moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - TARGET_SIZE);
+                            recentDockerLogHashes.Add(GenerateLogHash(recentLine));
                         }
-                        if (cachedModuleLogContent.Length > BUFFER_SIZE)
-                        {
-                            cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - TARGET_SIZE);
-                        }
-                        
-                        // Update session state
-                        SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
-                        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
-                    }
-                    
-                    onModuleLogUpdated?.Invoke();
-                    
-                    if (debugMode)
-                    {
-                        logCallback($"[ServerLogProcess] Read {newLines.Length} new Docker log lines", 0);
                     }
                 }
+            }
+            
+            // Only update if we have new unique logs
+            if (newUniqueLines.Count > 0)
+            {
+                string combinedNewLogs = string.Join(Environment.NewLine, newUniqueLines);
                 
-                lastDockerLogLineCount = currentLineCount;
+                // In Docker, all logs come from container output
+                lock (logLock)
+                {
+                    moduleLogContent += combinedNewLogs + Environment.NewLine;
+                    cachedModuleLogContent += combinedNewLogs + Environment.NewLine;
+                    
+                    // Apply size limiting
+                    if (moduleLogContent.Length > BUFFER_SIZE)
+                    {
+                        moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - TARGET_SIZE);
+                    }
+                    if (cachedModuleLogContent.Length > BUFFER_SIZE)
+                    {
+                        cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - TARGET_SIZE);
+                    }
+                    
+                    // Update session state
+                    SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+                    SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+                }
+                
+                onModuleLogUpdated?.Invoke();
+                
+                if (debugMode)
+                {
+                    logCallback($"[ServerLogProcess] Read {newUniqueLines.Count} new Docker log lines (out of {logLines.Length} total)", 0);
+                }
             }
         }
         catch (Exception ex)
@@ -2187,6 +2204,14 @@ public class ServerLogProcess
         {
             isReadingDockerLogs = false;
         }
+    }
+    
+    // Helper method to generate hash for a log line
+    private string GenerateLogHash(string logLine)
+    {
+        // Use a simple hash of the log content
+        // For Docker logs, we want to include the entire line including Docker's timestamp prefix
+        return logLine.GetHashCode().ToString();
     }
     
     public void CheckDockerLogProcesses(double currentTime)
