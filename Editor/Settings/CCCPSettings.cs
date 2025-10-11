@@ -13,6 +13,7 @@ public class CCCPSettings : ScriptableObject
 
     [Header("Server Configuration")]
     public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
+    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode lastLocalServerMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
     public string userName = "";
     public string serverUrl = "http://0.0.0.0:3000/";
     public int serverPort = 3000;

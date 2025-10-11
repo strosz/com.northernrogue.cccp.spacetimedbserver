@@ -781,13 +781,15 @@ public class ServerWindow : EditorWindow
                         serverManager.StopMaincloudLog();
                         if (debugMode) LogMessage("Stopped Maincloud log process before mode switch", 0);
 
-                        serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
+                        // Restore to last used local server mode (WSL or Docker)
+                        serverMode = (ServerMode)CCCPSettingsAdapter.GetLastLocalServerMode();
                         UpdateServerModeState();
                     }
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
-                    serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
+                    // Restore to last used local server mode (WSL or Docker)
+                    serverMode = (ServerMode)CCCPSettingsAdapter.GetLastLocalServerMode();
                     UpdateServerModeState();
                     ClearModuleLogFile();
                     ClearDatabaseLog();
@@ -806,6 +808,8 @@ public class ServerWindow : EditorWindow
                 }
                 else if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
+                    // Save the current local mode before switching away
+                    CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)serverMode);
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                     ClearModuleLogFile();
@@ -823,6 +827,8 @@ public class ServerWindow : EditorWindow
                     "OK","Cancel");
                     if (modeChange)
                     {
+                        // Save the current local mode before switching away
+                        CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)serverMode);
                         serverManager.StopServer();
                         serverMode = ServerMode.MaincloudServer;
                         UpdateServerModeState();
@@ -853,7 +859,7 @@ public class ServerWindow : EditorWindow
             // Shared settings
             GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
 
-            // CLI Provider dropdown (only shown in Local mode)
+            // CLI Provider dropdown (only shown in Local mode) Equals to which local server mode is selected
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 EditorGUILayout.BeginHorizontal();
@@ -869,8 +875,10 @@ public class ServerWindow : EditorWindow
                 {
                     ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.WSLServer : ServerMode.DockerServer;
                     serverMode = newMode;
+                    // Save the selected CLI provider as the last local mode
+                    CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)newMode);
                     UpdateServerModeState();
-                    LogMessage($"CLI Provider changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
+                    LogMessage($"Local server mode changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
                 }
                 GUILayout.Label(ServerUtilityProvider.GetStatusIcon(true), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -1629,6 +1637,7 @@ public class ServerWindow : EditorWindow
                 ServerUpdateProcess.debugMode = newDebugMode;
                 ServerLogProcess.debugMode = newDebugMode;
                 ServerWSLProcess.debugMode = newDebugMode;
+                ServerDockerProcess.debugMode = newDebugMode;
                 ServerCustomProcess.debugMode = newDebugMode;
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
@@ -2861,9 +2870,13 @@ public class ServerWindow : EditorWindow
         {
             if (debugMode) LogMessage($"Server mode transition: {previousServerMode} -> {serverMode}", 0);
             
+            // Reset server status when switching modes to prevent false positives
+            serverManager.ResetServerStatusOnModeChange();
+            if (debugMode) LogMessage("Server status reset for mode change", 0);
+            
             // Determine if we need to run a set-default command based on the transition
-            bool needsMaincloudSetDefault = (previousServerMode == ServerMode.WSLServer || previousServerMode == ServerMode.CustomServer) && serverMode == ServerMode.MaincloudServer;
-            bool needsLocalSetDefault = previousServerMode == ServerMode.MaincloudServer && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.CustomServer);
+            bool needsMaincloudSetDefault = (previousServerMode == ServerMode.WSLServer || previousServerMode == ServerMode.DockerServer || previousServerMode == ServerMode.CustomServer) && serverMode == ServerMode.MaincloudServer;
+            bool needsLocalSetDefault = previousServerMode == ServerMode.MaincloudServer && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer || serverMode == ServerMode.CustomServer);
             
             if (needsMaincloudSetDefault)
             {
@@ -2877,7 +2890,7 @@ public class ServerWindow : EditorWindow
             }
             else
             {
-                // Transitioning between WSL and Custom modes doesn't require set-default changes
+                // Transitioning between WSL, Docker and Custom modes doesn't require set-default changes
                 if (debugMode) LogMessage("No set-default command needed for this transition", 0);
             }
             

@@ -225,6 +225,11 @@ public class ServerSetupWindow : EditorWindow
         hasCustomSpacetimeDBService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBService();
         hasCustomSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBLogsService();
 
+        // Load Docker installation status from Settings
+        hasDocker = CCCPSettingsAdapter.GetHasDocker();
+        hasDockerCompose = CCCPSettingsAdapter.GetHasDockerCompose();
+        hasDockerImage = CCCPSettingsAdapter.GetHasDockerImage();
+
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = CCCPSettingsAdapter.GetWSL1Installed();
 
@@ -539,7 +544,9 @@ public class ServerSetupWindow : EditorWindow
             }
         };
     }
+    #endregion
 
+    #region Installer Item Status
     internal void UpdateInstallerItemsStatus()
     {
         bool repaintNeeded = false;
@@ -645,7 +652,7 @@ public class ServerSetupWindow : EditorWindow
             }
         }
         // For Custom SSH installer items
-        else {
+        else if (currentTab == 1) {
             foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
@@ -684,6 +691,44 @@ public class ServerSetupWindow : EditorWindow
                 {
                     newState = hasCustomSpacetimeDBService;
                     newEnabledState = isSessionActive && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(sshUserName);
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    newState = hasSpacetimeDBUnitySDK;
+                    newEnabledState = true; // Always enabled
+                }
+                
+                if (newState != previousState || newEnabledState != previousEnabledState)
+                {
+                    item.isInstalled = newState;
+                    item.isEnabled = newEnabledState;
+                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                }
+            }
+        }
+        // For Docker installer items
+        else if (currentTab == 2) {
+            foreach (var item in itemsToUpdate)
+            {
+                bool previousState = item.isInstalled;
+                bool previousEnabledState = item.isEnabled;
+                bool newState = previousState; // Default to no change
+                bool newEnabledState = previousEnabledState;
+                
+                if (item.title.Contains("Docker Desktop"))
+                {
+                    newState = hasDocker && hasDockerCompose;
+                    newEnabledState = true; // Always enabled
+                }
+                else if (item.title.Contains("Pull SpacetimeDB Docker Image"))
+                {
+                    newState = hasDockerImage;
+                    newEnabledState = hasDocker && hasDockerCompose;
+                }
+                else if (item.title.Contains("Generate Docker Compose"))
+                {
+                    newState = false; // Always show as available to regenerate
+                    newEnabledState = hasDocker && hasDockerCompose;
                 }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
                 {
@@ -1431,21 +1476,26 @@ public class ServerSetupWindow : EditorWindow
             
             isDockerRefreshing = false;
             
-            if (hasDocker && hasDockerCompose)
+            // Provide more detailed status messages
+            if (hasDocker && hasDockerCompose && hasDockerImage)
             {
-                SetStatus("Docker prerequisites check complete.", Color.green);
+                SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
+            }
+            else if (hasDocker && hasDockerCompose)
+            {
+                SetStatus("Docker is installed. SpacetimeDB image will be pulled when needed.", Color.green);
+            }
+            else if (hasDocker && !hasDockerCompose)
+            {
+                SetStatus("Docker is installed but Docker Compose is not available. Please update Docker Desktop.", Color.yellow);
             }
             else if (!hasDocker)
             {
-                SetStatus("Docker is not installed. Please install Docker Desktop.", Color.yellow);
-            }
-            else if (!hasDockerCompose)
-            {
-                SetStatus("Docker Compose is not available.", Color.yellow);
+                SetStatus("Docker is not installed or not in system PATH. Please install Docker Desktop.", Color.yellow);
             }
             else
             {
-                SetStatus("Docker prerequisites check complete. SpacetimeDB image not found locally.", Color.yellow);
+                SetStatus("Docker prerequisites check complete.", Color.yellow);
             }
         });
     }

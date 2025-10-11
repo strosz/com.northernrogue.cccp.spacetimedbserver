@@ -426,25 +426,104 @@ public class ServerDockerProcess
 
             try
             {
-                // Check if Docker is installed
-                using (Process dockerCheck = new Process())
+                // Step 1: Check if Docker CLI is installed (platform-agnostic)
+                // Use 'docker --version' which works even if daemon isn't running
+                using (Process dockerVersionCheck = new Process())
                 {
-                    dockerCheck.StartInfo.FileName = "docker";
-                    dockerCheck.StartInfo.Arguments = "--version";
-                    dockerCheck.StartInfo.RedirectStandardOutput = true;
-                    dockerCheck.StartInfo.RedirectStandardError = true;
-                    dockerCheck.StartInfo.UseShellExecute = false;
-                    dockerCheck.StartInfo.CreateNoWindow = true;
+                    dockerVersionCheck.StartInfo.FileName = "docker";
+                    dockerVersionCheck.StartInfo.Arguments = "--version";
+                    dockerVersionCheck.StartInfo.RedirectStandardOutput = true;
+                    dockerVersionCheck.StartInfo.RedirectStandardError = true;
+                    dockerVersionCheck.StartInfo.UseShellExecute = false;
+                    dockerVersionCheck.StartInfo.CreateNoWindow = true;
                     
-                    dockerCheck.Start();
-                    dockerCheck.WaitForExit(3000);
+                    dockerVersionCheck.Start();
+                    string output = dockerVersionCheck.StandardOutput.ReadToEnd();
+                    string error = dockerVersionCheck.StandardError.ReadToEnd();
+                    bool exited = dockerVersionCheck.WaitForExit(5000);
                     
-                    if (dockerCheck.ExitCode == 0)
+                    if (exited && dockerVersionCheck.ExitCode == 0 && output.Contains("Docker version"))
                     {
                         hasDocker = true;
+                        if (debugMode)
+                        {
+                            UnityEngine.Debug.Log($"[ServerDockerProcess] Docker is installed: {output.Trim()}");
+                        }
+                    }
+                    else
+                    {
+                        if (debugMode)
+                        {
+                            if (!exited)
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check timed out - Docker may not be installed");
+                            }
+                            else if (dockerVersionCheck.ExitCode != 0)
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check failed (exit code {dockerVersionCheck.ExitCode})");
+                                if (!string.IsNullOrEmpty(error))
+                                {
+                                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Error: {error.Trim()}");
+                                }
+                            }
+                            else
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check succeeded but output doesn't contain version info: {output}");
+                            }
+                        }
+                    }
+                    
+                    if (!exited)
+                    {
+                        try { dockerVersionCheck.Kill(); } catch { }
                     }
                 }
 
+                // Step 2: If Docker CLI exists, check if daemon is running
+                if (hasDocker)
+                {
+                    using (Process dockerPingCheck = new Process())
+                    {
+                        dockerPingCheck.StartInfo.FileName = "docker";
+                        dockerPingCheck.StartInfo.Arguments = "info";
+                        dockerPingCheck.StartInfo.RedirectStandardOutput = true;
+                        dockerPingCheck.StartInfo.RedirectStandardError = true;
+                        dockerPingCheck.StartInfo.UseShellExecute = false;
+                        dockerPingCheck.StartInfo.CreateNoWindow = true;
+                        
+                        dockerPingCheck.Start();
+                        string output = dockerPingCheck.StandardOutput.ReadToEnd();
+                        string error = dockerPingCheck.StandardError.ReadToEnd();
+                        bool exited = dockerPingCheck.WaitForExit(5000);
+                        
+                        if (exited && dockerPingCheck.ExitCode == 0)
+                        {
+                            if (debugMode)
+                            {
+                                UnityEngine.Debug.Log($"[ServerDockerProcess] Docker daemon is running");
+                            }
+                        }
+                        else
+                        {
+                            if (debugMode)
+                            {
+                                string reason = !exited ? "timeout" : $"exit code {dockerPingCheck.ExitCode}";
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker daemon is not running ({reason})");
+                                if (!string.IsNullOrEmpty(error) && error.Contains("Cannot connect"))
+                                {
+                                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker Desktop may not be started. Please start Docker Desktop.");
+                                }
+                            }
+                        }
+                        
+                        if (!exited)
+                        {
+                            try { dockerPingCheck.Kill(); } catch { }
+                        }
+                    }
+                }
+
+                // Step 3: Check if Docker Compose is available (only if Docker CLI exists)
                 if (hasDocker)
                 {
                     // Check if Docker Compose is available
@@ -458,15 +537,37 @@ public class ServerDockerProcess
                         composeCheck.StartInfo.CreateNoWindow = true;
                         
                         composeCheck.Start();
-                        composeCheck.WaitForExit(3000);
+                        string output = composeCheck.StandardOutput.ReadToEnd();
+                        string error = composeCheck.StandardError.ReadToEnd();
+                        bool exited = composeCheck.WaitForExit(5000);
                         
-                        if (composeCheck.ExitCode == 0)
+                        if (exited && composeCheck.ExitCode == 0)
                         {
                             hasDockerCompose = true;
+                            if (debugMode)
+                            {
+                                UnityEngine.Debug.Log($"[ServerDockerProcess] Docker Compose is available: {output.Trim()}");
+                            }
+                        }
+                        else
+                        {
+                            if (debugMode)
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker Compose check failed");
+                                if (!string.IsNullOrEmpty(error))
+                                {
+                                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Error: {error.Trim()}");
+                                }
+                            }
+                        }
+                        
+                        if (!exited)
+                        {
+                            try { composeCheck.Kill(); } catch { }
                         }
                     }
 
-                    // Check if SpacetimeDB image exists locally
+                    // Step 4: Check if SpacetimeDB image exists locally (only if Docker daemon is running)
                     using (Process imageCheck = new Process())
                     {
                         imageCheck.StartInfo.FileName = "docker";
@@ -478,26 +579,58 @@ public class ServerDockerProcess
                         
                         imageCheck.Start();
                         string output = imageCheck.StandardOutput.ReadToEnd();
-                        imageCheck.WaitForExit(3000);
+                        string error = imageCheck.StandardError.ReadToEnd();
+                        bool exited = imageCheck.WaitForExit(5000);
                         
-                        if (imageCheck.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+                        if (exited && imageCheck.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                         {
                             hasDockerImage = true;
+                            if (debugMode)
+                            {
+                                UnityEngine.Debug.Log($"[ServerDockerProcess] SpacetimeDB image found locally");
+                            }
+                        }
+                        else
+                        {
+                            if (debugMode)
+                            {
+                                if (string.IsNullOrWhiteSpace(output))
+                                {
+                                    UnityEngine.Debug.Log($"[ServerDockerProcess] SpacetimeDB image not found locally (can be pulled when needed)");
+                                }
+                                if (!string.IsNullOrEmpty(error) && error.Contains("Cannot connect"))
+                                {
+                                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Cannot check for images - Docker daemon not running");
+                                }
+                            }
+                        }
+                        
+                        if (!exited)
+                        {
+                            try { imageCheck.Kill(); } catch { }
                         }
                     }
+                }
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                // This exception occurs when the executable is not found (Docker not in PATH)
+                if (debugMode) 
+                {
+                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker executable not found. Docker may not be installed or not in system PATH: {ex.Message}");
                 }
             }
             catch (Exception ex)
             {
                 if (debugMode) 
                 {
-                    UnityEngine.Debug.LogError($"[ServerDockerProcess] Error checking prerequisites: {ex.Message}");
+                    UnityEngine.Debug.LogError($"[ServerDockerProcess] Error checking prerequisites: {ex.Message}\n{ex.StackTrace}");
                 }
             }
             
             if (debugMode) 
             {
-                UnityEngine.Debug.Log($"[ServerDockerProcess] Prerequisites check - Docker: {hasDocker}, Compose: {hasDockerCompose}, Image: {hasDockerImage}");
+                UnityEngine.Debug.Log($"[ServerDockerProcess] Prerequisites check complete - Docker: {hasDocker}, Compose: {hasDockerCompose}, Image: {hasDockerImage}");
             }
 
             EditorApplication.delayCall += () => callback(hasDocker, hasDockerCompose, hasDockerImage);
@@ -859,16 +992,20 @@ public class ServerDockerProcess
                     using (Process process = new Process())
                     {
                         process.StartInfo.FileName = "docker";
-                        process.StartInfo.Arguments = "info";
+                        process.StartInfo.Arguments = "version";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
                         process.StartInfo.UseShellExecute = false;
                         process.StartInfo.CreateNoWindow = true;
                         
                         process.Start();
-                        process.WaitForExit(3000);
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit(5000);
                         
-                        return process.ExitCode == 0;
+                        // Docker is running if we can get version info and exit code is 0
+                        // Also check for "Server:" section which confirms Docker daemon is running
+                        bool hasServerInfo = output.Contains("Server:") || output.Contains("Server Version:");
+                        return process.ExitCode == 0 && hasServerInfo;
                     }
                 }
                 catch
@@ -877,6 +1014,7 @@ public class ServerDockerProcess
                 }
             });
 
+            if (debugMode && result) logCallback("[ServerDockerProcess] Docker service is running", 0);
             return result;
         }
         catch (Exception ex)

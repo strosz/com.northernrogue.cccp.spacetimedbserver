@@ -1129,6 +1129,16 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static NorthernRogue.CCCP.Editor.ServerManager.ServerMode GetLastLocalServerMode() => Settings.lastLocalServerMode;
+    public static void SetLastLocalServerMode(NorthernRogue.CCCP.Editor.ServerManager.ServerMode value) 
+    { 
+        if (Settings.lastLocalServerMode != value)
+        {
+            Settings.lastLocalServerMode = value; 
+            SaveSettings();
+        }
+    }
+    
     #endregion
     
     #region Module Management

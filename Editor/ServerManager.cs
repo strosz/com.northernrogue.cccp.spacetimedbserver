@@ -1311,8 +1311,50 @@ public class ServerManager
                         isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                         if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
                     }                
-                }                
-                else // WSL and other modes
+                }
+                else if (Settings.serverMode == ServerMode.DockerServer)
+                {
+                    // Docker mode - check Docker container status
+                    bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                    bool containerRunning = false;
+                    
+                    if (dockerServiceRunning)
+                    {
+                        containerRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                    }
+                    
+                    // During startup phase, prioritize container status
+                    if (containerRunning)
+                    {
+                        isActuallyRunning = true;
+                        
+                        // Optionally check ping for additional confirmation
+                        if (elapsedTime > 3.0f)
+                        {
+                            bool pingResponding = await PingServerStatusAsync();
+                            if (DebugMode) 
+                            {
+                                LogMessage($"Docker startup check - Container: running, Ping: {(pingResponding ? "responding" : "not responding")}, Elapsed: {elapsedTime:F1}s", 0);
+                            }
+                        }
+                        else
+                        {
+                            if (DebugMode) 
+                            {
+                                LogMessage($"Docker startup check - Container: running, Elapsed: {elapsedTime:F1}s (early startup, ping skipped)", 0);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        isActuallyRunning = false;
+                        if (DebugMode) 
+                        {
+                            LogMessage($"Docker startup check - Container: not running, Elapsed: {elapsedTime:F1}s", 0);
+                        }
+                    }
+                }
+                else // WSL mode
                 {
                     // Use instantCheck=true to bypass cache during startup for immediate status verification
                     bool serviceRunning = await wslProcessor.CheckServerRunning(instantCheck: true);
@@ -1461,8 +1503,47 @@ public class ServerManager
                         if (DebugMode) LogMessage("Ignoring possible false negative server status check (server recently started)", 0);
                         return; // Skip this check, maintain current state
                     }                
-                }                
-                else // WSL and other modes
+                }
+                else if (Settings.serverMode == ServerMode.DockerServer)
+                {
+                    // Docker mode - check container and ping status
+                    bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                    bool containerRunning = false;
+                    bool pingResponding = false;
+                    
+                    if (dockerServiceRunning)
+                    {
+                        containerRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                        if (containerRunning)
+                        {
+                            pingResponding = await PingServerStatusAsync();
+                        }
+                    }
+                    
+                    // Special handling for recently stopped servers
+                    double timeSinceStop = EditorApplication.timeSinceStartup - stopInitiatedTime;
+                    bool recentlyStopped = justStopped && timeSinceStop < 10.0;
+                    
+                    if (recentlyStopped)
+                    {
+                        // Require both container AND ping to be active for recently stopped servers
+                        isActuallyRunning = containerRunning && pingResponding;
+                        if (DebugMode)
+                        {
+                            LogMessage($"Docker status (recently stopped) - Container: {(containerRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
+                    }
+                    else
+                    {
+                        // Normal operation: Server running if both container exists AND ping responds
+                        isActuallyRunning = containerRunning && pingResponding;
+                        if (DebugMode)
+                        {
+                            //LogMessage($"Docker status - Container: {(containerRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
+                    }
+                }
+                else // WSL mode
                 {
                     // Use a combination of service check and HTTP ping for better reliability
                     bool serviceRunning = await wslProcessor.CheckServerRunning();
@@ -2406,6 +2487,8 @@ public class ServerManager
         if (currentTime - lastWslCheckTime < wslCheckInterval) // Reuse the same interval
             return;
         
+        lastWslCheckTime = currentTime; // Update the cache time
+        
         try
         {
             if (dockerProcessor == null)
@@ -2585,9 +2668,27 @@ public class ServerManager
         }
     }
 
-
-
-
+    public void ResetServerStatusOnModeChange()
+    {
+        // Reset server status flags to prevent carrying over status from previous mode
+        serverConfirmedRunning = false;
+        serverStarted = false;
+        isStartingUp = false;
+        justStopped = false;
+        pingShowsOnline = false;
+        consecutiveFailedChecks = 0;
+        
+        // Update logProcessor state
+        if (logProcessor != null)
+        {
+            logProcessor.SetServerRunningState(false);
+        }
+        
+        // Save the reset state
+        SaveServerStateToSessionState();
+        
+        if (DebugMode) LogMessage("Server status reset for server mode change", 0);
+    }
 
     public void OpenSSHWindow()
     {
@@ -2626,6 +2727,17 @@ public class ServerManager
             await CheckServerStatus();
             
             // Check WSL journalctl log processes only if editor has focus
+            if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
+        }
+        else if (Settings.serverMode == ServerMode.DockerServer)
+        {
+            await CheckDockerStatus();
+            await CheckServerStatus();
+            
+            // Check Docker log processes only if editor has focus
             if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
             {
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
