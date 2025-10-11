@@ -160,32 +160,14 @@ public class ServerOutputWindow : EditorWindow
                 selectedTab = 0; // Default to Database All
             }
         }
-        else if (serverMode.Equals("DockerServer", StringComparison.OrdinalIgnoreCase))
-        {
-            // Docker mode: Only show module tabs (all logs come in one stream)
-            tabs = new string[] { "Module and Database All", "Module and Database Errors" };
-            // Map previous tab selection
-            if (previousSelectedTab >= 2) // Was on Database tabs
-            {
-                selectedTab = previousSelectedTab - 2; // Map to 0 or 1
-            }
-            else if (previousSelectedTab >= tabs.Length)
-            {
-                selectedTab = 0;
-            }
-        }
         else
         {
+            // All other modes (WSL, Docker, Custom) use standard 4-tab layout
             tabs = new string[] { "Module All", "Module Errors", "Database All", "Database Errors" };
             // Map previous tab selection
             if (previousServerMode.Equals("MaincloudServer", StringComparison.OrdinalIgnoreCase) && previousSelectedTab < 2)
             {
                 selectedTab = previousSelectedTab + 2; // Map back to Database tabs (2 or 3)
-            }
-            else if (previousServerMode.Equals("DockerServer", StringComparison.OrdinalIgnoreCase) && previousSelectedTab < 2)
-            {
-                // Map Docker tabs to Module tabs
-                selectedTab = previousSelectedTab; // Keep same position (0 or 1)
             }
             // Otherwise keep the same tab index if it's valid
             else if (selectedTab >= tabs.Length)
@@ -1489,37 +1471,6 @@ public class ServerOutputWindow : EditorWindow
         
         switch (currentTabName)
         {
-            case "Module and Database All":
-                if (string.IsNullOrEmpty(moduleLogFull)) {
-                    return "(Waiting for new Module and Database logs...)";
-                }
-                logToShow = moduleLogFull;
-                break;
-            case "Module and Database Errors":
-                if (string.IsNullOrEmpty(moduleLogFull)) {
-                    return "(Waiting for new Module and Database logs...)";
-                }
-                
-                try {
-                    var errorLines = moduleLogFull.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Where(line => 
-                            line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) || 
-                            line.Contains("WARN", StringComparison.OrdinalIgnoreCase) || 
-                            line.Contains("panic", StringComparison.OrdinalIgnoreCase) ||
-                            line.Contains("fail", StringComparison.OrdinalIgnoreCase) ||
-                            line.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
-                            line.Contains("[TAIL ERROR]") || 
-                            line.StartsWith("E "));
-                    
-                    logToShow = string.Join("\n", errorLines);
-                    
-                    if (string.IsNullOrWhiteSpace(logToShow)) {
-                        return "(No errors detected in Module and Database log)";
-                    }
-                } catch (Exception ex) {
-                    return $"Error filtering logs: {ex.Message}";
-                }
-                break;
             case "Module All":
                 if (string.IsNullOrEmpty(moduleLogFull)) {
                     return "(Waiting for new Module logs...)";

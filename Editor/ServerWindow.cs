@@ -1189,7 +1189,7 @@ public class ServerWindow : EditorWindow
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthTokenDocker = EditorGUILayout.TextField(authTokenDocker, GUILayout.Width(150));
+                string newAuthTokenDocker = EditorGUILayout.PasswordField(authTokenDocker, GUILayout.Width(150));
                 if (newAuthTokenDocker != authTokenDocker)
                 {
                     authTokenDocker = newAuthTokenDocker;
