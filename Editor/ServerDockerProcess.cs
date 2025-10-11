@@ -1262,6 +1262,8 @@ public class ServerDockerProcess
                         process.StartInfo.Arguments = $"logs --tail {tailLines} {ContainerName}";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
+                        process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+                        process.StartInfo.StandardErrorEncoding = System.Text.Encoding.UTF8;
                         process.StartInfo.UseShellExecute = false;
                         process.StartInfo.CreateNoWindow = true;
                         

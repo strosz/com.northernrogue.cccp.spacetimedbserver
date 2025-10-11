@@ -531,11 +531,11 @@ public class ServerReducerWindow : EditorWindow
 
         LoadSettings();
 
-        if (serverMode == "WSLServer")
+        if (serverMode == "WSLServer" || serverMode == "DockerServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
             {
-                SetStatus("WSL Server URL and Module Name are required.", Color.red);
+                SetStatus("Server URL and Module Name are required.", Color.red);
                 return;
             }
         } else if (serverMode == "CustomServer")
@@ -576,7 +576,7 @@ public class ServerReducerWindow : EditorWindow
         // Move try-catch outside of the iterator
         // Add version parameter to match ServerDataWindow's schema request
 
-        if (serverMode == "WSLServer"){
+        if (serverMode == "WSLServer" || serverMode == "DockerServer"){
             schemaUrl = $"{serverURL}/database/{moduleName}/schema?version=9";
         } else if (serverMode == "CustomServer") {
             schemaUrl = $"{customServerUrl}/database/{moduleName}/schema?version=9";
@@ -683,11 +683,11 @@ public class ServerReducerWindow : EditorWindow
     {
         LoadSettings();
 
-        if (serverMode == "WSLServer")
+        if (serverMode == "WSLServer" || serverMode == "DockerServer")
         {
             if (string.IsNullOrEmpty(serverURL) || string.IsNullOrEmpty(moduleName))
             {
-                SetStatus("WSL Server URL and Module Name are required.", Color.red);
+                SetStatus("Server URL and Module Name are required.", Color.red);
                 return;
             }
         } else if (serverMode == "CustomServer")
@@ -796,7 +796,7 @@ public class ServerReducerWindow : EditorWindow
     
     private IEnumerator RunReducerCoroutine(string reducerName, List<object> parameters, Action<bool, string> callback)
     {
-        if (serverMode == "WSLServer"){
+        if (serverMode == "WSLServer" || serverMode == "DockerServer"){
             reducerUrl = $"{serverURL}/database/{moduleName}/call/{reducerName}";
         } else if (serverMode == "CustomServer") {
             reducerUrl = $"{customServerUrl}/database/{moduleName}/call/{reducerName}";

@@ -54,8 +54,11 @@ public class ServerLogProcess
     private string moduleName = "";
     private string serverDirectory = "";
     
-    // Reference to the CMD processor for executing commands
+    // Reference to the WSL processor for executing commands
     private ServerWSLProcess wslProcess;
+    
+    // Reference to the Docker processor for executing commands
+    private ServerDockerProcess dockerProcessor;
     
     // Reference to the Custom processor for executing SSH commands
     private ServerCustomProcess customProcessor;
@@ -103,6 +106,18 @@ public class ServerLogProcess
 
     // Prevention of multiple simultaneous WSL log processing tasks
     private bool isWSLLogProcessingScheduled = false;
+
+    // Docker Logging Variables
+    
+    // DOCKER LOGS: Read from docker logs command
+    private double lastDockerLogReadTime = 0;
+    private double dockerLogReadInterval = 1.0;
+    private bool isReadingDockerLogs = false;
+    private int lastDockerLogLineCount = 0; // Track how many lines we've seen to get only new ones
+    private bool isDockerServer = false;
+    
+    // Prevention of multiple simultaneous Docker log processing tasks
+    private bool isDockerLogProcessingScheduled = false;
 
     // SSH Logging Variables
 
@@ -215,11 +230,18 @@ public class ServerLogProcess
             // Server Mode
             var currentServerMode = CCCPSettingsAdapter.GetServerMode();
             bool shouldBeCustomServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.CustomServer;
+            bool shouldBeDockerServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer;
 
             if (isCustomServer != shouldBeCustomServer)
             {
                 if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server mode sync: isCustomServer was {isCustomServer}, should be {shouldBeCustomServer} (ServerMode: {currentServerMode})");
                 isCustomServer = shouldBeCustomServer;
+            }
+            
+            if (isDockerServer != shouldBeDockerServer)
+            {
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server mode sync: isDockerServer was {isDockerServer}, should be {shouldBeDockerServer} (ServerMode: {currentServerMode})");
+                isDockerServer = shouldBeDockerServer;
             }
 
             // SSH User
@@ -1041,21 +1063,38 @@ public class ServerLogProcess
     
     public void ConfigureWSL(bool isLocalServer)
     {
-        // Ensure we're not in custom server mode for WSL
+        // Ensure we're not in custom server or Docker mode for WSL
         this.isCustomServer = false;
+        this.isDockerServer = false;
         
-        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured WSL journalctl: IsLocalServer={isLocalServer}, IsCustomServer={isCustomServer}");
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured WSL journalctl: IsLocalServer={isLocalServer}, IsCustomServer={isCustomServer}, IsDockerServer={isDockerServer}");
         
         // Initialize timestamps to 10 minutes ago to avoid getting massive historical logs but still get recent context
         DateTime startTime = DateTime.UtcNow.AddMinutes(-10);
         lastWSLModuleLogTimestamp = startTime;
-        lastWSLDatabaseLogTimestamp = startTime;        // Reset process protection flags
+        lastWSLDatabaseLogTimestamp = startTime;
+        
+        // Reset process protection flags
         isReadingWSLModuleLogs = false;
         isReadingWSLDatabaseLogs = false;
         databaseLogStartFresh = false; // Will be set to true if clearDatabaseLogAtStart is used
         databaseLogFreshStartTime = DateTime.MinValue;
         moduleLogStartFresh = false; // Will be set to true if clearModuleLogAtStart is used
         moduleLogFreshStartTime = DateTime.MinValue;
+    }
+    
+    public void ConfigureDocker(bool isLocalServer)
+    {
+        // Ensure we're in Docker mode
+        this.isCustomServer = false;
+        this.isDockerServer = true;
+        
+        if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured Docker logging: IsLocalServer={isLocalServer}, IsDockerServer={isDockerServer}");
+        
+        // Reset Docker-specific flags
+        isReadingDockerLogs = false;
+        lastDockerLogLineCount = 0;
+        lastDockerLogReadTime = 0;
     }
 
     public void StartWSLLogging()
@@ -2023,6 +2062,187 @@ public class ServerLogProcess
     }
     #endregion
     
+    #region Docker Logging
+    
+    public void StartDockerLogging()
+    {
+        if (debugMode) UnityEngine.Debug.Log("[ServerLogProcess] Starting Docker log reading");
+        
+        if (clearModuleLogAtStart)
+        {
+            ClearDockerLogs();
+        }
+        
+        // Reset line count to start fresh
+        lastDockerLogLineCount = 0;
+        lastDockerLogReadTime = 0;
+    }
+    
+    public void ClearDockerLogs()
+    {
+        if (debugMode) logCallback("[ServerLogProcess] Clearing Docker logs...", 0);
+        
+        // Clear in-memory logs
+        lock (logLock)
+        {
+            moduleLogContent = "";
+            cachedModuleLogContent = "";
+            databaseLogContent = "";
+            cachedDatabaseLogContent = "";
+            
+            SessionState.SetString(SessionKeyModuleLog, "");
+            SessionState.SetString(SessionKeyCachedModuleLog, "");
+            SessionState.SetString(SessionKeyDatabaseLog, "");
+            SessionState.SetString(SessionKeyCachedDatabaseLog, "");
+        }
+        
+        onModuleLogUpdated?.Invoke();
+        onDatabaseLogUpdated?.Invoke();
+        
+        if (debugMode) logCallback("[ServerLogProcess] Docker logs cleared", 1);
+    }
+    
+    private async Task ReadDockerLogsAsync()
+    {
+        if (dockerProcessor == null)
+        {
+            if (debugMode) logCallback("[ServerLogProcess] Docker processor not initialized", -1);
+            return;
+        }
+        
+        // Check if already reading
+        if (isReadingDockerLogs)
+        {
+            if (debugMode) logCallback("[ServerLogProcess] Docker log read already in progress, skipping", 0);
+            return;
+        }
+        
+        isReadingDockerLogs = true;
+        
+        try
+        {
+            // Get logs from Docker - all logs combined (module + database)
+            string newLogs = await dockerProcessor.GetDockerLogs(1000); // Get last 1000 lines
+            
+            if (string.IsNullOrEmpty(newLogs))
+            {
+                return;
+            }
+            
+            // Parse logs and separate module vs database logs if needed
+            // For now, treat all Docker logs as combined (both module and database)
+            string[] logLines = newLogs.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            
+            // Track current line count
+            int currentLineCount = logLines.Length;
+            
+            // Only process new lines
+            if (currentLineCount > lastDockerLogLineCount)
+            {
+                int newLineCount = currentLineCount - lastDockerLogLineCount;
+                string[] newLines = logLines.Skip(Math.Max(0, logLines.Length - newLineCount)).ToArray();
+                
+                if (newLines.Length > 0)
+                {
+                    string combinedNewLogs = string.Join(Environment.NewLine, newLines);
+                    
+                    // In Docker, all logs come from container output
+                    // We'll treat them as module logs primarily
+                    lock (logLock)
+                    {
+                        moduleLogContent += combinedNewLogs + Environment.NewLine;
+                        cachedModuleLogContent += combinedNewLogs + Environment.NewLine;
+                        
+                        // Apply size limiting
+                        if (moduleLogContent.Length > BUFFER_SIZE)
+                        {
+                            moduleLogContent = "[... Log Truncated ...]\n" + moduleLogContent.Substring(moduleLogContent.Length - TARGET_SIZE);
+                        }
+                        if (cachedModuleLogContent.Length > BUFFER_SIZE)
+                        {
+                            cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - TARGET_SIZE);
+                        }
+                        
+                        // Update session state
+                        SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
+                        SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
+                    }
+                    
+                    onModuleLogUpdated?.Invoke();
+                    
+                    if (debugMode)
+                    {
+                        logCallback($"[ServerLogProcess] Read {newLines.Length} new Docker log lines", 0);
+                    }
+                }
+                
+                lastDockerLogLineCount = currentLineCount;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"[ServerLogProcess] Error reading Docker logs: {ex.Message}", -1);
+        }
+        finally
+        {
+            isReadingDockerLogs = false;
+        }
+    }
+    
+    public void CheckDockerLogProcesses(double currentTime)
+    {
+        // Rate limit log reading
+        if (currentTime - lastDockerLogReadTime < 0.5)
+        {
+            return;
+        }
+        
+        // Prevent multiple simultaneous reads
+        if (isDockerLogProcessingScheduled)
+        {
+            if (debugMode) logCallback("[ServerLogProcess] Docker log processing already scheduled, skipping", 0);
+            return;
+        }
+        
+        if (currentTime - lastDockerLogReadTime > dockerLogReadInterval)
+        {
+            lastDockerLogReadTime = currentTime;
+            
+            if (serverRunning && isDockerServer)
+            {
+                isDockerLogProcessingScheduled = true;
+                
+                EditorApplication.delayCall += async () => {
+                    try
+                    {
+                        await ReadDockerLogsAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) logCallback($"[ServerLogProcess] Error in Docker log reading: {ex.Message}", -1);
+                    }
+                    finally
+                    {
+                        isDockerLogProcessingScheduled = false;
+                    }
+                };
+            }
+        }
+    }
+    
+    public void StopDockerLogging()
+    {
+        if (debugMode) logCallback("[ServerLogProcess] Stopping Docker log reading", 0);
+        
+        // Reset flags
+        isReadingDockerLogs = false;
+        isDockerLogProcessingScheduled = false;
+        
+        if (debugMode) logCallback("[ServerLogProcess] Docker log reading stopped", 1);
+    }
+    
+    #endregion
+    
     // Public method to update log read intervals
     public void UpdateLogReadIntervals(double interval)
     {
@@ -2030,6 +2250,7 @@ public class ServerLogProcess
         interval = Math.Max(1.0, Math.Min(10.0, interval));
         
         wslLogReadInterval = interval;
+        dockerLogReadInterval = interval;
         sshLogReadInterval = interval;
         
         if (debugMode)
@@ -2055,6 +2276,7 @@ public class ServerLogProcess
         Action onModuleLogUpdated,
         Action onDatabaseLogUpdated,
         ServerWSLProcess wslProcess = null,
+        ServerDockerProcess dockerProcessor = null,
         ServerCustomProcess customProcessor = null,
         bool debugMode = false)
     {
@@ -2062,6 +2284,7 @@ public class ServerLogProcess
         this.onModuleLogUpdated = onModuleLogUpdated;
         this.onDatabaseLogUpdated = onDatabaseLogUpdated;
         this.wslProcess = wslProcess;
+        this.dockerProcessor = dockerProcessor;
         this.customProcessor = customProcessor;
         ServerLogProcess.debugMode = debugMode;
         
@@ -2458,6 +2681,10 @@ public class ServerLogProcess
         {
             StartSSHLogging();
         }
+        else if (isDockerServer)
+        {
+            StartDockerLogging();
+        }
         else
         {
             StartWSLLogging();
@@ -2473,6 +2700,10 @@ public class ServerLogProcess
         {
             StopSSHLogging();
         }
+        else if (isDockerServer)
+        {
+            StopDockerLogging();
+        }
         else
         {
             StopWSLLogging();
@@ -2487,6 +2718,10 @@ public class ServerLogProcess
         if (isCustomServer)
         {
             CheckSSHLogProcesses(currentTime);
+        }
+        else if (isDockerServer)
+        {
+            CheckDockerLogProcesses(currentTime);
         }
         else
         {
@@ -2512,12 +2747,16 @@ public class ServerLogProcess
         {
             ClearSSHModuleLogFile();
         }
+        else if (isDockerServer)
+        {
+            ClearDockerLogs();
+        }
         else
         {
             ClearWSLModuleLog();
         }
         
-        if (debugMode) logCallback($"Module logs cleared for mode: {(isCustomServer ? "CustomServer" : "WSL")}", 1);
+        if (debugMode) logCallback($"Module logs cleared for mode: {(isCustomServer ? "CustomServer" : isDockerServer ? "DockerServer" : "WSL")}", 1);
     }
     
     public void ClearDatabaseLog()
@@ -2535,12 +2774,16 @@ public class ServerLogProcess
         {
             ClearSSHDatabaseLog();
         }
+        else if (isDockerServer)
+        {
+            ClearDockerLogs();
+        }
         else
         {
             ClearWSLDatabaseLog();
         }
         
-        if (debugMode) logCallback($"Database logs cleared for mode: {(isCustomServer ? "CustomServer" : "WSL")}", 1);
+        if (debugMode) logCallback($"Database logs cleared for mode: {(isCustomServer ? "CustomServer" : isDockerServer ? "DockerServer" : "WSL")}", 1);
     }
     #endregion
     

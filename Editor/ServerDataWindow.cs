@@ -844,7 +844,7 @@ public class ServerDataWindow : EditorWindow
         Repaint();
         
         // Use GetApiBaseUrl to ensure URL has /v1
-        if (serverMode == "WSLServer")
+        if (serverMode == "WSLServer" || serverMode == "DockerServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
@@ -1089,7 +1089,7 @@ public class ServerDataWindow : EditorWindow
         string tokenSnippet = string.IsNullOrEmpty(authToken) ? "None" : authToken.Substring(0, Math.Min(authToken.Length, 5)) + "...";
         // if (debugMode) Debug.Log($"[ServerDataWindow] Attempting schema request to URL: {serverURL}, Module: {moduleName}, AuthToken provided: {!string.IsNullOrEmpty(authToken)}, Token start: {tokenSnippet}");
 
-        if (serverMode == "WSLServer")
+        if (serverMode == "WSLServer" || serverMode == "DockerServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);
@@ -2466,7 +2466,7 @@ public class ServerDataWindow : EditorWindow
         
         try
         {
-            if (serverMode == "WSLServer")
+            if (serverMode == "WSLServer" || serverMode == "DockerServer")
                 urlBase = GetApiBaseUrl(serverURL);
             else if (serverMode == "CustomServer")
                 urlBase = GetApiBaseUrl(customServerUrl);
@@ -2632,7 +2632,7 @@ public class ServerDataWindow : EditorWindow
     private IEnumerator ImportDataCoroutine(List<(string tableName, string jsonData)> tablesToImport, Action<bool, string> callback)
     {
         // Reuse HttpClient and base URL logic from Refresh
-        if (serverMode == "WSLServer")
+        if (serverMode == "WSLServer" || serverMode == "DockerServer")
             urlBase = GetApiBaseUrl(serverURL);
         else if (serverMode == "CustomServer")
             urlBase = GetApiBaseUrl(customServerUrl);

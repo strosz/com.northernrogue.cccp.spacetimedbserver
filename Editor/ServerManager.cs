@@ -366,6 +366,7 @@ public class ServerManager
             () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
             () => ServerOutputWindow.RefreshDatabaseLogs(), // Database log update callback - uses high-priority refresh
             wslProcessor,
+            dockerProcessor,
             serverCustomProcess,
             debugMode
         );
@@ -575,11 +576,17 @@ public class ServerManager
                                     if (debugMode)
                                         LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
                                 }
-                                else if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
+                                else if (serverMode == ServerMode.DockerServer)
+                                {
+                                    logProcessor.ConfigureDocker(true);
+                                    if (debugMode)
+                                        LogMessage($"[ServerManager] Reconfigured Docker log processor", 1);
+                                }
+                                else if (serverMode == ServerMode.WSLServer)
                                 {
                                     logProcessor.ConfigureWSL(true);
                                     if (debugMode)
-                                        LogMessage($"[ServerManager] Reconfigured {serverMode} log processor", 1);
+                                        LogMessage($"[ServerManager] Reconfigured WSL log processor", 1);
                                 }
                                 
                                 logProcessor.SetServerRunningState(true);
@@ -849,13 +856,14 @@ public class ServerManager
                     serverConfirmedRunning = true;
                     isStartingUp = false; // Skip the startup grace period since we confirmed container is running
                     
-                    // Update log processor state
+                    // Configure Docker log processor
+                    logProcessor.ConfigureDocker(true);
                     logProcessor.SetServerRunningState(true);
                     
                     if (silentMode)
                     {
-                        // Note: Docker logs would be handled differently than WSL logs
-                        if (debugMode) LogMessage("Docker server started in silent mode.", 1);
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("Docker log processors started successfully.", 1);
                     }
                     
                     // Check ping in background for additional confirmation
@@ -877,8 +885,16 @@ public class ServerManager
                     serverStarted = true; // Assume starting, CheckServerStatus will verify
                     SaveServerStateToSessionState(); // Persist state across domain reloads
                     
-                    // Update log processor state
+                    // Configure Docker log processor
+                    logProcessor.ConfigureDocker(true);
                     logProcessor.SetServerRunningState(true);
+                    
+                    // Start logging if in silent mode
+                    if (silentMode)
+                    {
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("Docker log processors started successfully.", 1);
+                    }
                 }
             }
             catch (Exception ex)
@@ -985,6 +1001,7 @@ public class ServerManager
                 () => { SafeRepaint(); },
                 () => { SafeRepaint(); },
                 wslProcessor,
+                dockerProcessor,
                 serverCustomProcess,
                 debugMode
             );
