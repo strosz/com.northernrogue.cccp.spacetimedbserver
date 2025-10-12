@@ -1068,7 +1068,9 @@ public class ServerDockerProcess
                                 if (isLoginCommand && logCallback != null)
                                 {
                                     string processedOutput = ServerUtilityProvider.ProcessOutputAndOpenUrls(args.Data);
-                                    logCallback(processedOutput, 0);
+                                    // Use success log level (1) for successful login messages
+                                    int logLevel = processedOutput.Contains("Login successful!") ? 1 : 0;
+                                    logCallback(processedOutput, logLevel);
                                 }
                             }
                         };

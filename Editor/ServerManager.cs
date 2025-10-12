@@ -1858,7 +1858,8 @@ public class ServerManager
                     ? await dockerProcessor.RunServerCommandAsync(command, ServerDirectory)
                     : await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
-                if (!string.IsNullOrEmpty(result.output))
+                bool isLoginCommand = command.Contains("spacetime login") && !command.Contains("show --token");
+                if (!string.IsNullOrEmpty(result.output) && !isLoginCommand)
                 {
                     // Check if this is login info output and apply color formatting
                     string formattedOutput = ServerUtilityProvider.FormatLoginInfoOutput(result.output);
@@ -1866,7 +1867,7 @@ public class ServerManager
                     if (debugMode) UnityEngine.Debug.Log("Command output: " + formattedOutput);
                 }
                 
-                if (!string.IsNullOrEmpty(result.error))
+                if (!string.IsNullOrEmpty(result.error) && !isLoginCommand)
                 {
                     // Filter out formatting errors for generate commands that don't affect functionality
                     bool isGenerateCmd = command.Contains("spacetime generate");
