@@ -85,8 +85,9 @@ public static class ServerUtilityProvider
     /// Gets the relative path for client directory in SpacetimeDB format
     /// </summary>
     /// <param name="clientDirectory">The client directory path</param>
+    /// <param name="serverMode">Optional server mode to handle path differently (e.g., "DockerServer")</param>
     /// <returns>Relative path formatted for SpacetimeDB</returns>
-    public static string GetRelativeClientPath(string clientDirectory)
+    public static string GetRelativeClientPath(string clientDirectory, string serverMode = null)
     {
         // Default path if nothing else works
         string defaultPath = "../Assets/Scripts/Server";
@@ -101,6 +102,34 @@ public static class ServerUtilityProvider
             // Normalize path to forward slashes
             string normalizedPath = clientDirectory.Replace('\\', '/');
             
+            // Docker mode: Use /unity mount point instead of ../Assets
+            if (!string.IsNullOrEmpty(serverMode) && serverMode.Equals("DockerServer", StringComparison.OrdinalIgnoreCase))
+            {
+                // Find the "Assets" directory in the path
+                int assetsIndex = normalizedPath.IndexOf("Assets/");
+                if (assetsIndex < 0)
+                {
+                    assetsIndex = normalizedPath.IndexOf("Assets");
+                }
+                
+                if (assetsIndex >= 0)
+                {
+                    // Extract from "Assets" to the end and use /unity/ mount point
+                    string dockerPath = "/unity/" + normalizedPath.Substring(assetsIndex);
+                    
+                    // Add quotes if path contains spaces
+                    if (dockerPath.Contains(" "))
+                    {
+                        return $"\"{dockerPath}\"";
+                    }
+                    return dockerPath;
+                }
+                
+                // Fallback to /unity/Assets for Docker
+                return "/unity/Assets";
+            }
+            
+            // WSL/Custom mode: Use ../Assets relative path
             // If the path already starts with "../Assets", use it directly
             if (normalizedPath.StartsWith("../Assets"))
             {
@@ -108,16 +137,16 @@ public static class ServerUtilityProvider
             }
             
             // Find the "Assets" directory in the path
-            int assetsIndex = normalizedPath.IndexOf("Assets/");
-            if (assetsIndex < 0)
+            int assetsIndexNormal = normalizedPath.IndexOf("Assets/");
+            if (assetsIndexNormal < 0)
             {
-                assetsIndex = normalizedPath.IndexOf("Assets");
+                assetsIndexNormal = normalizedPath.IndexOf("Assets");
             }
             
-            if (assetsIndex >= 0)
+            if (assetsIndexNormal >= 0)
             {
                 // Extract from "Assets" to the end and prepend "../"
-                string relativePath = "../" + normalizedPath.Substring(assetsIndex);
+                string relativePath = "../" + normalizedPath.Substring(assetsIndexNormal);
                 
                 // Ensure it has proper structure
                 if (!relativePath.Contains("/"))

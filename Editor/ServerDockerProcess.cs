@@ -185,12 +185,12 @@ public class ServerDockerProcess
     
     #region Process Execution Methods
 
-    public Process StartVisibleServerProcess(string serverDirectory)
+    public Process StartVisibleServerProcess(string serverDirectory, string unityAssetsDirectory = null)
     {
         try 
         {
             // Get the configured port from settings
-            int hostPort = CCCPSettings.Instance.serverPort;
+            int hostPort = CCCPSettings.Instance.serverPortDocker;
             
             // Check if container already exists and is running
             var (exists, isRunning) = CheckContainerStatus(ContainerName);
@@ -234,9 +234,40 @@ public class ServerDockerProcess
             Process process = new Process();
             process.StartInfo.FileName = "cmd.exe";
             
+            // Build volume mounts
+            string volumeMounts = $"-v \"{serverDirectory}:/app\"";
+            
+            // Add Unity Assets directory as a volume mount if provided
+            if (!string.IsNullOrEmpty(unityAssetsDirectory))
+            {
+                // Get the Assets root directory (Unity project root contains Assets)
+                string assetsRoot = GetUnityProjectRoot(unityAssetsDirectory);
+                if (!string.IsNullOrEmpty(assetsRoot))
+                {
+                    volumeMounts += $" -v \"{assetsRoot}:/unity\"";
+                    if (debugMode) logCallback($"Mounting Unity project at /unity: {assetsRoot}", 0);
+                }
+                else
+                {
+                    logCallback($"WARNING: Could not determine Unity project root from: {unityAssetsDirectory}. File generation may fail!", -1);
+                    logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
+                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
+                    if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
+                }
+            }
+            else
+            {
+                logCallback($"WARNING: Unity Assets directory not provided. File generation will likely fail!", -1);
+                logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
+                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
+                if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
+            }
+            
             // Start Docker container with interactive mode
             // Note: NOT using --rm so container persists and can be stopped/restarted
-            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 -v \"{serverDirectory}:/app\" {ImageName} start";
+            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 {volumeMounts} {ImageName} start";
             
             process.StartInfo.Arguments = $"/k {dockerCommand}";
             process.StartInfo.UseShellExecute = true;
@@ -253,12 +284,12 @@ public class ServerDockerProcess
         }
     }
     
-    public Process StartSilentServerProcess(string serverDirectory)
+    public Process StartSilentServerProcess(string serverDirectory, string unityAssetsDirectory = null)
     {
         try 
         {
             // Get the configured port from settings
-            int hostPort = CCCPSettings.Instance.serverPort;
+            int hostPort = CCCPSettings.Instance.serverPortDocker;
             
             // Check if container already exists and is running
             var (exists, isRunning) = CheckContainerStatus(ContainerName);
@@ -299,9 +330,40 @@ public class ServerDockerProcess
                 }
             }
             
+            // Build volume mounts
+            string volumeMounts = $"-v \"{serverDirectory}:/app\"";
+            
+            // Add Unity Assets directory as a volume mount if provided
+            if (!string.IsNullOrEmpty(unityAssetsDirectory))
+            {
+                // Get the Assets root directory (Unity project root contains Assets)
+                string assetsRoot = GetUnityProjectRoot(unityAssetsDirectory);
+                if (!string.IsNullOrEmpty(assetsRoot))
+                {
+                    volumeMounts += $" -v \"{assetsRoot}:/unity\"";
+                    if (debugMode) logCallback($"Mounting Unity project at /unity: {assetsRoot}", 0);
+                }
+                else
+                {
+                    logCallback($"WARNING: Could not determine Unity project root from: {unityAssetsDirectory}. File generation may fail!", -1);
+                    logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
+                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
+                    if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
+                }
+            }
+            else
+            {
+                logCallback($"WARNING: Unity Assets directory not provided. File generation will likely fail!", -1);
+                logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
+                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
+                if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
+            }
+            
             // Container doesn't exist, create new one
             // Start Docker container in detached mode
-            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 -v \"{serverDirectory}:/app\" {ImageName} start";
+            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 {volumeMounts} {ImageName} start";
             
             if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
             
@@ -1145,6 +1207,126 @@ public class ServerDockerProcess
         }
         
         return (command, "");
+    }
+    
+    /// <summary>
+    /// Gets the Unity project root directory from an Assets subdirectory path
+    /// </summary>
+    /// <param name="assetsPath">Path to a directory within Assets</param>
+    /// <returns>Unity project root directory containing Assets folder, or null if not found</returns>
+    private string GetUnityProjectRoot(string assetsPath)
+    {
+        if (string.IsNullOrEmpty(assetsPath))
+            return null;
+            
+        try
+        {
+            // Normalize the path
+            string normalizedPath = assetsPath.Replace('\\', '/');
+            
+            if (debugMode) logCallback($"[GetUnityProjectRoot] Input path: {normalizedPath}", 0);
+            
+            // Find the Assets folder in the path
+            int assetsIndex = normalizedPath.IndexOf("/Assets/", StringComparison.OrdinalIgnoreCase);
+            if (assetsIndex < 0)
+            {
+                // Check if path ends with /Assets
+                assetsIndex = normalizedPath.LastIndexOf("/Assets", StringComparison.OrdinalIgnoreCase);
+                if (assetsIndex >= 0 && assetsIndex + 7 == normalizedPath.Length)
+                {
+                    // Path ends with /Assets, extract everything before it
+                    string projectRoot = normalizedPath.Substring(0, assetsIndex).Replace('/', '\\');
+                    if (debugMode) logCallback($"[GetUnityProjectRoot] Found /Assets at end. Project root: {projectRoot}", 0);
+                    return projectRoot;
+                }
+                
+                // Try without leading slash
+                assetsIndex = normalizedPath.IndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
+                if (assetsIndex < 0)
+                {
+                    if (debugMode) logCallback($"[GetUnityProjectRoot] Could not find 'Assets' in path", -1);
+                    return null;
+                }
+                
+                if (assetsIndex == 0)
+                {
+                    // Path starts with Assets/ (relative path)
+                    // Get current Unity project directory
+                    string projectRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    if (debugMode) logCallback($"[GetUnityProjectRoot] Path starts with Assets/. Using Unity's dataPath: {projectRoot}", 0);
+                    return projectRoot;
+                }
+            }
+            
+            // Extract everything before /Assets/ or Assets/
+            string result = normalizedPath.Substring(0, assetsIndex).Replace('/', '\\');
+            
+            // Handle case where path starts with Assets (relative path)
+            if (string.IsNullOrEmpty(result))
+            {
+                // Get current Unity project directory
+                result = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+            }
+            
+            if (debugMode) logCallback($"[GetUnityProjectRoot] Final project root: {result}", 0);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error getting Unity project root: {ex.Message}", -1);
+            return null;
+        }
+    }
+
+    public void PingServer(string serverUrl, Action<bool, string> callback)
+    {
+        try
+        {
+            // Run the ping command asynchronously inside the Docker container
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await RunServerCommandAsync($"spacetime server ping {serverUrl}", null, true);
+                    
+                    // Combine output and error for parsing
+                    string fullOutput = result.output + result.error;
+                    
+                    // Check if server is online by looking for "Server is online" in the output
+                    bool isOnline = fullOutput.Contains("Server is online");
+                    
+                    // Prepare a clean message for display
+                    string message = fullOutput;
+                    
+                    // Remove the "WARNING: This command is UNSTABLE" line if present
+                    if (message.Contains("WARNING: This command is UNSTABLE"))
+                    {
+                        int warningIndex = message.IndexOf("WARNING:");
+                        int newlineIndex = message.IndexOf('\n', warningIndex);
+                        if (newlineIndex > warningIndex)
+                        {
+                            message = message.Remove(warningIndex, newlineIndex + 1 - warningIndex);
+                        }
+                    }
+                    
+                    // Trim and clean up the message
+                    message = message.Trim();
+                    
+                    // Use EditorApplication.delayCall to ensure callback is called on main thread
+                    EditorApplication.delayCall += () => callback(isOnline, message);
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerDockerProcess] Error pinging server: {ex.Message}");
+                    EditorApplication.delayCall += () => callback(false, $"Error pinging server: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerDockerProcess] Error starting ping task: {ex.Message}");
+            callback(false, $"Error pinging server: {ex.Message}");
+        }
     }
     
     #endregion

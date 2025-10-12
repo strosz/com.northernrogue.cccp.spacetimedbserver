@@ -275,6 +275,9 @@ public class ServerManager
     public string ClientDirectory => Settings.clientDirectory;
     public string ServerLang => Settings.serverLang;
     public string ModuleName => moduleName;
+    public string LocalCLIProvider => Settings.localCLIProvider;
+
+    // WSL Server properties
     public string ServerUrl => Settings.serverUrl;
     public int ServerPort => Settings.serverPort;
     public string AuthToken => Settings.authToken;
@@ -832,11 +835,11 @@ public class ServerManager
                 Process containerProcess;
                 if (silentMode)
                 {
-                    containerProcess = dockerProcessor.StartSilentServerProcess(ServerDirectory);
+                    containerProcess = dockerProcessor.StartSilentServerProcess(ServerDirectory, ClientDirectory);
                 }
-                else
+                else // Should be removed
                 {
-                    containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory);
+                    containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory, ClientDirectory);
                 }
 
                 if (containerProcess == null)
@@ -904,7 +907,7 @@ public class ServerManager
             }
             catch (Exception ex)
             {
-                LogMessage($"Error during Docker server start sequence: {ex.Message}", -1);
+                if (debugMode) LogMessage($"Error during Docker server start sequence: {ex.Message}", -1);
                 serverStarted = false;
                 isStartingUp = false;
                 SaveServerStateToSessionState(); // Persist state across domain reloads
@@ -1125,10 +1128,10 @@ public class ServerManager
                 }
                 else
                 {
-                    if (stillRunning)
-                        LogMessage("Warning: Some SpacetimeDB processes may still be running.", -1);
-                    if (pingStillResponding)
-                        LogMessage("Warning: Server is still responding to ping requests.", -1);
+                    if (stillRunning && debugMode)
+                        LogMessage("Warning: Some SpacetimeDB processes may still be running.", 0);
+                    if (pingStillResponding && debugMode)
+                        LogMessage("Warning: Server is still responding to ping requests.", 0);
                         
                     // Still mark as stopped since we did our best
                     serverStarted = false;
@@ -1139,7 +1142,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Stop sequence completed. Check server status manually if needed.", 0);
+                    LogMessage("Stop sequence completed. Check server status manually if needed.", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -1201,11 +1204,11 @@ public class ServerManager
                 }
                 else
                 {
-                    if (stillRunning)
-                        LogMessage("Warning: Docker container may still be running.", -1);
-                    if (pingStillResponding)
-                        LogMessage("Warning: Server is still responding to ping requests.", -1);
-                        
+                    if (stillRunning && debugMode)
+                        LogMessage("Warning: Docker container may still be running.", 0);
+                    if (pingStillResponding && debugMode)
+                        LogMessage("Warning: Server is still responding to ping requests.", 0);
+
                     // Still mark as stopped since we did our best
                     serverStarted = false;
                     isStartingUp = false;
@@ -1215,7 +1218,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Stop sequence completed. Check Docker container status manually if needed.", 0);
+                    LogMessage("Stop sequence completed. Check Docker container status manually if needed.", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -1414,7 +1417,8 @@ public class ServerManager
                             LogMessage($"WSL startup check - Service: inactive, Elapsed: {elapsedTime:F1}s, Result: not running", 0);
                         }
                     }
-                }                // If running during startup phase, confirm immediately
+                }
+                // If running during startup phase, confirm immediately
                 if (isActuallyRunning)
                 {
                     if (DebugMode) LogMessage($"Startup confirmed: Server service is active and running.", 1);
@@ -2121,13 +2125,13 @@ public class ServerManager
             if (successfulPublish)
             {
                 LogMessage("Publish successful, automatically generating Unity files...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files");
             }
             else // If unsuccessful Publish
             {
                 LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (Publish failed)");
             }
         }
@@ -2302,7 +2306,7 @@ public class ServerManager
         return pingShowsOnline;
     }
     
-    public async Task<bool> PingServerStatusAsync()
+    public async Task<bool> PingServerStatusAsync() // For the status checks
     {
         string url;
         if (Settings.serverMode == ServerMode.CustomServer)
@@ -2313,7 +2317,7 @@ public class ServerManager
         {
             url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
-        else
+        else // Docker or WSL local server // We don't use ServerUrlDocker since the server pings itself at port 3000 regardless of the external mapping
         {
             url = !string.IsNullOrEmpty(ServerUrl) ? ServerUrl : "http://127.0.0.1:3000";
         }
@@ -2325,11 +2329,20 @@ public class ServerManager
 
         try
         {
-            // Use wslProcessor's synchronous ping method for immediate result with timeout
+            // Use the appropriate processor based on LocalCLIProvider
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-            wslProcessor.PingServer(url, (isOnline, message) => {
-                tcs.TrySetResult(isOnline); // Use TrySetResult to avoid exceptions if timeout occurs
-            });
+            if (LocalCLIProvider == "Docker")
+            {
+                dockerProcessor.PingServer(url, (isOnline, message) => {
+                    tcs.TrySetResult(isOnline);
+                });
+            }
+            else
+            {
+                wslProcessor.PingServer(url, (isOnline, message) => {
+                    tcs.TrySetResult(isOnline);
+                });
+            }
             
             // Wait for the ping result with a 5-second timeout to prevent hanging during startup
             using (var timeoutCTS = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5)))
@@ -2346,7 +2359,7 @@ public class ServerManager
         }
     }
 
-    public void PingServer(bool showLog)
+    public void PingServer(bool showLog) // For manual ping
     {
         string url;
         if (Settings.serverMode == ServerMode.CustomServer)
@@ -2357,7 +2370,7 @@ public class ServerManager
         {
             url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
-        else
+        else // Docker or WSL local server // We don't use ServerUrlDocker since the server pings itself at port 3000 regardless of the external mapping
         {
             url = !string.IsNullOrEmpty(ServerUrl) ? ServerUrl : "http://127.0.0.1:3000";
         }
@@ -2367,23 +2380,48 @@ public class ServerManager
             url = url.TrimEnd('/');
         }
         if (DebugMode) LogMessage($"Pinging server at {url}...", 0);
-        
-        wslProcessor.PingServer(url, (isOnline, message) => {
-            EditorApplication.delayCall += () => {
-                if (isOnline)
-                {
-                    if (showLog) LogMessage($"Server is online: {url}", 1);
-                    pingShowsOnline = true;
-                }
-                else
-                {
-                    if (showLog) LogMessage($"Server is offline: {message}", -1);
-                    pingShowsOnline = false;
-                }
-                
-                SafeRepaint();
-            };
-        });
+
+        if (LocalCLIProvider == "Docker"){
+            dockerProcessor.PingServer(url, (isOnline, message) => {
+                EditorApplication.delayCall += () => {
+                    if (isOnline && Settings.serverMode == ServerMode.DockerServer)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url} \n External mapping set to {ServerUrlDocker}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else if (isOnline && Settings.serverMode == ServerMode.CustomServer)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else
+                    {
+                        if (showLog) LogMessage($"Server is offline: {message} \n External mapping set to {ServerUrlDocker}", -1);
+                        pingShowsOnline = false;
+                    }
+                    
+                    SafeRepaint();
+                };
+            });
+        }
+        else if (LocalCLIProvider == "WSL"){
+            wslProcessor.PingServer(url, (isOnline, message) => {
+                EditorApplication.delayCall += () => {
+                    if (isOnline)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else
+                    {
+                        if (showLog) LogMessage($"Server is offline: {message}", -1);
+                        pingShowsOnline = false;
+                    }
+                    
+                    SafeRepaint();
+                };
+            });
+        }
     }
 
     public void BackupServerData()

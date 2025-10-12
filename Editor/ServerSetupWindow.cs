@@ -112,6 +112,7 @@ public class ServerSetupWindow : EditorWindow
     internal bool hasDocker = false;
     internal bool hasDockerCompose = false;
     internal bool hasDockerImage = false;
+    internal bool hasDockerContainerMountsConfigured = false;
     internal ServerDockerProcess dockerProcess;
     
     // WSL 1 requires unique install logic for Debian apps
@@ -523,6 +524,17 @@ public class ServerSetupWindow : EditorWindow
                 isInstalled = hasDockerImage,
                 isEnabled = hasDocker && hasDockerCompose,
                 installAction = PullSpacetimeDBImage
+            },
+            new InstallerItem
+            {
+                title = "Configure Docker Container Volume Mounts",
+                description = "Ensures the Docker container has proper volume mounts for Unity file generation\n"+
+                "Verifies that the Unity Assets directory is mounted at /unity inside the container\n"+
+                "Note: Will recreate container if mounts are incorrect (server must be stopped)",
+                isInstalled = hasDockerContainerMountsConfigured,
+                isEnabled = hasDocker && hasDockerImage,
+                installAction = ReconfigureDockerContainer,
+                sectionHeader = "Docker Container Configuration"
             },
             new InstallerItem
             {
@@ -1458,6 +1470,16 @@ public class ServerSetupWindow : EditorWindow
             hasDockerCompose = compose;
             hasDockerImage = image;
             
+            // Check container mounts if Docker and image are available
+            if (hasDocker && hasDockerImage)
+            {
+                hasDockerContainerMountsConfigured = CheckDockerContainerMounts();
+            }
+            else
+            {
+                hasDockerContainerMountsConfigured = false;
+            }
+            
             // Save to settings
             CCCPSettingsAdapter.SetHasDocker(hasDocker);
             CCCPSettingsAdapter.SetHasDockerCompose(hasDockerCompose);
@@ -1469,9 +1491,13 @@ public class ServerSetupWindow : EditorWindow
             isDockerRefreshing = false;
             
             // Provide more detailed status messages
-            if (hasDocker && hasDockerCompose && hasDockerImage)
+            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMountsConfigured)
             {
                 SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
+            }
+            else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMountsConfigured)
+            {
+                SetStatus("Docker ready but container needs volume mount configuration.", Color.yellow);
             }
             else if (hasDocker && hasDockerCompose)
             {
@@ -1774,6 +1800,181 @@ public class ServerSetupWindow : EditorWindow
         {
             EditorUtility.ClearProgressBar();
             UpdateInstallerItemsStatus();
+            Repaint();
+        }
+    }
+    
+    /// <summary>
+    /// Checks if the Docker container has correct volume mounts for Unity file generation
+    /// </summary>
+    private bool CheckDockerContainerMounts()
+    {
+        try
+        {
+            // Check if container exists
+            var (exists, isRunning) = CheckContainerExistsAndRunning();
+            
+            if (!exists)
+            {
+                // Container doesn't exist yet - that's okay, it will be created with correct mounts
+                return true;
+            }
+            
+            // Inspect the container to check mounts
+            var process = new System.Diagnostics.Process();
+            process.StartInfo.FileName = "docker";
+            process.StartInfo.Arguments = $"inspect {ServerDockerProcess.ContainerName}";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.CreateNoWindow = true;
+            
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            
+            if (process.ExitCode != 0)
+            {
+                return false;
+            }
+            
+            // Check if /unity mount exists in the output
+            bool hasUnityMount = output.Contains("\"/unity\"") || output.Contains(":/unity");
+            
+            return hasUnityMount;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerSetupWindow] Error checking container mounts: {ex.Message}");
+            }
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// Helper method to check if container exists and is running
+    /// </summary>
+    private (bool exists, bool isRunning) CheckContainerExistsAndRunning()
+    {
+        try
+        {
+            var process = new System.Diagnostics.Process();
+            process.StartInfo.FileName = "docker";
+            process.StartInfo.Arguments = $"ps -a --filter name={ServerDockerProcess.ContainerName} --format \"{{{{.Names}}}}|{{{{.Status}}}}\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.CreateNoWindow = true;
+            
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            
+            if (string.IsNullOrEmpty(output))
+            {
+                return (false, false);
+            }
+            
+            bool isRunning = output.Contains("Up");
+            return (true, isRunning);
+        }
+        catch
+        {
+            return (false, false);
+        }
+    }
+    
+    /// <summary>
+    /// Recreates the Docker container with correct volume mounts
+    /// </summary>
+    private async void ReconfigureDockerContainer()
+    {
+        try
+        {
+            SetStatusInternal("Reconfiguring Docker container...", Color.yellow);
+            
+            // Check if container is running
+            var (exists, isRunning) = CheckContainerExistsAndRunning();
+            
+            if (isRunning)
+            {
+                bool userConfirmed = EditorUtility.DisplayDialog(
+                    "Server Running",
+                    "The Docker server is currently running and must be stopped to reconfigure volume mounts.\n\n" +
+                    "The container will be removed and recreated with correct volume mounts. " +
+                    "No data will be lost as your server files and Unity project are on your Windows filesystem.\n\n" +
+                    "Stop server and reconfigure?",
+                    "Yes, Reconfigure",
+                    "Cancel"
+                );
+                
+                if (!userConfirmed)
+                {
+                    SetStatusInternal("Container reconfiguration cancelled.", Color.grey);
+                    return;
+                }
+                
+                // Stop the server through server manager
+                if (serverManager != null)
+                {
+                    SetStatusInternal("Stopping server...", Color.yellow);
+                    serverManager.StopServer();
+                    await Task.Delay(2000); // Wait for graceful shutdown
+                }
+            }
+            
+            if (exists)
+            {
+                // Remove the existing container
+                SetStatusInternal("Removing old container...", Color.yellow);
+                EditorUtility.DisplayProgressBar("Reconfiguring Docker Container", "Removing old container...", 0.3f);
+                
+                var removeProcess = new System.Diagnostics.Process();
+                removeProcess.StartInfo.FileName = "docker";
+                removeProcess.StartInfo.Arguments = $"rm -f {ServerDockerProcess.ContainerName}";
+                removeProcess.StartInfo.UseShellExecute = false;
+                removeProcess.StartInfo.RedirectStandardOutput = true;
+                removeProcess.StartInfo.RedirectStandardError = true;
+                removeProcess.StartInfo.CreateNoWindow = true;
+                
+                removeProcess.Start();
+                string removeOutput = removeProcess.StandardOutput.ReadToEnd();
+                string removeError = removeProcess.StandardError.ReadToEnd();
+                removeProcess.WaitForExit();
+                
+                if (removeProcess.ExitCode != 0)
+                {
+                    SetStatusInternal($"Failed to remove container: {removeError}", Color.red);
+                    EditorUtility.ClearProgressBar();
+                    return;
+                }
+                
+                LogMessageInternal("Old container removed successfully", 1);
+            }
+            
+            EditorUtility.DisplayProgressBar("Reconfiguring Docker Container", "Configuration updated", 1.0f);
+            
+            SetStatusInternal("Container reconfigured! Volume mounts will be applied on next server start.", Color.green);
+            LogMessageInternal("Container reconfigured successfully. Volume mounts will be correct on next server start.", 1);
+            
+            // Update status
+            hasDockerContainerMountsConfigured = true;
+            UpdateInstallerItemsStatus();
+        }
+        catch (Exception ex)
+        {
+            SetStatusInternal($"Error reconfiguring container: {ex.Message}", Color.red);
+            LogMessageInternal($"Container reconfiguration error: {ex.Message}", -1);
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerSetupWindow] Reconfiguration error: {ex}");
+            }
+        }
+        finally
+        {
+            EditorUtility.ClearProgressBar();
             Repaint();
         }
     }

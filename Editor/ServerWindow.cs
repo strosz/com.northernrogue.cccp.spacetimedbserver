@@ -41,6 +41,13 @@ public class ServerWindow : EditorWindow
     private bool hasBinaryen { get => CCCPSettingsAdapter.GetHasBinaryen(); set => CCCPSettingsAdapter.SetHasBinaryen(value); }
     private bool hasGit { get => CCCPSettingsAdapter.GetHasGit(); set => CCCPSettingsAdapter.SetHasGit(value); }
     private bool wslPrerequisitesChecked { get => CCCPSettingsAdapter.GetWslPrerequisitesChecked(); set => CCCPSettingsAdapter.SetWslPrerequisitesChecked(value); }
+
+    // Pre-requisites Docker - Direct property access to settings
+    private bool hasDocker { get => CCCPSettingsAdapter.GetHasDocker(); set => CCCPSettingsAdapter.SetHasDocker(value); }
+    private bool hasDockerCompose { get => CCCPSettingsAdapter.GetHasDockerCompose(); set => CCCPSettingsAdapter.SetHasDockerCompose(value); }
+    private bool hasDockerImage { get => CCCPSettingsAdapter.GetHasDockerImage(); set => CCCPSettingsAdapter.SetHasDockerImage(value); }
+
+    // Pre-requisites General - Direct property access to settings
     private bool initializedFirstModule { get => CCCPSettingsAdapter.GetInitializedFirstModule(); set => CCCPSettingsAdapter.SetInitializedFirstModule(value); }
     private bool publishFirstModule { get => CCCPSettingsAdapter.GetPublishFirstModule(); set => CCCPSettingsAdapter.SetPublishFirstModule(value); }
     private bool hasAllPrerequisites { get => CCCPSettingsAdapter.GetHasAllPrerequisites(); set => CCCPSettingsAdapter.SetHasAllPrerequisites(value); }
@@ -878,8 +885,8 @@ public class ServerWindow : EditorWindow
             {
                 EditorGUILayout.BeginHorizontal();
                 string cliProviderTooltip = 
-                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally. \n\n"+
-                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally. Docker is available for Linux, MacOS or Windows. \n\n"+
+                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally on Linux, MacOS or Windows. \n\n"+
+                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally on Windows. \n\n"+
                 "Both options provide a local development environment.";
                 EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
                 string[] cliProviderOptions = new string[] { "Docker (Any OS)", "WSL (Windows)" };
@@ -1154,9 +1161,9 @@ public class ServerWindow : EditorWindow
             if (serverMode == ServerMode.DockerServer)
             {
                 // Local Docker URL
-                string dockerUrlTooltip = "The URL of the Docker server.\n" +
+                string dockerUrlTooltip = "The full URL of the Docker server with the OS port mapping you wish to use.\n" +
                     "Example: http://0.0.0.0:3011/\n" +
-                    "Note: The port number is required.";
+                    "Note: The port number is required. Internally the spacetimedb server always runs on port 3000 by default.";
                 
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(new GUIContent("URL:", dockerUrlTooltip), GUILayout.Width(110));
@@ -2342,7 +2349,7 @@ public class ServerWindow : EditorWindow
         {
             if (GUILayout.Button("Generate Client Code", GUILayout.Height(30)))
             {
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory, serverManager.CurrentServerMode.ToString());
                 serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y", "Generating Client Code");
                 LogMessage($"Generated Client Code to: {outDir}", 1);
             }
@@ -2909,9 +2916,14 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableLocal()
     {
-        if (hasWSL)
+        if (isDockerRunning)
         {
-            if (debugMode) LogMessage("SpacetimeDB Local CLI is available.", 1);
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is available via Docker.", 1);
+            return true;
+        }
+        else if (isWslRunning)
+        {
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is available via WSL.", 1);
             return true;
         }
         else
