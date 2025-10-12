@@ -1040,6 +1040,9 @@ public class ServerDockerProcess
                 logCallback($"[ServerDockerProcess] Running command in container: {command}", 0);
             }
 
+            // Check if this is a login command that needs real-time output
+            bool isLoginCommand = command.Contains("spacetime login");
+
             var result = await Task.Run(() =>
             {
                 try
@@ -1058,19 +1061,37 @@ public class ServerDockerProcess
 
                         process.OutputDataReceived += (sender, args) =>
                         {
-                            if (args.Data != null) outputBuilder.AppendLine(args.Data);
+                            if (args.Data != null)
+                            {
+                                outputBuilder.AppendLine(args.Data);
+                                // For login commands, log output in real-time so user can see the URL immediately
+                                if (isLoginCommand && logCallback != null)
+                                {
+                                    logCallback(args.Data, 0);
+                                }
+                            }
                         };
 
                         process.ErrorDataReceived += (sender, args) =>
                         {
-                            if (args.Data != null) errorBuilder.AppendLine(args.Data);
+                            if (args.Data != null)
+                            {
+                                errorBuilder.AppendLine(args.Data);
+                                // For login commands, also log errors in real-time
+                                if (isLoginCommand && logCallback != null)
+                                {
+                                    logCallback(args.Data, -2);
+                                }
+                            }
                         };
 
                         process.Start();
                         process.BeginOutputReadLine();
                         process.BeginErrorReadLine();
 
-                        bool finished = process.WaitForExit(30000); // 30 second timeout
+                        // Use longer timeout for login commands (5 minutes) since they require user interaction
+                        int timeoutMs = isLoginCommand ? 300000 : 30000; // 5 minutes for login, 30 seconds for others
+                        bool finished = process.WaitForExit(timeoutMs);
                         if (!finished)
                         {
                             try { process.Kill(); } catch { }
