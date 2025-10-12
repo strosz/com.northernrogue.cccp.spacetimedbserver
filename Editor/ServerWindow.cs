@@ -21,6 +21,7 @@ public class ServerWindow : EditorWindow
     private ServerWSLProcess wslProcess;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
+    private ServerDockerProcess dockerProcess;
     
     // Server mode
     private ServerMode serverMode = ServerMode.WSLServer;
@@ -467,6 +468,12 @@ public class ServerWindow : EditorWindow
         if (wslProcess == null)
         {
             wslProcess = new ServerWSLProcess(LogMessage, debugMode);
+        }
+
+        // Initialize dockerProcess to avoid null reference exceptions
+        if (dockerProcess == null)
+        {
+            dockerProcess = new ServerDockerProcess(LogMessage, debugMode);
         }
 
         // Load server mode from Settings
@@ -1279,11 +1286,20 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.Space(3);
             }
 
+            if (serverMode == ServerMode.DockerServer)
+            {
+                if (GUILayout.Button("Server Setup Window"))
+                    ServerSetupWindow.ShowDockerWindow();
+            }
+            else if (serverMode == ServerMode.WSLServer)
+            {
+                if (GUILayout.Button("Server Setup Window"))
+                    ServerSetupWindow.ShowWSLWindow();
+            }
+
             // Status and Setup for local modes (WSL and Docker)
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
-                if (GUILayout.Button("Server Setup Window"))
-                    ServerSetupWindow.ShowWindow();
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
@@ -2365,137 +2381,189 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        // Ensure wslProcess is initialized before use
-        if (wslProcess == null)
+        if (localCLIProvider == "Docker")
         {
-            wslProcess = new ServerWSLProcess(LogMessage, debugMode);
+            if (dockerProcess == null)
+            {
+                dockerProcess = new ServerDockerProcess(LogMessage, debugMode);
+            }
+            
+            dockerProcess.CheckPrerequisites((docker, compose, image) => {
+                EditorApplication.delayCall += () => {
+                    // Update local state for UI
+                    hasDocker = docker;
+                    hasDockerCompose = compose;
+                    hasDockerImage = image;
+                    wslPrerequisitesChecked = true; // Check if this is necessary
+                    
+                    // Load userName value 
+                    userName = serverManager.UserName;
+                    
+                    Repaint();
+                    
+                    bool essentialSoftwareDocker = 
+                        docker && compose && image;
+
+                    bool essentialUserSettingsDocker = 
+                        !string.IsNullOrEmpty(serverDirectory) &&
+                        !string.IsNullOrEmpty(clientDirectory) &&
+                        !string.IsNullOrEmpty(moduleName) &&
+                        !string.IsNullOrEmpty(serverLang);
+
+                    List<string> missingSoftware = new List<string>();
+                    if (!docker) missingSoftware.Add("- Docker");
+                    if (!compose) missingSoftware.Add("- Docker Compose");
+                    if (!image) missingSoftware.Add("- SpacetimeDB Docker Image");
+
+                    List<string> missingUserSettings = new List<string>();
+                    if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
+                    if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                    if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
+                    if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
+                    if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+
+                    HandlePrerequisitesResult(essentialSoftwareDocker, essentialUserSettingsDocker, missingSoftware, missingUserSettings);
+                };
+            });
         }
-        
-        wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
-            EditorApplication.delayCall += () => {
-                // Update local state for UI
-                hasWSL = wsl;
-                hasDebian = debian;
-                hasDebianTrixie = trixie;
-                hasCurl = curl;
-                hasSpacetimeDBServer = spacetime;
-                hasSpacetimeDBPath = spacetimePath;
-                hasSpacetimeDBService = spacetimeService;
-                hasSpacetimeDBLogsService = spacetimeLogsService;
-                hasRust = rust;
-                hasBinaryen = binaryen;
-                hasGit = git;
-                hasNETSDK = netSdk;
-                wslPrerequisitesChecked = true;
-                
-                // Load userName value 
-                userName = serverManager.UserName;
-                
+        else if (localCLIProvider == "WSL")
+        {
+            if (wslProcess == null)
+            {
+                wslProcess = new ServerWSLProcess(LogMessage, debugMode);
+            }
+            
+            wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
+                EditorApplication.delayCall += () => {
+                    // Update local state for UI
+                    hasWSL = wsl;
+                    hasDebian = debian;
+                    hasDebianTrixie = trixie;
+                    hasCurl = curl;
+                    hasSpacetimeDBServer = spacetime;
+                    hasSpacetimeDBPath = spacetimePath;
+                    hasSpacetimeDBService = spacetimeService;
+                    hasSpacetimeDBLogsService = spacetimeLogsService;
+                    hasRust = rust;
+                    hasBinaryen = binaryen;
+                    hasGit = git;
+                    hasNETSDK = netSdk;
+                    wslPrerequisitesChecked = true;
+                    
+                    // Load userName value 
+                    userName = serverManager.UserName;
+                    
+                    Repaint();
+                    
+                    bool essentialSoftwareWSL = 
+                        wsl && debian && trixie && curl && 
+                        spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
+
+                    bool essentialUserSettingsWSL = 
+                        !string.IsNullOrEmpty(userName) &&
+                        !string.IsNullOrEmpty(serverDirectory) &&
+                        !string.IsNullOrEmpty(clientDirectory) &&
+                        !string.IsNullOrEmpty(moduleName) &&
+                        !string.IsNullOrEmpty(serverLang);
+
+                    List<string> missingSoftware = new List<string>();
+                    if (!wsl) missingSoftware.Add("- WSL");
+                    if (!debian) missingSoftware.Add("- Debian");
+                    if (!trixie) missingSoftware.Add("- Debian Trixie Update");
+                    if (!spacetime) missingSoftware.Add("- SpacetimeDB Server");
+                    if (!spacetimePath) missingSoftware.Add("- SpacetimeDB Path");
+                    if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
+                    if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
+                    if (!git) missingSoftware.Add("- Git");
+
+                    List<string> missingUserSettings = new List<string>();
+                    if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
+                    if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                    if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
+                    if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
+                    if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+
+                    HandlePrerequisitesResult(essentialSoftwareWSL, essentialUserSettingsWSL, missingSoftware, missingUserSettings);
+                };
+            });
+        }
+    }
+
+    private void HandlePrerequisitesResult(bool essentialSoftware, bool essentialUserSettings, List<string> missingSoftware, List<string> missingUserSettings)
+    {
+        if (!essentialSoftware || !essentialUserSettings)
+        {
+            bool needsInstallation = EditorUtility.DisplayDialog(
+                $"{localCLIProvider} Setup Required", 
+                $"You are missing some essential {localCLIProvider} software and/or settings to run SpacetimeDB.\n" +
+                $"Please setup the following Software in {localCLIProvider}:\n" +
+                string.Join("\n", missingSoftware) + "\n" +
+                $"Please set the following Pre-Requisites in {localCLIProvider}:\n" +
+                string.Join("\n", missingUserSettings),
+                "Server Setup Window", "Pre-Requisites"
+            );
+            if (needsInstallation)
+            {
+                ServerSetupWindow.ShowWindow();
+            }
+            else 
+            {
+                // Open the pre-requisites drawer
+                SetDrawerState(DrawerType.Prerequisites, true);
                 Repaint();
-                
-                bool essentialSoftware = 
-                    wsl && debian && trixie && curl && 
-                    spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
+            }
 
-                bool essentialUserSettings = 
-                    !string.IsNullOrEmpty(userName) &&
-                    !string.IsNullOrEmpty(serverDirectory) &&
-                    !string.IsNullOrEmpty(clientDirectory) &&
-                    !string.IsNullOrEmpty(moduleName) &&
-                    !string.IsNullOrEmpty(serverLang);
+            hasAllPrerequisites = false;
+            CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
+        }
+        else if (essentialSoftware && essentialUserSettings)
+        {
+            int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
+                $"{localCLIProvider} Setup Complete", 
+                $"You have everything necessary to run SpacetimeDB on {localCLIProvider}! \n\n" +
+                "Please proceed to Init New Module (if using a new module)\n\n" +
+                "Recommended: Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
+                "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
+                "Init Module and Refresh Login", "Refresh Login", "Cancel"
+            );
+            if (initModuleAndLogout == 0)
+            {
+                InitNewModule();
+                // Also logout and login again to ensure a safe online login
+                LogoutAndLogin();
+            } 
+            else if (initModuleAndLogout == 1)
+            {
+                // Only logout and login again to ensure a safe online login
+                LogoutAndLogin();
+            }
+            // If Cancel do nothing
 
-                List<string> missingSoftware = new List<string>();
-                if (!wsl) missingSoftware.Add("- WSL");
-                if (!debian) missingSoftware.Add("- Debian");
-                if (!trixie) missingSoftware.Add("- Debian Trixie Update");
-                if (!spacetime) missingSoftware.Add("- SpacetimeDB Server");
-                if (!spacetimePath) missingSoftware.Add("- SpacetimeDB Path");
-                if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
-                if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
-                if (!git) missingSoftware.Add("- Git");
+            hasAllPrerequisites = true;
+            CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
-                List<string> missingUserSettings = new List<string>();
-                if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
-                if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
-                if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
-                if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
-                if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
-
-                if (!essentialSoftware || !essentialUserSettings)
-                {
-                    bool needsInstallation = EditorUtility.DisplayDialog(
-                        "Missing Software", 
-                        "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
-                        "Please install the following Software:\n" +
-                        string.Join("\n", missingSoftware) + "\n" +
-                        "Please set the following Pre-Requisites:\n" +
-                        string.Join("\n", missingUserSettings),
-                        "Server Setup Window", "Pre-Requisites"
-                    );
-                    if (needsInstallation)
-                    {
-                        ServerSetupWindow.ShowWindow();
-                    }
-                    else 
-                    {
-                        // Open the pre-requisites drawer
-                        SetDrawerState(DrawerType.Prerequisites, true);
-                        Repaint();
-                    }
-
-                    hasAllPrerequisites = false;
-                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
-                }
-                else if (essentialSoftware && essentialUserSettings)
-                {
-                    int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
-                        "All Software Installed", 
-                        "You have everything necessary to run SpacetimeDB! \n\n" +
-                        "Please proceed to Init New Module (if using a new module)\n\n" +
-                        "Recommended: Logout and then Login again to switch to an online Login which is safer.\n\n" +
-                        "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                        "Init Module and Refresh Login", "Refresh Login", "Cancel"
-                    );
-                    if (initModuleAndLogout == 0)
-                    {
-                        InitNewModule();
-                        // Also logout and login again to ensure a safe online login
-                        LogoutAndLogin();
-                    } 
-                    else if (initModuleAndLogout == 1)
-                    {
-                        // Only logout and login again to ensure a safe online login
-                        LogoutAndLogin();
-                    }
-                    // If Cancel do nothing
-
-                    hasAllPrerequisites = true;
-                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
-
-                    publishFirstModule = true;
-                    CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
-                }
-                // After writing module name this will appear (when essential software and user settings)
-                else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Initialize First Module",
-                        "All requirements met to Initialize new server module. Please do this now and then Publish Module.\n" +
-                        "You can do this in Pre-Requisites > Shared Settings of the Main Window",
-                        "OK"
-                    );
-                }
-                else if (essentialSoftware && essentialUserSettings && initializedFirstModule && publishFirstModule)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Ready to Publish", 
-                        "You are now ready to publish and start SpacetimeDB for the first time.\n" +
-                        "Please copy your token to the Pre-Requisites section to enable all functionality after your first publish.",
-                        "OK"
-                    );
-                }
-            };
-        });
+            publishFirstModule = true;
+            CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
+        }
+        // After writing module name this will appear (when essential software and user settings)
+        else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
+        {
+            EditorUtility.DisplayDialog(
+                "Initialize First Module",
+                "All requirements met to Initialize new server module. Please do this now and then Publish Module.\n" +
+                "You can do this in Pre-Requisites > Shared Settings of the Main Window",
+                "OK"
+            );
+        }
+        else if (essentialSoftware && essentialUserSettings && initializedFirstModule && publishFirstModule)
+        {
+            EditorUtility.DisplayDialog(
+                "Ready to Publish", 
+                "You are now ready to publish and start SpacetimeDB for the first time.\n" +
+                "Please copy your token to the Pre-Requisites section to enable all functionality after your first publish.",
+                "OK"
+            );
+        }
     }
 
     public async void CheckPrerequisitesCustom()

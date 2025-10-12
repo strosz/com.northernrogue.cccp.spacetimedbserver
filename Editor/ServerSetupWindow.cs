@@ -33,8 +33,8 @@ public class ServerSetupWindow : EditorWindow
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Tab selection
-    private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer, 2 = Docker Setup
-    private string[] tabNames = new string[] { "WSL Local Setup", "Custom Remote Setup", "Docker Setup" };
+    private int currentTab; // 0 = Docker Installer, 1 = WSL Installer, 2 = Custom Debian Installer
+    private string[] tabNames = new string[] { "Docker Local Setup", "WSL Local Setup", "Custom Remote Setup" };
     private bool isAssetStoreBuild => ServerUpdateProcess.IsAssetStoreVersion();
     private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
     
@@ -139,16 +139,7 @@ public class ServerSetupWindow : EditorWindow
         window.InitializeTabNames();
         window.currentTab = 0; // Default to first tab
         window.InitializeInstallerItems();
-        window.CheckInstallationStatus();
-    }
-    
-    public static void ShowCustomWindow()
-    {
-        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
-        window.minSize = new Vector2(500, 400);
-        window.currentTab = 2; // Custom tab is always index 2
-        window.InitializeInstallerItems();
-        window.CheckCustomInstallationStatus();
+        window.CheckPrerequisitesDocker();
     }
     
     public static void ShowDockerWindow()
@@ -157,7 +148,25 @@ public class ServerSetupWindow : EditorWindow
         window.minSize = new Vector2(500, 400);
         window.currentTab = 0; // Docker tab is always index 0
         window.InitializeInstallerItems();
-        window.CheckDockerPrerequisites();
+        window.CheckPrerequisitesDocker();
+    }
+
+    public static void ShowWSLWindow()
+    {
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
+        window.minSize = new Vector2(500, 400);
+        window.currentTab = 1; // WSL tab is always index 1
+        window.InitializeInstallerItems();
+        window.CheckPrerequisitesWSL();
+    }
+
+    public static void ShowCustomWindow()
+    {
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
+        window.minSize = new Vector2(500, 400);
+        window.currentTab = 2; // Custom tab is always index 2
+        window.InitializeInstallerItems();
+        window.CheckPrerequisitesCustom();
     }
 
     private void InitializeTabNames()
@@ -281,7 +290,7 @@ public class ServerSetupWindow : EditorWindow
         isConnectedSSH = customProcess.IsSessionActive();
         if (isConnectedSSH)
         {
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
         }
     }
     
@@ -779,11 +788,11 @@ public class ServerSetupWindow : EditorWindow
     
             
             if (currentTab == wslTabIndex) {
-                CheckInstallationStatus();
+                CheckPrerequisitesWSL();
             } else if (currentTab == customTabIndex) {
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
             } else if (currentTab == dockerTabIndex) {
-                CheckDockerPrerequisites();
+                CheckPrerequisitesDocker();
             }
             UpdateInstallerItemsStatus();
         }
@@ -847,11 +856,11 @@ public class ServerSetupWindow : EditorWindow
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(60)))
         {
             if (currentTab == wslTabIndex) {
-                CheckInstallationStatus();
+                CheckPrerequisitesWSL();
             } else if (currentTab == customTabIndex) {
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
             } else if (currentTab == dockerTabIndex) {
-                CheckDockerPrerequisites();
+                CheckPrerequisitesDocker();
             }
             UpdateInstallerItemsStatus();
         }
@@ -993,9 +1002,9 @@ public class ServerSetupWindow : EditorWindow
                 e.Use();
 
                 if (currentTab == wslTabIndex) {
-                    CheckInstallationStatus();
+                    CheckPrerequisitesWSL();
                 } else if (currentTab == customTabIndex) {
-                    CheckCustomInstallationStatus();
+                    CheckPrerequisitesCustom();
                 }
             }
             
@@ -1008,9 +1017,9 @@ public class ServerSetupWindow : EditorWindow
                 userNamePrompt = false;
 
                 if (currentTab == wslTabIndex) {
-                    CheckInstallationStatus();
+                    CheckPrerequisitesWSL();
                 } else if (currentTab == customTabIndex) {
-                    CheckCustomInstallationStatus();
+                    CheckPrerequisitesCustom();
                 }
             }
             
@@ -1292,7 +1301,7 @@ public class ServerSetupWindow : EditorWindow
     #endregion
     
     #region Check Installation Status
-    internal async void CheckInstallationStatus()
+    internal async void CheckPrerequisitesWSL()
     {
         if (isRefreshing) return; // Don't start a new refresh if one is already running
         
@@ -1352,7 +1361,7 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
     }
     
-    internal async void CheckCustomInstallationStatus()
+    internal async void CheckPrerequisitesCustom()
     {
         await customProcess.StartSession();
         // Don't check if the SSH session isn't active
@@ -1456,7 +1465,7 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("Remote installation status check complete.", Color.green);
     }
     
-    private void CheckDockerPrerequisites()
+    private void CheckPrerequisitesDocker()
     {
         if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
         
