@@ -1064,10 +1064,11 @@ public class ServerDockerProcess
                             if (args.Data != null)
                             {
                                 outputBuilder.AppendLine(args.Data);
-                                // For login commands, log output in real-time so user can see the URL immediately
+                                // For login commands, process output to auto-open URLs and log in real-time
                                 if (isLoginCommand && logCallback != null)
                                 {
-                                    logCallback(args.Data, 0);
+                                    string processedOutput = ServerUtilityProvider.ProcessOutputAndOpenUrls(args.Data);
+                                    logCallback(processedOutput, 0);
                                 }
                             }
                         };
@@ -1089,13 +1090,16 @@ public class ServerDockerProcess
                         process.BeginOutputReadLine();
                         process.BeginErrorReadLine();
 
-                        // Use longer timeout for login commands (5 minutes) since they require user interaction
-                        int timeoutMs = isLoginCommand ? 300000 : 30000; // 5 minutes for login, 30 seconds for others
+                        // Use longer timeout for login commands (3 minutes) since they require user interaction
+                        int timeoutMs = isLoginCommand ? 180000 : 30000; // 3 minutes for login, 30 seconds for others
                         bool finished = process.WaitForExit(timeoutMs);
                         if (!finished)
                         {
                             try { process.Kill(); } catch { }
-                            return ("", "Command timed out", false);
+                            if (isLoginCommand)
+                                return ("", "Login command timed out. Please try again.", false);
+                            else
+                                return ("", "Command timed out. Please try again.", false);
                         }
 
                         string output = outputBuilder.ToString();

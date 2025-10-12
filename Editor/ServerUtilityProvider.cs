@@ -77,6 +77,110 @@ public static class ServerUtilityProvider
         return -1; // Invalid or no port found
     }
 
+    /// <summary>
+    /// Parses and extracts URLs from command output, specifically looking for login URLs
+    /// </summary>
+    /// <param name="output">The command output to parse</param>
+    /// <returns>Array of extracted URLs</returns>
+    public static string[] ExtractUrlsFromOutput(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return new string[0];
+
+        var urls = new System.Collections.Generic.List<string>();
+        
+        try
+        {
+            // Use regex to find URLs in the format: (http://...) or (https://...) or just http://... or https://...
+            // This handles the specific case: "Opening https://spacetimedb.com/login/cli?token=... in your browser."
+            string urlPattern = @"(?:Opening\s+)?(?:\(?)(https?://[^\s\)]+)(?:\)?)";
+            var matches = System.Text.RegularExpressions.Regex.Matches(output, urlPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                if (match.Groups.Count > 1)
+                {
+                    string url = match.Groups[1].Value;
+                    if (!string.IsNullOrEmpty(url) && !urls.Contains(url))
+                    {
+                        urls.Add(url);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error extracting URLs from output: {ex.Message}");
+        }
+        
+        return urls.ToArray();
+    }
+
+    /// <summary>
+    /// Opens a URL in the system's default browser
+    /// </summary>
+    /// <param name="url">The URL to open</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool OpenUrlInBrowser(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return false;
+
+        try
+        {
+            // Use Unity's Application.OpenURL which works in both Editor and builds
+            // But it must be called from the main thread, so use delayCall for thread safety
+            UnityEditor.EditorApplication.delayCall += () => Application.OpenURL(url);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error opening URL {url}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Processes command output to automatically open any detected login URLs
+    /// </summary>
+    /// <param name="output">The command output to process</param>
+    /// <returns>The processed output with URL opening status</returns>
+    public static string ProcessOutputAndOpenUrls(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return output;
+
+        string[] urls = ExtractUrlsFromOutput(output);
+        string processedOutput = output;
+        
+        foreach (string url in urls)
+        {
+            // Check if this looks like a login URL (contains login/cli)
+            if (url.Contains("login/cli"))
+            {
+                if (OpenUrlInBrowser(url))
+                {
+                    // Replace the "Opening ... in your browser" text with confirmation
+                    string urlPattern = @"Opening\s+" + System.Text.RegularExpressions.Regex.Escape(url) + @"\s+in\s+your\s+browser";
+                    processedOutput = System.Text.RegularExpressions.Regex.Replace(
+                        processedOutput, 
+                        urlPattern, 
+                        $"Opening {url} in your browser... (URL opened automatically)", 
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                    
+                    // Also handle the case without "Opening" prefix
+                    if (processedOutput.Contains(url) && !processedOutput.Contains("URL opened automatically"))
+                    {
+                        processedOutput = processedOutput.Replace(url, $"{url} (URL opened automatically)");
+                    }
+                }
+            }
+        }
+        
+        return processedOutput;
+    }
+
     #endregion
 
     #region Path Utilities
