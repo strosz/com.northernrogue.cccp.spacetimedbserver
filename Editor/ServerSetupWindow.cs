@@ -729,9 +729,9 @@ public class ServerSetupWindow : EditorWindow
                     newState = hasDockerImage;
                     newEnabledState = hasDocker && hasDockerCompose;
                 }
-                else if (item.title.Contains("Generate Docker Compose"))
+                else if (item.title.Contains("Configure Docker Container Volume Mounts"))
                 {
-                    newState = false; // Always show as available to regenerate
+                    newState = hasDockerContainerMountsConfigured;
                     newEnabledState = hasDocker && hasDockerCompose;
                 }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
@@ -1838,10 +1838,20 @@ public class ServerSetupWindow : EditorWindow
                 return false;
             }
             
-            // Check if /unity mount exists in the output
-            bool hasUnityMount = output.Contains("\"/unity\"") || output.Contains(":/unity");
+            // Check if /unity and /app mounts exist in the output
+            bool hasUnityMount = output.Contains("/unity");
+            bool hasAppMount = output.Contains("/app");
             
-            return hasUnityMount;
+            // For proper configuration, we need at least the Unity mount
+            // The /app mount is also desirable but not strictly required for all operations
+            bool hasProperMounts = hasUnityMount;
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.Log($"[ServerSetupWindow] Container mount check - Unity: {hasUnityMount}, App: {hasAppMount}, Proper: {hasProperMounts}");
+            }
+            
+            return hasProperMounts;
         }
         catch (Exception ex)
         {

@@ -1041,7 +1041,7 @@ public class ServerDockerProcess
             }
 
             // Check if this is a login command that needs real-time output
-            bool isLoginCommand = command.Contains("spacetime login");
+            bool isLoginCommand = command.Contains("spacetime login") && !command.Contains("show --token");
 
             var result = await Task.Run(() =>
             {

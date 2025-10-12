@@ -2448,25 +2448,27 @@ public class ServerWindow : EditorWindow
                 }
                 else if (essentialSoftware && essentialUserSettings)
                 {
-                    bool initModuleAndLogout = EditorUtility.DisplayDialog(
+                    int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
                         "All Software Installed", 
                         "You have everything necessary to run SpacetimeDB! \n\n" +
                         "Please proceed to Init New Module (if using a new module)\n\n" +
                         "Recommended: Logout and then Login again to switch to an online Login which is safer.\n\n" +
                         "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                        "Init Module and Refresh Login", "Only Refresh Login"
+                        "Init Module and Refresh Login", "Refresh Login", "Cancel"
                     );
-                    if (initModuleAndLogout)
+                    if (initModuleAndLogout == 0)
                     {
                         InitNewModule();
                         // Also logout and login again to ensure a safe online login
                         LogoutAndLogin();
                     } 
-                    else
+                    else if (initModuleAndLogout == 1)
                     {
                         // Only logout and login again to ensure a safe online login
                         LogoutAndLogin();
                     }
+                    // If Cancel do nothing
+
                     hasAllPrerequisites = true;
                     CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
@@ -2652,17 +2654,30 @@ public class ServerWindow : EditorWindow
             LogMessage("[LogoutAndLogin] Server Manager not initialized. Please restart Unity.", -1);
             return;
         }
-        if (serverRunning)
-        {
-            serverManager.StopServer();
+        if (localCLIProvider == "Docker") {
+            if (!serverRunning) // Docker starts and stops the whole container, so start it first if not running
+            {
+                serverManager.StartServer();
+                LogMessage("Waiting for Docker server to start in order to refresh login...", 0);
+                await Task.Delay(3000); // Wait for Docker server to start
+            }
+            serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
+            await Task.Delay(1000); // Wait for logout to complete
+            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
         }
-        await Task.Delay(2000); // Wait for server to stop
-        serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
-        await Task.Delay(1000); // Wait for logout to complete
-        serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
-        if (!serverRunning)
-        {
-            serverManager.StartServer();
+        else if (localCLIProvider == "WSL") {
+            if (serverRunning) // WSL is service based, so stop the spacetimedb service first if running
+            {
+                serverManager.StopServer();
+            }
+            await Task.Delay(3000); // Wait for WSL server to stop
+            serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
+            await Task.Delay(1000); // Wait for logout to complete
+            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
+            if (!serverRunning)
+            {
+                serverManager.StartServer();
+            }
         }
     }
 
