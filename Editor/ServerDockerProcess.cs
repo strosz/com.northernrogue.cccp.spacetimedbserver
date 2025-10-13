@@ -237,6 +237,10 @@ public class ServerDockerProcess
             // Build volume mounts
             string volumeMounts = $"-v \"{serverDirectory}:/app\"";
             
+            // Add persistent volume for SpacetimeDB data
+            volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
+            if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB data", 0);
+            
             // Add Unity Assets directory as a volume mount if provided
             if (!string.IsNullOrEmpty(unityAssetsDirectory))
             {
@@ -332,6 +336,10 @@ public class ServerDockerProcess
             
             // Build volume mounts
             string volumeMounts = $"-v \"{serverDirectory}:/app\"";
+            
+            // Add persistent volume for SpacetimeDB data
+            volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
+            if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB data", 0);
             
             // Add Unity Assets directory as a volume mount if provided
             if (!string.IsNullOrEmpty(unityAssetsDirectory))

@@ -414,8 +414,15 @@ public class ServerManager
             debugMode
         );
         
-        // Initialize VersionProcessor
-        versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        // Initialize VersionProcessor based on the current server mode
+        if (LocalCLIProvider == "Docker")
+        {
+            versionProcessor = new ServerVersionProcess(dockerProcessor, LogMessage, debugMode);
+        }
+        else // Default to WSL
+        {
+            versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        }
         
         // Initialize ServerDetectionProcess
         detectionProcess = new ServerDetectionProcess();
@@ -549,6 +556,25 @@ public class ServerManager
         {
             wslProcessor.ClearStatusCache();
         }
+        
+        // Reinitialize version processor based on new server mode
+        if (LocalCLIProvider == "Docker")
+        {
+            versionProcessor = new ServerVersionProcess(dockerProcessor, LogMessage, debugMode);
+        }
+        else // Default to WSL
+        {
+            versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        }
+        
+        // Reconfigure delegates
+        versionProcessor.ConfigureServerControlDelegates(
+            () => serverStarted,
+            () => autoCloseWsl,
+            (value) => { autoCloseWsl = value; },
+            () => StartServer(),
+            () => StopServer()
+        );
     }
 
     public void Configure()
@@ -2461,17 +2487,29 @@ public class ServerManager
 
     public void BackupServerData()
     {
-        versionProcessor.BackupServerData(BackupDirectory, UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.BackupServerDataDocker(BackupDirectory);
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.BackupServerDataWSL(BackupDirectory, UserName);
+        }
     }
 
     public void ClearServerData()
     {
-        versionProcessor.ClearServerData(UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.ClearServerDataDocker();
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.ClearServerDataWSL(UserName);
+        }
     }
 
     public void RestoreServerData()
     {
-        versionProcessor.RestoreServerData(BackupDirectory, UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.RestoreServerDataDocker(BackupDirectory);
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.RestoreServerDataWSL(BackupDirectory, UserName);
+        }
     }
 
     public void ClearModuleLogFile()

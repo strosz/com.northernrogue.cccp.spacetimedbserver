@@ -1665,9 +1665,13 @@ public class ServerSetupWindow : EditorWindow
 
             bool userConfirmed = EditorUtility.DisplayDialog(
                 "Confirm Container Reconfiguration",
-                "The Docker image is currently running and must be stopped to reconfigure volume mounts.\n\n" +
-                "The local SpacetimeDB Docker server database WILL BE RESET and the local SpacetimeDB Docker server module needs to be Published again if already Published.\n\n" +
-                "Do you wish to reconfigure volume mounts? This is required to do at least once to complete the setup.",
+                "The Docker container must be stopped and recreated to reconfigure volume mounts.\n\n" +
+                "This will apply the following mounts:\n" +
+                "- Server directory -> /app\n" +
+                "- Unity project -> /unity\n" +
+                "- Persistent SpacetimeDB data volume\n\n" +
+                "The local SpacetimeDB Docker server database WILL BE RESET and the module needs to be Published again.\n\n" +
+                "Do you wish to reconfigure? This is required to complete the setup.",
                 "Yes, Reconfigure",
                 "Cancel"
             );

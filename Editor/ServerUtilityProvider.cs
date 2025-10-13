@@ -419,6 +419,63 @@ public static class ServerUtilityProvider
     }
 
     #endregion
+
+    #region Platform Detection
+
+    /// <summary>
+    /// Determines if the current operating system is Windows
+    /// </summary>
+    public static bool IsWindows()
+    {
+        return Application.platform == RuntimePlatform.WindowsEditor;
+    }
+
+    /// <summary>
+    /// Determines if the current operating system is macOS
+    /// </summary>
+    public static bool IsMacOS()
+    {
+        return Application.platform == RuntimePlatform.OSXEditor;
+    }
+
+    /// <summary>
+    /// Determines if the current operating system is Linux
+    /// </summary>
+    public static bool IsLinux()
+    {
+        return Application.platform == RuntimePlatform.LinuxEditor;
+    }
+
+    /// <summary>
+    /// Gets the appropriate shell executable for the current platform
+    /// </summary>
+    /// <returns>Shell executable path (cmd.exe, bash, etc.)</returns>
+    public static string GetShellExecutable()
+    {
+        if (IsWindows())
+            return "cmd.exe";
+        else if (IsMacOS() || IsLinux())
+            return "/bin/bash";
+        else
+            return "sh"; // Fallback
+    }
+
+    /// <summary>
+    /// Gets the appropriate shell argument prefix for the current platform
+    /// </summary>
+    /// <param name="command">The command to wrap</param>
+    /// <returns>Shell arguments including the command</returns>
+    public static string GetShellArguments(string command)
+    {
+        if (IsWindows())
+            return $"/c {command}";
+        else if (IsMacOS() || IsLinux())
+            return $"-c \"{command}\"";
+        else
+            return $"-c \"{command}\""; // Fallback
+    }
+
+    #endregion
 }
 
 } // Namespace

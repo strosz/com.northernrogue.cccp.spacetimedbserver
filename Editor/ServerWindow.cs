@@ -2174,7 +2174,7 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            EditorGUILayout.LabelField("Local CLI", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField($"Local {localCLIProvider} CLI", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (localCLIProvider == "WSL")
             {
@@ -2190,7 +2190,7 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            if (serverMode == ServerMode.WSLServer)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
                 string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
