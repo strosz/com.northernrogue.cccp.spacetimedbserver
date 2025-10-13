@@ -33,8 +33,8 @@ public class ServerSetupWindow : EditorWindow
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Tab selection
-    private int currentTab; // 0 = Docker Installer, 1 = WSL Installer, 2 = Custom Debian Installer
-    private string[] tabNames = new string[] { "Docker Local Setup", "WSL Local Setup", "Custom Remote Setup" };
+    private int currentTab; // 0 = Docker, 1 = WSL, 2 = Custom
+    private string[] tabNames = new string[] { "Local Docker Setup", "Local WSL Setup", "Remote Custom Setup" };
     private bool isAssetStoreBuild => ServerUpdateProcess.IsAssetStoreVersion();
     private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
     
@@ -136,7 +136,6 @@ public class ServerSetupWindow : EditorWindow
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.InitializeTabNames();
         window.currentTab = 0; // Default to first tab
         window.InitializeInstallerItems();
         window.CheckPrerequisitesDocker();
@@ -165,14 +164,9 @@ public class ServerSetupWindow : EditorWindow
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
         window.currentTab = 2; // Custom tab is always index 2
+        window.InitializeCustomInstallerWindow();
         window.InitializeInstallerItems();
         window.CheckPrerequisitesCustom();
-    }
-
-    private void InitializeTabNames()
-    {
-        // Always show all three tabs
-        tabNames = new string[] { "Docker Local Setup", "WSL Local Setup", "Custom Remote Setup" };
     }
 
     #region OnEnable
@@ -182,8 +176,36 @@ public class ServerSetupWindow : EditorWindow
         wslProcess = new ServerWSLProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
         dockerProcess = new ServerDockerProcess(LogMessage, false);
-        serverManager = new ServerManager(LogMessage, () => Repaint());
-        
+        //serverManager = new ServerManager(LogMessage, () => Repaint());
+
+        // Try to reuse ServerManager from the main ServerWindow if it's open to share SSH state
+        serverManager = null;
+
+        try
+        {
+            if (EditorWindow.HasOpenInstances<ServerWindow>())
+            {
+                var mainWindow = EditorWindow.GetWindow<ServerWindow>();
+                if (mainWindow != null)
+                {
+                    serverManager = mainWindow.GetServerManager();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore — fallback to creating a local ServerManager
+        }
+
+        // If no shared ServerManager found, create one (fallback)
+        if (serverManager == null)
+        {
+            serverManager = new ServerManager(LogMessage, Repaint);
+        }
+        // After loading or creating ServerManager, ensure it has the latest settings
+        serverManager.LoadSettings();
+        serverManager.Configure();
+
         // Initialize install process (only for non-Asset Store builds)
         if (!isAssetStoreBuild)
         {
@@ -281,13 +303,16 @@ public class ServerSetupWindow : EditorWindow
 
     private void OnFocus()
     {
-        InitializeCustomInstallerWindow();
+        if (currentTab == customTabIndex) {
+            InitializeCustomInstallerWindow();
+        }
     }
 
     private void InitializeCustomInstallerWindow()
     {
-        customProcess = new ServerCustomProcess(LogMessage, false);
-        isConnectedSSH = customProcess.IsSessionActive();
+        if (serverManager != null) 
+        serverManager.SSHConnectionStatusAsync();
+        isConnectedSSH = serverManager.IsSSHConnectionActive;
         if (isConnectedSSH)
         {
             CheckPrerequisitesCustom();
@@ -330,7 +355,7 @@ public class ServerSetupWindow : EditorWindow
         {
             new InstallerItem
             {
-                title = "Install WSL with Debian",
+                title = "Setup WSL with Debian",
                 description = "Windows Subsystem for Linux with Debian distribution\n"+
                 "Important: Will launch a checker tool that determines if your system supports WSL1 or WSL2\n"+
                 "Note: May require a system restart. If it reports as failed, please restart and try again\n"+
@@ -342,7 +367,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Debian Trixie Update",
+                title = "Setup Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: Is now included by default in the WSL with Debian installer\n"+
@@ -353,7 +378,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install cURL",
+                title = "Setup cURL",
                 description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
@@ -362,7 +387,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Server",
+                title = "Setup SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
                 "Note: Only supports installing to the users home directory (SpacetimeDB default)",
                 isInstalled = hasSpacetimeDBServer,
@@ -371,7 +396,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB PATH",
+                title = "Setup SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasSpacetimeDBPath,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
@@ -379,7 +404,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Service",
+                title = "Setup SpacetimeDB Service",
                 description = "Install SpacetimeDB as a system service that automatically starts on server boot\n" +
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasSpacetimeDBService,
@@ -389,7 +414,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Rust",
+                title = "Setup Rust",
                 description = "Rust is a programming language that can be 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
@@ -398,7 +423,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install .NET SDK for C#",
+                title = "Setup .NET SDK for C#",
                 description = ".NET SDK 8.0 is Microsoft's software development kit for C#\n"+
                 "Note: Required to use the SpacetimeDB Server with C# Language",
                 isInstalled = hasNETSDK,
@@ -407,7 +432,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Web Assembly Optimizer Binaryen",
+                title = "Setup Web Assembly Optimizer Binaryen",
                 description = "Binaryen is a compiler toolkit for WebAssembly\n"+
                 "SpacetimeDB make use of wasm-opt optimizer for improving performance",
                 isInstalled = hasBinaryen,
@@ -416,7 +441,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Git",
+                title = "Setup Git",
                 description = "Git is a distributed version control system\n"+
                 "SpacetimeDB may call git commands during the publish and generate process",
                 isInstalled = hasGit,
@@ -425,7 +450,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Unity SDK",
+                title = "Setup SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
@@ -440,7 +465,7 @@ public class ServerSetupWindow : EditorWindow
         {   
             new InstallerItem
             {
-                title = "Install User",
+                title = "Setup User",
                 description = "Creates a new user on the SSH Debian server with proper permissions\n"+
                 "Will add your public SSH key to the user. Requires a manual SSH connection initially\n"+
                 "Note: You will be prompted to set a password for the new user",
@@ -453,7 +478,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install Debian Trixie Update",
+                title = "Setup Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: May take some minutes to install",
@@ -463,7 +488,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install cURL",
+                title = "Setup cURL",
                 description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCustomCurl,
@@ -472,7 +497,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Server",
+                title = "Setup SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
                 "Note: Will install to the current SSH user session home directory (SpacetimedDB default)",
                 isInstalled = hasCustomSpacetimeDBServer,
@@ -481,7 +506,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB PATH",
+                title = "Setup SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasCustomSpacetimeDBPath,
                 isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
@@ -489,7 +514,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Service",
+                title = "Setup SpacetimeDB Service",
                 description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
                               "Creates a systemd service file to run SpacetimeDB in the background\n" +
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
@@ -500,7 +525,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Unity SDK",
+                title = "Setup SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
@@ -515,7 +540,7 @@ public class ServerSetupWindow : EditorWindow
         {
             new InstallerItem
             {
-                title = "Install Docker Desktop",
+                title = "Setup Docker Desktop",
                 description = "Docker Desktop provides containerization for running SpacetimeDB\n"+
                 "Note: Available for Windows, macOS, and Linux\n"+
                 "Note: Docker Desktop includes Docker Compose",
@@ -547,7 +572,7 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Unity SDK",
+                title = "Setup SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
@@ -566,12 +591,12 @@ public class ServerSetupWindow : EditorWindow
 
         // Update the correct list based on current tab
         List<InstallerItem> itemsToUpdate;
-        if (currentTab == wslTabIndex) {
+        if (currentTab == dockerTabIndex) {
+            itemsToUpdate = dockerInstallerItems;
+        } else if (currentTab == wslTabIndex) {
             itemsToUpdate = installerItems;
         } else if (currentTab == customTabIndex) {
             itemsToUpdate = customInstallerItems;
-        } else if (currentTab == dockerTabIndex) {
-            itemsToUpdate = dockerInstallerItems;
         } else {
             return; // Invalid tab
         }
@@ -590,10 +615,47 @@ public class ServerSetupWindow : EditorWindow
         spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
         spacetimeSDKUpdateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
         
+        // For Docker installer items
+        if (currentTab == 0) {
+            foreach (var item in itemsToUpdate)
+            {
+                bool previousState = item.isInstalled;
+                bool previousEnabledState = item.isEnabled;
+                bool newState = previousState; // Default to no change
+                bool newEnabledState = previousEnabledState;
+                
+                if (item.title.Contains("Docker Desktop"))
+                {
+                    newState = hasDocker && hasDockerCompose;
+                    newEnabledState = true; // Always enabled
+                }
+                else if (item.title.Contains("Pull SpacetimeDB Docker Image"))
+                {
+                    newState = hasDockerImage;
+                    newEnabledState = hasDocker && hasDockerCompose;
+                }
+                else if (item.title.Contains("Configure Docker Container Volume Mounts"))
+                {
+                    newState = hasDockerContainerMountsConfigured;
+                    newEnabledState = hasDocker && hasDockerCompose;
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    newState = hasSpacetimeDBUnitySDK;
+                    newEnabledState = true; // Always enabled
+                }
+                
+                if (newState != previousState || newEnabledState != previousEnabledState)
+                {
+                    item.isInstalled = newState;
+                    item.isEnabled = newEnabledState;
+                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                }
+            }
+        }
         // For WSL installer items
-        if (currentTab == 1) {
-            foreach (var item in itemsToUpdate
-            )
+        else if (currentTab == 1) {
+            foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
                 bool previousEnabledState = item.isEnabled;
@@ -719,44 +781,6 @@ public class ServerSetupWindow : EditorWindow
                 }
             }
         }
-        // For Docker installer items
-        else if (currentTab == 0) {
-            foreach (var item in itemsToUpdate)
-            {
-                bool previousState = item.isInstalled;
-                bool previousEnabledState = item.isEnabled;
-                bool newState = previousState; // Default to no change
-                bool newEnabledState = previousEnabledState;
-                
-                if (item.title.Contains("Docker Desktop"))
-                {
-                    newState = hasDocker && hasDockerCompose;
-                    newEnabledState = true; // Always enabled
-                }
-                else if (item.title.Contains("Pull SpacetimeDB Docker Image"))
-                {
-                    newState = hasDockerImage;
-                    newEnabledState = hasDocker && hasDockerCompose;
-                }
-                else if (item.title.Contains("Configure Docker Container Volume Mounts"))
-                {
-                    newState = hasDockerContainerMountsConfigured;
-                    newEnabledState = hasDocker && hasDockerCompose;
-                }
-                else if (item.title.Contains("SpacetimeDB Unity SDK"))
-                {
-                    newState = hasSpacetimeDBUnitySDK;
-                    newEnabledState = true; // Always enabled
-                }
-                
-                if (newState != previousState || newEnabledState != previousEnabledState)
-                {
-                    item.isInstalled = newState;
-                    item.isEnabled = newEnabledState;
-                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
-                }
-            }
-        }
         
         if (repaintNeeded)
         {
@@ -783,12 +807,12 @@ public class ServerSetupWindow : EditorWindow
         {
             currentTab = newTab;
             // When switching tabs, check the appropriate installation status
-            if (currentTab == wslTabIndex) {
+            if (currentTab == dockerTabIndex) {
+                CheckPrerequisitesDocker();
+            } else if (currentTab == wslTabIndex) {
                 CheckPrerequisitesWSL();
             } else if (currentTab == customTabIndex) {
                 CheckPrerequisitesCustom();
-            } else if (currentTab == dockerTabIndex) {
-                CheckPrerequisitesDocker();
             }
             UpdateInstallerItemsStatus();
         }
@@ -796,6 +820,7 @@ public class ServerSetupWindow : EditorWindow
         EditorGUILayout.Space(5);
         
         DrawInstallerItemsList();
+
         EditorGUILayout.Space(5);
         
         DrawStatusMessage();
@@ -915,20 +940,20 @@ public class ServerSetupWindow : EditorWindow
         string title;
         string description;
         if (currentTab == dockerTabIndex) {
-            title = "SpacetimeDB Docker Setup";
-            description = "Setup Docker to run SpacetimeDB in containers.\n" +
-                         "Works on Windows, macOS, and Linux.\n" +
-                         "Includes tools to generate docker-compose.yml with your configuration.";
+            title = "Local SpacetimeDB Docker Setup";
+            description =   "Setup Docker to run SpacetimeDB in containers.\n" +
+                            "Works on Windows, macOS, and Linux.\n" +
+                            "You get a local Docker SpacetimeDB CLI for spacetime commands.";
         } else if (currentTab == wslTabIndex) {
-            title = "SpacetimeDB Local WSL Server Installer";
-            description = "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
-                         "You get a local WSL CLI for spacetime commands.\n" +
-                         "Required for all server modes to be able to publish your server.";
+            title = "Local SpacetimeDB WSL Setup";
+            description =   "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
+                            "Works on Windows 10 and 11 with WSL1 or WSL2.\n" +
+                            "You get a local WSL SpacetimeDB CLI for spacetime commands.";
         } else if (currentTab == customTabIndex) {
-            title = "SpacetimeDB Remote Custom Server Installer";
-            description = "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
-                         "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
-                         "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
+            title = "Remote Custom SpacetimeDB Server Setup";
+            description =   "Setup all the required software to run SpacetimeDB Server on a remote Linux Debian server via SSH.\n" +
+                            "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
+                            "Note: The Local Docker or WSL setup is required to be able to publish to your remote server.";
         } else {
             title = "Unknown Tab";
             description = "";
@@ -1079,7 +1104,7 @@ public class ServerSetupWindow : EditorWindow
         // Title - reuse cached content when possible
         EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        
 
-        if (currentTab == 0) {
+        if (currentTab == wslTabIndex) {
             showUpdateButton = (item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
@@ -1090,7 +1115,7 @@ public class ServerSetupWindow : EditorWindow
                               (item.title.Contains("SpacetimeDB Unity SDK") && 
                                     spacetimeSDKUpdateAvailable && 
                                     !string.IsNullOrEmpty(spacetimeSDKLatestVersion));
-        } else if (currentTab == 1) {
+        } else if (currentTab == customTabIndex) {
             showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
@@ -1133,11 +1158,11 @@ public class ServerSetupWindow : EditorWindow
         {
             if (item.title.Contains("SpacetimeDB Server") && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
             {
-                if (currentTab == 0 && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
+                if (currentTab == wslTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
                 {
                     EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersion, installedStyle, GUILayout.Width(110));
                 }
-                else if (currentTab == 1 && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
+                else if (currentTab == customTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
                 {
                     EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
                 }

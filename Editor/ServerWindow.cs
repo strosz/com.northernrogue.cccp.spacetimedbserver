@@ -76,7 +76,7 @@ public class ServerWindow : EditorWindow
     private int customServerPort { get => CCCPSettingsAdapter.GetCustomServerPort(); set => CCCPSettingsAdapter.SetCustomServerPort(value); }
     private string customServerAuthToken { get => CCCPSettingsAdapter.GetCustomServerAuthToken(); set => CCCPSettingsAdapter.SetCustomServerAuthToken(value); }
     private string sshPrivateKeyPath { get => CCCPSettingsAdapter.GetSSHPrivateKeyPath(); set => CCCPSettingsAdapter.SetSSHPrivateKeyPath(value); }
-    private bool isConnected;
+    private bool isConnectedCustomSSH;
 
     // Pre-requisites Maincloud Server - Direct property access to settings
     private string maincloudAuthToken { get => CCCPSettingsAdapter.GetMaincloudAuthToken(); set => CCCPSettingsAdapter.SetMaincloudAuthToken(value); }
@@ -593,7 +593,7 @@ public class ServerWindow : EditorWindow
                 if (serverMode == ServerMode.CustomServer)
                 {
                     serverManager.SSHConnectionStatusAsync();
-                    isConnected = serverManager.IsSSHConnectionActive;
+                    isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
                 }
             }
             catch (Exception ex)
@@ -655,11 +655,11 @@ public class ServerWindow : EditorWindow
                     if (serverMode == ServerMode.CustomServer)
                     {
                         serverManager.SSHConnectionStatusAsync();
-                        isConnected = serverManager.IsSSHConnectionActive;
+                        isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
                     }
                     else
                     {
-                        isConnected = false;
+                        isConnectedCustomSSH = false;
                     }
                 }
                 Repaint();
@@ -1133,7 +1133,7 @@ public class ServerWindow : EditorWindow
                 }
             }
             EditorGUI.EndDisabledGroup();
-            GUILayout.Label(ServerUtilityProvider.GetStatusIcon(initializedFirstModule), GUILayout.Width(20));
+            GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
             EditorGUILayout.EndHorizontal();
             #endregion
 
@@ -1349,7 +1349,8 @@ public class ServerWindow : EditorWindow
                 // SSH Keygen button
                 EditorGUILayout.BeginHorizontal();
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
-                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair"))
+                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                
+                if (GUILayout.Button("Generate SSH Key Pair"))
                 {
                     if (wslProcess == null)
                     {
@@ -1361,6 +1362,7 @@ public class ServerWindow : EditorWindow
                     // Create .ssh directory first, then generate the key pair
                     wslProcess.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
                 }
+                GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();
                 
                 // SSH Private Key Path (button only)
@@ -1472,16 +1474,16 @@ public class ServerWindow : EditorWindow
                 if (serverMode == ServerMode.CustomServer)
                 {
                     serverManager.SSHConnectionStatusAsync();
-                    isConnected = serverManager.IsSSHConnectionActive;
+                    isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
                 }
                 else
                 {
-                    isConnected = false;
+                    isConnectedCustomSSH = false;
                 }
                 
                 Color originalColor = connectedStyle.normal.textColor;
-                connectedStyle.normal.textColor = isConnected ? originalColor : Color.gray;
-                string connectionStatusText = isConnected ? "CONNECTED SSH" : "DISCONNECTED";
+                connectedStyle.normal.textColor = isConnectedCustomSSH ? originalColor : Color.gray;
+                string connectionStatusText = isConnectedCustomSSH ? "CONNECTED SSH" : "DISCONNECTED SSH";
                 EditorGUILayout.LabelField(connectionStatusText, connectedStyle);
                 // Restore the original color after using it
                 connectedStyle.normal.textColor = originalColor;
@@ -1507,6 +1509,7 @@ public class ServerWindow : EditorWindow
                     }
                     LogoutAndLogin();
                 }
+                GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();                
 
                 // Auth Token setting
@@ -1539,7 +1542,7 @@ public class ServerWindow : EditorWindow
                 bool isMaincloudConnected = serverManager.IsMaincloudConnected;
                 Color originalColor = connectedStyle.normal.textColor;
                 connectedStyle.normal.textColor = isMaincloudConnected ? originalColor : Color.gray;
-                string maincloudStatusText = isMaincloudConnected ? "CONNECTED" : "DISCONNECTED";
+                string maincloudStatusText = isMaincloudConnected ? "CONNECTED" : "DisConnectedCustomSSH";
                 EditorGUILayout.LabelField(maincloudStatusText, connectedStyle);
                 // Restore the original color after using it
                 connectedStyle.normal.textColor = originalColor;
@@ -2100,7 +2103,7 @@ public class ServerWindow : EditorWindow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
                     serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Logout", GUILayout.Height(20)))
@@ -2111,21 +2114,21 @@ public class ServerWindow : EditorWindow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
                     serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
             EditorGUI.BeginDisabledGroup(serverMode != ServerMode.MaincloudServer && !serverManager.IsServerStarted);
@@ -2133,7 +2136,7 @@ public class ServerWindow : EditorWindow
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime list", "Showing active modules");
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                    else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
                 }
             EditorGUI.EndDisabledGroup();
 
@@ -2142,14 +2145,14 @@ public class ServerWindow : EditorWindow
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.PingServer(true);
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Show Version", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
             }
 
             // Service Status button (only in Custom Server mode)
@@ -2161,7 +2164,7 @@ public class ServerWindow : EditorWindow
                 {
                     if (CLIAvailableRemote())
                     CheckServiceStatus();
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a remote (SSH) and it is available.", -1);
+                    else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a remote (SSH) and it is available.", -1);
                 }
                 // Add a button which opens a cmd window with the ssh username
                 if (GUILayout.Button("Open SSH Window", buttonStyle))
@@ -3041,7 +3044,7 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableRemote()
     {
-        if (isConnected)
+        if (isConnectedCustomSSH)
         {
             if (debugMode) LogMessage("CLI Available on Remote Server", 1);
             return true;
