@@ -176,11 +176,8 @@ public class ServerSetupWindow : EditorWindow
         wslProcess = new ServerWSLProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
         dockerProcess = new ServerDockerProcess(LogMessage, false);
-        //serverManager = new ServerManager(LogMessage, () => Repaint());
-
         // Try to reuse ServerManager from the main ServerWindow if it's open to share SSH state
         serverManager = null;
-
         try
         {
             if (EditorWindow.HasOpenInstances<ServerWindow>())
@@ -196,7 +193,6 @@ public class ServerSetupWindow : EditorWindow
         {
             // Ignore — fallback to creating a local ServerManager
         }
-
         // If no shared ServerManager found, create one (fallback)
         if (serverManager == null)
         {
@@ -205,6 +201,9 @@ public class ServerSetupWindow : EditorWindow
         // After loading or creating ServerManager, ensure it has the latest settings
         serverManager.LoadSettings();
         serverManager.Configure();
+        // Check SSH connection status
+        if (serverManager != null) serverManager.SSHConnectionStatusAsync();
+        isConnectedSSH = serverManager.IsSSHConnectionActive;
 
         // Initialize install process (only for non-Asset Store builds)
         if (!isAssetStoreBuild)
@@ -310,8 +309,7 @@ public class ServerSetupWindow : EditorWindow
 
     private void InitializeCustomInstallerWindow()
     {
-        if (serverManager != null) 
-        serverManager.SSHConnectionStatusAsync();
+        if (serverManager != null) serverManager.SSHConnectionStatusAsync();
         isConnectedSSH = serverManager.IsSSHConnectionActive;
         if (isConnectedSSH)
         {
@@ -616,7 +614,7 @@ public class ServerSetupWindow : EditorWindow
         spacetimeSDKUpdateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
         
         // For Docker installer items
-        if (currentTab == 0) {
+        if (currentTab == dockerTabIndex) {
             foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
@@ -654,7 +652,7 @@ public class ServerSetupWindow : EditorWindow
             }
         }
         // For WSL installer items
-        else if (currentTab == 1) {
+        else if (currentTab == wslTabIndex) {
             foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
@@ -727,7 +725,7 @@ public class ServerSetupWindow : EditorWindow
             }
         }
         // For Custom SSH installer items
-        else if (currentTab == 2) {
+        else if (currentTab == customTabIndex) {
             foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;

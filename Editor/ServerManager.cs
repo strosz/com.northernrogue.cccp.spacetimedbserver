@@ -1915,7 +1915,7 @@ public class ServerManager
             else // WSL local commands, Docker commands, Custom Remote publish or Maincloud commands
             {
                 // Errors which causes the command to fail may be needed to be procesed directly in RunServerCommandAsync
-                var result = Settings.serverMode == ServerMode.DockerServer 
+                var result = Settings.localCLIProvider == "Docker"
                     ? await dockerProcessor.RunServerCommandAsync(command, ServerDirectory)
                     : await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
                 

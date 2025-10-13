@@ -646,25 +646,14 @@ public class ServerWindow : EditorWindow
         }
         
         // Background status checks to update the UI without having to interact with it
-        if (windowFocused)
+        if (currentTime - lastCheckTime > statusUICheckInterval)
         {
-            if (currentTime - lastCheckTime > statusUICheckInterval)
+            if (serverMode == ServerMode.CustomServer) 
             {
-                if (serverMode == ServerMode.CustomServer) 
-                {
-                    // Update connection status asynchronously to avoid blocking UI
-                    if (serverMode == ServerMode.CustomServer)
-                    {
-                        serverManager.SSHConnectionStatusAsync();
-                        isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
-                    }
-                    else
-                    {
-                        isConnectedCustomSSH = false;
-                    }
-                }
-                Repaint();
+                serverManager.SSHConnectionStatusAsync();
+                isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
             }
+            Repaint();
         }
     }
     
@@ -1470,17 +1459,6 @@ public class ServerWindow : EditorWindow
                 // Connection status display
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
-                
-                // Update connection status asynchronously to avoid blocking UI
-                if (serverMode == ServerMode.CustomServer)
-                {
-                    serverManager.SSHConnectionStatusAsync();
-                    isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
-                }
-                else
-                {
-                    isConnectedCustomSSH = false;
-                }
                 
                 Color originalColor = connectedStyle.normal.textColor;
                 connectedStyle.normal.textColor = isConnectedCustomSSH ? originalColor : Color.gray;

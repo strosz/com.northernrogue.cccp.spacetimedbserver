@@ -51,58 +51,68 @@ public class ServerDockerProcess
         Process process = null;
         try
         {
-            if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Running PowerShell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug} | RequiresElevation: {requiresElevation}");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Running shell command: {command} | Visible: {visibleProcess} | KeepOpen: {keepWindowOpenForDebug} | RequiresElevation: {requiresElevation}");
             
             process = new Process();
             
             if (visibleProcess)
             {
-                // For visible window, use a simpler approach
-                process.StartInfo.FileName = "cmd.exe";
+                // For visible window, use platform-specific shell
+                process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
                 process.StartInfo.UseShellExecute = true;
                 process.StartInfo.CreateNoWindow = false;
                 
-                // Use a temporary batch file
-                string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"cosmoscovecontrolpanel_docker_{DateTime.Now.Ticks}.bat");
-                
-                using (System.IO.StreamWriter sw = new System.IO.StreamWriter(tempBatchFile))
+                if (ServerUtilityProvider.IsWindows())
                 {
-                    sw.WriteLine("@echo off");
-                    sw.WriteLine("echo Running command...");
-                    sw.WriteLine(command);
-                    sw.WriteLine($"echo Command finished. Exit code is %ERRORLEVEL%.");
-                    sw.WriteLine("if %ERRORLEVEL% neq 0 (");
-                    sw.WriteLine("    echo ERROR: Command failed with exit code %ERRORLEVEL%");
-                    sw.WriteLine(")");
+                    // Use a temporary batch file on Windows
+                    string tempBatchFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"cosmoscovecontrolpanel_docker_{DateTime.Now.Ticks}.bat");
                     
-                    if (keepWindowOpenForDebug)
+                    using (System.IO.StreamWriter sw = new System.IO.StreamWriter(tempBatchFile))
                     {
-                        sw.WriteLine("echo Press any key to close this window...");
-                        sw.WriteLine("pause > nul");
+                        sw.WriteLine("@echo off");
+                        sw.WriteLine("echo Running command...");
+                        sw.WriteLine(command);
+                        sw.WriteLine($"echo Command finished. Exit code is %ERRORLEVEL%.");
+                        sw.WriteLine("if %ERRORLEVEL% neq 0 (");
+                        sw.WriteLine("    echo ERROR: Command failed with exit code %ERRORLEVEL%");
+                        sw.WriteLine(")");
+                        
+                        if (keepWindowOpenForDebug)
+                        {
+                            sw.WriteLine("echo Press any key to close this window...");
+                            sw.WriteLine("pause > nul");
+                        }
+                        else
+                        {
+                            sw.WriteLine("echo Window will close in 5 seconds...");
+                            sw.WriteLine("timeout /t 5 /nobreak > nul");
+                        }
+                        sw.WriteLine("exit /b %ERRORLEVEL%");
                     }
-                    else
-                    {
-                        sw.WriteLine("echo Window will close in 5 seconds...");
-                        sw.WriteLine("timeout /t 5 /nobreak > nul");
-                    }
-                    sw.WriteLine("exit /b %ERRORLEVEL%");
+                    
+                    process.StartInfo.Arguments = $"/C \"{tempBatchFile}\"";
+                    
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Created batch file: {tempBatchFile} with command: {command}");
                 }
-                
-                process.StartInfo.Arguments = $"/C \"{tempBatchFile}\"";
-                
-                if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Created batch file: {tempBatchFile} with command: {command}");
+                else
+                {
+                    // Unix-like systems (macOS, Linux)
+                    process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(command);
+                }
             }
             else // Hidden execution
             {
-                process.StartInfo.FileName = "powershell.exe";
+                process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.CreateNoWindow = true;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
 
                 string commandToExecute = command;
-                if (requiresElevation)
+                if (requiresElevation && ServerUtilityProvider.IsWindows())
                 {
+                    // Elevation only supported on Windows via PowerShell
+                    process.StartInfo.FileName = "powershell.exe";
                     var (exe, args) = SplitCommandForProcess(commandToExecute);
                     
                     string escapedExe = exe.Replace("'", "''");
@@ -110,10 +120,14 @@ public class ServerDockerProcess
 
                     commandToExecute = $"$ProgressPreference = 'SilentlyContinue'; try {{ $process = Start-Process -FilePath '{escapedExe}' -ArgumentList '{escapedArgs}' -Verb RunAs -Wait -PassThru; exit $process.ExitCode; }} catch {{ Write-Error $_; exit 1; }}";
                     if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Elevated command for hidden execution: {commandToExecute}");
+                    string escapedFinalCommand = commandToExecute.Replace("\"", "`\"");
+                    process.StartInfo.Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{escapedFinalCommand}\"";
                 }
-                
-                string escapedFinalCommand = commandToExecute.Replace("\"", "`\"");
-                process.StartInfo.Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{escapedFinalCommand}\"";
+                else
+                {
+                    // Standard hidden execution for all platforms
+                    process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(commandToExecute);
+                }
             }
             
             process.Start();
@@ -201,8 +215,8 @@ public class ServerDockerProcess
                 
                 // Just open a window to the existing container
                 Process logProcess = new Process();
-                logProcess.StartInfo.FileName = "cmd.exe";
-                logProcess.StartInfo.Arguments = $"/k docker logs -f {ContainerName}";
+                logProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker logs -f {ContainerName}");
                 logProcess.StartInfo.UseShellExecute = true;
                 logProcess.Start();
                 return logProcess;
@@ -214,8 +228,8 @@ public class ServerDockerProcess
                 
                 // Start existing stopped container
                 Process startProcess = new Process();
-                startProcess.StartInfo.FileName = "cmd.exe";
-                startProcess.StartInfo.Arguments = $"/c docker start {ContainerName}";
+                startProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker start {ContainerName}");
                 startProcess.StartInfo.UseShellExecute = false;
                 startProcess.StartInfo.CreateNoWindow = true;
                 startProcess.Start();
@@ -223,8 +237,8 @@ public class ServerDockerProcess
                 
                 // Now show logs
                 Process logProcess = new Process();
-                logProcess.StartInfo.FileName = "cmd.exe";
-                logProcess.StartInfo.Arguments = $"/k docker logs -f {ContainerName}";
+                logProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker logs -f {ContainerName}");
                 logProcess.StartInfo.UseShellExecute = true;
                 logProcess.Start();
                 return logProcess;
@@ -232,7 +246,7 @@ public class ServerDockerProcess
             
             // Container doesn't exist, create new one
             Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe";
+            process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
             
             // Build volume mounts
             string volumeMounts = $"-v \"{serverDirectory}:/app\"";
@@ -273,10 +287,10 @@ public class ServerDockerProcess
             // Note: NOT using --rm so container persists and can be stopped/restarted
             string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 {volumeMounts} {ImageName} start";
             
-            process.StartInfo.Arguments = $"/k {dockerCommand}";
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
             process.StartInfo.UseShellExecute = true;
             
-            if (debugMode) logCallback($"Starting SpacetimeDB Server on port {hostPort} (Docker Visible CMD)...", 0);
+            if (debugMode) logCallback($"Starting SpacetimeDB Server on port {hostPort} (Docker Visible Shell)...", 0);
             process.Start();
             serverProcess = process;
             return process;
@@ -310,8 +324,8 @@ public class ServerDockerProcess
                 
                 // Start existing stopped container
                 Process startProcess = new Process();
-                startProcess.StartInfo.FileName = "cmd.exe";
-                startProcess.StartInfo.Arguments = $"/c docker start {ContainerName}";
+                startProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker start {ContainerName}");
                 startProcess.StartInfo.UseShellExecute = false;
                 startProcess.StartInfo.CreateNoWindow = true;
                 startProcess.StartInfo.RedirectStandardOutput = true;
@@ -376,8 +390,8 @@ public class ServerDockerProcess
             if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
             
             Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe"; 
-            process.StartInfo.Arguments = $"/c {dockerCommand}";
+            process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable(); 
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
@@ -416,8 +430,8 @@ public class ServerDockerProcess
         {
             // Open Docker Desktop or attach to running container
             Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe";
-            process.StartInfo.Arguments = $"/k docker exec -it {ContainerName} /bin/bash";
+            process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker exec -it {ContainerName} /bin/bash");
             process.StartInfo.UseShellExecute = true;
             process.Start();
         }
@@ -436,8 +450,8 @@ public class ServerDockerProcess
         try
         {
             Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe";
-            process.StartInfo.Arguments = "/c docker-compose down";
+            process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments("docker-compose down");
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
@@ -456,8 +470,8 @@ public class ServerDockerProcess
         try
         {
             Process process = new Process();
-            process.StartInfo.FileName = "cmd.exe";
-            process.StartInfo.Arguments = "/c docker-compose up -d";
+            process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments("docker-compose up -d");
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
