@@ -2211,9 +2211,9 @@ public class ServerManager
             return;
         }
 
-        if (Settings.serverMode == ServerMode.DockerServer)
+        if (LocalCLIProvider == "Docker")
         {
-            // For Docker, the directory is mounted into the container, use the mount path directly
+            // For Docker the server directory needs to be mounted in the container, so we use the mount path /app directly
             string command = $"cd /app && spacetime init --lang {ServerLang} .";
             dockerProcessor.RunDockerCommandSilent($"exec {ServerDockerProcess.ContainerName} bash -c \"{command}\"");
             LogMessage("New module initialized", 1);

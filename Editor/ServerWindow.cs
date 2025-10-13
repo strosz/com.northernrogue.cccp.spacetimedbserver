@@ -892,13 +892,15 @@ public class ServerWindow : EditorWindow
             {
                 EditorGUILayout.BeginHorizontal();
                 string cliProviderTooltip = 
-                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally on Linux, MacOS or Windows. \n\n"+
-                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally on Windows. \n\n"+
+                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally.\n\n"+
+                "Docker supports Linux, MacOS or Windows. Fast 3 step setup, but requires Docker Desktop to run on your PC.\n\n"+
+                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally.\n\n"+
+                "WSL supports Windows. Slower 9 step setup, but can run silently in the background.\n\n"+
                 "Both options provide a local development environment.";
                 EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
-                string[] cliProviderOptions = new string[] { "Docker (Any OS)", "WSL (Windows)" };
+                string[] cliProviderOptions = new string[] { "Docker (Windows, Linux and MacOS)", "WSL (Windows)" };
                 int cliProviderSelectedIndex = serverMode == ServerMode.DockerServer ? 0 : 1;
-                int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions, GUILayout.Width(150));
+                int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions);
                 if (newCliProviderSelectedIndex != cliProviderSelectedIndex)
                 {
                     ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.DockerServer : ServerMode.WSLServer;
@@ -926,7 +928,7 @@ public class ServerWindow : EditorWindow
             string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
             int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
             if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
-            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(150));
+            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions);
             if (newunityLangSelectedIndex != unityLangSelectedIndex)
             {
                 unityLang = unityLangValues[newunityLangSelectedIndex];
@@ -943,7 +945,7 @@ public class ServerWindow : EditorWindow
             "Note: This should be placed in the Assets folder of your Unity project.";
             EditorGUILayout.LabelField(new GUIContent("Client Path:", clientDirectoryTooltip), GUILayout.Width(110));
             string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
-            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Height(20)))
             {
                 string path = EditorUtility.OpenFolderPanel("Select Client Path", Application.dataPath, "");
                 if (!string.IsNullOrEmpty(path))
@@ -967,7 +969,7 @@ public class ServerWindow : EditorWindow
             string[] serverLangValues = new string[] { "rust", "csharp" };
             int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
             if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
-            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
+            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions);
             if (newServerLangSelectedIndex != serverLangSelectedIndex)
             {
                 serverLang = serverLangValues[newServerLangSelectedIndex];
@@ -975,7 +977,7 @@ public class ServerWindow : EditorWindow
                 LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
             }
             GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();            
+            EditorGUILayout.EndHorizontal();
             
             // Add New Module Entry
             EditorGUILayout.BeginHorizontal();
@@ -986,7 +988,7 @@ public class ServerWindow : EditorWindow
             "Path: Directory of where Cargo.toml is located or to be created at.\n"+
             "Note: Create a new empty folder if the module has not been created yet.";            
             EditorGUILayout.LabelField(new GUIContent("Module New Entry:", moduleSettingsTooltip), GUILayout.Width(110));
-            newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput, GUILayout.Width(100));
+            newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput);
             string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
             if (GUILayout.Button(new GUIContent("Add", serverDirButtonTooltip), GUILayout.Width(47), GUILayout.Height(20)))
             {
@@ -1048,7 +1050,7 @@ public class ServerWindow : EditorWindow
                 
                 // Adjust selectedModuleIndex for dropdown (add 1 because of "Select..." option)
                 int dropdownIndex = selectedModuleIndex >= 0 ? selectedModuleIndex + 1 : 0;
-                int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, moduleOptions, GUILayout.Width(150));
+                int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, moduleOptions);
                 
                 // Handle selection change
                 if (newDropdownIndex != dropdownIndex)
@@ -1066,7 +1068,7 @@ public class ServerWindow : EditorWindow
             else
             {
                 EditorGUI.BeginDisabledGroup(true);
-                EditorGUILayout.Popup(0, new string[] { "No saved modules" }, GUILayout.Width(150));
+                EditorGUILayout.Popup(0, new string[] { "No saved modules" });
                 EditorGUI.EndDisabledGroup();
             }
             GUILayout.Label(ServerUtilityProvider.GetStatusIcon(selectedModuleIndex != -1), GUILayout.Width(20));
@@ -1098,7 +1100,7 @@ public class ServerWindow : EditorWindow
             }
             
             EditorGUI.BeginDisabledGroup(deleteMode && !hasSelectedModule);
-            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Width(150), GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Height(20)))
             {
                 if (deleteMode && hasSelectedModule)
                 {
@@ -1130,6 +1132,7 @@ public class ServerWindow : EditorWindow
                 }
             }
             EditorGUI.EndDisabledGroup();
+            GUILayout.Label(ServerUtilityProvider.GetStatusIcon(initializedFirstModule), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
             #endregion
 
@@ -1149,7 +1152,7 @@ public class ServerWindow : EditorWindow
                 "Backups for the server use little space, so you can commit this folder to your repository.";
                 EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
                 string backupDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(backupDirectory) ? "Not Set" : backupDirectory);
-                if (GUILayout.Button(new GUIContent("Set Backup Directory", backupDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Set Backup Directory", backupDirButtonTooltip), GUILayout.Height(20)))
                 {
                     string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
                     if (!string.IsNullOrEmpty(path))
@@ -1174,7 +1177,7 @@ public class ServerWindow : EditorWindow
                 
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(new GUIContent("URL:", dockerUrlTooltip), GUILayout.Width(110));
-                string newUrlDocker = EditorGUILayout.DelayedTextField(serverUrlDocker, GUILayout.Width(150));
+                string newUrlDocker = EditorGUILayout.DelayedTextField(serverUrlDocker);
                 if (newUrlDocker != serverUrlDocker)
                 {
                     serverUrlDocker = newUrlDocker;
@@ -1203,7 +1206,7 @@ public class ServerWindow : EditorWindow
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthTokenDocker = EditorGUILayout.PasswordField(authTokenDocker, GUILayout.Width(150));
+                string newAuthTokenDocker = EditorGUILayout.PasswordField(authTokenDocker);
                 if (newAuthTokenDocker != authTokenDocker)
                 {
                     authTokenDocker = newAuthTokenDocker;
@@ -1224,7 +1227,7 @@ public class ServerWindow : EditorWindow
                 "The Debian username to use for Debian commands.\n\n"+
                 "Note: Needed for most server commands and utilities.";
                 EditorGUILayout.LabelField(new GUIContent("Debian Username:", userNameTooltip), GUILayout.Width(110));
-                string newUserName = EditorGUILayout.DelayedTextField(userName, GUILayout.Width(150));
+                string newUserName = EditorGUILayout.DelayedTextField(userName);
                 if (newUserName != userName)
                 {
                     userName = newUserName;
@@ -1241,7 +1244,7 @@ public class ServerWindow : EditorWindow
                 "Default: http://0.0.0.0:3000/\n" +
                 "Note: The port number is required.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.DelayedTextField(serverUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(serverUrl);
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
@@ -1274,7 +1277,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(authToken);
                 if (newAuthToken != authToken)
                 {
                     authToken = newAuthToken;
@@ -1305,8 +1308,25 @@ public class ServerWindow : EditorWindow
 
                 // Status display - show WSL/Docker status based on server mode
                 EditorGUILayout.BeginHorizontal();
+                string tooltipStatus;
+                if (isDockerRunning && serverMode == ServerMode.DockerServer)
+                {
+                    tooltipStatus = "Docker Desktop is running on your PC.";
+                }
+                else if (!isDockerRunning && serverMode == ServerMode.DockerServer)
+                {
+                    tooltipStatus = "Docker Desktop is not running on your PC. Please start Docker Desktop.";
+                }
+                else if (isWslRunning && serverMode == ServerMode.WSLServer)
+                {
+                    tooltipStatus = "Windows Subsystem for Linux is running on your PC.";
+                }
+                else // !isWslRunning && serverMode == ServerMode.WSLServer
+                {
+                    tooltipStatus = "Windows Subsystem for Linux is not running on your PC. It will start automatically when needed.";
+                }
                 string statusLabel = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? "Docker:" : "WSL:";
-                EditorGUILayout.LabelField(statusLabel, GUILayout.Width(110));
+                EditorGUILayout.LabelField(new GUIContent(statusLabel, tooltipStatus), GUILayout.Width(110));
                 Color originalStatusColor = connectedStyle.normal.textColor;
                 
                 bool serviceRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
@@ -1328,7 +1348,7 @@ public class ServerWindow : EditorWindow
                 // SSH Keygen button
                 EditorGUILayout.BeginHorizontal();
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
-                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
+                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair"))
                 {
                     if (wslProcess == null)
                     {
@@ -1350,7 +1370,7 @@ public class ServerWindow : EditorWindow
                     keyPathTooltip += $"\n\nCurrent path: {sshPrivateKeyPath}";
                 }                
                 EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
-                if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip), GUILayout.Width(150)))
+                if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip)))
                 {                    
                     // Use the same default .ssh directory as SSH key generation
                     string defaultSshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
@@ -1374,7 +1394,7 @@ public class ServerWindow : EditorWindow
                 string userNameTooltip = 
                 "The SSH username to use to login to your distro.";
                 EditorGUILayout.LabelField(new GUIContent("SSH Username:", userNameTooltip), GUILayout.Width(110));
-                string newUserName = EditorGUILayout.DelayedTextField(sshUserName, GUILayout.Width(150));
+                string newUserName = EditorGUILayout.DelayedTextField(sshUserName);
                 if (newUserName != sshUserName)
                 {
                     sshUserName = newUserName;
@@ -1393,7 +1413,7 @@ public class ServerWindow : EditorWindow
                 "Make sure port 22 (SSH, used automatically) and port 3000 (SpacetimeDB) are open.\n" +
                 "Press Enter after editing to apply changes.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.DelayedTextField(customServerUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(customServerUrl);
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
@@ -1427,7 +1447,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken);
                 if (newAuthToken != customServerAuthToken)
                 {
                     customServerAuthToken = newAuthToken;
@@ -1478,7 +1498,7 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 string loginTooltip = "Login to the official SpacetimeDB Maincloud using your Github account";
                 EditorGUILayout.LabelField(new GUIContent("Login:",loginTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Login to Maincloud", GUILayout.Width(150)))
+                if (GUILayout.Button("Login to Maincloud"))
                 {
                     if (wslProcess == null)
                     {
@@ -1494,7 +1514,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken);
                 if (newAuthToken != maincloudAuthToken)
                 {
                     maincloudAuthToken = newAuthToken;
