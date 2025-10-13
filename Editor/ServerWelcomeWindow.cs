@@ -74,19 +74,22 @@ public class ServerWelcomeWindow : EditorWindow
         textStyle.fontSize = 12;
         textStyle.richText = true;
 
-        string welcomeText = 
-        "This is a Windows WSL integration of SpacetimeDB within Unity.\n" +
-        "You can find it in your editor's toolbar at\n <b>Window>SpacetimeDB Server Manager</b>.\n\n" +
+        string welcomeMainWindow = 
+        "Welcome to Cosmos Cove Control Panel,\n a SpacetimeDB manager within Unity.\n\n" +
+        "You can find a new menu at\n <b>Window>SpacetimeDB Server Manager</b>.\n\n" +
         "<size=125%><b>Quick Start</b></size>\n" +
-        "1. Open the Main Window.\n Enter the essential Pre-Requisites.\n <size=75%><color=grey>Init New Module after step 2 is done.\n Auth token can be entered after all steps are done.</color></size>\n\n" +
-        "2. Open the Setup Window.\n Check and setup all essential software.\n\n" +
-        "3. You can now publish and start the server! \n\n For a detailed Quick Start check the documentation";
+        "1. Open the Main Window.\n <size=90%><color=grey>Enter the essential Shared Settings\n in Pre-Requisites.</color></size>\n\n";
+        string welcomeSetupWindow =
+        "2. Open the Setup Window.\n <size=90%><color=grey>Check and setup the essential Software\n for either a Docker or WSL Local CLI.</color></size>\n\n";
+        string welcomeStartServer =
+        "3. You can now publish and start the server!\n <size=90%><color=grey>Enter the Auth Token from Commands\n for full access to all features.</color></size>\n\n For a detailed Quick Start check the documentation";
 
-        EditorGUILayout.LabelField(welcomeText, textStyle);
+        // Text Main Window
+        EditorGUILayout.LabelField(welcomeMainWindow, textStyle);
         
-        EditorGUILayout.Space(20);
+        EditorGUILayout.Space(-30);
         
-        // Buttons
+        // Button Main Window
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         if (GUILayout.Button("Main Window", GUILayout.Height(30), GUILayout.Width(200)))
@@ -95,9 +98,14 @@ public class ServerWelcomeWindow : EditorWindow
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
-        
+
         EditorGUILayout.Space(5);
+
+        // Text Setup Window
+        EditorGUILayout.LabelField(welcomeSetupWindow, textStyle);
+        EditorGUILayout.Space(-30);
         
+        // Button Setup Window
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         if (GUILayout.Button("Setup Window", GUILayout.Height(30), GUILayout.Width(200)))
@@ -109,6 +117,10 @@ public class ServerWelcomeWindow : EditorWindow
 
         EditorGUILayout.Space(5);
 
+        // Text Start Server
+        EditorGUILayout.LabelField(welcomeStartServer, textStyle);
+
+        // Button Documentation
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
         if (GUILayout.Button("Documentation", GUILayout.Height(30), GUILayout.Width(200)))
@@ -117,6 +129,8 @@ public class ServerWelcomeWindow : EditorWindow
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(-5);
 
         // Welcome message depending on version (Github Dev version if both versions are true)
         if (ServerUpdateProcess.IsGithubVersion() && ServerUpdateProcess.IsAssetStoreVersion())

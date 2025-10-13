@@ -549,9 +549,9 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Pull SpacetimeDB Docker Image",
-                description = "Downloads the official SpacetimeDB Docker image (clockworklabs/spacetime) from Docker Hub\n"+
-                "The image will be pulled and ready to use with the configured port mapping\n"+
+                title = "Setup SpacetimeDB Docker Image",
+                description = "Opens the official SpacetimeDB homepage for the Docker image (clockworklabs/spacetime) command\n"+
+                "After the image is pulled from the Docker Desktop terminal, it will be ready to use with the configured port mapping\n"+
                 "Note: This may take a few minutes depending on your internet connection",
                 isInstalled = hasDockerImage,
                 isEnabled = hasDocker && hasDockerCompose,
@@ -559,14 +559,13 @@ public class ServerSetupWindow : EditorWindow
             },
             new InstallerItem
             {
-                title = "Configure Docker Container Volume Mounts",
+                title = "Setup Docker Container Volume Mounts",
                 description = "Ensures the Docker container has proper volume mounts for Unity file generation\n"+
-                "Verifies that the Unity Assets directory is mounted at /unity inside the container\n"+
+                "Verifies that the Unity Assets directory and Server Directory are mounted inside the container\n"+
                 "Note: Will recreate container if mounts are incorrect (server must be stopped)",
                 isInstalled = hasDockerContainerMounts,
                 isEnabled = hasDocker && hasDockerImage,
                 installAction = ReconfigureDockerContainer,
-                sectionHeader = "Docker Container Configuration"
             },
             new InstallerItem
             {
@@ -627,12 +626,12 @@ public class ServerSetupWindow : EditorWindow
                     newState = hasDocker && hasDockerCompose;
                     newEnabledState = true; // Always enabled
                 }
-                else if (item.title.Contains("Pull SpacetimeDB Docker Image"))
+                else if (item.title.Contains("Docker Image"))
                 {
                     newState = hasDockerImage;
                     newEnabledState = hasDocker && hasDockerCompose;
                 }
-                else if (item.title.Contains("Configure Docker Container Volume Mounts"))
+                else if (item.title.Contains("Docker Container Volume Mounts"))
                 {
                     newState = hasDockerContainerMounts;
                     newEnabledState = hasDocker && hasDockerCompose;

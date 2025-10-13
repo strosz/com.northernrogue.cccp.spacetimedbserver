@@ -1065,6 +1065,8 @@ public class ServerWindow : EditorWindow
             GUILayout.Label(ServerUtilityProvider.GetStatusIcon(selectedModuleIndex != -1), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
 
+            GUILayout.Label("Module Initialization", EditorStyles.centeredGreyMiniLabel);
+
             // Init a new module / Delete Selected Module
             EditorGUILayout.BeginHorizontal();
             bool deleteMode = Event.current.control && Event.current.alt;
@@ -2096,7 +2098,7 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disConnectedCustomSSH. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
             }
 
-            if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))
+            if (GUILayout.Button("Show Login Info With Auth Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
