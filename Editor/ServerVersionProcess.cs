@@ -173,16 +173,56 @@ public class ServerVersionProcess
 
     public async void ClearServerDataDocker()
     {
-        // Construct the clear command to remove all files in the data directory
-        string clearCommand = "rm -rf /home/spacetime/.local/share/spacetime/data/*";
-
-        logCallback("Clearing Docker server data from /home/spacetime/.local/share/spacetime/data...", 0);
-        var result = await dockerProcess.RunServerCommandAsync(clearCommand);
+        // Check if server is running
+        bool wasRunning = ServerIsRunning();
         
-        if (result.success)
-            logCallback("Docker server data cleared successfully.", 1);
-        else
-            logCallback($"Clear operation may have failed: {result.error}", -1);
+        if (wasRunning)
+        {
+            logCallback("Stopping server to safely clear data...", 0);
+            StopServer();
+            // Docker container needs some time to stop
+            await Task.Delay(15000);
+        }
+
+        try
+        {
+            logCallback("Clearing Docker volume data...", 0);
+            
+            // Use a temporary alpine container to clear the volume
+            // Mount the volume at /data in the temp container
+            string clearCommand = $"docker run --rm -v spacetimedb-data:/data alpine sh -c \"rm -rf /data/*\"";
+            
+            Process clearProcess = new Process();
+            clearProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            clearProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(clearCommand);
+            clearProcess.StartInfo.UseShellExecute = false;
+            clearProcess.StartInfo.CreateNoWindow = true;
+            clearProcess.StartInfo.RedirectStandardOutput = true;
+            clearProcess.StartInfo.RedirectStandardError = true;
+            
+            clearProcess.Start();
+            string output = await clearProcess.StandardOutput.ReadToEndAsync();
+            string error = await clearProcess.StandardError.ReadToEndAsync();
+            clearProcess.WaitForExit();
+            
+            if (clearProcess.ExitCode == 0)
+            {
+                logCallback("Docker server data cleared successfully.", 1);
+            }
+            else
+            {
+                logCallback($"Clear operation failed: {error}", -1);
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+            {
+                logCallback("Restarting server...", 0);
+                await Task.Delay(1000);
+                StartServer();
+            }
+        }
     }
 
     public async void ClearServerDataWSL(string userName)
@@ -191,6 +231,17 @@ public class ServerVersionProcess
         {
             logCallback("Error: Username is not set or invalid.", -1);
             return;
+        }
+
+        // Check if server is running
+        bool wasRunning = ServerIsRunning();
+        
+        if (wasRunning)
+        {
+            logCallback("Stopping server to safely clear data...", 0);
+            StopServer();
+            // WSL needs less time to stop
+            await Task.Delay(3000);
         }
 
         string spacetimePath = $"/home/{userName}/.local/share/spacetime/data";
@@ -258,9 +309,10 @@ public class ServerVersionProcess
             
             if (wasRunning)
             {
+                logCallback("Stopping server to safely restore data...", 0);
                 StopServer();
                 
-                // Delay to ensure server has stopped
+                // Docker container needs some time to stop
                 await Task.Delay(15000);
             }
             
@@ -270,6 +322,8 @@ public class ServerVersionProcess
                 
                 if (wasRunning)
                 {
+                    logCallback("Restarting server...", 0);
+                    await Task.Delay(1000);
                     StartServer();
                 }
             }
@@ -353,62 +407,49 @@ public class ServerVersionProcess
     {
         logCallback("Starting Docker restore process...", 0);
 
-        string containerTempRestore = $"/tmp/restore_{DateTime.Now.ToString("yyyyMMdd_HHmmss")}.tar.gz";
-
         try
         {
-            // Copy backup file from host to container using cross-platform approach
-            logCallback("Copying backup file to Docker container...", 0);
-            string dockerCpCommand = $"docker cp \"{backupFilePath}\" {ServerDockerProcess.ContainerName}:{containerTempRestore}";
+            // Get absolute path for the backup file
+            string absoluteBackupPath = Path.GetFullPath(backupFilePath);
+            string backupFileName = Path.GetFileName(absoluteBackupPath);
+            string backupDirectory = Path.GetDirectoryName(absoluteBackupPath);
             
-            Process cpProcess = new Process();
-            cpProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            cpProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCpCommand);
-            cpProcess.StartInfo.UseShellExecute = false;
-            cpProcess.StartInfo.CreateNoWindow = true;
-            cpProcess.StartInfo.RedirectStandardOutput = true;
-            cpProcess.StartInfo.RedirectStandardError = true;
+            logCallback("Restoring data to Docker volume...", 0);
             
-            cpProcess.Start();
-            string cpOutput = await cpProcess.StandardOutput.ReadToEndAsync();
-            string cpError = await cpProcess.StandardError.ReadToEndAsync();
-            cpProcess.WaitForExit();
+            // Use a temporary alpine container to:
+            // 1. Mount the volume at /data
+            // 2. Mount the backup directory at /backup (read-only)
+            // 3. Clear existing data and extract the backup
+            string restoreCommand = $"docker run --rm " +
+                $"-v spacetimedb-data:/data " +
+                $"-v \"{backupDirectory}:/backup:ro\" " +
+                $"alpine sh -c \"rm -rf /data/* && tar xzf /backup/{backupFileName} -C /data --strip-components=1\"";
+            
+            Process restoreProcess = new Process();
+            restoreProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            restoreProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(restoreCommand);
+            restoreProcess.StartInfo.UseShellExecute = false;
+            restoreProcess.StartInfo.CreateNoWindow = true;
+            restoreProcess.StartInfo.RedirectStandardOutput = true;
+            restoreProcess.StartInfo.RedirectStandardError = true;
+            
+            restoreProcess.Start();
+            string output = await restoreProcess.StandardOutput.ReadToEndAsync();
+            string error = await restoreProcess.StandardError.ReadToEndAsync();
+            restoreProcess.WaitForExit();
 
-            if (cpProcess.ExitCode != 0)
+            if (restoreProcess.ExitCode != 0)
             {
-                logCallback($"Failed to copy backup to container: {cpError}", -1);
+                logCallback($"Failed to restore backup: {error}", -1);
                 return;
             }
-
-            // Clear existing data
-            logCallback("Clearing existing data in container...", 0);
-            string clearCommand = "rm -rf /home/spacetime/.local/share/spacetime/data/*";
-            var clearResult = await dockerProcess.RunServerCommandAsync(clearCommand);
-
-            if (!clearResult.success)
-            {
-                logCallback($"Warning: Could not clear existing data: {clearResult.error}", -2);
-            }
-
-            // Extract backup
-            logCallback("Extracting backup in container...", 0);
-            string extractCommand = $"tar xzf {containerTempRestore} -C /home/spacetime/.local/share/spacetime";
-            var extractResult = await dockerProcess.RunServerCommandAsync(extractCommand);
-
-            if (!extractResult.success)
-            {
-                logCallback($"Failed to extract backup: {extractResult.error}", -1);
-                return;
-            }
-
-            // Clean up temp restore file
-            await dockerProcess.RunServerCommandAsync($"rm {containerTempRestore}");
 
             logCallback("Docker restore completed successfully!", 1);
             
             EditorUtility.DisplayDialog(
                 "Restore Completed",
-                "SpacetimeDB data has been successfully restored from backup in the Docker container.",
+                "SpacetimeDB data has been successfully restored from backup to the Docker volume.\n\n" +
+                "The server will use this data when it starts.",
                 "OK"
             );
         }
@@ -765,18 +806,14 @@ public class ServerVersionProcess
     }
     
     private void StopServer()
-    {
-        logCallback("Stopping server before restore...", 0);
-        
+    {       
         // If delegate is configured, use it
         if (stopServerDelegate != null)
             stopServerDelegate();
     }
     
     private void StartServer()
-    {
-        logCallback("Restarting server after restore...", 0);
-        
+    {       
         // If delegate is configured, use it
         if (startServerDelegate != null)
             startServerDelegate();

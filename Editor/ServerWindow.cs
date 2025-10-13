@@ -2194,7 +2194,6 @@ public class ServerWindow : EditorWindow
                         "Clear Database",
                         "Cancel"))
                     {
-                        serverManager.StopServer();
                         CloseDatabaseAndReducerWindow();
                         serverManager.ClearServerData();
                     }
