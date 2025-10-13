@@ -947,7 +947,7 @@ public class ServerManager
                 }
                 else
                 {
-                    LogMessage("Container started, waiting for server to become ready...", 0);
+                    if (debugMode) LogMessage("Container started, waiting for server to become ready...", 0);
                     // Mark server as starting up for grace period monitoring
                     isStartingUp = true;
                     startupTime = (float)EditorApplication.timeSinceStartup;
@@ -1506,7 +1506,9 @@ public class ServerManager
                         }
                     }
                     SafeRepaint();
-                    return;                }                // If grace period expires and still not running, assume failure
+                    return;                
+                }
+                // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
                 {
                     LogMessage($"Server failed to start within grace period ({serverStartupGracePeriod} seconds).", -1);
@@ -1514,10 +1516,32 @@ public class ServerManager
                     // Before giving up, do one final service check to be absolutely sure
                     try
                     {
-                        bool finalServiceCheck = await wslProcessor.CheckServerRunning(instantCheck: true);
+                        bool finalServiceCheck = false;
+                        
+                        // Use mode-specific check for final verification
+                        if (Settings.serverMode == ServerMode.DockerServer)
+                        {
+                            bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                            if (dockerServiceRunning)
+                            {
+                                finalServiceCheck = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                            }
+                        }
+                        else if (Settings.serverMode == ServerMode.CustomServer)
+                        {
+                            await serverCustomProcess.CheckServerRunning(true);
+                            finalServiceCheck = serverCustomProcess.cachedServerRunningStatus;
+                        }
+                        else // WSL mode
+                        {
+                            finalServiceCheck = await wslProcessor.CheckServerRunning(instantCheck: true);
+                        }
+                        
                         if (finalServiceCheck)
                         {
-                            LogMessage("Final service check shows server is actually running - recovering!", 1);
+                            string serverType = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                               Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                            LogMessage($"Final service check shows server is actually running - recovering! ({serverType})", 1);
                             isStartingUp = false;
                             serverStarted = true;
                             SaveServerStateToSessionState(); // Persist state across domain reloads

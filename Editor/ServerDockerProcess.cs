@@ -285,7 +285,8 @@ public class ServerDockerProcess
             
             // Start Docker container with interactive mode
             // Note: NOT using --rm so container persists and can be stopped/restarted
-            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 {volumeMounts} {ImageName} start";
+            // Override entrypoint and use --user root to ensure permissions on the volume
+            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && su spacetime -c 'spacetime start'\"";
             
             process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
             process.StartInfo.UseShellExecute = true;
@@ -385,7 +386,8 @@ public class ServerDockerProcess
             
             // Container doesn't exist, create new one
             // Start Docker container in detached mode
-            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 {volumeMounts} {ImageName} start";
+            // Override entrypoint and use --user root to ensure permissions on the volume
+            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && su spacetime -c 'spacetime start'\"";
             
             if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
             
