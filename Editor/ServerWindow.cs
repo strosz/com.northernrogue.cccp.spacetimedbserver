@@ -47,6 +47,7 @@ public class ServerWindow : EditorWindow
     private bool hasDocker { get => CCCPSettingsAdapter.GetHasDocker(); set => CCCPSettingsAdapter.SetHasDocker(value); }
     private bool hasDockerCompose { get => CCCPSettingsAdapter.GetHasDockerCompose(); set => CCCPSettingsAdapter.SetHasDockerCompose(value); }
     private bool hasDockerImage { get => CCCPSettingsAdapter.GetHasDockerImage(); set => CCCPSettingsAdapter.SetHasDockerImage(value); }
+    private bool hasDockerContainerMounts { get => CCCPSettingsAdapter.GetHasDockerContainerMounts(); set => CCCPSettingsAdapter.SetHasDockerContainerMounts(value); }
 
     // Pre-requisites General - Direct property access to settings
     private bool initializedFirstModule { get => CCCPSettingsAdapter.GetInitializedFirstModule(); set => CCCPSettingsAdapter.SetInitializedFirstModule(value); }
@@ -2413,13 +2414,14 @@ public class ServerWindow : EditorWindow
             {
                 dockerProcess = new ServerDockerProcess(LogMessage, debugMode);
             }
-            
-            dockerProcess.CheckPrerequisites((docker, compose, image) => {
+
+            dockerProcess.CheckPrerequisites((docker, compose, image, mounts) => {
                 EditorApplication.delayCall += () => {
                     // Update local state for UI
                     hasDocker = docker;
                     hasDockerCompose = compose;
                     hasDockerImage = image;
+                    hasDockerContainerMounts = mounts;
                     wslPrerequisitesChecked = true; // Check if this is necessary
                     
                     // Load userName value 

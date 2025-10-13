@@ -260,6 +260,8 @@ public static class CCCPSettingsProvider
 
                         EditorGUI.indentLevel++;
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("serverMode"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("lastLocalServerMode"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("localCLIProvider"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("userName"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("serverUrl"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("serverPort"));
@@ -272,6 +274,25 @@ public static class CCCPSettingsProvider
                         EditorGUILayout.BeginHorizontal();
                         EditorGUILayout.LabelField(authTokenProp.displayName, GUILayout.Width(143f));
                         authTokenProp.stringValue = EditorGUILayout.PasswordField(authTokenProp.stringValue);
+                        EditorGUILayout.EndHorizontal();
+                        
+                        // Docker Server Configuration
+                        EditorGUILayout.Space(5);
+                        EditorGUILayout.LabelField("Docker Server Configuration", EditorStyles.boldLabel);
+                        
+                        // Increase label width again for Docker fields
+                        EditorGUIUtility.labelWidth = 160f;
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("serverUrlDocker"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("serverPortDocker"));
+                        
+                        // Reset label width
+                        EditorGUIUtility.labelWidth = prevLabelWidth;
+                        
+                        // Docker Auth Token as password field
+                        var authTokenDockerProp = serializedObject.FindProperty("authTokenDocker");
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField(authTokenDockerProp.displayName, GUILayout.Width(143f));
+                        authTokenDockerProp.stringValue = EditorGUILayout.PasswordField(authTokenDockerProp.stringValue);
                         EditorGUILayout.EndHorizontal();
                         
                         EditorGUI.indentLevel--;
@@ -512,6 +533,15 @@ public static class CCCPSettingsProvider
                             EditorGUI.indentLevel--;
                             
                             EditorGUILayout.Space();
+                            EditorGUILayout.LabelField("Docker Prerequisites", EditorStyles.boldLabel);
+                            EditorGUI.indentLevel++;
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("hasDocker"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("hasDockerCompose"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("hasDockerImage"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("hasDockerContainerMounts"));
+                            EditorGUI.indentLevel--;
+                            
+                            EditorGUILayout.Space();
                             EditorGUILayout.LabelField("Unity Prerequisites", EditorStyles.boldLabel);
                             EditorGUI.indentLevel++;
                             EditorGUILayout.PropertyField(serializedObject.FindProperty("hasSpacetimeDBUnitySDK"));
@@ -540,7 +570,8 @@ public static class CCCPSettingsProvider
                             
                             EditorGUILayout.LabelField("SpacetimeDB Versions", EditorStyles.boldLabel);
                             EditorGUI.indentLevel++;
-                            EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBCurrentVersion"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBCurrentVersionWSL"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBCurrentVersionDocker"));
                             EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBCurrentVersionCustom"));
                             EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBCurrentVersionTool"));
                             EditorGUILayout.PropertyField(serializedObject.FindProperty("spacetimeDBLatestVersion"));
@@ -550,9 +581,12 @@ public static class CCCPSettingsProvider
                             EditorGUILayout.Space();
                             EditorGUILayout.LabelField("Rust Versions", EditorStyles.boldLabel);
                             EditorGUI.indentLevel++;
-                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustCurrentVersion"));
-                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustLatestVersion"));
-                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustupVersion"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustCurrentVersionWSL"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustLatestVersionWSL"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustupVersionWSL"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustCurrentVersionDocker"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustLatestVersionDocker"));
+                            EditorGUILayout.PropertyField(serializedObject.FindProperty("rustupVersionDocker"));
                             EditorGUI.indentLevel--;
                             
                             EditorGUILayout.Space();

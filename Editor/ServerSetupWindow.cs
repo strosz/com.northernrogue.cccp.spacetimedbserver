@@ -112,7 +112,7 @@ public class ServerSetupWindow : EditorWindow
     internal bool hasDocker = false;
     internal bool hasDockerCompose = false;
     internal bool hasDockerImage = false;
-    internal bool hasDockerContainerMountsConfigured = false;
+    internal bool hasDockerContainerMounts = false;
     internal ServerDockerProcess dockerProcess;
     
     // WSL 1 requires unique install logic for Debian apps
@@ -565,7 +565,7 @@ public class ServerSetupWindow : EditorWindow
                 description = "Ensures the Docker container has proper volume mounts for Unity file generation\n"+
                 "Verifies that the Unity Assets directory is mounted at /unity inside the container\n"+
                 "Note: Will recreate container if mounts are incorrect (server must be stopped)",
-                isInstalled = hasDockerContainerMountsConfigured,
+                isInstalled = hasDockerContainerMounts,
                 isEnabled = hasDocker && hasDockerImage,
                 installAction = ReconfigureDockerContainer,
                 sectionHeader = "Docker Container Configuration"
@@ -636,7 +636,7 @@ public class ServerSetupWindow : EditorWindow
                 }
                 else if (item.title.Contains("Configure Docker Container Volume Mounts"))
                 {
-                    newState = hasDockerContainerMountsConfigured;
+                    newState = hasDockerContainerMounts;
                     newEnabledState = hasDocker && hasDockerCompose;
                 }
                 else if (item.title.Contains("SpacetimeDB Unity SDK"))
@@ -1487,27 +1487,19 @@ public class ServerSetupWindow : EditorWindow
         isDockerRefreshing = true;
         SetStatus("Checking Docker prerequisites...", Color.yellow);
         
-        // Check Docker prerequisites asynchronously
-        dockerProcess.CheckPrerequisites((docker, compose, image) =>
+        // Check Docker prerequisites asynchronously - now includes container mount check
+        dockerProcess.CheckPrerequisites((docker, compose, image, containerMounts) =>
         {
             hasDocker = docker;
             hasDockerCompose = compose;
             hasDockerImage = image;
-            
-            // Check container mounts if Docker and image are available
-            if (hasDocker && hasDockerImage)
-            {
-                hasDockerContainerMountsConfigured = CheckDockerContainerMounts();
-            }
-            else
-            {
-                hasDockerContainerMountsConfigured = false;
-            }
+            hasDockerContainerMounts = containerMounts;
             
             // Save to settings
             CCCPSettingsAdapter.SetHasDocker(hasDocker);
             CCCPSettingsAdapter.SetHasDockerCompose(hasDockerCompose);
             CCCPSettingsAdapter.SetHasDockerImage(hasDockerImage);
+            CCCPSettingsAdapter.SetHasDockerContainerMounts(hasDockerContainerMounts);
             
             UpdateInstallerItemsStatus();
             Repaint();
@@ -1515,11 +1507,11 @@ public class ServerSetupWindow : EditorWindow
             isDockerRefreshing = false;
             
             // Provide more detailed status messages
-            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMountsConfigured)
+            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
             {
                 SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
             }
-            else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMountsConfigured)
+            else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMounts)
             {
                 SetStatus("Docker ready but container needs volume mount configuration.", Color.yellow);
             }
@@ -1650,103 +1642,12 @@ public class ServerSetupWindow : EditorWindow
         
         if (EditorUtility.DisplayDialog("SpacetimeDB Docker Image Required",
             "The SpacetimeDB Docker image needs to be pulled manually.\n\n" +
-            "1. Visit the official SpacetimeDB installation page.\n\n" +
-            "2. Copy the Docker command and run it in your Docker Desktop terminal.\n\n" +
+            "1. Visit the official SpacetimeDB installation page and copy the Docker command.\n\n" +
+            "2. Replace the port 3000:3000 with your desired port mapping (i.e. 3011:3000) in the Docker command and run it in your Docker Desktop terminal.\n\n" +
             "3. After pulling the image, click Refresh to verify.",
             "Open Installation Guide", "Cancel"))
         {
             Application.OpenURL("https://spacetimedb.com/install#docker");
-        }
-    }
-    
-    /// <summary>
-    /// Checks if the Docker container has correct volume mounts for Unity file generation
-    /// </summary>
-    private bool CheckDockerContainerMounts()
-    {
-        try
-        {
-            // Check if container exists
-            var (exists, isRunning) = CheckContainerExistsAndRunning();
-            
-            if (!exists)
-            {
-                // Container doesn't exist yet - that's okay, it will be created with correct mounts
-                return true;
-            }
-            
-            // Inspect the container to check mounts
-            var process = new System.Diagnostics.Process();
-            process.StartInfo.FileName = "docker";
-            process.StartInfo.Arguments = $"inspect {ServerDockerProcess.ContainerName}";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.StartInfo.CreateNoWindow = true;
-            
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            
-            if (process.ExitCode != 0)
-            {
-                return false;
-            }
-            
-            // Check if /unity and /app mounts exist in the output
-            bool hasUnityMount = output.Contains("/unity");
-            bool hasAppMount = output.Contains("/app");
-            
-            // For proper configuration, we need at least the Unity mount
-            // The /app mount is also desirable but not strictly required for all operations
-            bool hasProperMounts = hasUnityMount;
-            
-            if (debugMode)
-            {
-                UnityEngine.Debug.Log($"[ServerSetupWindow] Container mount check - Unity: {hasUnityMount}, App: {hasAppMount}, Proper: {hasProperMounts}");
-            }
-            
-            return hasProperMounts;
-        }
-        catch (Exception ex)
-        {
-            if (debugMode)
-            {
-                UnityEngine.Debug.LogError($"[ServerSetupWindow] Error checking container mounts: {ex.Message}");
-            }
-            return false;
-        }
-    }
-    
-    /// <summary>
-    /// Helper method to check if container exists and is running
-    /// </summary>
-    private (bool exists, bool isRunning) CheckContainerExistsAndRunning()
-    {
-        try
-        {
-            var process = new System.Diagnostics.Process();
-            process.StartInfo.FileName = "docker";
-            process.StartInfo.Arguments = $"ps -a --filter name={ServerDockerProcess.ContainerName} --format \"{{{{.Names}}}}|{{{{.Status}}}}\"";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.CreateNoWindow = true;
-            
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-            
-            if (string.IsNullOrEmpty(output))
-            {
-                return (false, false);
-            }
-            
-            bool isRunning = output.Contains("Up");
-            return (true, isRunning);
-        }
-        catch
-        {
-            return (false, false);
         }
     }
     
@@ -1759,8 +1660,8 @@ public class ServerSetupWindow : EditorWindow
         {
             SetStatusInternal("Reconfiguring Docker container...", Color.yellow);
             
-            // Check if container is running
-            var (exists, isRunning) = CheckContainerExistsAndRunning();
+            // Check if container is running using dockerProcess
+            var (exists, isRunning) = dockerProcess.CheckContainerExistsAndRunning();
 
             bool userConfirmed = EditorUtility.DisplayDialog(
                 "Confirm Container Reconfiguration",
@@ -1823,7 +1724,7 @@ public class ServerSetupWindow : EditorWindow
             LogMessageInternal("Container reconfigured successfully. Volume mounts will be correct on next server start.", 1);
             
             // Update status
-            hasDockerContainerMountsConfigured = true;
+            hasDockerContainerMounts = true;
             UpdateInstallerItemsStatus();
         }
         catch (Exception ex)

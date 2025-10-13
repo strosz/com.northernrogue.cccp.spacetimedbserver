@@ -563,13 +563,14 @@ public class ServerDockerProcess
     
     #region CheckPrereq
 
-    public void CheckPrerequisites(Action<bool, bool, bool> callback)
+    public void CheckPrerequisites(Action<bool, bool, bool, bool> callback)
     {
         Task.Run(() =>
         {
             bool hasDocker = false;
             bool hasDockerCompose = false;
             bool hasDockerImage = false;
+            bool hasDockerContainerMounts = false;
 
             try
             {
@@ -775,13 +776,95 @@ public class ServerDockerProcess
                 }
             }
             
+            // Step 5: Check container mounts if Docker and image are available
+            if (hasDocker && hasDockerImage)
+            {
+                hasDockerContainerMounts = CheckDockerContainerMounts();
+            }
+            
             if (debugMode) 
             {
-                UnityEngine.Debug.Log($"[ServerDockerProcess] Prerequisites check complete - Docker: {hasDocker}, Compose: {hasDockerCompose}, Image: {hasDockerImage}");
+                UnityEngine.Debug.Log($"[ServerDockerProcess] Prerequisites check complete - Docker: {hasDocker}, Compose: {hasDockerCompose}, Image: {hasDockerImage}, Container Mounts: {hasDockerContainerMounts}");
             }
 
-            EditorApplication.delayCall += () => callback(hasDocker, hasDockerCompose, hasDockerImage);
+            EditorApplication.delayCall += () => callback(hasDocker, hasDockerCompose, hasDockerImage, hasDockerContainerMounts);
         });
+    }
+    
+    /// <summary>
+    /// Checks if the Docker container has correct volume mounts for Unity file generation
+    /// </summary>
+    private bool CheckDockerContainerMounts()
+    {
+        try
+        {
+            // Check if container exists
+            var (exists, isRunning) = CheckContainerExistsAndRunning();
+            
+            if (!exists)
+            {
+                // Container doesn't exist yet - that's okay, it will be created with correct mounts
+                return true;
+            }
+            
+            // Inspect the container to check mounts
+            using (Process inspectProcess = new Process())
+            {
+                inspectProcess.StartInfo.FileName = "docker";
+                inspectProcess.StartInfo.Arguments = $"inspect {ContainerName}";
+                inspectProcess.StartInfo.UseShellExecute = false;
+                inspectProcess.StartInfo.RedirectStandardOutput = true;
+                inspectProcess.StartInfo.RedirectStandardError = true;
+                inspectProcess.StartInfo.CreateNoWindow = true;
+                
+                inspectProcess.Start();
+                string output = inspectProcess.StandardOutput.ReadToEnd();
+                inspectProcess.WaitForExit();
+                
+                if (inspectProcess.ExitCode != 0)
+                {
+                    return false;
+                }
+                
+                // Check if /unity and /app mounts exist in the output
+                bool hasUnityMount = output.Contains("/unity");
+                bool hasAppMount = output.Contains("/app");
+                
+                // For proper configuration, we need at least the Unity mount
+                // The /app mount is also desirable but not strictly required for all operations
+                bool hasProperMounts = hasUnityMount;
+                
+                if (debugMode)
+                {
+                    UnityEngine.Debug.Log($"[ServerDockerProcess] Container mount check - Unity: {hasUnityMount}, App: {hasAppMount}, Proper: {hasProperMounts}");
+                }
+                
+                return hasProperMounts;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerDockerProcess] Error checking container mounts: {ex.Message}");
+            }
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// Public wrapper to check if a Docker container exists and if it's running
+    /// </summary>
+    /// <param name="containerName">Optional container name, defaults to ContainerName constant</param>
+    /// <returns>Tuple of (exists, isRunning)</returns>
+    public (bool exists, bool isRunning) CheckContainerExistsAndRunning(string containerName = null)
+    {
+        if (string.IsNullOrEmpty(containerName))
+        {
+            containerName = ContainerName;
+        }
+        
+        return CheckContainerStatus(containerName);
     }
     #endregion
 

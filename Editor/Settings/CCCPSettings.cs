@@ -78,6 +78,7 @@ public class CCCPSettings : ScriptableObject
     public bool hasDocker = false;
     public bool hasDockerCompose = false;
     public bool hasDockerImage = false;
+    public bool hasDockerContainerMounts = false;
     
     [Header("Workflow Settings")]
     public bool wslPrerequisitesChecked = false;

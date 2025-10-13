@@ -850,7 +850,17 @@ public static class CCCPSettingsAdapter
             SaveSettings(); 
         }
     }
-    
+
+    public static bool GetHasDockerContainerMounts() => Settings.hasDockerContainerMounts;
+    public static void SetHasDockerContainerMounts(bool value) 
+    { 
+        if (Settings.hasDockerContainerMounts != value)
+        {
+            Settings.hasDockerContainerMounts = value; 
+            SaveSettings(); 
+        }
+    }
+
     public static bool GetHideWarnings() => Settings.hideWarnings;
     public static void SetHideWarnings(bool value) 
     { 

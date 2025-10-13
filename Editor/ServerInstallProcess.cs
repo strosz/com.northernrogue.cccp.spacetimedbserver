@@ -3,8 +3,6 @@ using UnityEditor;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.IO;
-using System.Text.RegularExpressions;
 using NorthernRogue.CCCP.Editor.Settings;
 
 // Contains all installation methods for development builds only ///
