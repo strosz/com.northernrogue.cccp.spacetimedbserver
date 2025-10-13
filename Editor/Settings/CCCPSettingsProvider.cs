@@ -1064,15 +1064,15 @@ public static class CCCPSettingsProvider
         settings.echoToConsole = EditorPrefs.GetBool(PrefsKeyPrefix + "EchoToConsole", settings.echoToConsole);
         
         // Version Information
-        settings.spacetimeDBCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", settings.spacetimeDBCurrentVersion);
+        settings.spacetimeDBCurrentVersionWSL = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersion", settings.spacetimeDBCurrentVersionWSL);
         settings.spacetimeDBCurrentVersionCustom = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionCustom", settings.spacetimeDBCurrentVersionCustom);
         settings.spacetimeDBCurrentVersionTool = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBVersionTool", settings.spacetimeDBCurrentVersionTool);
         settings.spacetimeDBLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeDBLatestVersion", settings.spacetimeDBLatestVersion);
         settings.spacetimeSDKLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "SpacetimeSDKLatestVersion", settings.spacetimeSDKLatestVersion);
         settings.CCCPAssetStoreLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "CCCPAssetStoreLatestVersion", settings.CCCPAssetStoreLatestVersion);
-        settings.rustCurrentVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", settings.rustCurrentVersion);
-        settings.rustLatestVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", settings.rustLatestVersion);
-        settings.rustupVersion = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", settings.rustupVersion);
+        settings.rustCurrentVersionWSL = EditorPrefs.GetString(PrefsKeyPrefix + "RustVersion", settings.rustCurrentVersionWSL);
+        settings.rustLatestVersionWSL = EditorPrefs.GetString(PrefsKeyPrefix + "RustLatestVersion", settings.rustLatestVersionWSL);
+        settings.rustupVersionWSL = EditorPrefs.GetString(PrefsKeyPrefix + "RustupVersion", settings.rustupVersionWSL);
         settings.rustupUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustupUpdateAvailable", settings.rustupUpdateAvailable);
         settings.rustUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "RustUpdateAvailable", settings.rustUpdateAvailable);
         settings.SpacetimeDBUpdateAvailable = EditorPrefs.GetBool(PrefsKeyPrefix + "SpacetimeDBUpdateAvailable", settings.SpacetimeDBUpdateAvailable);

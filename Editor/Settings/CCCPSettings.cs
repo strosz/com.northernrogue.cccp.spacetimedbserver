@@ -100,14 +100,14 @@ public class CCCPSettings : ScriptableObject
     public bool welcomeWindowShown = false;
 
     [Header("Version Information")]
-    public string spacetimeDBCurrentVersion = "";
+    public string spacetimeDBCurrentVersionWSL = "";
     public string spacetimeDBCurrentVersionCustom = "";
     public string spacetimeDBCurrentVersionTool = "";
     public string spacetimeDBLatestVersion = "";
     public string spacetimeSDKLatestVersion = "";
-    public string rustCurrentVersion = "";
-    public string rustLatestVersion = "";
-    public string rustupVersion = "";
+    public string rustCurrentVersionWSL = "";
+    public string rustLatestVersionWSL = "";
+    public string rustupVersionWSL = "";
     public string CCCPAssetStoreLatestVersion = "";
     public bool rustupUpdateAvailable = false;
     public bool rustUpdateAvailable = false;
@@ -303,14 +303,14 @@ public class CCCPSettings : ScriptableObject
         showLocalTime = true;
         welcomeWindowShown = false;
 
-        spacetimeDBCurrentVersion = "";
+        spacetimeDBCurrentVersionWSL = "";
         spacetimeDBCurrentVersionCustom = "";
         spacetimeDBCurrentVersionTool = "";
         spacetimeDBLatestVersion = "";
         spacetimeSDKLatestVersion = "";
-        rustCurrentVersion = "";
-        rustLatestVersion = "";
-        rustupVersion = "";
+        rustCurrentVersionWSL = "";
+        rustLatestVersionWSL = "";
+        rustupVersionWSL = "";
         CCCPAssetStoreLatestVersion = "";
         rustUpdateAvailable = false;
         rustupUpdateAvailable = false;

@@ -99,7 +99,7 @@ public class ServerWindow : EditorWindow
     private bool clearDatabaseLogAtStart { get => CCCPSettingsAdapter.GetClearDatabaseLogAtStart(); set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); }
 
     // Update SpacetimeDB - Direct property access to settings
-    private string spacetimeDBCurrentVersion { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(value); }
+    private string spacetimeDBCurrentVersionWSL { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); }
     private string spacetimeDBCurrentVersionCustom { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionCustom(value); }
     private string spacetimeDBLatestVersion { get => CCCPSettingsAdapter.GetSpacetimeDBLatestVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(value); }
 
@@ -2049,7 +2049,7 @@ public class ServerWindow : EditorWindow
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
         if (serverMode == ServerMode.WSLServer)
-            EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionWSL, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.CustomServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.MaincloudServer)

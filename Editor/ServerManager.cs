@@ -203,8 +203,8 @@ public class ServerManager
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion 
     { 
-        get => Settings.spacetimeDBCurrentVersion; 
-        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(value); 
+        get => Settings.spacetimeDBCurrentVersionWSL; 
+        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); 
     }
     public string spacetimeDBCurrentVersionCustom 
     { 
@@ -225,18 +225,18 @@ public class ServerManager
     // Update Rust
     public string rustCurrentVersion 
     { 
-        get => Settings.rustCurrentVersion; 
-        set => CCCPSettingsAdapter.SetRustCurrentVersion(value); 
+        get => Settings.rustCurrentVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustCurrentVersionWSL(value); 
     }
     public string rustLatestVersion 
     { 
-        get => Settings.rustLatestVersion; 
-        set => CCCPSettingsAdapter.SetRustLatestVersion(value); 
+        get => Settings.rustLatestVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustLatestVersionWSL(value); 
     }
     public string rustupVersion 
     { 
-        get => Settings.rustupVersion; 
-        set => CCCPSettingsAdapter.SetRustupVersion(value); 
+        get => Settings.rustupVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustupVersionWSL(value); 
     }
 
     // Server output window settings
@@ -2537,9 +2537,9 @@ public class ServerManager
                 // Check SpacetimeDB version and update once every time WSL is confirmed running
                 if (isWslRunning)
                 {
-                    await CheckSpacetimeDBVersion();
+                    await CheckSpacetimeDBVersionWSL();
                     await CheckSpacetimeSDKVersion();
-                    await CheckRustVersion();
+                    await CheckRustVersionWSL();
                 }
             }
             
@@ -2856,12 +2856,12 @@ public class ServerManager
 
     #region Spacetime Version
 
-    public async Task CheckSpacetimeDBVersion() // Only runs in WSL once when WSL has started
+    public async Task CheckSpacetimeDBVersionWSL() // Only runs in WSL once when WSL has started
     {
         if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
         
         // Only proceed if enough prerequisites are met
-        if (!hasWSL || !hasDebianTrixie || !hasSpacetimeDBServer || !hasSpacetimeDBPath)
+        if (!hasAllPrerequisites)
         {
             if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met", 0);
             return;
@@ -2922,7 +2922,7 @@ public class ServerManager
 
         if (!string.IsNullOrEmpty(version))
         {
-            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(version);
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(version);
 
             spacetimeDBCurrentVersion = version;
 
@@ -2996,7 +2996,7 @@ public class ServerManager
     #endregion
     
     #region Rust Version
-    public async Task CheckRustVersion() // Only runs in WSL once when WSL has started
+    public async Task CheckRustVersionWSL() // Only runs in WSL once when WSL has started
     {
         if (debugMode) LogMessage("Checking Rust version...", 0);
         
@@ -3053,7 +3053,7 @@ public class ServerManager
                 if (latestMatch.Success && latestMatch.Groups.Count > 1)
                 {
                     string latestVersion = latestMatch.Groups[1].Value;
-                    CCCPSettingsAdapter.SetRustLatestVersion(latestVersion);
+                    CCCPSettingsAdapter.SetRustLatestVersionWSL(latestVersion);
                     rustLatestVersion = latestVersion;
                     if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion} to {latestVersion}", 1);
                 }
@@ -3065,7 +3065,7 @@ public class ServerManager
             else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
             {
                 // Clear the latest version when up to date
-                CCCPSettingsAdapter.SetRustLatestVersion("");
+                CCCPSettingsAdapter.SetRustLatestVersionWSL("");
                 rustLatestVersion = "";
                 if (debugMode) LogMessage($"Rust is up to date at version: {rustStableVersion}", 1);
             }
@@ -3094,7 +3094,7 @@ public class ServerManager
         // Save versions to Settings and local variables
         if (!string.IsNullOrEmpty(rustStableVersion))
         {
-            CCCPSettingsAdapter.SetRustCurrentVersion(rustStableVersion);
+            CCCPSettingsAdapter.SetRustCurrentVersionWSL(rustStableVersion);
             rustCurrentVersion = rustStableVersion;
             
             if (rustUpdateAvailable)
@@ -3110,7 +3110,7 @@ public class ServerManager
         
         if (!string.IsNullOrEmpty(rustupCurrentVersion))
         {
-            CCCPSettingsAdapter.SetRustupVersion(rustupCurrentVersion);
+            CCCPSettingsAdapter.SetRustupVersionWSL(rustupCurrentVersion);
             rustupVersion = rustupCurrentVersion;
             
             if (rustupUpdateAvailable)

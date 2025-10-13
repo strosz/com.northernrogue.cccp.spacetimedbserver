@@ -113,16 +113,16 @@ public class ServerInstallProcess
     // Helper methods to call parent window methods
     private void SetStatus(string message, Color color) => window.SetStatusInternal(message, color);
     private void LogMessage(string message, int type) => window.LogMessageInternal(message, type);
-    private void CheckInstallationStatus() => window.CheckInstallationStatus();
+    private void CheckPrerequisitesWSL() => window.CheckPrerequisitesWSL();
+    private void CheckPrerequisitesCustom() => window.CheckPrerequisitesCustom();
     private void UpdateInstallerItemsStatus() => window.UpdateInstallerItemsStatus();
-    private void CheckCustomInstallationStatus() => window.CheckCustomInstallationStatus();
     private void Repaint() => window.Repaint();
     private void UpdateCargoSpacetimeDBVersion() => window.UpdateCargoSpacetimeDBVersion();
     
     #region WSL Installation Methods
     public async void InstallWSLDebian()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         if (hasWSL && hasDebian && !installIfAlreadyInstalled)
         {
             SetStatus("WSL2 with Debian is already installed.", Color.green);
@@ -169,7 +169,7 @@ public class ServerInstallProcess
 
                 if (installedSuccessfully)
                 {
-                    CheckInstallationStatus();
+                    CheckPrerequisitesWSL();
                     await Task.Delay(1000);
                     if (hasWSL && hasDebian)
                     {
@@ -219,7 +219,7 @@ public class ServerInstallProcess
             {
                 string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
                 await wslProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                CheckInstallationStatus();
+                CheckPrerequisitesWSL();
                 if (hasWSL && hasDebian)
                 {
                     // Display dialog informing user about Debian first-time setup
@@ -261,7 +261,7 @@ public class ServerInstallProcess
 
     public async void InstallDebianTrixie()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasDebianTrixie && !installIfAlreadyInstalled)
@@ -340,7 +340,7 @@ public class ServerInstallProcess
         bool fullUpgradeSuccess = await wslProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!fullUpgradeSuccess)
         {
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(1000);
             if (WSL1Installed && hasDebianTrixie)
             SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
@@ -361,7 +361,7 @@ public class ServerInstallProcess
         wslProcess.StartWsl();
         SetStatus("WSL restarted. Checking installation status...", Color.green);
         await Task.Delay(5000); // Longer wait for startup
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         if (hasDebianTrixie)
         {
@@ -375,7 +375,7 @@ public class ServerInstallProcess
     
     public async void InstallCurl()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasCurl && !installIfAlreadyInstalled)
@@ -414,7 +414,7 @@ public class ServerInstallProcess
         );
         if (!installSuccess)
         {
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(2000);
             if (WSL1Installed && hasCurl)
             SetStatus("cURL installed successfully. (WSL1)", Color.green);
@@ -425,7 +425,7 @@ public class ServerInstallProcess
         }
         
         // Check installation status
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasCurl)
@@ -446,7 +446,7 @@ public class ServerInstallProcess
         visibleInstallProcesses = true;
         keepWindowOpenForDebug = true;
 
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (!hasWSL)
@@ -487,10 +487,10 @@ public class ServerInstallProcess
         {
             SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
 
-            await serverManager.CheckSpacetimeDBVersion();
+            await serverManager.CheckSpacetimeDBVersionWSL();
             spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
             
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
 
             await Task.Delay(1000);
             
@@ -511,7 +511,7 @@ public class ServerInstallProcess
 
     public async void InstallSpacetimeDBPath()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         // If already installed, just update UI
@@ -534,7 +534,7 @@ public class ServerInstallProcess
         {
             SetStatus("SpacetimeDB PATH installation started. This may take some time.", Color.green);
             await Task.Delay(1000);
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(1000);
             if (hasSpacetimeDBPath)
             {
@@ -600,7 +600,7 @@ public class ServerInstallProcess
             return;
         }
 
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasSpacetimeDBService && !installIfAlreadyInstalled)
@@ -794,7 +794,7 @@ public class ServerInstallProcess
                 SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
                 await Task.Delay(2000);
                 
-                CheckInstallationStatus();
+                CheckPrerequisitesWSL();
                 await Task.Delay(1000);
                 
                 if (hasSpacetimeDBService)
@@ -836,7 +836,7 @@ public class ServerInstallProcess
 
     public async void InstallRust()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         bool isUpdate = hasRust && rustUpdateAvailable && !string.IsNullOrEmpty(rustLatestVersion);
@@ -873,13 +873,13 @@ public class ServerInstallProcess
             {
                 // Update the current version to the latest version
                 rustCurrentVersion = rustLatestVersion;
-                CCCPSettingsAdapter.SetRustCurrentVersion(rustCurrentVersion);
+                CCCPSettingsAdapter.SetRustCurrentVersionWSL(rustCurrentVersion);
 
                 // Clear the update available flags
                 rustUpdateAvailable = false;
                 rustLatestVersion = "";
                 CCCPSettingsAdapter.SetRustUpdateAvailable(false);
-                CCCPSettingsAdapter.SetRustLatestVersion("");
+                CCCPSettingsAdapter.SetRustLatestVersionWSL("");
                 
                 SetStatus($"Rust updated successfully to v{rustCurrentVersion}!", Color.green);
             }
@@ -938,7 +938,7 @@ public class ServerInstallProcess
         bool buildEssentialSuccess = await wslProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!buildEssentialSuccess)
         {
-            CheckInstallationStatus(); // If failed to install build-essential, we still check if Rust is installed
+            CheckPrerequisitesWSL(); // If failed to install build-essential, we still check if Rust is installed
             await Task.Delay(1000);
             if (WSL1Installed && hasRust)
             {
@@ -951,13 +951,13 @@ public class ServerInstallProcess
         }
 
         // Check installation status
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasRust)
         {
             // Fetch the actual Rust version for immediate display
-            await serverManager.CheckRustVersion();
+            await serverManager.CheckRustVersionWSL();
             UpdateInstallerItemsStatus();
             SetStatus("Rust installed successfully.", Color.green);
         }
@@ -971,7 +971,7 @@ public class ServerInstallProcess
 
     public async void InstallNETSDK()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasNETSDK && !installIfAlreadyInstalled)
@@ -1058,7 +1058,7 @@ public class ServerInstallProcess
         bool netSDKInstallSuccess = await wslProcess.RunPowerShellInstallCommand(netSDKInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
         if (!netSDKInstallSuccess)
         {
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(1000);
             if (WSL1Installed && hasNETSDK)
             {
@@ -1084,7 +1084,7 @@ public class ServerInstallProcess
         }
 
         // Check installation status
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasNETSDK)
@@ -1102,7 +1102,7 @@ public class ServerInstallProcess
 
     public async void InstallBinaryen()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasBinaryen && !installIfAlreadyInstalled)
@@ -1135,7 +1135,7 @@ public class ServerInstallProcess
             
             if (!installSuccess)
             {
-                CheckInstallationStatus();
+                CheckPrerequisitesWSL();
                 await Task.Delay(2000);
                 if (WSL1Installed && hasBinaryen)
                 {
@@ -1149,7 +1149,7 @@ public class ServerInstallProcess
             }
             
             // Check installation status
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(1000);
             
             if (hasBinaryen)
@@ -1170,7 +1170,7 @@ public class ServerInstallProcess
     
     public async void InstallGit()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasGit && !installIfAlreadyInstalled)
@@ -1209,7 +1209,7 @@ public class ServerInstallProcess
         );
         if (!installSuccess)
         {
-            CheckInstallationStatus();
+            CheckPrerequisitesWSL();
             await Task.Delay(2000);
             if (WSL1Installed && hasGit)
                 SetStatus("Git installed successfully.", Color.green);
@@ -1220,7 +1220,7 @@ public class ServerInstallProcess
         }
         
         // Check installation status
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         if (hasGit)
@@ -1235,7 +1235,7 @@ public class ServerInstallProcess
     
     public async void InstallSpacetimeDBUnitySDK()
     {
-        CheckInstallationStatus();
+        CheckPrerequisitesWSL();
         await Task.Delay(1000);
         
         // Check if this is an update or fresh install
@@ -1295,7 +1295,7 @@ public class ServerInstallProcess
                     UpdateInstallerItemsStatus();
                     
                     // After successful installation, ensure the window updates properly
-                    CheckInstallationStatus();
+                    CheckPrerequisitesWSL();
                 }
                 else
                 {
@@ -1406,7 +1406,7 @@ public class ServerInstallProcess
                 SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
                 
                 // Update UI
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
 
                 EditorUtility.DisplayDialog(
                     "New User Created",
@@ -1439,7 +1439,7 @@ public class ServerInstallProcess
                 return;
             }
 
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
             await Task.Delay(1000);
             
             if (hasCustomDebianTrixie && !installIfAlreadyInstalled)
@@ -1503,7 +1503,7 @@ public class ServerInstallProcess
                 // Wait for changes to apply
                 await Task.Delay(3000);
                 
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
                 await Task.Delay(1000);
                 
                 if (hasCustomDebianTrixie)
@@ -1544,7 +1544,7 @@ public class ServerInstallProcess
                 return;
             }
 
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
             await Task.Delay(1000);
             
             if (hasCustomCurl && !installIfAlreadyInstalled)
@@ -1582,7 +1582,7 @@ public class ServerInstallProcess
                 
                 await Task.Delay(2000);
                 
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
                 await Task.Delay(1000);
                 
                 if (hasCustomCurl)
@@ -1623,7 +1623,7 @@ public class ServerInstallProcess
                 return;
             }
 
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
             await Task.Delay(1000);
             
             if (hasCustomSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersionCustom) && !installIfAlreadyInstalled)
@@ -1663,7 +1663,7 @@ public class ServerInstallProcess
 
                 await Task.Delay(2000);
                 
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
 
                 await Task.Delay(1000);
                 
@@ -1705,7 +1705,7 @@ public class ServerInstallProcess
                 return;
             }
 
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
             await Task.Delay(1000);
             
             if (hasCustomSpacetimeDBPath && !installIfAlreadyInstalled)
@@ -1745,7 +1745,7 @@ public class ServerInstallProcess
                 
                 await Task.Delay(2000);
                 
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
                 await Task.Delay(1000);
                 
                 if (hasCustomSpacetimeDBPath)
@@ -1812,7 +1812,7 @@ public class ServerInstallProcess
                 return;
             }
 
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
             await Task.Delay(1000);
             
             if (hasCustomSpacetimeDBService && !installIfAlreadyInstalled)
@@ -1983,7 +1983,7 @@ public class ServerInstallProcess
                 
                 await Task.Delay(2000);
                 
-                CheckCustomInstallationStatus();
+                CheckPrerequisitesCustom();
                 await Task.Delay(1000);
                 
                 if (hasCustomSpacetimeDBService)

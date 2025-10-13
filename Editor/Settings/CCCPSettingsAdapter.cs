@@ -343,12 +343,12 @@ public static class CCCPSettingsAdapter
         }
     }
     
-    public static string GetSpacetimeDBCurrentVersion() => Settings.spacetimeDBCurrentVersion;
-    public static void SetSpacetimeDBCurrentVersion(string value) 
+    public static string GetSpacetimeDBCurrentVersionWSL() => Settings.spacetimeDBCurrentVersionWSL;
+    public static void SetSpacetimeDBCurrentVersionWSL(string value) 
     { 
-        if (Settings.spacetimeDBCurrentVersion != value)
+        if (Settings.spacetimeDBCurrentVersionWSL != value)
         {
-            Settings.spacetimeDBCurrentVersion = value; 
+            Settings.spacetimeDBCurrentVersionWSL = value; 
             MarkDirty();
         }
     }
@@ -383,32 +383,32 @@ public static class CCCPSettingsAdapter
         }
     }
     
-    public static string GetRustCurrentVersion() => Settings.rustCurrentVersion;
-    public static void SetRustCurrentVersion(string value) 
+    public static string GetRustCurrentVersionWSL() => Settings.rustCurrentVersionWSL;
+    public static void SetRustCurrentVersionWSL(string value) 
     { 
-        if (Settings.rustCurrentVersion != value)
+        if (Settings.rustCurrentVersionWSL != value)
         {
-            Settings.rustCurrentVersion = value; 
+            Settings.rustCurrentVersionWSL = value; 
             MarkDirty();
         }
     }
     
-    public static string GetRustLatestVersion() => Settings.rustLatestVersion;
-    public static void SetRustLatestVersion(string value) 
+    public static string GetRustLatestVersionWSL() => Settings.rustLatestVersionWSL;
+    public static void SetRustLatestVersionWSL(string value) 
     { 
-        if (Settings.rustLatestVersion != value)
+        if (Settings.rustLatestVersionWSL != value)
         {
-            Settings.rustLatestVersion = value; 
+            Settings.rustLatestVersionWSL = value; 
             MarkDirty();
         }
     }
     
-    public static string GetRustupVersion() => Settings.rustupVersion;
-    public static void SetRustupVersion(string value) 
+    public static string GetRustupVersionWSL() => Settings.rustupVersionWSL;
+    public static void SetRustupVersionWSL(string value) 
     { 
-        if (Settings.rustupVersion != value)
+        if (Settings.rustupVersionWSL != value)
         {
-            Settings.rustupVersion = value; 
+            Settings.rustupVersionWSL = value; 
             MarkDirty();
         }
     }
@@ -1283,15 +1283,15 @@ public static class CCCPSettingsAdapter
             case "SSHPrivateKeyPath": return GetSSHPrivateKeyPath();
             case "CustomServerURL": return GetCustomServerUrl();
             case "CustomServerAuthToken": return GetCustomServerAuthToken();
-            case "SpacetimeDBVersion": return GetSpacetimeDBCurrentVersion();
+            case "SpacetimeDBVersion": return GetSpacetimeDBCurrentVersionWSL();
             case "SpacetimeDBVersionCustom": return GetSpacetimeDBCurrentVersionCustom();
             case "SpacetimeDBVersionTool": return GetSpacetimeDBCurrentVersionTool();
             case "SpacetimeDBLatestVersion": return GetSpacetimeDBLatestVersion();
             case "CCCPAssetStoreLatestVersion": return GetCCCPAssetStoreLatestVersion();
             case "SpacetimeSDKLatestVersion": return GetSpacetimeSDKLatestVersion();
-            case "RustVersion": return GetRustCurrentVersion();
-            case "RustLatestVersion": return GetRustLatestVersion();
-            case "RustupVersion": return GetRustupVersion();
+            case "RustVersion": return GetRustCurrentVersionWSL();
+            case "RustLatestVersion": return GetRustLatestVersionWSL();
+            case "RustupVersion": return GetRustupVersionWSL();
             case "DistributionType": return GetDistributionType();
             case "GithubLastCommitSha": return GetGithubLastCommitSha();
             case "OriginalFileInfo": return GetOriginalFileInfo();
@@ -1331,15 +1331,15 @@ public static class CCCPSettingsAdapter
             case "SSHPrivateKeyPath": SetSSHPrivateKeyPath(value); break;
             case "CustomServerURL": SetCustomServerUrl(value); break;
             case "CustomServerAuthToken": SetCustomServerAuthToken(value); break;
-            case "SpacetimeDBVersion": SetSpacetimeDBCurrentVersion(value); break;
+            case "SpacetimeDBVersion": SetSpacetimeDBCurrentVersionWSL(value); break;
             case "SpacetimeDBVersionCustom": SetSpacetimeDBCurrentVersionCustom(value); break;
             case "SpacetimeDBVersionTool": SetSpacetimeDBCurrentVersionTool(value); break;
             case "SpacetimeDBLatestVersion": SetSpacetimeDBLatestVersion(value); break;
             case "CCCPAssetStoreLatestVersion": SetCCCPAssetStoreLatestVersion(value); break;
             case "SpacetimeSDKLatestVersion": SetSpacetimeSDKLatestVersion(value); break;
-            case "RustVersion": SetRustCurrentVersion(value); break;
-            case "RustLatestVersion": SetRustLatestVersion(value); break;
-            case "RustupVersion": SetRustupVersion(value); break;
+            case "RustVersion": SetRustCurrentVersionWSL(value); break;
+            case "RustLatestVersion": SetRustLatestVersionWSL(value); break;
+            case "RustupVersion": SetRustupVersionWSL(value); break;
             case "DistributionType": SetDistributionType(value); break;
             case "GithubLastCommitSha": SetGithubLastCommitSha(value); break;
             case "OriginalFileInfo": SetOriginalFileInfo(value); break;

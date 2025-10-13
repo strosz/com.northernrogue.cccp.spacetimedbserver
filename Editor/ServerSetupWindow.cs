@@ -253,15 +253,15 @@ public class ServerSetupWindow : EditorWindow
         tempCreateUserNameInput = ""; // Initialize empty for the "Create User" functionality
         
         // Load version info of SpacetimeDB
-        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL();
         spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
         spacetimeDBCurrentVersionTool = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionTool();
         spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
 
         // Load version info of Rust
-        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
-        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
-        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersionWSL();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersionWSL();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersionWSL();
         rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
 
         // Load version info of SpacetimeDB SDK
@@ -577,12 +577,12 @@ public class ServerSetupWindow : EditorWindow
         }
 
         // Reload version information from Settings to ensure we have the latest data
-        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL();
         spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
         spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
-        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
-        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
-        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersionWSL();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersionWSL();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersionWSL();
         rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
 
         // Reload SpacetimeDB SDK version information
@@ -1346,10 +1346,10 @@ public class ServerSetupWindow : EditorWindow
         });
 
         // Check SpacetimeDB version to update it if it was updated in the installer
-        await serverManager.CheckSpacetimeDBVersion();
+        await serverManager.CheckSpacetimeDBVersionWSL();
 
         // Check Rust version to update it if it was updated in the installer
-        await serverManager.CheckRustVersion();
+        await serverManager.CheckRustVersionWSL();
 
         // Update UI
         UpdateInstallerItemsStatus();
