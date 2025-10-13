@@ -521,7 +521,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: Docker Desktop includes Docker Compose",
                 isInstalled = hasDocker,
                 isEnabled = true,
-                installAction = InstallDocker,
+                installAction = CheckDocker,
                 sectionHeader = "Required Docker Software"
             },
             new InstallerItem
@@ -532,7 +532,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: This may take a few minutes depending on your internet connection",
                 isInstalled = hasDockerImage,
                 isEnabled = hasDocker && hasDockerCompose,
-                installAction = PullSpacetimeDBImage
+                installAction = CheckDockerImage
             },
             new InstallerItem
             {
@@ -783,10 +783,6 @@ public class ServerSetupWindow : EditorWindow
         {
             currentTab = newTab;
             // When switching tabs, check the appropriate installation status
-    
-    
-    
-            
             if (currentTab == wslTabIndex) {
                 CheckPrerequisitesWSL();
             } else if (currentTab == customTabIndex) {
@@ -838,16 +834,14 @@ public class ServerSetupWindow : EditorWindow
         
         stylesInitialized = true;
     }
+    #endregion
+    
+    #region Draw UI
     
     private void DrawToolbar()
     {
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-        
-        // Determine which tab we're on
 
-
-
-        
         // Refresh Button
         bool isRefreshingCurrentTab = (currentTab == wslTabIndex && isRefreshing) || 
                                        (currentTab == customTabIndex && isCustomRefreshing) ||
@@ -912,21 +906,20 @@ public class ServerSetupWindow : EditorWindow
         
         EditorGUILayout.EndHorizontal();
     }
-    
+
     private void DrawInstallerItemsList()
     {
         // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        // Determine which tab we're on
-
-
-
-        
         string title;
         string description;
-        
-        if (currentTab == wslTabIndex) {
+        if (currentTab == dockerTabIndex) {
+            title = "SpacetimeDB Docker Setup";
+            description = "Setup Docker to run SpacetimeDB in containers.\n" +
+                         "Works on Windows, macOS, and Linux.\n" +
+                         "Includes tools to generate docker-compose.yml with your configuration.";
+        } else if (currentTab == wslTabIndex) {
             title = "SpacetimeDB Local WSL Server Installer";
             description = "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
                          "You get a local WSL CLI for spacetime commands.\n" +
@@ -936,11 +929,6 @@ public class ServerSetupWindow : EditorWindow
             description = "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
                          "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
                          "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
-        } else if (currentTab == dockerTabIndex) {
-            title = "SpacetimeDB Docker Setup";
-            description = "Setup Docker to run SpacetimeDB in containers.\n" +
-                         "Works on Windows, macOS, and Linux.\n" +
-                         "Includes tools to generate docker-compose.yml with your configuration.";
         } else {
             title = "Unknown Tab";
             description = "";
@@ -1300,7 +1288,7 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region Check Installation Status
+    #region WSL Prerequisites
     internal async void CheckPrerequisitesWSL()
     {
         if (isRefreshing) return; // Don't start a new refresh if one is already running
@@ -1464,7 +1452,9 @@ public class ServerSetupWindow : EditorWindow
         isCustomRefreshing = false;
         SetStatus("Remote installation status check complete.", Color.green);
     }
+    #endregion
     
+    #region Docker Prerequisites
     private void CheckPrerequisitesDocker()
     {
         if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
@@ -1613,203 +1603,34 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region Docker Installation Methods
-    
-    private void InstallDocker()
+    #region Docker Setup
+
+    private void CheckDocker()
     {
-        if (isAssetStoreBuild)
+        SetStatus("Docker Desktop required. Please visit: https://spacetimedb.com/install", Color.yellow);
+        
+        if (EditorUtility.DisplayDialog("Docker Desktop Required",
+            "Docker Desktop needs to be installed to run SpacetimeDB in Docker mode.\n\n" +
+            "Please visit the official SpacetimeDB installation guide for instructions.\n\n" +
+            "After installation, click Refresh to verify.",
+            "Open Installation Guide", "Cancel"))
         {
-            CheckDocker(); // Asset Store builds only check, provide link to docs
-            return;
+            Application.OpenURL("https://spacetimedb.com/install#docker");
         }
-
-        // For non-Asset Store builds, call the actual installation process
-        InstallDockerInternal();
-    }
-
-    private void InstallDockerInternal()
-    {
-        SetStatus("Opening Docker Desktop download page...", Color.yellow);
-        
-        // Open Docker Desktop download page based on platform
-        string dockerUrl = "https://www.docker.com/products/docker-desktop/";
-        
-        EditorUtility.DisplayDialog("Install Docker Desktop",
-            "Docker Desktop provides containerization for running SpacetimeDB.\n\n" +
-            "You will be redirected to the Docker Desktop download page.\n\n" +
-            "After installation, please restart this window and click Refresh to verify the installation.",
-            "OK");
-        
-        Application.OpenURL(dockerUrl);
-        
-        SetStatus("Docker Desktop download page opened. Please install and restart.", Color.green);
     }
     
-    private async void PullSpacetimeDBImage()
+    private void CheckDockerImage()
     {
-        if (isAssetStoreBuild)
+        SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
+        
+        if (EditorUtility.DisplayDialog("SpacetimeDB Docker Image Required",
+            "The SpacetimeDB Docker image needs to be pulled manually.\n\n" +
+            "1. Visit the official SpacetimeDB installation page.\n\n" +
+            "2. Copy the Docker command and run it in your Docker Desktop terminal.\n\n" +
+            "3. After pulling the image, click Refresh to verify.",
+            "Open Installation Guide", "Cancel"))
         {
-            CheckDockerImage(); // Asset Store builds only check, provide link to docs
-            return;
-        }
-
-        // For non-Asset Store builds, call the actual installation process
-        await PullSpacetimeDBImageInternal();
-    }
-
-    private async Task PullSpacetimeDBImageInternal()
-    {
-        try
-        {
-            EditorUtility.DisplayProgressBar("Pulling SpacetimeDB Image", "Starting Docker pull...", 0.1f);
-            SetStatus("Pulling SpacetimeDB Docker image...", Color.yellow);
-            
-            // Use simpler docker pull command instead of docker run
-            string imageName = "clockworklabs/spacetime";
-            
-            if (debugMode)
-            {
-                LogMessage($"Pulling Docker image: {imageName}", 0);
-            }
-            
-            // Pull the image
-            EditorUtility.DisplayProgressBar("Pulling SpacetimeDB Image", "Downloading image (this may take a few minutes)...", 0.3f);
-            
-            bool pullResult = await Task.Run(() =>
-            {
-                try
-                {
-                    using (System.Diagnostics.Process process = new System.Diagnostics.Process())
-                    {
-                        process.StartInfo.FileName = "docker";
-                        process.StartInfo.Arguments = $"pull {imageName}";
-                        process.StartInfo.RedirectStandardOutput = true;
-                        process.StartInfo.RedirectStandardError = true;
-                        process.StartInfo.UseShellExecute = false;
-                        process.StartInfo.CreateNoWindow = !visibleInstallProcesses;
-                        
-                        if (debugMode)
-                        {
-                            UnityEngine.Debug.Log($"[ServerSetupWindow] Executing: docker pull {imageName}");
-                        }
-                        
-                        process.Start();
-                        
-                        // Read output for progress updates
-                        string output = process.StandardOutput.ReadToEnd();
-                        string error = process.StandardError.ReadToEnd();
-                        
-                        process.WaitForExit();
-                        
-                        if (debugMode)
-                        {
-                            if (!string.IsNullOrEmpty(output))
-                            {
-                                UnityEngine.Debug.Log($"[ServerSetupWindow] Pull output: {output}");
-                            }
-                            if (!string.IsNullOrEmpty(error))
-                            {
-                                UnityEngine.Debug.Log($"[ServerSetupWindow] Pull stderr: {error}");
-                            }
-                        }
-                        
-                        return process.ExitCode == 0;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (debugMode)
-                    {
-                        UnityEngine.Debug.LogError($"[ServerSetupWindow] Error during pull: {ex.Message}");
-                    }
-                    return false;
-                }
-            });
-            
-            if (pullResult)
-            {
-                EditorUtility.DisplayProgressBar("Pulling SpacetimeDB Image", "Verifying image...", 0.8f);
-                SetStatus("Verifying image availability...", Color.yellow);
-                await Task.Delay(1000); // Brief delay for Docker to update
-                
-                // Verify the image is actually available
-                bool imageExists = await Task.Run(() =>
-                {
-                    try
-                    {
-                        using (System.Diagnostics.Process checkProcess = new System.Diagnostics.Process())
-                        {
-                            checkProcess.StartInfo.FileName = "docker";
-                            checkProcess.StartInfo.Arguments = $"images -q {imageName}";
-                            checkProcess.StartInfo.RedirectStandardOutput = true;
-                            checkProcess.StartInfo.RedirectStandardError = true;
-                            checkProcess.StartInfo.UseShellExecute = false;
-                            checkProcess.StartInfo.CreateNoWindow = true;
-                            
-                            checkProcess.Start();
-                            string output = checkProcess.StandardOutput.ReadToEnd();
-                            string error = checkProcess.StandardError.ReadToEnd();
-                            checkProcess.WaitForExit();
-                            
-                            bool exists = !string.IsNullOrWhiteSpace(output);
-                            
-                            if (debugMode)
-                            {
-                                UnityEngine.Debug.Log($"[ServerSetupWindow] Image verification - Exists: {exists}");
-                                if (exists)
-                                {
-                                    UnityEngine.Debug.Log($"[ServerSetupWindow] Image ID: {output.Trim()}");
-                                }
-                                if (!string.IsNullOrEmpty(error))
-                                {
-                                    UnityEngine.Debug.Log($"[ServerSetupWindow] Verification stderr: {error}");
-                                }
-                            }
-                            
-                            return exists;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (debugMode)
-                        {
-                            UnityEngine.Debug.LogError($"[ServerSetupWindow] Error checking image: {ex.Message}");
-                        }
-                        return false;
-                    }
-                });
-                
-                EditorUtility.DisplayProgressBar("Pulling SpacetimeDB Image", "Complete!", 1.0f);
-                
-                if (imageExists)
-                {
-                    SetStatus("SpacetimeDB Docker image pulled and verified successfully!", Color.green);
-                    hasDockerImage = true;
-                    CCCPSettingsAdapter.SetHasDockerImage(true);
-                }
-                else
-                {
-                    SetStatus("Image pull completed but verification failed. Please click Refresh to check again.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("Failed to pull SpacetimeDB Docker image. Check Docker Desktop is running.", Color.red);
-            }
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error pulling image: {ex.Message}", Color.red);
-            if (debugMode)
-            {
-                UnityEngine.Debug.LogError($"[ServerSetupWindow] Pull error: {ex}");
-            }
-        }
-        finally
-        {
-            EditorUtility.ClearProgressBar();
-            UpdateInstallerItemsStatus();
-            Repaint();
+            Application.OpenURL("https://spacetimedb.com/install#docker");
         }
     }
     
@@ -1918,8 +1739,8 @@ public class ServerSetupWindow : EditorWindow
 
             bool userConfirmed = EditorUtility.DisplayDialog(
                 "Confirm Container Reconfiguration",
-                "The Docker server is currently running and must be stopped to reconfigure volume mounts.\n\n" +
-                "The local Docker server database WILL BE RESET and the local Docker server module needs to be Published again if already Published.\n\n" +
+                "The Docker image is currently running and must be stopped to reconfigure volume mounts.\n\n" +
+                "The local SpacetimeDB Docker server database WILL BE RESET and the local SpacetimeDB Docker server module needs to be Published again if already Published.\n\n" +
                 "Do you wish to reconfigure volume mounts? This is required to do at least once to complete the setup.",
                 "Yes, Reconfigure",
                 "Cancel"
@@ -2047,39 +1868,6 @@ public class ServerSetupWindow : EditorWindow
     private void SetStatus(string message, Color color)
     {
         SetStatusInternal(message, color);
-    }
-    #endregion
-    
-    #region Asset Store Check-Only Methods
-    // These methods are used in Asset Store builds where installation code is not allowed
-    // They only check status and provide links to official documentation
-    
-    private void CheckDocker()
-    {
-        SetStatus("Docker Desktop required. Please visit: https://spacetimedb.com/install", Color.yellow);
-        
-        if (EditorUtility.DisplayDialog("Docker Desktop Required",
-            "Docker Desktop needs to be installed to run SpacetimeDB in Docker mode.\n\n" +
-            "Please visit the official SpacetimeDB installation guide for instructions.\n\n" +
-            "After installation, click Refresh to verify.",
-            "Open Installation Guide", "Cancel"))
-        {
-            Application.OpenURL("https://spacetimedb.com/install#docker");
-        }
-    }
-    
-    private void CheckDockerImage()
-    {
-        SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
-        
-        if (EditorUtility.DisplayDialog("SpacetimeDB Docker Image Required",
-            "The SpacetimeDB Docker image needs to be pulled manually.\n\n" +
-            "Please visit the official SpacetimeDB installation guide for instructions.\n\n" +
-            "After pulling the image, click Refresh to verify.",
-            "Open Installation Guide", "Cancel"))
-        {
-            Application.OpenURL("https://spacetimedb.com/install#docker");
-        }
     }
     #endregion
     
