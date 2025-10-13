@@ -1624,15 +1624,15 @@ public class ServerSetupWindow : EditorWindow
 
     private void CheckDocker()
     {
-        SetStatus("Docker Desktop required. Please visit: https://spacetimedb.com/install", Color.yellow);
+        SetStatus("Docker Desktop required. Please visit: https://www.docker.com/products/docker-desktop/", Color.yellow);
         
         if (EditorUtility.DisplayDialog("Docker Desktop Required",
-            "Docker Desktop needs to be installed to run SpacetimeDB in Docker mode.\n\n" +
-            "Please visit the official SpacetimeDB installation guide for instructions.\n\n" +
+            "Docker Desktop needs to be installed to run a SpacetimeDB CLI and Server in Docker mode.\n\n" +
+            "Please visit the official Docker Desktop homepage and install your desired distribution.\n\n" +
             "After installation, click Refresh to verify.",
-            "Open Installation Guide", "Cancel"))
+            "Open Docker Homepage", "Cancel"))
         {
-            Application.OpenURL("https://spacetimedb.com/install#docker");
+            Application.OpenURL("https://www.docker.com/products/docker-desktop/");
         }
     }
     
@@ -1645,7 +1645,7 @@ public class ServerSetupWindow : EditorWindow
             "1. Visit the official SpacetimeDB installation page and copy the Docker command.\n\n" +
             "2. Replace the port 3000:3000 with your desired port mapping (i.e. 3011:3000) in the Docker command and run it in your Docker Desktop terminal.\n\n" +
             "3. After pulling the image, click Refresh to verify.",
-            "Open Installation Guide", "Cancel"))
+            "Open SpacetimeDB Homepage", "Cancel"))
         {
             Application.OpenURL("https://spacetimedb.com/install#docker");
         }
