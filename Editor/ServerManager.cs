@@ -179,6 +179,21 @@ public class ServerManager
         get => Settings.hasGit; 
         set => CCCPSettingsAdapter.SetHasGit(value); 
     }
+    public bool hasDocker 
+    { 
+        get => Settings.hasDocker; 
+        set => CCCPSettingsAdapter.SetHasDocker(value); 
+    }
+    public bool hasDockerCompose 
+    { 
+        get => Settings.hasDockerCompose; 
+        set => CCCPSettingsAdapter.SetHasDockerCompose(value); 
+    }
+    public bool hasDockerImage 
+    { 
+        get => Settings.hasDockerImage; 
+        set => CCCPSettingsAdapter.SetHasDockerImage(value); 
+    }
     public bool wslPrerequisitesChecked 
     { 
         get => Settings.wslPrerequisitesChecked; 
@@ -205,6 +220,11 @@ public class ServerManager
     { 
         get => Settings.spacetimeDBCurrentVersionWSL; 
         set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); 
+    }
+    public string spacetimeDBCurrentVersionDocker 
+    { 
+        get => Settings.spacetimeDBCurrentVersionDocker; 
+        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(value); 
     }
     public string spacetimeDBCurrentVersionCustom 
     { 
@@ -237,6 +257,21 @@ public class ServerManager
     { 
         get => Settings.rustupVersionWSL; 
         set => CCCPSettingsAdapter.SetRustupVersionWSL(value); 
+    }
+    public string rustCurrentVersionDocker 
+    { 
+        get => Settings.rustCurrentVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustCurrentVersionDocker(value); 
+    }
+    public string rustLatestVersionDocker 
+    { 
+        get => Settings.rustLatestVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustLatestVersionDocker(value); 
+    }
+    public string rustupVersionDocker 
+    { 
+        get => Settings.rustupVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustupVersionDocker(value); 
     }
 
     // Server output window settings
@@ -2582,6 +2617,14 @@ public class ServerManager
             {
                 isDockerRunning = dockerServiceRunning;
                 if (debugMode) LogMessage($"Docker status updated to: {(isDockerRunning ? "Running" : "Stopped")}", 0);
+                
+                // Check SpacetimeDB version and update once every time Docker is confirmed running
+                if (isDockerRunning)
+                {
+                    await CheckSpacetimeDBVersionDocker();
+                    await CheckSpacetimeSDKVersion();
+                    await CheckRustVersionDocker();
+                }
             }
         }
         catch (Exception ex)
@@ -2858,90 +2901,79 @@ public class ServerManager
 
     public async Task CheckSpacetimeDBVersionWSL() // Only runs in WSL once when WSL has started
     {
-        if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
-        
-        // Only proceed if enough prerequisites are met
-        if (!hasAllPrerequisites)
+        if (wslProcessor == null)
         {
-            if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met", 0);
+            if (debugMode) LogMessage("WSL processor not initialized", -1);
             return;
         }
         
-        // Use RunServerCommandAsync to run the spacetime --version command (mark as status check for silent mode)
-        var result = await wslProcessor.RunServerCommandAsync("spacetime --version", serverDirectory, true);
+        var result = await wslProcessor.CheckSpacetimeDBVersionWSL(hasAllPrerequisites, serverDirectory);
         
-        if (string.IsNullOrEmpty(result.output))
-        {
-            if (debugMode) LogMessage("Failed to get SpacetimeDB version", -1);
-            return;
-        }
-        //UnityEngine.Debug.Log($"SpacetimeDB version output: {result.output}");
+        string version = result.version;
+        string toolversion = result.toolVersion;
+        string latestVersion = result.latestVersion;
+        bool updateAvailable = result.updateAvailable;
         
-        // Parse the version from output that looks like:
-        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.3.1/spacetimedb-cli
-        // Commit: 
-        // spacetimedb tool version 1.3.0; spacetimedb-lib version 1.3.0;"
-        // Prefer the version from the path (1.3.1) over the tool version (1.3.0)
-        string version = "";
-        string toolversion = "";
-
-        // First try to extract version from the path (preferred method)
-        System.Text.RegularExpressions.Match pathMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"Path:\s+[^\r\n]*?/bin/([0-9]+\.[0-9]+\.[0-9]+)/");
-
-        if (pathMatch.Success && pathMatch.Groups.Count > 1)
+        if (!string.IsNullOrEmpty(toolversion))
         {
-            version = pathMatch.Groups[1].Value;
-            if (debugMode) LogMessage($"Detected SpacetimeDB version from path: {version}", 1);
-        }
-        else
-        {
-            // Fallback to tool version if path version not found
-            System.Text.RegularExpressions.Match fallbackToolMatch = 
-                System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
-
-            if (fallbackToolMatch.Success && fallbackToolMatch.Groups.Count > 1)
-            {
-                version = fallbackToolMatch.Groups[1].Value;
-                if (debugMode) LogMessage($"Detected SpacetimeDB version from tool output: {version}", 1);
-            }
-        }
-
-        // Also save the tool version for cargo.toml version update in Setup Window
-        System.Text.RegularExpressions.Match toolMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
-
-        if (toolMatch.Success && toolMatch.Groups.Count > 1)
-        {
-            toolversion = toolMatch.Groups[1].Value;
             CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionTool(toolversion);
             spacetimeDBCurrentVersionTool = toolversion;
-
-            if (debugMode) LogMessage($"Detected SpacetimeDB tool version from output: {toolversion}", 1);
         }
 
         if (!string.IsNullOrEmpty(version))
         {
             CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(version);
-
             spacetimeDBCurrentVersion = version;
 
-            // Check if update is available by comparing with the latest version from ServerUpdateProcess
-            spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
-            if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
+            if (updateAvailable)
             {
                 // Only show the update message once per editor session (persists across script recompilations)
                 if (!SessionState.GetBool("SpacetimeDBWSLUpdateMessageShown", false))
                 {
-                    LogMessage($"SpacetimeDB update available for WSL! Click on the Setup Window update button to install. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                    LogMessage($"SpacetimeDB update available for WSL! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
                     SessionState.SetBool("SpacetimeDBWSLUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
         }
-        else
+    }
+    
+    public async Task CheckSpacetimeDBVersionDocker() // Only runs in Docker once when Docker has started
+    {
+        if (dockerProcessor == null)
         {
-            if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+            if (debugMode) LogMessage("Docker processor not initialized", -1);
+            return;
+        }
+        
+        var result = await dockerProcessor.CheckSpacetimeDBVersionDocker(hasDocker, hasDockerImage, serverDirectory);
+        
+        string version = result.version;
+        string toolversion = result.toolVersion;
+        string latestVersion = result.latestVersion;
+        bool updateAvailable = result.updateAvailable;
+        
+        if (!string.IsNullOrEmpty(toolversion))
+        {
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionTool(toolversion);
+            spacetimeDBCurrentVersionTool = toolversion;
+        }
+
+        if (!string.IsNullOrEmpty(version))
+        {
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(version);
+            spacetimeDBCurrentVersionDocker = version;
+
+            if (updateAvailable)
+            {
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("SpacetimeDBDockerUpdateMessageShown", false))
+                {
+                    LogMessage($"SpacetimeDB update available for Docker! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
+                    SessionState.SetBool("SpacetimeDBDockerUpdateMessageShown", true);
+                }
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
+            }
         }
     }
     
@@ -2998,104 +3030,36 @@ public class ServerManager
     #region Rust Version
     public async Task CheckRustVersionWSL() // Only runs in WSL once when WSL has started
     {
-        if (debugMode) LogMessage("Checking Rust version...", 0);
-        
-        // Only proceed if enough prerequisites are met
-        if (!hasWSL || !hasDebianTrixie || !hasRust)
+        if (wslProcessor == null)
         {
-            if (debugMode) LogMessage("Skipping Rust version check - prerequisites not met or Rust not installed", 0);
+            if (debugMode) LogMessage("WSL processor not initialized", -1);
             return;
         }
         
-        // Use RunServerCommandAsync to run the rustup check command (mark as status check for silent mode)
-        var result = await wslProcessor.RunServerCommandAsync("rustup check", serverDirectory, true);
+        var result = await wslProcessor.CheckRustVersionWSL(hasWSL, hasDebianTrixie, hasRust, serverDirectory);
         
-        if (string.IsNullOrEmpty(result.output))
-        {
-            if (debugMode) LogMessage("Failed to get Rust version information", -1);
-            return;
-        }
-        
-        // TODO: Remove this simulation line after testing
-        //result.output = "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)\nrustup - Up to date : 1.28.2";
-        
-        if (debugMode) LogMessage($"Rust check output: {result.output}", 0);
-        
-        // Parse the version from output that looks like:
-        // "stable-x86_64-unknown-linux-gnu - Up to date : 1.89.0 (29483883e 2025-08-04)
-        // rustup - Up to date : 1.28.2"
-        // Or when updates are available:
-        // "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)
-        // rustup - Update available : 1.28.2 -> 1.29.0"
-        
-        string rustStableVersion = "";
-        string rustupCurrentVersion = "";
-        bool rustUpdateAvailable = false;
-        bool rustupUpdateAvailable = false;
-        
-        // Parse Rust stable version
-        System.Text.RegularExpressions.Match rustMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
-        
-        if (rustMatch.Success && rustMatch.Groups.Count > 1)
-        {
-            rustStableVersion = rustMatch.Groups[1].Value;
-            
-            // Check if update is available for Rust and extract latest version
-            if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Update available"))
-            {
-                rustUpdateAvailable = true;
-                
-                // Try to extract the latest version from "1.89.0 -> 1.90.0" format
-                System.Text.RegularExpressions.Match latestMatch = 
-                    System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?->\s*([0-9]+\.[0-9]+\.[0-9]+)");
-                
-                if (latestMatch.Success && latestMatch.Groups.Count > 1)
-                {
-                    string latestVersion = latestMatch.Groups[1].Value;
-                    CCCPSettingsAdapter.SetRustLatestVersionWSL(latestVersion);
-                    rustLatestVersion = latestVersion;
-                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion} to {latestVersion}", 1);
-                }
-                else
-                {
-                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion}", 1);
-                }
-            }
-            else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
-            {
-                // Clear the latest version when up to date
-                CCCPSettingsAdapter.SetRustLatestVersionWSL("");
-                rustLatestVersion = "";
-                if (debugMode) LogMessage($"Rust is up to date at version: {rustStableVersion}", 1);
-            }
-        }
-        
-        // Parse rustup version
-        System.Text.RegularExpressions.Match rustupMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"rustup.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
-        
-        if (rustupMatch.Success && rustupMatch.Groups.Count > 1)
-        {
-            rustupCurrentVersion = rustupMatch.Groups[1].Value;
-            
-            // Check if update is available for rustup
-            if (result.output.Contains("rustup - Update available"))
-            {
-                rustupUpdateAvailable = true;
-                if (debugMode) LogMessage($"Rustup update available from version: {rustupCurrentVersion}", 1);
-            }
-            else if (result.output.Contains("rustup - Up to date"))
-            {
-                if (debugMode) LogMessage($"Rustup is up to date at version: {rustupCurrentVersion}", 1);
-            }
-        }
+        string rustStableVersion = result.rustVersion;
+        string rustLatestVersionResult = result.rustLatestVersion;
+        bool rustUpdateAvailable = result.rustUpdateAvailable;
+        string rustupCurrentVersion = result.rustupVersion;
+        bool rustupUpdateAvailable = result.rustupUpdateAvailable;
         
         // Save versions to Settings and local variables
         if (!string.IsNullOrEmpty(rustStableVersion))
         {
             CCCPSettingsAdapter.SetRustCurrentVersionWSL(rustStableVersion);
             rustCurrentVersion = rustStableVersion;
+            
+            if (!string.IsNullOrEmpty(rustLatestVersionResult))
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionWSL(rustLatestVersionResult);
+                rustLatestVersion = rustLatestVersionResult;
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionWSL("");
+                rustLatestVersion = "";
+            }
             
             if (rustUpdateAvailable)
             {
@@ -3115,7 +3079,6 @@ public class ServerManager
             
             if (rustupUpdateAvailable)
             {
-                //LogMessage($"Rustup update available for WSL! Click on the Setup Window update button to install the latest version: {rustupCurrentVersion}", 1);
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
             }
             else
@@ -3123,10 +3086,65 @@ public class ServerManager
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
             }
         }
-        
-        if (string.IsNullOrEmpty(rustStableVersion) && string.IsNullOrEmpty(rustupCurrentVersion))
+    }
+    
+    public async Task CheckRustVersionDocker() // Only runs in Docker once when Docker has started
+    {
+        if (dockerProcessor == null)
         {
-            if (debugMode) LogMessage("Could not parse Rust version information from output", -1);
+            if (debugMode) LogMessage("Docker processor not initialized", -1);
+            return;
+        }
+        
+        var result = await dockerProcessor.CheckRustVersionDocker(hasDocker, hasDockerImage, serverDirectory);
+        
+        string rustStableVersion = result.rustVersion;
+        string rustLatestVersionResult = result.rustLatestVersion;
+        bool rustUpdateAvailable = result.rustUpdateAvailable;
+        string rustupCurrentVersion = result.rustupVersion;
+        bool rustupUpdateAvailable = result.rustupUpdateAvailable;
+        
+        // Save versions to Settings and local variables
+        if (!string.IsNullOrEmpty(rustStableVersion))
+        {
+            CCCPSettingsAdapter.SetRustCurrentVersionDocker(rustStableVersion);
+            rustCurrentVersionDocker = rustStableVersion;
+            
+            if (!string.IsNullOrEmpty(rustLatestVersionResult))
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionDocker(rustLatestVersionResult);
+                rustLatestVersionDocker = rustLatestVersionResult;
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionDocker("");
+                rustLatestVersionDocker = "";
+            }
+            
+            if (rustUpdateAvailable)
+            {
+                LogMessage($"Rust update available for Docker! Click on the Setup Window update button to install. Current version: {rustCurrentVersionDocker} and latest version: {rustLatestVersionDocker}", 1);
+                CCCPSettingsAdapter.SetRustUpdateAvailable(true);
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustUpdateAvailable(false);
+            }
+        }
+        
+        if (!string.IsNullOrEmpty(rustupCurrentVersion))
+        {
+            CCCPSettingsAdapter.SetRustupVersionDocker(rustupCurrentVersion);
+            rustupVersionDocker = rustupCurrentVersion;
+            
+            if (rustupUpdateAvailable)
+            {
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
+            }
         }
     }
     

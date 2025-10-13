@@ -1915,25 +1915,24 @@ public class ServerSetupWindow : EditorWindow
             
             // Check if container is running
             var (exists, isRunning) = CheckContainerExistsAndRunning();
+
+            bool userConfirmed = EditorUtility.DisplayDialog(
+                "Confirm Container Reconfiguration",
+                "The Docker server is currently running and must be stopped to reconfigure volume mounts.\n\n" +
+                "The local Docker server database WILL BE RESET and the local Docker server module needs to be Published again if already Published.\n\n" +
+                "Do you wish to reconfigure volume mounts? This is required to do at least once to complete the setup.",
+                "Yes, Reconfigure",
+                "Cancel"
+            );
+
+            if (!userConfirmed)
+            {
+                SetStatusInternal("Container reconfiguration cancelled.", Color.grey);
+                return;
+            }
             
             if (isRunning)
             {
-                bool userConfirmed = EditorUtility.DisplayDialog(
-                    "Server Running",
-                    "The Docker server is currently running and must be stopped to reconfigure volume mounts.\n\n" +
-                    "The container will be removed and recreated with correct volume mounts. " +
-                    "No data will be lost as your server files and Unity project are on your Windows filesystem.\n\n" +
-                    "Stop server and reconfigure?",
-                    "Yes, Reconfigure",
-                    "Cancel"
-                );
-                
-                if (!userConfirmed)
-                {
-                    SetStatusInternal("Container reconfiguration cancelled.", Color.grey);
-                    return;
-                }
-                
                 // Stop the server through server manager
                 if (serverManager != null)
                 {

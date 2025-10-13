@@ -1520,6 +1520,183 @@ public class ServerWSLProcess
 
     #endregion
 
+    #region Version Checking
+    
+    public async Task<(string version, string toolVersion, string latestVersion, bool updateAvailable)> CheckSpacetimeDBVersionWSL(bool hasAllPrerequisites, string serverDirectory)
+    {
+        if (debugMode) logCallback("Checking SpacetimeDB version...", 0);
+        
+        // Only proceed if enough prerequisites are met
+        if (!hasAllPrerequisites)
+        {
+            if (debugMode) logCallback("Skipping SpacetimeDB version check - prerequisites not met", 0);
+            return ("", "", "", false);
+        }
+        
+        // Use RunServerCommandAsync to run the spacetime --version command (mark as status check for silent mode)
+        var result = await RunServerCommandAsync("spacetime --version", serverDirectory, true);
+        
+        if (string.IsNullOrEmpty(result.output))
+        {
+            if (debugMode) logCallback("Failed to get SpacetimeDB version", -1);
+            return ("", "", "", false);
+        }
+        
+        // Parse the version from output that looks like:
+        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.3.1/spacetimedb-cli
+        // Commit: 
+        // spacetimedb tool version 1.3.0; spacetimedb-lib version 1.3.0;"
+        // Prefer the version from the path (1.3.1) over the tool version (1.3.0)
+        string version = "";
+        string toolversion = "";
+
+        // First try to extract version from the path (preferred method)
+        System.Text.RegularExpressions.Match pathMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"Path:\s+[^\r\n]*?/bin/([0-9]+\.[0-9]+\.[0-9]+)/");
+
+        if (pathMatch.Success && pathMatch.Groups.Count > 1)
+        {
+            version = pathMatch.Groups[1].Value;
+            if (debugMode) logCallback($"Detected SpacetimeDB version from path: {version}", 1);
+        }
+        else
+        {
+            // Fallback to tool version if path version not found
+            System.Text.RegularExpressions.Match fallbackToolMatch = 
+                System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
+
+            if (fallbackToolMatch.Success && fallbackToolMatch.Groups.Count > 1)
+            {
+                version = fallbackToolMatch.Groups[1].Value;
+                if (debugMode) logCallback($"Detected SpacetimeDB version from tool output: {version}", 1);
+            }
+        }
+
+        // Also save the tool version for cargo.toml version update in Setup Window
+        System.Text.RegularExpressions.Match toolMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
+
+        if (toolMatch.Success && toolMatch.Groups.Count > 1)
+        {
+            toolversion = toolMatch.Groups[1].Value;
+            if (debugMode) logCallback($"Detected SpacetimeDB tool version from output: {toolversion}", 1);
+        }
+
+        if (!string.IsNullOrEmpty(version))
+        {
+            // Check if update is available by comparing with the latest version
+            string latestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
+            bool updateAvailable = !string.IsNullOrEmpty(latestVersion) && version != latestVersion;
+            
+            return (version, toolversion, latestVersion, updateAvailable);
+        }
+        else
+        {
+            if (debugMode) logCallback("Could not parse SpacetimeDB version from output", -1);
+            return ("", "", "", false);
+        }
+    }
+    
+    public async Task<(string rustVersion, string rustLatestVersion, bool rustUpdateAvailable, string rustupVersion, bool rustupUpdateAvailable)> CheckRustVersionWSL(bool hasWSL, bool hasDebianTrixie, bool hasRust, string serverDirectory)
+    {
+        if (debugMode) logCallback("Checking Rust version...", 0);
+        
+        // Only proceed if enough prerequisites are met
+        if (!hasWSL || !hasDebianTrixie || !hasRust)
+        {
+            if (debugMode) logCallback("Skipping Rust version check - prerequisites not met or Rust not installed", 0);
+            return ("", "", false, "", false);
+        }
+        
+        // Use RunServerCommandAsync to run the rustup check command (mark as status check for silent mode)
+        var result = await RunServerCommandAsync("rustup check", serverDirectory, true);
+        
+        if (string.IsNullOrEmpty(result.output))
+        {
+            if (debugMode) logCallback("Failed to get Rust version information", -1);
+            return ("", "", false, "", false);
+        }
+        
+        if (debugMode) logCallback($"Rust check output: {result.output}", 0);
+        
+        // Parse the version from output that looks like:
+        // "stable-x86_64-unknown-linux-gnu - Up to date : 1.89.0 (29483883e 2025-08-04)
+        // rustup - Up to date : 1.28.2"
+        // Or when updates are available:
+        // "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)
+        // rustup - Update available : 1.28.2 -> 1.29.0"
+        
+        string rustStableVersion = "";
+        string rustLatestVersion = "";
+        string rustupCurrentVersion = "";
+        bool rustUpdateAvailable = false;
+        bool rustupUpdateAvailable = false;
+        
+        // Parse Rust stable version
+        System.Text.RegularExpressions.Match rustMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
+        
+        if (rustMatch.Success && rustMatch.Groups.Count > 1)
+        {
+            rustStableVersion = rustMatch.Groups[1].Value;
+            
+            // Check if update is available for Rust and extract latest version
+            if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Update available"))
+            {
+                rustUpdateAvailable = true;
+                
+                // Try to extract the latest version from "1.89.0 -> 1.90.0" format
+                System.Text.RegularExpressions.Match latestMatch = 
+                    System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?->\s*([0-9]+\.[0-9]+\.[0-9]+)");
+                
+                if (latestMatch.Success && latestMatch.Groups.Count > 1)
+                {
+                    rustLatestVersion = latestMatch.Groups[1].Value;
+                    if (debugMode) logCallback($"Rust update available from version: {rustStableVersion} to {rustLatestVersion}", 1);
+                }
+                else
+                {
+                    if (debugMode) logCallback($"Rust update available from version: {rustStableVersion}", 1);
+                }
+            }
+            else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
+            {
+                // Clear the latest version when up to date
+                rustLatestVersion = "";
+                if (debugMode) logCallback($"Rust is up to date at version: {rustStableVersion}", 1);
+            }
+        }
+        
+        // Parse rustup version
+        System.Text.RegularExpressions.Match rustupMatch = 
+            System.Text.RegularExpressions.Regex.Match(result.output, @"rustup.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
+        
+        if (rustupMatch.Success && rustupMatch.Groups.Count > 1)
+        {
+            rustupCurrentVersion = rustupMatch.Groups[1].Value;
+            
+            // Check if update is available for rustup
+            if (result.output.Contains("rustup - Update available"))
+            {
+                rustupUpdateAvailable = true;
+                if (debugMode) logCallback($"Rustup update available from version: {rustupCurrentVersion}", 1);
+            }
+            else if (result.output.Contains("rustup - Up to date"))
+            {
+                if (debugMode) logCallback($"Rustup is up to date at version: {rustupCurrentVersion}", 1);
+            }
+        }
+        
+        if (string.IsNullOrEmpty(rustStableVersion) && string.IsNullOrEmpty(rustupCurrentVersion))
+        {
+            if (debugMode) logCallback("Could not parse Rust version information from output", -1);
+        }
+        
+        return (rustStableVersion, rustLatestVersion, rustUpdateAvailable, rustupCurrentVersion, rustupUpdateAvailable);
+    }
+    
+    #endregion
+
 } // Class
 } // Namespace
 

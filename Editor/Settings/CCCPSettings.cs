@@ -101,6 +101,7 @@ public class CCCPSettings : ScriptableObject
 
     [Header("Version Information")]
     public string spacetimeDBCurrentVersionWSL = "";
+    public string spacetimeDBCurrentVersionDocker = "";
     public string spacetimeDBCurrentVersionCustom = "";
     public string spacetimeDBCurrentVersionTool = "";
     public string spacetimeDBLatestVersion = "";
@@ -108,6 +109,9 @@ public class CCCPSettings : ScriptableObject
     public string rustCurrentVersionWSL = "";
     public string rustLatestVersionWSL = "";
     public string rustupVersionWSL = "";
+    public string rustCurrentVersionDocker = "";
+    public string rustLatestVersionDocker = "";
+    public string rustupVersionDocker = "";
     public string CCCPAssetStoreLatestVersion = "";
     public bool rustupUpdateAvailable = false;
     public bool rustUpdateAvailable = false;

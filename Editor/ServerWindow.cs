@@ -100,6 +100,7 @@ public class ServerWindow : EditorWindow
 
     // Update SpacetimeDB - Direct property access to settings
     private string spacetimeDBCurrentVersionWSL { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); }
+    private string spacetimeDBCurrentVersionDocker { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionDocker(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(value); }
     private string spacetimeDBCurrentVersionCustom { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionCustom(value); }
     private string spacetimeDBLatestVersion { get => CCCPSettingsAdapter.GetSpacetimeDBLatestVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(value); }
 
@@ -2050,6 +2051,8 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
         if (serverMode == ServerMode.WSLServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersionWSL, versionStyle, GUILayout.Width(25));
+        else if (serverMode == ServerMode.DockerServer)
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionDocker, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.CustomServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.MaincloudServer)

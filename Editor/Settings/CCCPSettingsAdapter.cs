@@ -353,6 +353,16 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetSpacetimeDBCurrentVersionDocker() => Settings.spacetimeDBCurrentVersionDocker;
+    public static void SetSpacetimeDBCurrentVersionDocker(string value) 
+    { 
+        if (Settings.spacetimeDBCurrentVersionDocker != value)
+        {
+            Settings.spacetimeDBCurrentVersionDocker = value; 
+            MarkDirty();
+        }
+    }
+    
     public static string GetSpacetimeDBCurrentVersionCustom() => Settings.spacetimeDBCurrentVersionCustom;
     public static void SetSpacetimeDBCurrentVersionCustom(string value) 
     { 
@@ -409,6 +419,36 @@ public static class CCCPSettingsAdapter
         if (Settings.rustupVersionWSL != value)
         {
             Settings.rustupVersionWSL = value; 
+            MarkDirty();
+        }
+    }
+
+    public static string GetRustCurrentVersionDocker() => Settings.rustCurrentVersionDocker;
+    public static void SetRustCurrentVersionDocker(string value) 
+    { 
+        if (Settings.rustCurrentVersionDocker != value)
+        {
+            Settings.rustCurrentVersionDocker = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetRustLatestVersionDocker() => Settings.rustLatestVersionDocker;
+    public static void SetRustLatestVersionDocker(string value) 
+    { 
+        if (Settings.rustLatestVersionDocker != value)
+        {
+            Settings.rustLatestVersionDocker = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetRustupVersionDocker() => Settings.rustupVersionDocker;
+    public static void SetRustupVersionDocker(string value) 
+    { 
+        if (Settings.rustupVersionDocker != value)
+        {
+            Settings.rustupVersionDocker = value; 
             MarkDirty();
         }
     }
