@@ -887,8 +887,19 @@ public class ServerManager
                         throw new Exception("Failed to start Docker service. Please start Docker Desktop manually.");
                     }
                     
-                    // Wait a moment for Docker service to fully initialize
-                    await Task.Delay(3000);
+                    // Wait for Docker service to become fully ready
+                    LogMessage("Docker Desktop is starting. Please wait...", 0);
+                    bool dockerReady = await dockerProcessor.WaitForDockerServiceReady(60); // Wait up to 60 seconds
+                    
+                    if (!dockerReady)
+                    {
+                        throw new Exception("Docker Desktop did not become ready in time. Please check if Docker Desktop is running and try again.");
+                    }
+                    
+                    LogMessage("Docker service is now ready!", 1);
+                    
+                    // Give Docker daemon an extra moment to stabilize
+                    await Task.Delay(2000);
                 }
 
                 // Start Docker container

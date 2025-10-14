@@ -1560,6 +1560,45 @@ public class ServerDockerProcess
         }
     }
 
+    /// <summary>
+    /// Waits for Docker service to become ready after starting Docker Desktop
+    /// </summary>
+    /// <param name="maxWaitSeconds">Maximum time to wait in seconds</param>
+    /// <returns>True if Docker became ready, false if timeout</returns>
+    public async Task<bool> WaitForDockerServiceReady(int maxWaitSeconds = 60)
+    {
+        if (debugMode) logCallback($"[ServerDockerProcess] Waiting for Docker service to become ready (max {maxWaitSeconds}s)...", 0);
+        
+        int checkIntervalMs = 2000; // Check every 2 seconds
+        int checksPerformed = 0;
+        int maxChecks = (maxWaitSeconds * 1000) / checkIntervalMs;
+        
+        while (checksPerformed < maxChecks)
+        {
+            bool isReady = await IsDockerServiceRunning();
+            
+            if (isReady)
+            {
+                if (debugMode) logCallback($"[ServerDockerProcess] Docker service is ready after {checksPerformed * 2} seconds", 1);
+                return true;
+            }
+            
+            checksPerformed++;
+            
+            // Log progress every 10 seconds
+            if (checksPerformed % 5 == 0)
+            {
+                int secondsWaited = checksPerformed * 2;
+                logCallback($"Still waiting for Docker to start... ({secondsWaited}s elapsed)", 0);
+            }
+            
+            await Task.Delay(checkIntervalMs);
+        }
+        
+        logCallback($"[ServerDockerProcess] Docker service did not become ready within {maxWaitSeconds} seconds", -1);
+        return false;
+    }
+
     #endregion
 
     #region Docker Log Management
