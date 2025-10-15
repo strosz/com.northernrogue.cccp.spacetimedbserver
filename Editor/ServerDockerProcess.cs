@@ -491,24 +491,8 @@ public class ServerDockerProcess
         if (debugMode) logCallback("Attempting to shut down Docker Desktop...", 0);
         try
         {
-            // Gracefully quit Docker Desktop - it will handle stopping containers on its own
-            // We don't wait for completion as Docker Desktop continues its shutdown independently
-            string quitCommand;
-            if (ServerUtilityProvider.IsWindows())
-            {
-                // Use taskkill for graceful shutdown instead of Stop-Process -Force
-                quitCommand = "taskkill /IM \"Docker Desktop.exe\" /T";
-            }
-            else if (ServerUtilityProvider.IsMacOS())
-            {
-                // AppleScript quit is already graceful
-                quitCommand = "osascript -e 'quit app \"Docker\"'";
-            }
-            else // Linux
-            {
-                // Try systemd first (preferred), fallback to pkill
-                quitCommand = "systemctl --user stop docker-desktop 2>/dev/null || pkill -TERM 'docker-desktop'";
-            }
+            // Use Docker Desktop's official shutdown command (works on all platforms on Docker Desktop 4.11.0+)
+            string quitCommand = "docker desktop stop";
 
             Process quitProcess = new Process();
             quitProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
@@ -521,7 +505,7 @@ public class ServerDockerProcess
             
             // Don't wait long - just trigger the shutdown and let Docker Desktop handle the rest
             // Docker Desktop will continue its shutdown process (including stopping containers) after Unity quits
-            if (!quitProcess.WaitForExit(500)) // Wait max 500ms just to initiate
+            if (!quitProcess.WaitForExit(100)) // Wait 100ms to initiate successfully
             {
                 if (debugMode) logCallback("Docker Desktop shutdown initiated (continuing in background).", 1);
             }
@@ -1639,7 +1623,7 @@ public class ServerDockerProcess
             if (checksPerformed % 5 == 0)
             {
                 int secondsWaited = checksPerformed * 2;
-                logCallback($"Waiting for Docker to start... ({secondsWaited}s elapsed)", 0);
+                logCallback($"Waiting for Docker Desktop to start... ({secondsWaited}s elapsed)", 0);
             }
             
             await Task.Delay(checkIntervalMs);

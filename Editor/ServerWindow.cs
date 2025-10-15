@@ -1600,8 +1600,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string autoPublishTooltip = 
-            "Automatic Publishing: The Docker or WSL CLI will automatically publish the module to your server when changes are detected. \n\n"+
-            "Manual Publish: The Docker or WSL CLI will not automatically publish the module and will require manual publishing.";
+            $"Automatic Publishing: The {localCLIProvider} CLI will automatically publish the module to your server when changes are detected. \n\n"+
+            $"Manual Publish: The {localCLIProvider} CLI will not automatically publish the module and will require manual publishing.";
             EditorGUILayout.LabelField(new GUIContent("Auto Publish Mode:", autoPublishTooltip), GUILayout.Width(120));
             GUIStyle autoPublishStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoPublishMode)
@@ -1653,18 +1653,18 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string cliCloseTooltip = 
-            "Close CLI at Unity Quit: Your Docker or WSL (depending on active mode) virtualization and CLI will close when Unity is closed. \n"+
-            "Saves resources when the virtualization is not in use. Docker and WSL may otherwise leave several processes running.\n\n"+
-            "Keep Running: Your Docker or WSL virtualization and CLI will keep running after Unity is closed.\n\n"+
-            "Recommended: Close CLI at Unity Quit unless having other applications besides SpacetimeDB depending on Docker or WSL.";
-            EditorGUILayout.LabelField(new GUIContent("CLI Auto Close:", cliCloseTooltip), GUILayout.Width(120));
+            $"Close {localCLIProvider} at Unity Quit: Your {localCLIProvider} virtualization and CLI will close when Unity is closed. \n"+
+            $"Saves resources when the virtualization is not in use. {localCLIProvider} may otherwise leave several processes running.\n\n"+
+            $"Keep Running: Your {localCLIProvider} virtualization and CLI will keep running after Unity is closed.\n\n"+
+            $"Recommended: Close {localCLIProvider} at Unity Quit unless having other applications besides SpacetimeDB depending on {localCLIProvider}.";
+            EditorGUILayout.LabelField(new GUIContent($"{localCLIProvider} Auto Close:", cliCloseTooltip), GUILayout.Width(120));
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoCloseCLI)
             {
                 wslCloseStyle.normal.textColor = warningColor;
                 wslCloseStyle.hover.textColor = warningColor;
             }
-            if (GUILayout.Button(serverManager.AutoCloseCLI ? "Close CLI at Unity Quit" : "Keep Running", wslCloseStyle))
+            if (GUILayout.Button(serverManager.AutoCloseCLI ? $"Close {localCLIProvider} at Unity Quit" : "Keep Running", wslCloseStyle))
             {
                 bool newAutoClose = !serverManager.AutoCloseCLI;
                 serverManager.autoCloseCLI = newAutoClose;
@@ -2125,18 +2125,32 @@ public class ServerWindow : EditorWindow
             EditorGUI.EndDisabledGroup();
 
             if (serverMode != ServerMode.MaincloudServer)
-            if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
             {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.PingServer(true);
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                // Maincloud does not support ping command
+                if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+                {
+                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                    serverManager.PingServer(true);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                }
+                // Maincloud always uses the latest version
+                if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+                {
+                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                    serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                }
             }
 
-            if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+            // Maincloud energy command
+            if (serverMode == ServerMode.MaincloudServer)
             {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                if (GUILayout.Button("Show Energy Balance", GUILayout.Height(20)))
+                {
+                    if (CLIAvailableLocal()) 
+                        serverManager.RunServerCommand("spacetime energy balance", "Showing SpacetimeDB Maincloud energy");
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL or Docker) and it is available.", -1);
+                }
             }
 
             // Service Status button (only in Custom Server mode)
@@ -2796,6 +2810,22 @@ public class ServerWindow : EditorWindow
         // Skip extra warning messages
         if (message.Contains("WARNING"))
         {
+            return;
+        }
+
+        // Check for Maincloud balance JSON pattern: {"balance": "123.45"}
+        var balanceMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"^\s*\{\s*""balance""\s*:\s*""?(?<val>[^\""}]+)""?\s*\}\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        if (balanceMatch.Success)
+        {
+            string val = balanceMatch.Groups["val"].Value.Trim();
+            // Show only the balance value in green with timestamp
+            commandOutputLog += $"<color=#575757>{DateTime.Now:HH:mm:ss}</color> <color=#00FF00>{val}</color>\n";
+
+            EditorApplication.delayCall += Repaint;
             return;
         }
         

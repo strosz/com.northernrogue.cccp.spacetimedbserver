@@ -876,7 +876,7 @@ public class ServerManager
                 bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
                 if (!dockerServiceRunning)
                 {
-                    LogMessage("Docker Desktop is not running. Attempting to start. This may take up to 30 seconds...", 0);
+                    LogMessage("Starting up Docker Desktop. This may take up to 30 seconds...", 0);
                     bool started = await dockerProcessor.StartDockerService();
                     if (!started)
                     {
