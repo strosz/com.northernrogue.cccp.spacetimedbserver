@@ -95,7 +95,7 @@ public class ServerWindow : EditorWindow
     private bool autoPublishMode { get => CCCPSettingsAdapter.GetAutoPublishMode(); set => CCCPSettingsAdapter.SetAutoPublishMode(value); }
     private bool publishAndGenerateMode { get => CCCPSettingsAdapter.GetPublishAndGenerateMode(); set => CCCPSettingsAdapter.SetPublishAndGenerateMode(value); }
     private bool silentMode { get => CCCPSettingsAdapter.GetSilentMode(); set => CCCPSettingsAdapter.SetSilentMode(value); }
-    private bool autoCloseWsl { get => CCCPSettingsAdapter.GetAutoCloseWsl(); set => CCCPSettingsAdapter.SetAutoCloseWsl(value); }
+    private bool autoCloseCLI { get => CCCPSettingsAdapter.GetAutoCloseCLI(); set => CCCPSettingsAdapter.SetAutoCloseCLI(value); }
     private bool clearModuleLogAtStart { get => CCCPSettingsAdapter.GetClearModuleLogAtStart(); set => CCCPSettingsAdapter.SetClearModuleLogAtStart(value); }
     private bool clearDatabaseLogAtStart { get => CCCPSettingsAdapter.GetClearDatabaseLogAtStart(); set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); }
 
@@ -1168,10 +1168,9 @@ public class ServerWindow : EditorWindow
             if (serverMode == ServerMode.DockerServer)
             {
                 // Local Docker URL
-                string dockerUrlTooltip = "The full URL of the Docker server with the OS port mapping you wish to use.\n" +
-                    "Example: http://0.0.0.0:3011/\n" +
+                string dockerUrlTooltip = "The full URL of the Docker server with the OS port mapping you wish to use.\n\n" +
+                    "Example: http://0.0.0.0:3011/ \n\n" +
                     "Note: The port number is required. Internally the spacetimedb server always runs on port 3000 by default.";
-                
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(new GUIContent("URL:", dockerUrlTooltip), GUILayout.Width(110));
                 string newUrlDocker = EditorGUILayout.DelayedTextField(serverUrlDocker);
@@ -1601,8 +1600,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string autoPublishTooltip = 
-            "Automatic Publishing: The WSL CLI will automatically publish the module to your server when changes are detected. \n\n"+
-            "Manual Publish: The WSL CLI will not automatically publish the module and will require manual publishing.";
+            "Automatic Publishing: The Docker or WSL CLI will automatically publish the module to your server when changes are detected. \n\n"+
+            "Manual Publish: The Docker or WSL CLI will not automatically publish the module and will require manual publishing.";
             EditorGUILayout.LabelField(new GUIContent("Auto Publish Mode:", autoPublishTooltip), GUILayout.Width(120));
             GUIStyle autoPublishStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoPublishMode)
@@ -1653,23 +1652,23 @@ public class ServerWindow : EditorWindow
             // WSL Auto Close toggle
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
-            string wslCloseTooltip = 
-            "Close WSL at Unity Quit: The WSL CLI will close WSL when Unity is closed. \n"+
-            "Saves resources when WSL is not in use. WSL may otherwise leave several processes running.\n\n"+
-            "Keep Running: The WSL CLI will keep the WSL process running after Unity is closed.\n\n"+
-            "Recommended: Close WSL at Unity Quit";
-            EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
+            string cliCloseTooltip = 
+            "Close CLI at Unity Quit: Your Docker or WSL (depending on active mode) virtualization and CLI will close when Unity is closed. \n"+
+            "Saves resources when the virtualization is not in use. Docker and WSL may otherwise leave several processes running.\n\n"+
+            "Keep Running: Your Docker or WSL virtualization and CLI will keep running after Unity is closed.\n\n"+
+            "Recommended: Close CLI at Unity Quit unless having other applications besides SpacetimeDB depending on Docker or WSL.";
+            EditorGUILayout.LabelField(new GUIContent("CLI Auto Close:", cliCloseTooltip), GUILayout.Width(120));
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
-            if (serverManager.AutoCloseWsl)
+            if (serverManager.AutoCloseCLI)
             {
                 wslCloseStyle.normal.textColor = warningColor;
                 wslCloseStyle.hover.textColor = warningColor;
             }
-            if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
+            if (GUILayout.Button(serverManager.AutoCloseCLI ? "Close CLI at Unity Quit" : "Keep Running", wslCloseStyle))
             {
-                bool newAutoClose = !serverManager.AutoCloseWsl;
-                serverManager.autoCloseWsl = newAutoClose;
-                autoCloseWsl = newAutoClose; // Keep local field in sync
+                bool newAutoClose = !serverManager.AutoCloseCLI;
+                serverManager.autoCloseCLI = newAutoClose;
+                autoCloseCLI = newAutoClose; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
 
@@ -1742,7 +1741,7 @@ public class ServerWindow : EditorWindow
                 // Update other components that need to know about debug mode
                 ServerSetupWindow.debugMode = newDebugMode;
                 ServerOutputWindow.debugMode = newDebugMode;
-                ServerWindowInitializer.debugMode = newDebugMode;
+                ServerEditorStates.debugMode = newDebugMode;
                 ServerUpdateProcess.debugMode = newDebugMode;
                 ServerLogProcess.debugMode = newDebugMode;
                 ServerWSLProcess.debugMode = newDebugMode;

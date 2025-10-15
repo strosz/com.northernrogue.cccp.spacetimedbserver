@@ -485,6 +485,56 @@ public class ServerDockerProcess
             if (debugMode) logCallback($"Error attempting to start Docker: {ex.Message}", -1);
         }    
     }
+
+    public void ShutdownDockerDesktop()
+    {
+        if (debugMode) logCallback("Attempting to shut down Docker Desktop...", 0);
+        try
+        {
+            // Gracefully quit Docker Desktop - it will handle stopping containers on its own
+            // We don't wait for completion as Docker Desktop continues its shutdown independently
+            string quitCommand;
+            if (ServerUtilityProvider.IsWindows())
+            {
+                // Use taskkill for graceful shutdown instead of Stop-Process -Force
+                quitCommand = "taskkill /IM \"Docker Desktop.exe\" /T";
+            }
+            else if (ServerUtilityProvider.IsMacOS())
+            {
+                // AppleScript quit is already graceful
+                quitCommand = "osascript -e 'quit app \"Docker\"'";
+            }
+            else // Linux
+            {
+                // Try systemd first (preferred), fallback to pkill
+                quitCommand = "systemctl --user stop docker-desktop 2>/dev/null || pkill -TERM 'docker-desktop'";
+            }
+
+            Process quitProcess = new Process();
+            quitProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            quitProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(quitCommand);
+            quitProcess.StartInfo.UseShellExecute = false;
+            quitProcess.StartInfo.CreateNoWindow = true;
+            quitProcess.StartInfo.RedirectStandardOutput = true;
+            quitProcess.StartInfo.RedirectStandardError = true;
+            quitProcess.Start();
+            
+            // Don't wait long - just trigger the shutdown and let Docker Desktop handle the rest
+            // Docker Desktop will continue its shutdown process (including stopping containers) after Unity quits
+            if (!quitProcess.WaitForExit(500)) // Wait max 500ms just to initiate
+            {
+                if (debugMode) logCallback("Docker Desktop shutdown initiated (continuing in background).", 1);
+            }
+            else
+            {
+                if (debugMode) logCallback("Docker Desktop shutdown command completed.", 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error attempting to shut down Docker Desktop: {ex.Message}", -1);
+        }
+    }
     #endregion
 
     #region CheckServerProcess
@@ -1567,7 +1617,7 @@ public class ServerDockerProcess
     /// <returns>True if Docker became ready, false if timeout</returns>
     public async Task<bool> WaitForDockerServiceReady(int maxWaitSeconds = 60)
     {
-        if (debugMode) logCallback($"[ServerDockerProcess] Waiting for Docker service to become ready (max {maxWaitSeconds}s)...", 0);
+        if (debugMode) logCallback($"[ServerDockerProcess] Waiting for Docker Desktop to become ready (max {maxWaitSeconds}s)...", 0);
         
         int checkIntervalMs = 2000; // Check every 2 seconds
         int checksPerformed = 0;
@@ -1579,7 +1629,7 @@ public class ServerDockerProcess
             
             if (isReady)
             {
-                if (debugMode) logCallback($"[ServerDockerProcess] Docker service is ready after {checksPerformed * 2} seconds", 1);
+                if (debugMode) logCallback($"[ServerDockerProcess] Docker Desktop is ready after {checksPerformed * 2} seconds", 1);
                 return true;
             }
             
@@ -1589,13 +1639,13 @@ public class ServerDockerProcess
             if (checksPerformed % 5 == 0)
             {
                 int secondsWaited = checksPerformed * 2;
-                logCallback($"Still waiting for Docker to start... ({secondsWaited}s elapsed)", 0);
+                logCallback($"Waiting for Docker to start... ({secondsWaited}s elapsed)", 0);
             }
             
             await Task.Delay(checkIntervalMs);
         }
-        
-        logCallback($"[ServerDockerProcess] Docker service did not become ready within {maxWaitSeconds} seconds", -1);
+
+        logCallback($"[ServerDockerProcess] Docker Desktop did not become ready within {maxWaitSeconds} seconds", -1);
         return false;
     }
 

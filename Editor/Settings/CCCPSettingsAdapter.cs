@@ -940,13 +940,13 @@ public static class CCCPSettingsAdapter
             MarkDirty(); 
         }
     }
-    
-    public static bool GetAutoCloseWsl() => Settings.autoCloseWsl;
-    public static void SetAutoCloseWsl(bool value) 
+
+    public static bool GetAutoCloseCLI() => Settings.autoCloseCLI;
+    public static void SetAutoCloseCLI(bool value) 
     { 
-        if (Settings.autoCloseWsl != value)
+        if (Settings.autoCloseCLI != value)
         {
-            Settings.autoCloseWsl = value; 
+            Settings.autoCloseCLI = value; 
             MarkDirty(); 
         }
     }
@@ -1447,7 +1447,7 @@ public static class CCCPSettingsAdapter
             case "DebugMode": return GetDebugMode();
             case "ClearModuleLogAtStart": return GetClearModuleLogAtStart();
             case "ClearDatabaseLogAtStart": return GetClearDatabaseLogAtStart();
-            case "AutoCloseWsl": return GetAutoCloseWsl();
+            case "AutoCloseWsl": return GetAutoCloseCLI();
             case "EchoToConsole": return GetEchoToConsole();
             case "ShowLocalTime": return GetShowLocalTime();
             case "RustUpdateAvailable": return GetRustUpdateAvailable();
@@ -1517,7 +1517,7 @@ public static class CCCPSettingsAdapter
             case "DebugMode": SetDebugMode(value); break;
             case "ClearModuleLogAtStart": SetClearModuleLogAtStart(value); break;
             case "ClearDatabaseLogAtStart": SetClearDatabaseLogAtStart(value); break;
-            case "AutoCloseWsl": SetAutoCloseWsl(value); break;
+            case "AutoCloseWsl": SetAutoCloseCLI(value); break;
             case "EchoToConsole": SetEchoToConsole(value); break;
             case "ShowLocalTime": SetShowLocalTime(value); break;
             case "RustUpdateAvailable": SetRustUpdateAvailable(value); break;

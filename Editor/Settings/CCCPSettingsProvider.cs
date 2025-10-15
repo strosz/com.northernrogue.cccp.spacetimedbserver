@@ -403,7 +403,7 @@ public static class CCCPSettingsProvider
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("debugMode"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("clearModuleLogAtStart"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("clearDatabaseLogAtStart"));
-                        EditorGUILayout.PropertyField(serializedObject.FindProperty("autoCloseWsl"));
+                        EditorGUILayout.PropertyField(serializedObject.FindProperty("autoCloseCLI"));
                         EditorGUILayout.PropertyField(serializedObject.FindProperty("echoToConsole"));
                         EditorGUI.indentLevel--;
                         EditorGUILayout.Space();
@@ -1094,7 +1094,7 @@ public static class CCCPSettingsProvider
         settings.debugMode = EditorPrefs.GetBool(PrefsKeyPrefix + "DebugMode", settings.debugMode);
         settings.clearModuleLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearModuleLogAtStart", settings.clearModuleLogAtStart);
         settings.clearDatabaseLogAtStart = EditorPrefs.GetBool(PrefsKeyPrefix + "ClearDatabaseLogAtStart", settings.clearDatabaseLogAtStart);
-        settings.autoCloseWsl = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", settings.autoCloseWsl);
+        settings.autoCloseCLI = EditorPrefs.GetBool(PrefsKeyPrefix + "AutoCloseWsl", settings.autoCloseCLI);
         settings.echoToConsole = EditorPrefs.GetBool(PrefsKeyPrefix + "EchoToConsole", settings.echoToConsole);
         
         // Version Information

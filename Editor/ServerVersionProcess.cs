@@ -3,7 +3,6 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using NorthernRogue.CCCP.Editor.Settings;
 
 // Processes the backup and restore commands of the local WSL Server ///
 
@@ -18,8 +17,6 @@ public class ServerVersionProcess
     
     // Server control delegates
     private Func<bool> isServerRunningDelegate;
-    private Func<bool> getAutoCloseWslDelegate;
-    private Action<bool> setAutoCloseWslDelegate;
     private Action startServerDelegate;
     private Action stopServerDelegate;
 
@@ -45,14 +42,10 @@ public class ServerVersionProcess
     /// </summary>
     public void ConfigureServerControlDelegates(
         Func<bool> isServerRunningDelegate,
-        Func<bool> getAutoCloseWslDelegate,
-        Action<bool> setAutoCloseWslDelegate,
         Action startServerDelegate,
         Action stopServerDelegate)
     {
         this.isServerRunningDelegate = isServerRunningDelegate;
-        this.getAutoCloseWslDelegate = getAutoCloseWslDelegate;
-        this.setAutoCloseWslDelegate = setAutoCloseWslDelegate;
         this.startServerDelegate = startServerDelegate;
         this.stopServerDelegate = stopServerDelegate;
     }
@@ -514,13 +507,10 @@ public class ServerVersionProcess
             
             // Check if server is running and handle server stop/start
             bool wasRunning = ServerIsRunning();
-            bool autoCloseWslWasTrue = false;
             
             // Get the current autoCloseWsl setting
             if (wasRunning)
             {
-                autoCloseWslWasTrue = GetAutoCloseWsl();
-                SetAutoCloseWsl(false); // Disable auto close WSL
                 StopServer();
                 
                 // Small delay to ensure server has stopped
@@ -530,12 +520,6 @@ public class ServerVersionProcess
             try
             {
                 PerformRestoreWSL(backupFilePath, userName);
-                
-                // Restore the autoCloseWsl setting if it was changed
-                if (autoCloseWslWasTrue)
-                {
-                    SetAutoCloseWsl(true);
-                }
                 
                 // Restart server if it was running
                 if (wasRunning)
@@ -817,24 +801,6 @@ public class ServerVersionProcess
         // If delegate is configured, use it
         if (startServerDelegate != null)
             startServerDelegate();
-    }
-    
-    private bool GetAutoCloseWsl()
-    {
-        // If delegate is configured, use it; otherwise fall back to Settings
-        if (getAutoCloseWslDelegate != null)
-            return getAutoCloseWslDelegate();
-            
-        return CCCPSettingsAdapter.GetAutoCloseWsl();
-    }
-    
-    private void SetAutoCloseWsl(bool value)
-    {
-        // If delegate is configured, use it; otherwise set Settings directly
-        if (setAutoCloseWslDelegate != null)
-            setAutoCloseWslDelegate(value);
-        else
-            CCCPSettingsAdapter.SetAutoCloseWsl(value);
     }
 
     #endregion

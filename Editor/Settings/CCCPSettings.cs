@@ -95,7 +95,7 @@ public class CCCPSettings : ScriptableObject
     public bool debugMode = false;
     public bool clearModuleLogAtStart = true;
     public bool clearDatabaseLogAtStart = true;
-    public bool autoCloseWsl = true;
+    public bool autoCloseCLI = true;
     public bool echoToConsole = true;
     public bool showLocalTime = true;
     public bool welcomeWindowShown = false;
@@ -303,7 +303,7 @@ public class CCCPSettings : ScriptableObject
         debugMode = false;
         clearModuleLogAtStart = true;
         clearDatabaseLogAtStart = true;
-        autoCloseWsl = true;
+        autoCloseCLI = true;
         echoToConsole = true;
         showLocalTime = true;
         welcomeWindowShown = false;

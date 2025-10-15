@@ -112,10 +112,10 @@ public class ServerManager
         get => Settings.clearDatabaseLogAtStart; 
         set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); 
     }
-    public bool autoCloseWsl 
+    public bool autoCloseCLI
     { 
-        get => Settings.autoCloseWsl; 
-        set => CCCPSettingsAdapter.SetAutoCloseWsl(value); 
+        get => Settings.autoCloseCLI; 
+        set => CCCPSettingsAdapter.SetAutoCloseCLI(value); 
     }
 
     // Prerequisites state
@@ -295,7 +295,7 @@ public class ServerManager
     public bool AutoPublishMode => autoPublishMode;
     public bool PublishAndGenerateMode => publishAndGenerateMode;
     public bool SilentMode => silentMode;
-    public bool AutoCloseWsl => autoCloseWsl;
+    public bool AutoCloseCLI => autoCloseCLI;
     public bool ClearModuleLogAtStart => clearModuleLogAtStart;
     public bool ClearDatabaseLogAtStart => clearDatabaseLogAtStart;
 
@@ -435,8 +435,6 @@ public class ServerManager
         // Configure the server control delegates
         versionProcessor.ConfigureServerControlDelegates(
             () => serverStarted, // IsServerRunning
-            () => autoCloseWsl,  // GetAutoCloseWsl
-            (value) => { autoCloseWsl = value; }, // SetAutoCloseWsl
             () => StartServer(),  // StartServer
             () => StopServer()    // StopServer
         );
@@ -570,8 +568,6 @@ public class ServerManager
         // Reconfigure delegates
         versionProcessor.ConfigureServerControlDelegates(
             () => serverStarted,
-            () => autoCloseWsl,
-            (value) => { autoCloseWsl = value; },
             () => StartServer(),
             () => StopServer()
         );
@@ -880,15 +876,14 @@ public class ServerManager
                 bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
                 if (!dockerServiceRunning)
                 {
-                    LogMessage("Docker service is not running. Attempting to start Docker Desktop...", 0);
+                    LogMessage("Docker Desktop is not running. Attempting to start. This may take up to 30 seconds...", 0);
                     bool started = await dockerProcessor.StartDockerService();
                     if (!started)
                     {
-                        throw new Exception("Failed to start Docker service. Please start Docker Desktop manually.");
+                        throw new Exception("Failed to start Docker Desktop. Please start Docker Desktop manually.");
                     }
                     
                     // Wait for Docker service to become fully ready
-                    LogMessage("Docker Desktop is starting. Please wait...", 0);
                     bool dockerReady = await dockerProcessor.WaitForDockerServiceReady(60); // Wait up to 60 seconds
                     
                     if (!dockerReady)
@@ -896,7 +891,7 @@ public class ServerManager
                         throw new Exception("Docker Desktop did not become ready in time. Please check if Docker Desktop is running and try again.");
                     }
                     
-                    LogMessage("Docker service is now ready!", 1);
+                    LogMessage("Docker Desktop is now ready!", 1);
                     
                     // Give Docker daemon an extra moment to stabilize
                     await Task.Delay(2000);
@@ -919,7 +914,7 @@ public class ServerManager
                     throw new Exception("Failed to start Docker container");
                 }
 
-                LogMessage("Docker Container Started Successfully!", 1);
+                LogMessage("Docker SpacetimeDB Container Started Successfully!", 1);
                 
                 // Wait a moment for container to initialize
                 await Task.Delay(2000);
