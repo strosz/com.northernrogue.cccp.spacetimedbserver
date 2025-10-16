@@ -115,11 +115,11 @@ public class ServerLogProcess
     private double dockerLogReadInterval = 1.0;
     private bool isReadingDockerModuleLogs = false;
     private bool isReadingDockerDatabaseLogs = false;
-    private HashSet<string> recentDockerModuleLogHashes = new HashSet<string>(); // Track module logs we've already processed
-    private HashSet<string> recentDockerDatabaseLogHashes = new HashSet<string>(); // Track database logs we've already processed
     private bool isDockerServer = false;
-    private bool isFirstDockerModuleLogRead = true; // Track if this is the first read (to avoid filtering initial logs)
-    private bool isFirstDockerDatabaseLogRead = true; // Track if this is the first read (to avoid filtering initial logs)
+    
+    // Timestamp-based filtering for Docker logs (much more robust than hashing)
+    private DateTime dockerModuleLogCutoffTimestamp = DateTime.MinValue; // Only show logs after this time
+    private DateTime dockerDatabaseLogCutoffTimestamp = DateTime.MinValue; // Only show logs after this time
     
     // Prevention of multiple simultaneous Docker log processing tasks
     private bool isDockerLogProcessingScheduled = false;
@@ -935,6 +935,24 @@ public class ServerLogProcess
         if (debugMode) logCallback("SSH log reading stopped", 0);
     }
 
+    /// <summary>
+    /// Restart SSH log reading processes (useful when they get stuck after recompilation)
+    /// </summary>
+    public void RestartSSHLogging()
+    {
+        if (debugMode) logCallback("[ServerLogProcess] Restarting SSH log reading processes", 0);
+        
+        // Reset read flags to allow new reads
+        isReadingWSLModuleLogs = false;
+        isReadingWSLDatabaseLogs = false;
+        isSSHLogProcessingScheduled = false;
+        
+        // Reset read timer to force immediate next read
+        lastLogReadTime = 0;
+        
+        if (debugMode) logCallback("[ServerLogProcess] SSH log processes restarted", 0);
+    }
+
     public async void SwitchModuleSSH(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
         if (debugMode) logCallback($"[SSH] Starting module switch to: {newModuleName}", 0);
@@ -1103,12 +1121,12 @@ public class ServerLogProcess
         
         if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Configured Docker logging: IsLocalServer={isLocalServer}, IsDockerServer={isDockerServer}");
         
-        // Reset Docker-specific flags
+        // Reset Docker-specific flags but DON'T reset first-read flags or hash sets
+        // This allows logs to persist across mode switches and recompilation
         isReadingDockerModuleLogs = false;
         isReadingDockerDatabaseLogs = false;
-        recentDockerModuleLogHashes.Clear();
-        recentDockerDatabaseLogHashes.Clear();
         lastDockerLogReadTime = 0;
+        // Note: NOT clearing hash sets or first-read flags to preserve log history
     }
 
     public void StartWSLLogging()
@@ -1937,6 +1955,24 @@ public class ServerLogProcess
         if (debugMode) logCallback("WSL log reading stopped", 0);
     }
 
+    /// <summary>
+    /// Restart WSL log reading processes (useful when they get stuck after recompilation)
+    /// </summary>
+    public void RestartWSLLogging()
+    {
+        if (debugMode) logCallback("[ServerLogProcess] Restarting WSL log reading processes", 0);
+        
+        // Reset read flags to allow new reads
+        isReadingWSLModuleLogs = false;
+        isReadingWSLDatabaseLogs = false;
+        isWSLLogProcessingScheduled = false;
+        
+        // Reset read timer to force immediate next read
+        lastWSLLogReadTime = 0;
+        
+        if (debugMode) logCallback("[ServerLogProcess] WSL log processes restarted", 0);
+    }
+
     public async void SwitchModuleWSL(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
         if (debugMode) logCallback($"[WSL] Starting module switch to: {newModuleName}", 0);
@@ -2087,17 +2123,39 @@ public class ServerLogProcess
             ClearDockerLogs();
         }
         
-        // Reset hash sets and first-read flags to start fresh
-        recentDockerModuleLogHashes.Clear();
-        recentDockerDatabaseLogHashes.Clear();
-        isFirstDockerModuleLogRead = true;
-        isFirstDockerDatabaseLogRead = true;
+        // Set timestamps to show all logs from now on (timestamp-based filtering)
+        dockerModuleLogCutoffTimestamp = DateTime.MinValue; // Show all logs
+        dockerDatabaseLogCutoffTimestamp = DateTime.MinValue; // Show all logs
         lastDockerLogReadTime = 0;
+    }
+    
+    /// <summary>
+    /// Restart Docker log reading processes (useful when they get stuck after recompilation)
+    /// </summary>
+    public void RestartDockerLogging()
+    {
+        if (debugMode) logCallback("[ServerLogProcess] Restarting Docker log reading processes", 0);
+        
+        // Reset read flags to allow new reads
+        isReadingDockerModuleLogs = false;
+        isReadingDockerDatabaseLogs = false;
+        isDockerLogProcessingScheduled = false;
+        
+        // Reset read timer to force immediate next read
+        lastDockerLogReadTime = 0;
+        
+        // Keep cutoff timestamps so we don't re-read old logs
+        // Just restart the reading process
+        if (debugMode) logCallback("[ServerLogProcess] Docker log processes restarted", 0);
     }
     
     public void ClearDockerLogs()
     {
         if (debugMode) logCallback("[ServerLogProcess] Clearing Docker logs...", 0);
+        
+        // Set cutoff timestamps to now, so only new logs from this point forward are shown
+        dockerModuleLogCutoffTimestamp = DateTime.UtcNow;
+        dockerDatabaseLogCutoffTimestamp = DateTime.UtcNow;
         
         // Clear in-memory logs
         lock (logLock)
@@ -2143,70 +2201,49 @@ public class ServerLogProcess
             
             if (string.IsNullOrEmpty(newLogs))
             {
+                if (debugMode) logCallback("[ServerLogProcess] No Docker module logs retrieved", 0);
                 return;
             }
             
             // Split into individual log lines
             string[] logLines = newLogs.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (debugMode) logCallback($"[ServerLogProcess] Split Docker module logs into {logLines.Length} lines", 0);
             
-            // Process each line and filter out duplicates (skip filtering on first read)
-            List<string> newUniqueLines = new List<string>();
+            // Filter logs by timestamp and format timestamps
+            List<string> newFilteredLines = new List<string>();
             
-            if (isFirstDockerModuleLogRead)
+            foreach (string line in logLines)
             {
-                // First read: accept all logs without deduplication
-                newUniqueLines.AddRange(logLines.Where(line => !string.IsNullOrWhiteSpace(line)));
+                if (string.IsNullOrWhiteSpace(line)) continue;
                 
-                // Add all to hash set for future deduplication
-                foreach (string line in newUniqueLines)
+                // Try to extract timestamp from line
+                DateTime logTimestamp = ExtractDockerTimestamp(line);
+                
+                // Debug first few lines
+                if (newFilteredLines.Count < 3)
                 {
-                    recentDockerModuleLogHashes.Add(GenerateLogHash(line));
+                    if (debugMode) logCallback($"[ServerLogProcess] Module log line {newFilteredLines.Count}: timestamp={logTimestamp}, cutoff={dockerModuleLogCutoffTimestamp}, included={logTimestamp > dockerModuleLogCutoffTimestamp}", 0);
                 }
                 
-                isFirstDockerModuleLogRead = false;
-                if (debugMode) logCallback($"[ServerLogProcess] First Docker module log read: accepted all {newUniqueLines.Count} lines", 0);
-            }
-            else
-            {
-                // Subsequent reads: use hash deduplication
-                foreach (string line in logLines)
+                // Include log if it's after the cutoff timestamp
+                if (logTimestamp > dockerModuleLogCutoffTimestamp)
                 {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    
-                    // Generate hash for this log line
-                    string logHash = GenerateLogHash(line);
-                    
-                    // Only add if we haven't seen this log before
-                    if (!recentDockerModuleLogHashes.Contains(logHash))
-                    {
-                        recentDockerModuleLogHashes.Add(logHash);
-                        newUniqueLines.Add(line);
-                        
-                        // Maintain hash set size limit
-                        if (recentDockerModuleLogHashes.Count > MAX_RECENT_LOG_HASHES)
-                        {
-                            // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
-                            var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
-                            recentDockerModuleLogHashes.Clear();
-                            foreach (var recentLine in recentLines)
-                            {
-                                recentDockerModuleLogHashes.Add(GenerateLogHash(recentLine));
-                            }
-                        }
-                    }
+                    string formattedLine = FormatDockerLogTimestamp(line);
+                    newFilteredLines.Add(formattedLine);
                 }
             }
             
-            // Only update if we have new unique logs
-            if (newUniqueLines.Count > 0)
+            // Only update if we have new logs
+            if (newFilteredLines.Count > 0)
             {
-                string combinedNewLogs = string.Join(Environment.NewLine, newUniqueLines);
+                string combinedNewLogs = string.Join(Environment.NewLine, newFilteredLines);
                 
                 // Docker module logs from container stdout/stderr
+                // REPLACE entire log with the current output (not append) to mirror actual log state
                 lock (logLock)
                 {
-                    moduleLogContent += combinedNewLogs + Environment.NewLine;
-                    cachedModuleLogContent += combinedNewLogs + Environment.NewLine;
+                    moduleLogContent = combinedNewLogs;
+                    cachedModuleLogContent = combinedNewLogs;
                     
                     // Apply size limiting
                     if (moduleLogContent.Length > BUFFER_SIZE)
@@ -2227,7 +2264,7 @@ public class ServerLogProcess
                 
                 if (debugMode)
                 {
-                    logCallback($"[ServerLogProcess] Read {newUniqueLines.Count} new Docker module log lines (out of {logLines.Length} total)", 0);
+                    logCallback($"[ServerLogProcess] Read {newFilteredLines.Count} Docker module log lines (replaced entire buffer)", 0);
                 }
             }
         }
@@ -2306,65 +2343,58 @@ public class ServerLogProcess
             
             // Split into individual log lines
             string[] logLines = result.output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (debugMode) logCallback($"[ServerLogProcess] Split Docker database logs into {logLines.Length} lines, cutoff={dockerDatabaseLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}", 0);
             
-            // Process each line and filter out duplicates (skip filtering on first read)
-            List<string> newUniqueLines = new List<string>();
+            // Filter logs by timestamp and format timestamps
+            List<string> newFilteredLines = new List<string>();
             
-            if (isFirstDockerDatabaseLogRead)
+            foreach (string line in logLines)
             {
-                // First read: accept all logs without deduplication
-                newUniqueLines.AddRange(logLines.Where(line => !string.IsNullOrWhiteSpace(line)));
+                if (string.IsNullOrWhiteSpace(line)) continue;
                 
-                // Add all to hash set for future deduplication
-                foreach (string line in newUniqueLines)
+                // Try to extract timestamp from line
+                DateTime logTimestamp = ExtractDockerTimestamp(line);
+                
+                // Debug first few lines with actual content
+                if (newFilteredLines.Count < 3 && debugMode)
                 {
-                    recentDockerDatabaseLogHashes.Add(GenerateLogHash(line));
+                    logCallback($"[ServerLogProcess] Database log sample: {line.Substring(0, Math.Min(80, line.Length))}", 0);
+                    logCallback($"[ServerLogProcess] Database log parsed timestamp={logTimestamp:yyyy-MM-dd HH:mm:ss}, cutoff={dockerDatabaseLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}, included={logTimestamp > dockerDatabaseLogCutoffTimestamp}", 0);
                 }
                 
-                isFirstDockerDatabaseLogRead = false;
-                if (debugMode) logCallback($"[ServerLogProcess] First Docker database log read: accepted all {newUniqueLines.Count} lines", 0);
-            }
-            else
-            {
-                // Subsequent reads: use hash deduplication
-                foreach (string line in logLines)
+                // Include log if it's after the cutoff timestamp
+                if (logTimestamp > dockerDatabaseLogCutoffTimestamp)
                 {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    
-                    // Generate hash for this log line
-                    string logHash = GenerateLogHash(line);
-                    
-                    // Only add if we haven't seen this log before
-                    if (!recentDockerDatabaseLogHashes.Contains(logHash))
-                    {
-                        recentDockerDatabaseLogHashes.Add(logHash);
-                        newUniqueLines.Add(line);
-                        
-                        // Maintain hash set size limit
-                        if (recentDockerDatabaseLogHashes.Count > MAX_RECENT_LOG_HASHES)
-                        {
-                            // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
-                            var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
-                            recentDockerDatabaseLogHashes.Clear();
-                            foreach (var recentLine in recentLines)
-                            {
-                                recentDockerDatabaseLogHashes.Add(GenerateLogHash(recentLine));
-                            }
-                        }
-                    }
+                    string formattedLine = FormatDockerLogTimestamp(line);
+                    newFilteredLines.Add(formattedLine);
                 }
             }
             
-            // Only update if we have new unique logs
-            if (newUniqueLines.Count > 0)
+            // Only update if we have new logs
+            if (newFilteredLines.Count > 0)
             {
-                string combinedNewLogs = string.Join(Environment.NewLine, newUniqueLines);
+                string combinedNewLogs = string.Join(Environment.NewLine, newFilteredLines);
                 
                 // Docker database logs from spacetime logs command
+                // REPLACE entire log with the current output (not queue/append) to mirror actual log state
                 lock (logLock)
                 {
-                    // Queue the logs for processing
-                    databaseLogQueue.Enqueue(combinedNewLogs);
+                    databaseLogContent = combinedNewLogs;
+                    cachedDatabaseLogContent = combinedNewLogs;
+                    
+                    // Apply size limiting
+                    if (databaseLogContent.Length > BUFFER_SIZE)
+                    {
+                        databaseLogContent = "[... Log Truncated ...]\n" + databaseLogContent.Substring(databaseLogContent.Length - TARGET_SIZE);
+                    }
+                    if (cachedDatabaseLogContent.Length > BUFFER_SIZE)
+                    {
+                        cachedDatabaseLogContent = "[... Log Truncated ...]\n" + cachedDatabaseLogContent.Substring(cachedDatabaseLogContent.Length - TARGET_SIZE);
+                    }
+                    
+                    // Update session state
+                    SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                    SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
                 }
                 
                 // Trigger callback
@@ -2372,7 +2402,7 @@ public class ServerLogProcess
                 
                 if (debugMode)
                 {
-                    logCallback($"[ServerLogProcess] Read {newUniqueLines.Count} new Docker database log lines (out of {logLines.Length} total)", 0);
+                    logCallback($"[ServerLogProcess] Read {newFilteredLines.Count} Docker database log lines (replaced entire buffer)", 0);
                 }
             }
         }
@@ -2394,6 +2424,127 @@ public class ServerLogProcess
         return logLine.GetHashCode().ToString();
     }
     
+    // Helper method to extract timestamp from Docker log line
+    private DateTime ExtractDockerTimestamp(string logLine)
+    {
+        try
+        {
+            // Docker logs come in TWO formats:
+            // 1. Module logs (docker container stdout): "2025-10-13T19:35:07.086695Z  INFO ..."
+            // 2. Database logs (spacetime logs cmd): "2025-10-13 21:30:57.706 | ..."
+            
+            if (string.IsNullOrEmpty(logLine) || logLine.Length < 19)
+                return DateTime.MinValue;
+            
+            // Try Format 1: ISO 8601 with Z (module logs)
+            int zIndex = logLine.IndexOf('Z');
+            if (zIndex >= 19 && zIndex < 40) // Reasonable range for timestamp
+            {
+                string timestampStr = logLine.Substring(0, zIndex + 1);
+                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                {
+                    return utcTime;
+                }
+            }
+            
+            // Try Format 2: with pipe separator (database logs)
+            int pipeIndex = logLine.IndexOf('|');
+            if (pipeIndex >= 19) // Has pipe separator
+            {
+                string timestampStr = logLine.Substring(0, pipeIndex).Trim();
+                
+                // Try to parse: "2025-10-13 21:30:57.706"
+                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.None, out DateTime parsedTime))
+                {
+                    return parsedTime;
+                }
+                
+                // Try without milliseconds: "2025-10-13 21:30:57"
+                if (timestampStr.Contains("."))
+                {
+                    string withoutMs = timestampStr.Substring(0, timestampStr.LastIndexOf('.'));
+                    if (DateTime.TryParse(withoutMs, null, System.Globalization.DateTimeStyles.None, out DateTime parsedTimeNoMs))
+                    {
+                        return parsedTimeNoMs;
+                    }
+                }
+            }
+            
+            return DateTime.MinValue;
+        }
+        catch
+        {
+            return DateTime.MinValue;
+        }
+    }
+    
+    // Helper method to format Docker log timestamps from UTC to local time
+    private string FormatDockerLogTimestamp(string logLine)
+    {
+        try
+        {
+            // Docker logs come in TWO formats:
+            // 1. Module logs (docker container stdout): "2025-10-13T19:35:07.086695Z  INFO ..."
+            // 2. Database logs (spacetime logs cmd): "2025-10-13 21:30:57.706 | ..."
+            
+            if (string.IsNullOrEmpty(logLine) || logLine.Length < 19)
+                return logLine;
+            
+            // Try Format 1: ISO 8601 with Z (module logs)
+            int zIndex = logLine.IndexOf('Z');
+            if (zIndex >= 19 && zIndex < 40)
+            {
+                string timestampStr = logLine.Substring(0, zIndex + 1);
+                string remainder = logLine.Substring(zIndex + 1);
+                
+                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                {
+                    // Convert to local time
+                    DateTime localTime = utcTime.ToLocalTime();
+                    // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
+                    string formattedTime = "[" + localTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
+                    return formattedTime + remainder;
+                }
+            }
+            
+            // Try Format 2: with pipe separator (database logs)
+            int pipeIndex = logLine.IndexOf('|');
+            if (pipeIndex >= 19)
+            {
+                string timestampStr = logLine.Substring(0, pipeIndex).Trim();
+                string remainder = logLine.Substring(pipeIndex + 1); // Skip the pipe
+                
+                DateTime parsedTime = DateTime.MinValue;
+                
+                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.None, out DateTime result))
+                {
+                    parsedTime = result;
+                }
+                else if (timestampStr.Contains("."))
+                {
+                    string withoutMs = timestampStr.Substring(0, timestampStr.LastIndexOf('.'));
+                    if (DateTime.TryParse(withoutMs, null, System.Globalization.DateTimeStyles.None, out DateTime resultNoMs))
+                    {
+                        parsedTime = resultNoMs;
+                    }
+                }
+                
+                if (parsedTime > DateTime.MinValue)
+                {
+                    // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
+                    string formattedTime = "[" + parsedTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
+                    return formattedTime + remainder;
+                }
+            }
+            
+            return logLine;
+        }
+        catch
+        {
+            return logLine;
+        }
+    }
+    
     public void CheckDockerLogProcesses(double currentTime)
     {
         // Rate limit log reading
@@ -2403,11 +2554,11 @@ public class ServerLogProcess
         }
         
         // Skip if there's already a scheduled Docker log processing task
-        if (isDockerLogProcessingScheduled)
+        /*if (isDockerLogProcessingScheduled)
         {
             if (debugMode) logCallback("[ServerLogProcess] Docker log processing already scheduled, skipping", 0);
             return;
-        }
+        }*/
         
         if (currentTime - lastDockerLogReadTime > dockerLogReadInterval)
         {

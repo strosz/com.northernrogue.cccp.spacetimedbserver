@@ -687,6 +687,32 @@ public class ServerManager
                                 
                                 logProcessor.SetServerRunningState(true);
                                 logProcessor.StartLogging();
+                                
+                                // Restart log reading processes to clear any stuck states from compilation
+                                if (serverMode == ServerMode.CustomServer)
+                                {
+                                    logProcessor.RestartSSHLogging();
+                                }
+                                else if (serverMode == ServerMode.DockerServer)
+                                {
+                                    logProcessor.RestartDockerLogging();
+                                }
+                                else if (serverMode == ServerMode.WSLServer)
+                                {
+                                    logProcessor.RestartWSLLogging();
+                                }
+                                else if (serverMode == ServerMode.MaincloudServer)
+                                {
+                                    if (LocalCLIProvider == "Docker")
+                                    {
+                                        logProcessor.RestartDockerLogging();
+                                    }
+                                    else // WSL
+                                    {
+                                        logProcessor.RestartWSLLogging();
+                                    }
+                                }
+                                
                                 if (debugMode)
                                     LogMessage("[ServerManager] Restarted log processor after compilation - server confirmed running.", 1);
                             }
@@ -3254,6 +3280,12 @@ public class ServerManager
         {
             logProcessor.UpdateLogReadIntervals(interval);
         }
+    }
+    
+    // Public method to get the log processor (for ServerOutputWindow)
+    public ServerLogProcess GetLogProcessor()
+    {
+        return logProcessor;
     }
     
     // Public method to trigger log processing directly (for ServerOutputWindow)
