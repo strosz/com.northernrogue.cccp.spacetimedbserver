@@ -2179,35 +2179,54 @@ public class ServerLogProcess
     
     private async Task ReadDockerModuleLogsAsync()
     {
-        if (dockerProcessor == null)
-        {
-            if (debugMode) logCallback("[ServerLogProcess] Docker processor not initialized", -1);
-            return;
-        }
-        
-        // Check if already reading
-        if (isReadingDockerModuleLogs)
-        {
-            if (debugMode) logCallback("[ServerLogProcess] Docker module log read already in progress, skipping", 0);
-            return;
-        }
-        
-        isReadingDockerModuleLogs = true;
-        
         try
         {
-            // Get module logs from Docker container stdout/stderr
-            string newLogs = await dockerProcessor.GetDockerLogs(1000); // Get last 1000 lines
+            logCallback("[ServerLogProcess] ReadDockerModuleLogsAsync STARTED - checking processor", 0);
+            UnityEngine.Debug.Log("[ServerLogProcess] ReadDockerModuleLogsAsync STARTED - checking processor");
+            
+            if (dockerProcessor == null)
+            {
+                logCallback("[ServerLogProcess] ERROR: Docker processor is NULL!", -1);
+                UnityEngine.Debug.LogError("[ServerLogProcess] ERROR: Docker processor is NULL!");
+                return;
+            }
+            
+            logCallback("[ServerLogProcess] Getting Docker logs (non-blocking)...", 0);
+            UnityEngine.Debug.Log("[ServerLogProcess] Getting Docker logs (non-blocking)...");
+            
+            // Use a non-blocking approach with timeout
+            string newLogs = null;
+            try
+            {
+                var logsTask = dockerProcessor.GetDockerLogs(1000);
+                // Wait up to 10 seconds
+                if (await Task.WhenAny(logsTask, Task.Delay(10000)) == logsTask)
+                {
+                    newLogs = await logsTask;
+                }
+                else
+                {
+                    logCallback("[ServerLogProcess] WARNING: GetDockerLogs timed out", 0);
+                    UnityEngine.Debug.LogWarning("[ServerLogProcess] WARNING: GetDockerLogs timed out");
+                }
+            }
+            catch (Exception ex)
+            {
+                logCallback($"[ServerLogProcess] Error calling GetDockerLogs: {ex.Message}", -1);
+                UnityEngine.Debug.LogError($"[ServerLogProcess] Error calling GetDockerLogs: {ex.Message}");
+            }
+            
+            logCallback($"[ServerLogProcess] GetDockerLogs returned {newLogs?.Length ?? 0} characters", 0);
             
             if (string.IsNullOrEmpty(newLogs))
             {
-                if (debugMode) logCallback("[ServerLogProcess] No Docker module logs retrieved", 0);
+                logCallback("[ServerLogProcess] WARNING: No Docker module logs retrieved", 0);
                 return;
             }
             
             // Split into individual log lines
             string[] logLines = newLogs.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (debugMode) logCallback($"[ServerLogProcess] Split Docker module logs into {logLines.Length} lines", 0);
+            logCallback($"[ServerLogProcess] Split Docker module logs into {logLines.Length} lines", 0);
             
             // Filter logs by timestamp and format timestamps
             List<string> newFilteredLines = new List<string>();
@@ -2222,24 +2241,46 @@ public class ServerLogProcess
                 // Debug first few lines
                 if (newFilteredLines.Count < 3)
                 {
-                    if (debugMode) logCallback($"[ServerLogProcess] Module log line {newFilteredLines.Count}: timestamp={logTimestamp}, cutoff={dockerModuleLogCutoffTimestamp}, included={logTimestamp > dockerModuleLogCutoffTimestamp}", 0);
+                    logCallback($"[ServerLogProcess] Module log sample: {line.Substring(0, Math.Min(80, line.Length))}", 0);
+                    logCallback($"[ServerLogProcess] Module timestamp: {logTimestamp:yyyy-MM-dd HH:mm:ss}, cutoff: {dockerModuleLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}", 0);
                 }
                 
-                // Include log if it's after the cutoff timestamp
-                if (logTimestamp > dockerModuleLogCutoffTimestamp)
+                // Include log based on timestamp logic
+                // Lines with valid timestamps are filtered by time
+                // Lines without timestamps (MinValue) are always included (banners, warnings, etc.)
+                bool shouldInclude = false;
+                
+                if (logTimestamp == DateTime.MinValue)
+                {
+                    // No timestamp found - this is a non-timestamped line (banner, warning, etc.)
+                    // Always include these on first read, skip on subsequent reads to avoid duplication
+                    shouldInclude = (dockerModuleLogCutoffTimestamp == DateTime.MinValue);
+                }
+                else if (dockerModuleLogCutoffTimestamp == DateTime.MinValue)
+                {
+                    // First read: include all logs with valid timestamps
+                    shouldInclude = true;
+                }
+                else if (logTimestamp > dockerModuleLogCutoffTimestamp)
+                {
+                    // Subsequent reads: only include logs after the cutoff
+                    shouldInclude = true;
+                }
+                
+                if (shouldInclude)
                 {
                     string formattedLine = FormatDockerLogTimestamp(line);
                     newFilteredLines.Add(formattedLine);
                 }
             }
             
+            logCallback($"[ServerLogProcess] After filtering: {newFilteredLines.Count} logs pass filter", 0);
+            
             // Only update if we have new logs
             if (newFilteredLines.Count > 0)
             {
                 string combinedNewLogs = string.Join(Environment.NewLine, newFilteredLines);
                 
-                // Docker module logs from container stdout/stderr
-                // REPLACE entire log with the current output (not append) to mirror actual log state
                 lock (logLock)
                 {
                     moduleLogContent = combinedNewLogs;
@@ -2255,26 +2296,31 @@ public class ServerLogProcess
                         cachedModuleLogContent = "[... Log Truncated ...]\n" + cachedModuleLogContent.Substring(cachedModuleLogContent.Length - TARGET_SIZE);
                     }
                     
-                    // Update session state
                     SessionState.SetString(SessionKeyModuleLog, moduleLogContent);
                     SessionState.SetString(SessionKeyCachedModuleLog, cachedModuleLogContent);
                 }
                 
                 onModuleLogUpdated?.Invoke();
-                
-                if (debugMode)
-                {
-                    logCallback($"[ServerLogProcess] Read {newFilteredLines.Count} Docker module log lines (replaced entire buffer)", 0);
-                }
+                logCallback($"[ServerLogProcess] SUCCESS: Read {newFilteredLines.Count} Docker module log lines", 1);
             }
+            else
+            {
+                logCallback("[ServerLogProcess] WARNING: No logs passed filter", 0);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logCallback("[ServerLogProcess] Module logs read was cancelled", 0);
         }
         catch (Exception ex)
         {
-            if (debugMode) logCallback($"[ServerLogProcess] Error reading Docker module logs: {ex.Message}", -1);
+            logCallback($"[ServerLogProcess] EXCEPTION in ReadDockerModuleLogsAsync: {ex.Message}", -1);
+            UnityEngine.Debug.LogError($"[ServerLogProcess] EXCEPTION in ReadDockerModuleLogsAsync: {ex}");
         }
         finally
         {
             isReadingDockerModuleLogs = false;
+            logCallback("[ServerLogProcess] ReadDockerModuleLogsAsync COMPLETED", 0);
         }
     }
     
@@ -2288,14 +2334,16 @@ public class ServerLogProcess
         
         if (string.IsNullOrEmpty(moduleName))
         {
-            if (debugMode) logCallback("[ServerLogProcess] No module name set for Docker database logs", 0);
+            logCallback("[ServerLogProcess] ERROR: No module name set for Docker database logs!", 0);
             return;
         }
+        
+        logCallback("[ServerLogProcess] ReadDockerDatabaseLogsAsync STARTED", 0);
         
         // Check if already reading
         if (isReadingDockerDatabaseLogs)
         {
-            if (debugMode) logCallback("[ServerLogProcess] Docker database log read already in progress, skipping", 0);
+            logCallback("[ServerLogProcess] WARNING: Docker database log read already in progress, skipping", 0);
             return;
         }
         
@@ -2309,41 +2357,51 @@ public class ServerLogProcess
             {
                 // For Maincloud mode, explicitly target maincloud server
                 serverParam = "--server maincloud";
-                if (debugMode) logCallback($"[ServerLogProcess] Using Docker with Maincloud server for database logs (module: {moduleName})", 0);
+                logCallback($"[ServerLogProcess] Using Docker with Maincloud server for database logs (module: {moduleName})", 0);
             }
             else
             {
                 // For DockerServer mode, target local server (default)
                 serverParam = "--server local";
-                if (debugMode) logCallback($"[ServerLogProcess] Using Docker with local server for database logs (module: {moduleName})", 0);
+                logCallback($"[ServerLogProcess] Using Docker with local server for database logs (module: {moduleName})", 0);
             }
             
             // Run "spacetime logs <module>" inside the Docker container with appropriate server target
             string command = $"spacetime logs {serverParam} {moduleName} --num-lines 100";
-            if (debugMode) logCallback($"[ServerLogProcess] Running Docker command: {command}", 0);
+            logCallback($"[ServerLogProcess] Running Docker command: {command}", 0);
             
-            var result = await dockerProcessor.RunServerCommandAsync(command, null, false);
+            var commandTask = dockerProcessor.RunServerCommandAsync(command, null, false);
+            var timeoutTask = Task.Delay(15000); // 15 second timeout
+            var completedTask = await Task.WhenAny(commandTask, timeoutTask);
             
-            if (debugMode) logCallback($"[ServerLogProcess] Docker command result - Success: {result.success}, Output length: {result.output?.Length ?? 0}, Error: {result.error}", 0);
+            if (completedTask == timeoutTask)
+            {
+                logCallback("[ServerLogProcess] ERROR: Docker command timed out after 15 seconds!", -1);
+                return;
+            }
+            
+            var result = await commandTask;
+            
+            logCallback($"[ServerLogProcess] Docker command result - Success: {result.success}, Output length: {result.output?.Length ?? 0}", 0);
             
             if (!result.success || string.IsNullOrEmpty(result.output))
             {
-                if (debugMode && !string.IsNullOrEmpty(result.error))
+                if (!string.IsNullOrEmpty(result.error))
                 {
-                    logCallback($"[ServerLogProcess] Error getting Docker database logs: {result.error}", -1);
+                    logCallback($"[ServerLogProcess] ERROR getting Docker database logs: {result.error}", -1);
                 }
-                if (debugMode && string.IsNullOrEmpty(result.output))
+                if (string.IsNullOrEmpty(result.output))
                 {
-                    logCallback("[ServerLogProcess] Docker database log output was empty", 0);
+                    logCallback("[ServerLogProcess] WARNING: Docker database log output was empty", 0);
                 }
                 return;
             }
             
-            if (debugMode) logCallback($"[ServerLogProcess] Raw output preview: {result.output.Substring(0, Math.Min(200, result.output.Length))}...", 0);
+            logCallback($"[ServerLogProcess] Raw output preview: {result.output.Substring(0, Math.Min(200, result.output.Length))}...", 0);
             
             // Split into individual log lines
             string[] logLines = result.output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (debugMode) logCallback($"[ServerLogProcess] Split Docker database logs into {logLines.Length} lines, cutoff={dockerDatabaseLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}", 0);
+            logCallback($"[ServerLogProcess] Split Docker database logs into {logLines.Length} lines", 0);
             
             // Filter logs by timestamp and format timestamps
             List<string> newFilteredLines = new List<string>();
@@ -2356,19 +2414,32 @@ public class ServerLogProcess
                 DateTime logTimestamp = ExtractDockerTimestamp(line);
                 
                 // Debug first few lines with actual content
-                if (newFilteredLines.Count < 3 && debugMode)
+                if (newFilteredLines.Count < 3)
                 {
                     logCallback($"[ServerLogProcess] Database log sample: {line.Substring(0, Math.Min(80, line.Length))}", 0);
-                    logCallback($"[ServerLogProcess] Database log parsed timestamp={logTimestamp:yyyy-MM-dd HH:mm:ss}, cutoff={dockerDatabaseLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}, included={logTimestamp > dockerDatabaseLogCutoffTimestamp}", 0);
+                    logCallback($"[ServerLogProcess] Database log parsed timestamp={logTimestamp:yyyy-MM-dd HH:mm:ss}, cutoff={dockerDatabaseLogCutoffTimestamp:yyyy-MM-dd HH:mm:ss}", 0);
                 }
                 
                 // Include log if it's after the cutoff timestamp
-                if (logTimestamp > dockerDatabaseLogCutoffTimestamp)
+                // Special case: if cutoff is MinValue (first read), include all logs with valid timestamps
+                if (dockerDatabaseLogCutoffTimestamp == DateTime.MinValue)
                 {
+                    // First read: include all logs with valid (non-MinValue) timestamps
+                    if (logTimestamp > DateTime.MinValue)
+                    {
+                        string formattedLine = FormatDockerLogTimestamp(line);
+                        newFilteredLines.Add(formattedLine);
+                    }
+                }
+                else if (logTimestamp > dockerDatabaseLogCutoffTimestamp)
+                {
+                    // Subsequent reads: only include logs after the cutoff
                     string formattedLine = FormatDockerLogTimestamp(line);
                     newFilteredLines.Add(formattedLine);
                 }
             }
+            
+            logCallback($"[ServerLogProcess] After filtering: {newFilteredLines.Count} database logs pass filter", 0);
             
             // Only update if we have new logs
             if (newFilteredLines.Count > 0)
@@ -2399,20 +2470,21 @@ public class ServerLogProcess
                 
                 // Trigger callback
                 onDatabaseLogUpdated?.Invoke();
-                
-                if (debugMode)
-                {
-                    logCallback($"[ServerLogProcess] Read {newFilteredLines.Count} Docker database log lines (replaced entire buffer)", 0);
-                }
+                logCallback($"[ServerLogProcess] SUCCESS: Read {newFilteredLines.Count} Docker database log lines", 1);
+            }
+            else
+            {
+                logCallback("[ServerLogProcess] WARNING: No database logs passed filter (all filtered out)", 0);
             }
         }
         catch (Exception ex)
         {
-            if (debugMode) logCallback($"[ServerLogProcess] Error reading Docker database logs: {ex.Message}", -1);
+            logCallback($"[ServerLogProcess] EXCEPTION reading Docker database logs: {ex.Message}\n{ex.StackTrace}", -1);
         }
         finally
         {
             isReadingDockerDatabaseLogs = false;
+            logCallback("[ServerLogProcess] ReadDockerDatabaseLogsAsync COMPLETED", 0);
         }
     }
     
@@ -2432,26 +2504,40 @@ public class ServerLogProcess
             // Docker logs come in TWO formats:
             // 1. Module logs (docker container stdout): "2025-10-13T19:35:07.086695Z  INFO ..."
             // 2. Database logs (spacetime logs cmd): "2025-10-13 21:30:57.706 | ..."
+            // Some lines may have ANSI codes or no timestamps at all
             
-            if (string.IsNullOrEmpty(logLine) || logLine.Length < 19)
+            if (string.IsNullOrEmpty(logLine))
+                return DateTime.MinValue;
+            
+            // Remove ANSI escape codes (colors, formatting, etc.)
+            // They start with \x1b[ or \e[ and end with a letter
+            string cleanLine = System.Text.RegularExpressions.Regex.Replace(logLine, @"\x1b\[[0-9;]*[A-Za-z]", "");
+            cleanLine = System.Text.RegularExpressions.Regex.Replace(cleanLine, @"\e\[[0-9;]*[A-Za-z]", "");
+            
+            if (cleanLine.Length < 19)
                 return DateTime.MinValue;
             
             // Try Format 1: ISO 8601 with Z (module logs)
-            int zIndex = logLine.IndexOf('Z');
+            // Look for pattern: YYYY-MM-DDTHH:MM:SS.ffffffZ
+            int zIndex = cleanLine.IndexOf('Z');
             if (zIndex >= 19 && zIndex < 40) // Reasonable range for timestamp
             {
-                string timestampStr = logLine.Substring(0, zIndex + 1);
-                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                string timestampStr = cleanLine.Substring(0, zIndex + 1);
+                // Check if it looks like a timestamp (contains T and hyphen)
+                if (timestampStr.Contains('T') && timestampStr.Contains('-'))
                 {
-                    return utcTime;
+                    if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                    {
+                        return utcTime;
+                    }
                 }
             }
             
             // Try Format 2: with pipe separator (database logs)
-            int pipeIndex = logLine.IndexOf('|');
+            int pipeIndex = cleanLine.IndexOf('|');
             if (pipeIndex >= 19) // Has pipe separator
             {
-                string timestampStr = logLine.Substring(0, pipeIndex).Trim();
+                string timestampStr = cleanLine.Substring(0, pipeIndex).Trim();
                 
                 // Try to parse: "2025-10-13 21:30:57.706"
                 if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.None, out DateTime parsedTime))
@@ -2486,33 +2572,45 @@ public class ServerLogProcess
             // Docker logs come in TWO formats:
             // 1. Module logs (docker container stdout): "2025-10-13T19:35:07.086695Z  INFO ..."
             // 2. Database logs (spacetime logs cmd): "2025-10-13 21:30:57.706 | ..."
+            // Some lines may have ANSI codes that we need to strip
             
-            if (string.IsNullOrEmpty(logLine) || logLine.Length < 19)
+            if (string.IsNullOrEmpty(logLine))
                 return logLine;
             
+            // Remove ANSI escape codes first
+            string cleanLine = System.Text.RegularExpressions.Regex.Replace(logLine, @"\x1b\[[0-9;]*[A-Za-z]", "");
+            cleanLine = System.Text.RegularExpressions.Regex.Replace(cleanLine, @"\e\[[0-9;]*[A-Za-z]", "");
+            
+            if (cleanLine.Length < 19)
+                return logLine; // Return original if too short
+            
             // Try Format 1: ISO 8601 with Z (module logs)
-            int zIndex = logLine.IndexOf('Z');
+            int zIndex = cleanLine.IndexOf('Z');
             if (zIndex >= 19 && zIndex < 40)
             {
-                string timestampStr = logLine.Substring(0, zIndex + 1);
-                string remainder = logLine.Substring(zIndex + 1);
+                string timestampStr = cleanLine.Substring(0, zIndex + 1);
+                string remainder = cleanLine.Substring(zIndex + 1);
                 
-                if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                // Check if it looks like a timestamp
+                if (timestampStr.Contains('T') && timestampStr.Contains('-'))
                 {
-                    // Convert to local time
-                    DateTime localTime = utcTime.ToLocalTime();
-                    // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
-                    string formattedTime = "[" + localTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
-                    return formattedTime + remainder;
+                    if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
+                    {
+                        // Convert to local time
+                        DateTime localTime = utcTime.ToLocalTime();
+                        // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
+                        string formattedTime = "[" + localTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
+                        return formattedTime + remainder;
+                    }
                 }
             }
             
             // Try Format 2: with pipe separator (database logs)
-            int pipeIndex = logLine.IndexOf('|');
+            int pipeIndex = cleanLine.IndexOf('|');
             if (pipeIndex >= 19)
             {
-                string timestampStr = logLine.Substring(0, pipeIndex).Trim();
-                string remainder = logLine.Substring(pipeIndex + 1); // Skip the pipe
+                string timestampStr = cleanLine.Substring(0, pipeIndex).Trim();
+                string remainder = cleanLine.Substring(pipeIndex + 1); // Skip the pipe
                 
                 DateTime parsedTime = DateTime.MinValue;
                 
@@ -2537,7 +2635,8 @@ public class ServerLogProcess
                 }
             }
             
-            return logLine;
+            // Return cleaned line (ANSI codes removed)
+            return cleanLine;
         }
         catch
         {
