@@ -613,7 +613,22 @@ public class ServerManager
                 {
                     try
                     {
-                        bool isActuallyRunning = await PingServerStatusAsync();
+                        // For MaincloudServer mode, skip ping verification since it's a remote service
+                        // We're only using the local CLI (Docker/WSL) as a tool, not hosting a server
+                        bool isActuallyRunning = false;
+                        if (serverMode == ServerMode.MaincloudServer)
+                        {
+                            // Maincloud is always available, just verify we can connect to it
+                            isActuallyRunning = true; // Assume Maincloud is online
+                            if (debugMode)
+                                LogMessage("[ServerManager] MaincloudServer mode - skipping local server ping, Maincloud is assumed available", 0);
+                        }
+                        else
+                        {
+                            // For WSL, Docker, and Custom servers, verify the server is actually running
+                            isActuallyRunning = await PingServerStatusAsync();
+                        }
+                        
                         if (!isActuallyRunning)
                         {
                             if (debugMode)
@@ -652,6 +667,22 @@ public class ServerManager
                                     logProcessor.ConfigureWSL(true);
                                     if (debugMode)
                                         LogMessage($"[ServerManager] Reconfigured WSL log processor", 1);
+                                }
+                                else if (serverMode == ServerMode.MaincloudServer)
+                                {
+                                    // For Maincloud, configure based on localCLIProvider
+                                    if (LocalCLIProvider == "Docker")
+                                    {
+                                        logProcessor.ConfigureDocker(true);
+                                        if (debugMode)
+                                            LogMessage($"[ServerManager] Reconfigured Docker log processor for MaincloudServer mode", 1);
+                                    }
+                                    else // WSL
+                                    {
+                                        logProcessor.ConfigureWSL(true);
+                                        if (debugMode)
+                                            LogMessage($"[ServerManager] Reconfigured WSL log processor for MaincloudServer mode", 1);
+                                    }
                                 }
                                 
                                 logProcessor.SetServerRunningState(true);

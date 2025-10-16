@@ -110,7 +110,7 @@ public class ServerLogProcess
     // Docker Logging Variables
     
     // DOCKER MODULE LOGS: Read from docker logs command
-    // DOCKER DATABASE LOGS: Read from spacetime logs -f <module> inside container
+    // DOCKER DATABASE LOGS: Read from spacetime logs --server <local|maincloud> <module> inside container
     private double lastDockerLogReadTime = 0;
     private double dockerLogReadInterval = 1.0;
     private bool isReadingDockerModuleLogs = false;
@@ -118,9 +118,14 @@ public class ServerLogProcess
     private HashSet<string> recentDockerModuleLogHashes = new HashSet<string>(); // Track module logs we've already processed
     private HashSet<string> recentDockerDatabaseLogHashes = new HashSet<string>(); // Track database logs we've already processed
     private bool isDockerServer = false;
+    private bool isFirstDockerModuleLogRead = true; // Track if this is the first read (to avoid filtering initial logs)
+    private bool isFirstDockerDatabaseLogRead = true; // Track if this is the first read (to avoid filtering initial logs)
     
     // Prevention of multiple simultaneous Docker log processing tasks
     private bool isDockerLogProcessingScheduled = false;
+    
+    // Track current server mode for proper command construction
+    private NorthernRogue.CCCP.Editor.ServerManager.ServerMode currentServerMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
 
     // SSH Logging Variables
 
@@ -231,9 +236,13 @@ public class ServerLogProcess
         try
         {
             // Server Mode
-            var currentServerMode = CCCPSettingsAdapter.GetServerMode();
+            currentServerMode = CCCPSettingsAdapter.GetServerMode();
             bool shouldBeCustomServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.CustomServer;
-            bool shouldBeDockerServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer;
+            
+            // For MaincloudServer mode, check the localCLIProvider to determine if Docker should be used for logging
+            bool shouldBeDockerServer = currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer ||
+                                       (currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.MaincloudServer && 
+                                        CCCPSettingsAdapter.GetLocalCLIProvider() == "Docker");
 
             if (isCustomServer != shouldBeCustomServer)
             {
@@ -243,7 +252,7 @@ public class ServerLogProcess
             
             if (isDockerServer != shouldBeDockerServer)
             {
-                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server mode sync: isDockerServer was {isDockerServer}, should be {shouldBeDockerServer} (ServerMode: {currentServerMode})");
+                if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Server mode sync: isDockerServer was {isDockerServer}, should be {shouldBeDockerServer} (ServerMode: {currentServerMode}, LocalCLIProvider: {CCCPSettingsAdapter.GetLocalCLIProvider()})");
                 isDockerServer = shouldBeDockerServer;
             }
 
@@ -2078,9 +2087,11 @@ public class ServerLogProcess
             ClearDockerLogs();
         }
         
-        // Reset hash sets to start fresh
+        // Reset hash sets and first-read flags to start fresh
         recentDockerModuleLogHashes.Clear();
         recentDockerDatabaseLogHashes.Clear();
+        isFirstDockerModuleLogRead = true;
+        isFirstDockerDatabaseLogRead = true;
         lastDockerLogReadTime = 0;
     }
     
@@ -2138,31 +2149,49 @@ public class ServerLogProcess
             // Split into individual log lines
             string[] logLines = newLogs.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             
-            // Process each line and filter out duplicates
+            // Process each line and filter out duplicates (skip filtering on first read)
             List<string> newUniqueLines = new List<string>();
             
-            foreach (string line in logLines)
+            if (isFirstDockerModuleLogRead)
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                // First read: accept all logs without deduplication
+                newUniqueLines.AddRange(logLines.Where(line => !string.IsNullOrWhiteSpace(line)));
                 
-                // Generate hash for this log line
-                string logHash = GenerateLogHash(line);
-                
-                // Only add if we haven't seen this log before
-                if (!recentDockerModuleLogHashes.Contains(logHash))
+                // Add all to hash set for future deduplication
+                foreach (string line in newUniqueLines)
                 {
-                    recentDockerModuleLogHashes.Add(logHash);
-                    newUniqueLines.Add(line);
+                    recentDockerModuleLogHashes.Add(GenerateLogHash(line));
+                }
+                
+                isFirstDockerModuleLogRead = false;
+                if (debugMode) logCallback($"[ServerLogProcess] First Docker module log read: accepted all {newUniqueLines.Count} lines", 0);
+            }
+            else
+            {
+                // Subsequent reads: use hash deduplication
+                foreach (string line in logLines)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
                     
-                    // Maintain hash set size limit
-                    if (recentDockerModuleLogHashes.Count > MAX_RECENT_LOG_HASHES)
+                    // Generate hash for this log line
+                    string logHash = GenerateLogHash(line);
+                    
+                    // Only add if we haven't seen this log before
+                    if (!recentDockerModuleLogHashes.Contains(logHash))
                     {
-                        // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
-                        var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
-                        recentDockerModuleLogHashes.Clear();
-                        foreach (var recentLine in recentLines)
+                        recentDockerModuleLogHashes.Add(logHash);
+                        newUniqueLines.Add(line);
+                        
+                        // Maintain hash set size limit
+                        if (recentDockerModuleLogHashes.Count > MAX_RECENT_LOG_HASHES)
                         {
-                            recentDockerModuleLogHashes.Add(GenerateLogHash(recentLine));
+                            // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
+                            var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
+                            recentDockerModuleLogHashes.Clear();
+                            foreach (var recentLine in recentLines)
+                            {
+                                recentDockerModuleLogHashes.Add(GenerateLogHash(recentLine));
+                            }
                         }
                     }
                 }
@@ -2237,47 +2266,90 @@ public class ServerLogProcess
         
         try
         {
-            // Run "spacetime logs -f <module>" inside the Docker container
-            // Use docker exec to run the command
-            var result = await dockerProcessor.RunServerCommandAsync($"spacetime logs {moduleName} --num-lines 100", null, false);
+            // Determine which server to target based on current server mode
+            string serverParam = "";
+            if (currentServerMode == NorthernRogue.CCCP.Editor.ServerManager.ServerMode.MaincloudServer)
+            {
+                // For Maincloud mode, explicitly target maincloud server
+                serverParam = "--server maincloud";
+                if (debugMode) logCallback($"[ServerLogProcess] Using Docker with Maincloud server for database logs (module: {moduleName})", 0);
+            }
+            else
+            {
+                // For DockerServer mode, target local server (default)
+                serverParam = "--server local";
+                if (debugMode) logCallback($"[ServerLogProcess] Using Docker with local server for database logs (module: {moduleName})", 0);
+            }
+            
+            // Run "spacetime logs <module>" inside the Docker container with appropriate server target
+            string command = $"spacetime logs {serverParam} {moduleName} --num-lines 100";
+            if (debugMode) logCallback($"[ServerLogProcess] Running Docker command: {command}", 0);
+            
+            var result = await dockerProcessor.RunServerCommandAsync(command, null, false);
+            
+            if (debugMode) logCallback($"[ServerLogProcess] Docker command result - Success: {result.success}, Output length: {result.output?.Length ?? 0}, Error: {result.error}", 0);
             
             if (!result.success || string.IsNullOrEmpty(result.output))
             {
                 if (debugMode && !string.IsNullOrEmpty(result.error))
                 {
-                    logCallback($"[ServerLogProcess] Error getting Docker database logs: {result.error}", 0);
+                    logCallback($"[ServerLogProcess] Error getting Docker database logs: {result.error}", -1);
+                }
+                if (debugMode && string.IsNullOrEmpty(result.output))
+                {
+                    logCallback("[ServerLogProcess] Docker database log output was empty", 0);
                 }
                 return;
             }
             
+            if (debugMode) logCallback($"[ServerLogProcess] Raw output preview: {result.output.Substring(0, Math.Min(200, result.output.Length))}...", 0);
+            
             // Split into individual log lines
             string[] logLines = result.output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             
-            // Process each line and filter out duplicates
+            // Process each line and filter out duplicates (skip filtering on first read)
             List<string> newUniqueLines = new List<string>();
             
-            foreach (string line in logLines)
+            if (isFirstDockerDatabaseLogRead)
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                // First read: accept all logs without deduplication
+                newUniqueLines.AddRange(logLines.Where(line => !string.IsNullOrWhiteSpace(line)));
                 
-                // Generate hash for this log line
-                string logHash = GenerateLogHash(line);
-                
-                // Only add if we haven't seen this log before
-                if (!recentDockerDatabaseLogHashes.Contains(logHash))
+                // Add all to hash set for future deduplication
+                foreach (string line in newUniqueLines)
                 {
-                    recentDockerDatabaseLogHashes.Add(logHash);
-                    newUniqueLines.Add(line);
+                    recentDockerDatabaseLogHashes.Add(GenerateLogHash(line));
+                }
+                
+                isFirstDockerDatabaseLogRead = false;
+                if (debugMode) logCallback($"[ServerLogProcess] First Docker database log read: accepted all {newUniqueLines.Count} lines", 0);
+            }
+            else
+            {
+                // Subsequent reads: use hash deduplication
+                foreach (string line in logLines)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
                     
-                    // Maintain hash set size limit
-                    if (recentDockerDatabaseLogHashes.Count > MAX_RECENT_LOG_HASHES)
+                    // Generate hash for this log line
+                    string logHash = GenerateLogHash(line);
+                    
+                    // Only add if we haven't seen this log before
+                    if (!recentDockerDatabaseLogHashes.Contains(logHash))
                     {
-                        // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
-                        var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
-                        recentDockerDatabaseLogHashes.Clear();
-                        foreach (var recentLine in recentLines)
+                        recentDockerDatabaseLogHashes.Add(logHash);
+                        newUniqueLines.Add(line);
+                        
+                        // Maintain hash set size limit
+                        if (recentDockerDatabaseLogHashes.Count > MAX_RECENT_LOG_HASHES)
                         {
-                            recentDockerDatabaseLogHashes.Add(GenerateLogHash(recentLine));
+                            // Remove oldest hashes (simple approach: clear and rebuild from recent logs)
+                            var recentLines = newUniqueLines.TakeLast(MAX_RECENT_LOG_HASHES / 2).ToList();
+                            recentDockerDatabaseLogHashes.Clear();
+                            foreach (var recentLine in recentLines)
+                            {
+                                recentDockerDatabaseLogHashes.Add(GenerateLogHash(recentLine));
+                            }
                         }
                     }
                 }
@@ -2330,7 +2402,7 @@ public class ServerLogProcess
             return;
         }
         
-        // Prevent multiple simultaneous reads
+        // Skip if there's already a scheduled Docker log processing task
         if (isDockerLogProcessingScheduled)
         {
             if (debugMode) logCallback("[ServerLogProcess] Docker log processing already scheduled, skipping", 0);
@@ -2343,25 +2415,32 @@ public class ServerLogProcess
             
             if (serverRunning && isDockerServer)
             {
+                // Set flag to prevent multiple simultaneous tasks
                 isDockerLogProcessingScheduled = true;
                 
-                EditorApplication.delayCall += async () => {
-                    try
-                    {
-                        // Read both module logs and database logs
-                        await ReadDockerModuleLogsAsync();
-                        await ReadDockerDatabaseLogsAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        if (debugMode) logCallback($"[ServerLogProcess] Error in Docker log reading: {ex.Message}", -1);
-                    }
-                    finally
-                    {
-                        isDockerLogProcessingScheduled = false;
-                    }
-                };
+                // Call async method directly - it will execute on current context
+                _ = ProcessDockerLogsAsync();
             }
+        }
+    }
+    
+    private async Task ProcessDockerLogsAsync()
+    {
+        try
+        {
+            if (debugMode) logCallback("[ServerLogProcess] Docker log processing started", 0);
+            await ReadDockerModuleLogsAsync();
+            await ReadDockerDatabaseLogsAsync();
+            if (debugMode) logCallback("[ServerLogProcess] Docker log processing completed", 0);
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"[ServerLogProcess] Error in Docker log reading: {ex.Message}", -1);
+        }
+        finally
+        {
+            // Clear the flag when processing is complete
+            isDockerLogProcessingScheduled = false;
         }
     }
     
