@@ -25,7 +25,6 @@ public class ServerInstallProcess
     private ServerWSLProcess wslProcess => window.wslProcess;
     private ServerCustomProcess customProcess => window.customProcess;
     private ServerManager serverManager => window.serverManager;
-    private ServerDockerProcess dockerProcess => window.dockerProcess;
     
     private bool hasWSL => window.hasWSL;
     private bool hasDebian => window.hasDebian;
@@ -112,6 +111,7 @@ public class ServerInstallProcess
     private void SetStatus(string message, Color color) => window.SetStatusInternal(message, color);
     private void LogMessage(string message, int type) => window.LogMessageInternal(message, type);
     private void CheckPrerequisitesWSL() => window.CheckPrerequisitesWSL();
+    private void CheckPrerequisitesDocker() => window.CheckPrerequisitesDocker();
     private void CheckPrerequisitesCustom() => window.CheckPrerequisitesCustom();
     private void UpdateInstallerItemsStatus() => window.UpdateInstallerItemsStatus();
     private void Repaint() => window.Repaint();
@@ -1233,7 +1233,15 @@ public class ServerInstallProcess
     
     public async void InstallSpacetimeDBUnitySDK()
     {
-        CheckPrerequisitesWSL();
+        // Check if hasSpacetimeDBUnitySDK to see if this is an update or fresh install
+        if (CCCPSettingsAdapter.GetLocalCLIProvider() == "Docker")
+        {
+            CheckPrerequisitesDocker();
+        }
+        else if (CCCPSettingsAdapter.GetLocalCLIProvider() == "WSL")
+        {
+            CheckPrerequisitesWSL();
+        }
         await Task.Delay(1000);
         
         // Check if this is an update or fresh install
@@ -1293,7 +1301,14 @@ public class ServerInstallProcess
                     UpdateInstallerItemsStatus();
                     
                     // After successful installation, ensure the window updates properly
-                    CheckPrerequisitesWSL();
+                    if (CCCPSettingsAdapter.GetLocalCLIProvider() == "Docker")
+                    {
+                        CheckPrerequisitesDocker();
+                    }
+                    else if (CCCPSettingsAdapter.GetLocalCLIProvider() == "WSL")
+                    {
+                        CheckPrerequisitesWSL();
+                    }
                 }
                 else
                 {
@@ -2006,8 +2021,7 @@ public class ServerInstallProcess
         }
     }
     #endregion
-}
-
+} // Class
 } // Namespace
 
 // made by Mathias Toivonen at Northern Rogue Games

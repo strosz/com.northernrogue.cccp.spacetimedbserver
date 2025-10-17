@@ -1347,7 +1347,7 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region WSL Prerequisites
+    #region WSL Prereq
     internal async void CheckPrerequisitesWSL()
     {
         if (isRefreshing) return; // Don't start a new refresh if one is already running
@@ -1407,7 +1407,8 @@ public class ServerSetupWindow : EditorWindow
         isRefreshing = false;
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
     }
-    
+    #endregion
+    #region Custom Prereq
     internal async void CheckPrerequisitesCustom()
     {
         await customProcess.StartSession();
@@ -1513,13 +1514,20 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region Docker Prerequisites
-    private void CheckPrerequisitesDocker()
+    #region Docker Prereq
+    internal void CheckPrerequisitesDocker()
     {
         if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
         
         isDockerRefreshing = true;
         SetStatus("Checking Docker prerequisites...", Color.yellow);
+
+        // Check for SpacetimeDB Unity SDK separately
+        ServerSpacetimeSDKInstaller.IsSDKInstalled((isSDKInstalled) => {
+            hasSpacetimeDBUnitySDK = isSDKInstalled;
+            CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(hasSpacetimeDBUnitySDK);
+            UpdateInstallerItemsStatus();
+        });
         
         // Check Docker prerequisites asynchronously - now includes container mount check
         dockerProcess.CheckPrerequisites((docker, compose, image, containerMounts) =>
