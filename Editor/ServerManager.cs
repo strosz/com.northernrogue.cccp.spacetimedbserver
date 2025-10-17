@@ -242,6 +242,23 @@ public class ServerManager
         set => CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(value); 
     }
 
+    // Docker image tag tracking (for Docker container image updates)
+    public string dockerImageCurrentTag
+    {
+        get => Settings.dockerImageCurrentTag;
+        set => CCCPSettingsAdapter.SetDockerImageCurrentTag(value);
+    }
+    public string dockerImageLatestTag
+    {
+        get => Settings.dockerImageLatestTag;
+        set => CCCPSettingsAdapter.SetDockerImageLatestTag(value);
+    }
+    public bool dockerImageUpdateAvailable
+    {
+        get => Settings.dockerImageUpdateAvailable;
+        set => CCCPSettingsAdapter.SetDockerImageUpdateAvailable(value);
+    }
+
     // Update Rust
     public string rustCurrentVersion 
     { 
@@ -2767,6 +2784,7 @@ public class ServerManager
                 if (isDockerRunning)
                 {
                     await CheckSpacetimeDBVersionDocker();
+                    await CheckDockerImageTag();
                     await CheckSpacetimeSDKVersion();
                     await CheckRustVersionDocker();
                 }
@@ -3119,6 +3137,83 @@ public class ServerManager
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
+        }
+    }
+    
+    public async Task CheckDockerImageTag() // Only runs in Docker once when Docker has started
+    {
+        if (dockerProcessor == null)
+        {
+            if (debugMode) LogMessage("Docker processor not initialized", -1);
+            return;
+        }
+        
+        var result = await dockerProcessor.GetLatestImageTag();
+        
+        string currentTag = result.currentTag;
+        string latestTag = result.latestTag;
+        bool updateAvailable = result.updateAvailable;
+        
+        if (!string.IsNullOrEmpty(currentTag))
+        {
+            CCCPSettingsAdapter.SetDockerImageCurrentTag(currentTag);
+            dockerImageCurrentTag = currentTag;
+        }
+
+        if (!string.IsNullOrEmpty(latestTag))
+        {
+            CCCPSettingsAdapter.SetDockerImageLatestTag(latestTag);
+            dockerImageLatestTag = latestTag;
+
+            if (updateAvailable)
+            {
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("DockerImageUpdateMessageShown", false))
+                {
+                    LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current tag: {currentTag} and latest tag: {latestTag}", 1);
+                    SessionState.SetBool("DockerImageUpdateMessageShown", true);
+                }
+                CCCPSettingsAdapter.SetDockerImageUpdateAvailable(true);
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetDockerImageUpdateAvailable(false);
+            }
+        }
+    }
+    
+    public async Task<bool> UpdateDockerImage()
+    {
+        if (dockerProcessor == null)
+        {
+            LogMessage("Docker processor not initialized - cannot update image", -1);
+            return false;
+        }
+        
+        try
+        {
+            LogMessage("Starting Docker image update...", 0);
+            bool success = await dockerProcessor.UpdateDockerImage(dockerImageLatestTag);
+            
+            if (success)
+            {
+                LogMessage("Docker image updated successfully", 1);
+                // Reset the update flag and refresh version info
+                CCCPSettingsAdapter.SetDockerImageUpdateAvailable(false);
+                SessionState.SetBool("DockerImageUpdateMessageShown", false);
+                await CheckDockerImageTag();
+            }
+            else
+            {
+                LogMessage("Failed to update Docker image", -1);
+            }
+            
+            return success;
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Error updating Docker image: {ex.Message}", -1);
+            return false;
         }
     }
     

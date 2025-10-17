@@ -114,10 +114,13 @@ public class CCCPSettings : ScriptableObject
     public string rustLatestVersionDocker = "";
     public string rustupVersionDocker = "";
     public string CCCPAssetStoreLatestVersion = "";
+    public string dockerImageCurrentTag = "";
+    public string dockerImageLatestTag = "";
     public bool rustupUpdateAvailable = false;
     public bool rustUpdateAvailable = false;
     public bool spacetimeSDKUpdateAvailable = false;
     public bool SpacetimeDBUpdateAvailable = false;
+    public bool dockerImageUpdateAvailable = false;
     public bool CCCPGithubUpdateAvailable = false;
     public bool CCCPAssetStoreUpdateAvailable = false;
     public string distributionType = "";

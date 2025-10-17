@@ -393,6 +393,36 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetDockerImageCurrentTag() => Settings.dockerImageCurrentTag;
+    public static void SetDockerImageCurrentTag(string value) 
+    { 
+        if (Settings.dockerImageCurrentTag != value)
+        {
+            Settings.dockerImageCurrentTag = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetDockerImageLatestTag() => Settings.dockerImageLatestTag;
+    public static void SetDockerImageLatestTag(string value) 
+    { 
+        if (Settings.dockerImageLatestTag != value)
+        {
+            Settings.dockerImageLatestTag = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static bool GetDockerImageUpdateAvailable() => Settings.dockerImageUpdateAvailable;
+    public static void SetDockerImageUpdateAvailable(bool value) 
+    { 
+        if (Settings.dockerImageUpdateAvailable != value)
+        {
+            Settings.dockerImageUpdateAvailable = value; 
+            MarkDirty();
+        }
+    }
+    
     public static string GetRustCurrentVersionWSL() => Settings.rustCurrentVersionWSL;
     public static void SetRustCurrentVersionWSL(string value) 
     { 

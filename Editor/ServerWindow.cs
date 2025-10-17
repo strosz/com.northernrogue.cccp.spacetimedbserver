@@ -2217,6 +2217,14 @@ public class ServerWindow : EditorWindow
                         serverManager.ClearServerData();
                     }
                 }
+
+                EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.HasAllPrerequisites);
+                string checkForUpdateTooltip = $"Checks for SpacetimeDB {localCLIProvider} CLI updates if available.";
+                if (GUILayout.Button(new GUIContent($"Check for {localCLIProvider} CLI Update", checkForUpdateTooltip), GUILayout.Height(20)))
+                {
+                    CheckCLIUpdates();
+                }
+                EditorGUI.EndDisabledGroup();
             }
 
             if (debugMode && serverMode == ServerMode.WSLServer)
@@ -2771,6 +2779,24 @@ public class ServerWindow : EditorWindow
                 serverManager.StartServer();
             }
         }
+    }
+
+    private async void CheckCLIUpdates()
+    {
+        if (localCLIProvider == "Docker")
+        {
+            await serverManager.CheckSpacetimeDBVersionDocker();
+            await serverManager.CheckDockerImageTag();
+            await serverManager.CheckSpacetimeSDKVersion();
+            await serverManager.CheckRustVersionDocker();
+        }
+        else if (localCLIProvider == "WSL")
+        {
+            await serverManager.CheckSpacetimeDBVersionWSL();
+            await serverManager.CheckSpacetimeSDKVersion();
+            await serverManager.CheckRustVersionWSL();
+        }
+        await serverManager.CheckSpacetimeSDKVersion();
     }
 
     private async void CheckServiceStatus()

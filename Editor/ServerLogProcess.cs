@@ -2263,7 +2263,7 @@ public class ServerLogProcess
                 {
                     if (debugMode && linesProcessed < 3)
                     {
-                        logCallback($"[ServerLogProcess] Skipping old Docker module log line from {lineTimestamp:yyyy-MM-dd HH:mm:ss}", 0);
+                        UnityEngine.Debug.Log($"[ServerLogProcess] Skipping old Docker module log line from {lineTimestamp:yyyy-MM-dd HH:mm:ss}");
                     }
                     // Still track the latest timestamp even if we skip this line
                     if (lineTimestamp > latestTimestamp)
@@ -2280,7 +2280,7 @@ public class ServerLogProcess
                     {
                         if (debugMode && linesProcessed < 3)
                         {
-                            logCallback($"[ServerLogProcess] Skipping duplicate Docker module log line (no timestamp): {line.Substring(0, Math.Min(80, line.Length))}...", 0);
+                            UnityEngine.Debug.Log($"[ServerLogProcess] Skipping duplicate Docker module log line (no timestamp): {line.Substring(0, Math.Min(80, line.Length))}...");
                         }
                         continue;
                     }
@@ -2433,11 +2433,11 @@ public class ServerLogProcess
             {
                 if (!string.IsNullOrEmpty(result.error))
                 {
-                    logCallback($"[ServerLogProcess] ERROR getting Docker database logs: {result.error}", -1);
+                    if (debugMode) logCallback($"[ServerLogProcess] ERROR getting Docker database logs: {result.error}", -1);
                 }
                 if (string.IsNullOrEmpty(result.output))
                 {
-                    logCallback("[ServerLogProcess] WARNING: Docker database log output was empty", 0);
+                    if (debugMode) logCallback("[ServerLogProcess] WARNING: Docker database log output was empty", 0);
                 }
                 return;
             }

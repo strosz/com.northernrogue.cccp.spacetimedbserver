@@ -71,6 +71,11 @@ public class ServerSetupWindow : EditorWindow
     internal string spacetimeSDKLatestVersion = "";
     internal bool spacetimeSDKUpdateAvailable = false;
     
+    // Docker image version tracking
+    internal string dockerImageCurrentTag = "";
+    internal string dockerImageLatestTag = "";
+    internal bool dockerImageUpdateAvailable = false;
+    
     // Styles
     private GUIStyle titleStyle;
     private GUIStyle itemTitleStyle;
@@ -260,6 +265,11 @@ public class ServerSetupWindow : EditorWindow
         hasDocker = CCCPSettingsAdapter.GetHasDocker();
         hasDockerCompose = CCCPSettingsAdapter.GetHasDockerCompose();
         hasDockerImage = CCCPSettingsAdapter.GetHasDockerImage();
+        
+        // Load Docker image version tracking from Settings
+        dockerImageCurrentTag = CCCPSettingsAdapter.GetDockerImageCurrentTag();
+        dockerImageLatestTag = CCCPSettingsAdapter.GetDockerImageLatestTag();
+        dockerImageUpdateAvailable = CCCPSettingsAdapter.GetDockerImageUpdateAvailable();
 
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = CCCPSettingsAdapter.GetWSL1Installed();
@@ -555,7 +565,17 @@ public class ServerSetupWindow : EditorWindow
                 "Note: This may take a few minutes depending on your internet connection",
                 isInstalled = hasDockerImage,
                 isEnabled = hasDocker && hasDockerCompose,
-                installAction = CheckDockerImage
+                installAction = () => 
+                {
+                    if (!hasDockerImage)
+                    {
+                        CheckDockerImage();
+                    }
+                    else if (dockerImageUpdateAvailable)
+                    {
+                        UpdateDockerImage();
+                    }
+                }
             },
             new InstallerItem
             {
@@ -606,6 +626,11 @@ public class ServerSetupWindow : EditorWindow
         rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersionWSL();
         rustupVersion = CCCPSettingsAdapter.GetRustupVersionWSL();
         rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
+        
+        // Reload Docker image version information
+        dockerImageCurrentTag = CCCPSettingsAdapter.GetDockerImageCurrentTag();
+        dockerImageLatestTag = CCCPSettingsAdapter.GetDockerImageLatestTag();
+        dockerImageUpdateAvailable = CCCPSettingsAdapter.GetDockerImageUpdateAvailable();
 
         // Reload SpacetimeDB SDK version information
         spacetimeSDKCurrentVersion = ServerUpdateProcess.GetCurrentSpacetimeSDKVersion();
@@ -1117,6 +1142,10 @@ public class ServerSetupWindow : EditorWindow
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
                                     spacetimeDBCurrentVersionCustom != spacetimeDBLatestVersion;
+        } else if (currentTab == dockerTabIndex) {
+            showUpdateButton = item.title.Contains("Setup SpacetimeDB Docker Image") && 
+                                    dockerImageUpdateAvailable && 
+                                    !string.IsNullOrEmpty(dockerImageLatestTag);
         }
         
         // Status (installed or install button)
@@ -1137,6 +1166,10 @@ public class ServerSetupWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB Unity SDK"))
             {
                 updateButtonText = "Update to v" + spacetimeSDKLatestVersion;
+            }
+            else if (item.title.Contains("Setup SpacetimeDB Docker Image"))
+            {
+                updateButtonText = "Update to " + dockerImageLatestTag;
             }
             else
             {
@@ -1171,6 +1204,10 @@ public class ServerSetupWindow : EditorWindow
             else if (item.title.Contains("SpacetimeDB Unity SDK") && !string.IsNullOrEmpty(spacetimeSDKCurrentVersion))
             {
                 EditorGUILayout.LabelField("✓ Installed v " + spacetimeSDKCurrentVersion, installedStyle, GUILayout.Width(110));
+            }
+            else if (item.title.Contains("Setup SpacetimeDB Docker Image") && !string.IsNullOrEmpty(dockerImageCurrentTag))
+            {
+                EditorGUILayout.LabelField("✓ Installed " + dockerImageCurrentTag, installedStyle, GUILayout.Width(110));
             }
             else
             {
@@ -1645,6 +1682,86 @@ public class ServerSetupWindow : EditorWindow
             "Open SpacetimeDB Homepage", "Cancel"))
         {
             Application.OpenURL("https://spacetimedb.com/install#docker");
+        }
+    }
+    
+    /// <summary>
+    /// Updates the SpacetimeDB Docker image to the latest version
+    /// </summary>
+    private async void UpdateDockerImage()
+    {
+        bool confirmed = EditorUtility.DisplayDialog(
+            "Update Docker Image",
+            $"Update SpacetimeDB Docker image from {dockerImageCurrentTag} to {dockerImageLatestTag}?\n\n" +
+            "The process will:\n" +
+            "1. Stop the current server container (if running)\n" +
+            "2. Pull the latest Docker image from Docker Hub\n" +
+            "3. Prepare for restart (the existing container will be recreated on next start)\n\n" +
+            "This may take several minutes depending on your internet connection.",
+            "Update", "Cancel"
+        );
+
+        if (!confirmed) return;
+
+        try
+        {
+            SetStatusInternal("Updating Docker image...", Color.yellow);
+            EditorUtility.DisplayProgressBar("Docker Image Update", "Updating image...", 0.0f);
+
+            if (serverManager != null)
+            {
+                bool success = await serverManager.UpdateDockerImage();
+                
+                if (success)
+                {
+                    EditorUtility.DisplayProgressBar("Docker Image Update", "Update complete", 1.0f);
+                    SetStatusInternal("Docker image updated successfully!", Color.green);
+                    LogMessageInternal($"Docker image updated from {dockerImageCurrentTag} to {dockerImageLatestTag}", 1);
+                    
+                    // Refresh the UI
+                    UpdateInstallerItemsStatus();
+                    Repaint();
+                    
+                    // Show completion dialog
+                    EditorUtility.DisplayDialog(
+                        "Docker Image Update Complete",
+                        $"The Docker image has been successfully updated to {dockerImageLatestTag}.\n\n" +
+                        "You can now restart the server. The container will be recreated with the new image on next start.",
+                        "OK"
+                    );
+                    dockerImageCurrentTag = dockerImageLatestTag; // Update current tag
+                    CCCPSettingsAdapter.SetDockerImageCurrentTag(dockerImageLatestTag);
+                }
+                else
+                {
+                    SetStatusInternal("Failed to update Docker image", Color.red);
+                    LogMessageInternal("Docker image update failed", -1);
+                    EditorUtility.DisplayDialog(
+                        "Docker Image Update Failed",
+                        "Failed to update the Docker image. Please check the console logs for details.",
+                        "OK"
+                    );
+                }
+            }
+            else
+            {
+                SetStatusInternal("Server manager not initialized", Color.red);
+                LogMessageInternal("Cannot update image: Server manager not initialized", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatusInternal($"Error updating Docker image: {ex.Message}", Color.red);
+            LogMessageInternal($"Docker image update error: {ex.Message}", -1);
+            EditorUtility.DisplayDialog(
+                "Docker Image Update Error",
+                $"Error updating Docker image: {ex.Message}",
+                "OK"
+            );
+        }
+        finally
+        {
+            EditorUtility.ClearProgressBar();
         }
     }
     

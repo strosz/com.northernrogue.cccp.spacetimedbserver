@@ -1879,6 +1879,244 @@ public class ServerDockerProcess
         return (rustStableVersion, rustLatestVersion, rustUpdateAvailable, rustupCurrentVersion, rustupUpdateAvailable);
     }
     
+    /// <summary>
+    /// Fetches the latest Docker image tag for SpacetimeDB from the registry
+    /// This compares the current running image tag with the latest available tag
+    /// </summary>
+    public async Task<(string currentTag, string latestTag, bool updateAvailable)> GetLatestImageTag()
+    {
+        if (debugMode) logCallback("Checking for latest SpacetimeDB Docker image tag...", 0);
+        
+        try
+        {
+            // Get the current image tag by querying docker images on the host
+            string currentTag = "";
+            
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.Arguments = $"/c docker images {ImageName}";
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                
+                process.Start();
+                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                bool exited = await Task.Run(() => process.WaitForExit(10000)); // 10 second timeout
+                
+                if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    // Parse the output to find the tag
+                    // Expected format:
+                    // REPOSITORY                TAG       IMAGE ID       CREATED        SIZE
+                    // clockworklabs/spacetime   v1.6.0    236587e83648   10 hours ago   2.49GB
+                    
+                    string[] lines = output.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.None);
+                    
+                    // Skip header line and find the first row with our image
+                    for (int i = 1; i < lines.Length; i++)
+                    {
+                        string line = lines[i].Trim();
+                        if (string.IsNullOrEmpty(line)) continue;
+                        
+                        // Split by whitespace to get columns
+                        string[] columns = System.Text.RegularExpressions.Regex.Split(line, @"\s+");
+                        
+                        // Format: REPOSITORY TAG IMAGE_ID CREATED SIZE
+                        // We want the second column (index 1) which is the TAG
+                        if (columns.Length >= 2)
+                        {
+                            currentTag = columns[1]; // Get the TAG column
+                            if (debugMode) logCallback($"Current SpacetimeDB Docker image tag: {currentTag}", 0);
+                            break;
+                        }
+                    }
+                    
+                    if (string.IsNullOrEmpty(currentTag))
+                    {
+                        if (debugMode) logCallback("Could not parse Docker image tag from 'docker images' output", -1);
+                    }
+                }
+                else if (!exited)
+                {
+                    process.Kill();
+                    if (debugMode) logCallback("docker images query timed out", -1);
+                }
+                else if (process.ExitCode != 0)
+                {
+                    if (debugMode) logCallback($"docker images query failed with exit code {process.ExitCode}", -1);
+                }
+            }
+            
+            // Get the latest image tag from Docker Hub
+            string latestTag = await GetLatestImageTagFromRegistry();
+            
+            if (!string.IsNullOrEmpty(latestTag))
+            {
+                bool updateAvailable = currentTag != latestTag && !string.IsNullOrEmpty(currentTag);
+                if (debugMode) logCallback($"Latest SpacetimeDB Docker image tag: {latestTag}, update available: {updateAvailable}", 0);
+                return (currentTag, latestTag, updateAvailable);
+            }
+            else
+            {
+                if (debugMode) logCallback("Could not determine latest SpacetimeDB Docker image tag", -1);
+                return (currentTag, "", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error checking for latest Docker image tag: {ex.Message}", -1);
+            return ("", "", false);
+        }
+    }
+    
+    /// <summary>
+    /// Fetches the latest version tag from Docker registry by querying metadata
+    /// Gets the first tag matching a version number pattern (v1.x.x) since Docker Hub's "latest" is just a label
+    /// </summary>
+    private async Task<string> GetLatestImageTagFromRegistry()
+    {
+        try
+        {
+            // Use PowerShell to query Docker Hub API for tags
+            // We get multiple tags and filter for the first one that looks like a version number (contains dot)
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "powershell.exe";
+                process.StartInfo.Arguments = "-Command \"" +
+                    "$response = Invoke-RestMethod -Uri 'https://registry.hub.docker.com/v2/repositories/clockworklabs/spacetime/tags?page_size=100' -ErrorAction SilentlyContinue; " +
+                    "if ($response -and $response.results) { " +
+                        // Find the first tag that looks like a version number (vX.Y.Z or X.Y.Z)
+                        "$versionTag = $response.results | Where-Object { $_.name -match '^v?[0-9]+\\.[0-9]+' -and $_.name -ne 'latest' } | Select-Object -First 1; " +
+                        "if ($versionTag) { " +
+                            "Write-Host $versionTag.name; " +
+                        "} else { " +
+                            "Write-Host 'Error'; " +
+                        "} " +
+                    "} else { " +
+                        "Write-Host 'Error'; " +
+                    "} " +
+                    "\"";
+                
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                
+                process.Start();
+                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                bool exited = await Task.Run(() => process.WaitForExit(10000));
+                
+                if (exited && process.ExitCode == 0)
+                {
+                    string latestTag = output.Trim();
+                    if (!latestTag.Contains("Error") && !string.IsNullOrEmpty(latestTag))
+                    {
+                        if (debugMode) logCallback($"Retrieved latest version tag from registry: {latestTag}", 0);
+                        return latestTag;
+                    }
+                }
+                else if (!exited)
+                {
+                    process.Kill();
+                    if (debugMode) logCallback("Docker Hub registry query timed out", -1);
+                }
+                else if (process.ExitCode != 0)
+                {
+                    if (debugMode) logCallback($"Docker Hub registry query failed with exit code {process.ExitCode}", -1);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error querying Docker Hub registry: {ex.Message}", -1);
+        }
+        
+        return "";
+    }
+    
+    /// <summary>
+    /// Updates the SpacetimeDB Docker image by pulling the latest version
+    /// Stops the container, pulls the new image with the specified tag, removes the old container,
+    /// and prepares for restart with the new image
+    /// </summary>
+    /// <param name="latestTag">The version tag to pull (e.g., "v1.6.0")</param>
+    public async Task<bool> UpdateDockerImage(string latestTag = null)
+    {
+        if (debugMode) logCallback("Starting Docker image update process...", 0);
+        
+        try
+        {
+            // Step 1: Stop the current server container (if running)
+            if (debugMode) logCallback("Step 1: Stopping the server container...", 0);
+            bool stopped = await StopServer(ContainerName);
+            if (!stopped && debugMode)
+            {
+                logCallback("Note: Server may already be stopped", 0);
+            }
+            
+            // Step 2: Remove the old container so it will be recreated with the new image
+            // This ensures the new image is used, not the old one
+            if (debugMode) logCallback("Step 2: Removing old container to force recreation...", 0);
+            bool removed = await RemoveDockerContainer(ContainerName);
+            if (!removed && debugMode)
+            {
+                logCallback("Note: Container may not exist or couldn't be removed", 0);
+            }
+            
+            // Step 3: Pull the latest image from Docker Hub using the actual version tag
+            // The docker pull command must be run on the host OS, not inside the container
+            if (debugMode) logCallback("Step 3: Pulling latest Docker image...", 0);
+            
+            // Use the provided tag, or just the image name if no tag provided
+            string pullCommand = string.IsNullOrEmpty(latestTag) 
+                ? ImageName 
+                : $"{ImageName}:{latestTag}";
+            
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.Arguments = $"/c docker pull {pullCommand}";
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                
+                process.Start();
+                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                string error = await Task.Run(() => process.StandardError.ReadToEnd());
+                bool exited = await Task.Run(() => process.WaitForExit(60000)); // 60 second timeout
+                
+                if (!exited)
+                {
+                    process.Kill();
+                    logCallback("Failed to pull Docker image: Operation timed out", -1);
+                    if (debugMode) logCallback($"Timeout error: {error}", -1);
+                    return false;
+                }
+                
+                if (process.ExitCode != 0)
+                {
+                    logCallback($"Failed to pull Docker image: {error}", -1);
+                    if (debugMode) logCallback($"Pull output: {output}", -1);
+                    return false;
+                }
+                
+                if (debugMode) logCallback($"Docker image pull output: {output}", 0);
+            }
+            
+            if (debugMode) logCallback($"Docker image updated successfully to {pullCommand}", 1);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error updating Docker image: {ex.Message}", -1);
+            if (debugMode) logCallback($"Stack trace: {ex.StackTrace}", -1);
+            return false;
+        }
+    }
+    
     #endregion
 
 } // Class
