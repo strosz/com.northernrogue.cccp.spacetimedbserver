@@ -211,7 +211,8 @@ public class ServerSetupWindow : EditorWindow
         isConnectedSSH = serverManager.IsSSHConnectionActive;
 
         // Initialize install process (only for non-Asset Store builds)
-        if (!isAssetStoreBuild)
+        // Note: isGithubBuild is more reliable - if it's a Github build, we need install process
+        if (isGithubBuild)
         {
             installProcess = new ServerInstallProcess(this);
         }
@@ -370,7 +371,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: If you already have WSL installed, it will install Debian for your chosen WSL version",
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallWSLDebian()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallWSLDebian()) : null,
                 sectionHeader = "Required Local Software"
             },
             new InstallerItem
@@ -382,7 +383,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallDebianTrixie()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallDebianTrixie()) : null
             },
             new InstallerItem
             {
@@ -391,7 +392,7 @@ public class ServerSetupWindow : EditorWindow
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCurl()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCurl()) : null
             },
             new InstallerItem
             {
@@ -400,7 +401,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: Only supports installing to the users home directory (SpacetimeDB default)",
                 isInstalled = hasSpacetimeDBServer,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBServer()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBServer()) : null
             },
             new InstallerItem
             {
@@ -408,7 +409,7 @@ public class ServerSetupWindow : EditorWindow
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasSpacetimeDBPath,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBPath()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBPath()) : null
             },
             new InstallerItem
             {
@@ -417,7 +418,7 @@ public class ServerSetupWindow : EditorWindow
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasSpacetimeDBService,
                 isEnabled = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBService()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBService()) : null,
                 expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
@@ -427,7 +428,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallRust()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallRust()) : null
             },
             new InstallerItem
             {
@@ -436,7 +437,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: Required to use the SpacetimeDB Server with C# Language",
                 isInstalled = hasNETSDK,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallNETSDK()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallNETSDK()) : null
             },
             new InstallerItem
             {
@@ -445,7 +446,7 @@ public class ServerSetupWindow : EditorWindow
                 "SpacetimeDB make use of wasm-opt optimizer for improving performance",
                 isInstalled = hasBinaryen,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallBinaryen()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallBinaryen()) : null
             },
             new InstallerItem
             {
@@ -454,7 +455,7 @@ public class ServerSetupWindow : EditorWindow
                 "SpacetimeDB may call git commands during the publish and generate process",
                 isInstalled = hasGit,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallGit()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallGit()) : null
             },
             new InstallerItem
             {
@@ -463,7 +464,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -479,7 +480,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: You will be prompted to set a password for the new user",
                 isInstalled = hasCustomDebianUser,
                 isEnabled = isConnectedSSH,
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomUser()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomUser()) : null,
                 hasUsernameField = true,
                 usernameLabel = "Create Username:",
                 sectionHeader = "Required Remote Software"
@@ -492,7 +493,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: May take some minutes to install",
                 isInstalled = hasCustomDebianTrixie,
                 isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(sshUserName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomDebianTrixie()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomDebianTrixie()) : null
             },
             new InstallerItem
             {
@@ -501,7 +502,7 @@ public class ServerSetupWindow : EditorWindow
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCustomCurl,
                 isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(userName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomCurl()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomCurl()) : null
             },
             new InstallerItem
             {
@@ -510,7 +511,7 @@ public class ServerSetupWindow : EditorWindow
                 "Note: Will install to the current SSH user session home directory (SpacetimedDB default)",
                 isInstalled = hasCustomSpacetimeDBServer,
                 isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBServer()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBServer()) : null
             },
             new InstallerItem
             {
@@ -518,7 +519,7 @@ public class ServerSetupWindow : EditorWindow
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasCustomSpacetimeDBPath,
                 isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBPath()) : null
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBPath()) : null
             },
             new InstallerItem
             {
@@ -528,7 +529,7 @@ public class ServerSetupWindow : EditorWindow
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasCustomSpacetimeDBService,
                 isEnabled = customProcess.IsSessionActive() && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(userName),
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBService()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBService()) : null,
                 expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
@@ -538,7 +539,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -594,7 +595,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Docker
-                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
                 sectionHeader = "Required Unity Plugin"
             }
         };
