@@ -956,6 +956,11 @@ public class ServerManager
 
                 // Start Docker container
                 if (DebugMode) LogMessage("Starting SpacetimeDB Docker container...", 0);
+                
+                // First check if container is already running before attempting to start
+                var (containerExists, containerIsRunning) = dockerProcessor.CheckContainerExistsAndRunning();
+                bool containerWasAlreadyRunning = containerExists && containerIsRunning;
+                
                 Process containerProcess;
                 if (silentMode)
                 {
@@ -966,9 +971,24 @@ public class ServerManager
                     containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory, ClientDirectory);
                 }
 
+                // Note: containerProcess can be null if container was already running - this is not an error
+                // The StartSilentServerProcess returns null when container is already running
                 if (containerProcess == null)
                 {
-                    throw new Exception("Failed to start Docker container");
+                    // Check if it was already running (null is expected in this case)
+                    if (!containerWasAlreadyRunning)
+                    {
+                        // Container wasn't running before, and we failed to start it
+                        bool dockerRunning = await dockerProcessor.IsDockerServiceRunning();
+                        if (!await dockerProcessor.CheckDockerProcessAsync(dockerRunning))
+                        {
+                            throw new Exception("Failed to start Docker container");
+                        }
+                    }
+                    else
+                    {
+                        if (DebugMode) LogMessage("Container was already running, continuing with startup confirmation...", 0);
+                    }
                 }
 
                 LogMessage("Docker SpacetimeDB Container Started Successfully!", 1);
