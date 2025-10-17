@@ -21,10 +21,12 @@ public class ServerWindow : EditorWindow
     private ServerWSLProcess wslProcess;
     private ServerCustomProcess serverCustomProcess;
     private ServerDetectionProcess detectionProcess;
+    private ServerDockerProcess dockerProcess;
     
     // Server mode
     private ServerMode serverMode = ServerMode.WSLServer;
     private ServerMode previousServerMode = ServerMode.WSLServer;
+    private string localCLIProvider { get => CCCPSettingsAdapter.GetLocalCLIProvider(); set => CCCPSettingsAdapter.SetLocalCLIProvider(value); }
 
     // Pre-requisites WSL - Direct property access to settings
     private bool hasWSL { get => CCCPSettingsAdapter.GetHasWSL(); set => CCCPSettingsAdapter.SetHasWSL(value); }
@@ -40,6 +42,14 @@ public class ServerWindow : EditorWindow
     private bool hasBinaryen { get => CCCPSettingsAdapter.GetHasBinaryen(); set => CCCPSettingsAdapter.SetHasBinaryen(value); }
     private bool hasGit { get => CCCPSettingsAdapter.GetHasGit(); set => CCCPSettingsAdapter.SetHasGit(value); }
     private bool wslPrerequisitesChecked { get => CCCPSettingsAdapter.GetWslPrerequisitesChecked(); set => CCCPSettingsAdapter.SetWslPrerequisitesChecked(value); }
+
+    // Pre-requisites Docker - Direct property access to settings
+    private bool hasDocker { get => CCCPSettingsAdapter.GetHasDocker(); set => CCCPSettingsAdapter.SetHasDocker(value); }
+    private bool hasDockerCompose { get => CCCPSettingsAdapter.GetHasDockerCompose(); set => CCCPSettingsAdapter.SetHasDockerCompose(value); }
+    private bool hasDockerImage { get => CCCPSettingsAdapter.GetHasDockerImage(); set => CCCPSettingsAdapter.SetHasDockerImage(value); }
+    private bool hasDockerContainerMounts { get => CCCPSettingsAdapter.GetHasDockerContainerMounts(); set => CCCPSettingsAdapter.SetHasDockerContainerMounts(value); }
+
+    // Pre-requisites General - Direct property access to settings
     private bool initializedFirstModule { get => CCCPSettingsAdapter.GetInitializedFirstModule(); set => CCCPSettingsAdapter.SetInitializedFirstModule(value); }
     private bool publishFirstModule { get => CCCPSettingsAdapter.GetPublishFirstModule(); set => CCCPSettingsAdapter.SetPublishFirstModule(value); }
     private bool hasAllPrerequisites { get => CCCPSettingsAdapter.GetHasAllPrerequisites(); set => CCCPSettingsAdapter.SetHasAllPrerequisites(value); }
@@ -56,13 +66,18 @@ public class ServerWindow : EditorWindow
     private int serverPort { get => CCCPSettingsAdapter.GetServerPort(); set => CCCPSettingsAdapter.SetServerPort(value); }
     private string authToken { get => CCCPSettingsAdapter.GetAuthToken(); set => CCCPSettingsAdapter.SetAuthToken(value); }
 
+    // Docker Server Configuration - Direct property access to settings
+    private string serverUrlDocker { get => CCCPSettingsAdapter.GetServerUrlDocker(); set => CCCPSettingsAdapter.SetServerUrlDocker(value); }
+    private int serverPortDocker { get => CCCPSettingsAdapter.GetServerPortDocker(); set => CCCPSettingsAdapter.SetServerPortDocker(value); }
+    private string authTokenDocker { get => CCCPSettingsAdapter.GetAuthTokenDocker(); set => CCCPSettingsAdapter.SetAuthTokenDocker(value); }
+
     // Pre-requisites Custom Server - Direct property access to settings
     private string sshUserName { get => CCCPSettingsAdapter.GetSSHUserName(); set => CCCPSettingsAdapter.SetSSHUserName(value); }
     private string customServerUrl { get => CCCPSettingsAdapter.GetCustomServerUrl(); set => CCCPSettingsAdapter.SetCustomServerUrl(value); }
     private int customServerPort { get => CCCPSettingsAdapter.GetCustomServerPort(); set => CCCPSettingsAdapter.SetCustomServerPort(value); }
     private string customServerAuthToken { get => CCCPSettingsAdapter.GetCustomServerAuthToken(); set => CCCPSettingsAdapter.SetCustomServerAuthToken(value); }
     private string sshPrivateKeyPath { get => CCCPSettingsAdapter.GetSSHPrivateKeyPath(); set => CCCPSettingsAdapter.SetSSHPrivateKeyPath(value); }
-    private bool isConnected;
+    private bool isConnectedCustomSSH;
 
     // Pre-requisites Maincloud Server - Direct property access to settings
     private string maincloudAuthToken { get => CCCPSettingsAdapter.GetMaincloudAuthToken(); set => CCCPSettingsAdapter.SetMaincloudAuthToken(value); }
@@ -80,12 +95,13 @@ public class ServerWindow : EditorWindow
     private bool autoPublishMode { get => CCCPSettingsAdapter.GetAutoPublishMode(); set => CCCPSettingsAdapter.SetAutoPublishMode(value); }
     private bool publishAndGenerateMode { get => CCCPSettingsAdapter.GetPublishAndGenerateMode(); set => CCCPSettingsAdapter.SetPublishAndGenerateMode(value); }
     private bool silentMode { get => CCCPSettingsAdapter.GetSilentMode(); set => CCCPSettingsAdapter.SetSilentMode(value); }
-    private bool autoCloseWsl { get => CCCPSettingsAdapter.GetAutoCloseWsl(); set => CCCPSettingsAdapter.SetAutoCloseWsl(value); }
+    private bool autoCloseCLI { get => CCCPSettingsAdapter.GetAutoCloseCLI(); set => CCCPSettingsAdapter.SetAutoCloseCLI(value); }
     private bool clearModuleLogAtStart { get => CCCPSettingsAdapter.GetClearModuleLogAtStart(); set => CCCPSettingsAdapter.SetClearModuleLogAtStart(value); }
     private bool clearDatabaseLogAtStart { get => CCCPSettingsAdapter.GetClearDatabaseLogAtStart(); set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); }
 
     // Update SpacetimeDB - Direct property access to settings
-    private string spacetimeDBCurrentVersion { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(value); }
+    private string spacetimeDBCurrentVersionWSL { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); }
+    private string spacetimeDBCurrentVersionDocker { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionDocker(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(value); }
     private string spacetimeDBCurrentVersionCustom { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionCustom(value); }
     private string spacetimeDBLatestVersion { get => CCCPSettingsAdapter.GetSpacetimeDBLatestVersion(); set => CCCPSettingsAdapter.SetSpacetimeDBLatestVersion(value); }
 
@@ -150,6 +166,7 @@ public class ServerWindow : EditorWindow
 
     public enum AuthTokenType
     {
+        Docker,
         WSL,
         Custom,
         Maincloud
@@ -455,8 +472,20 @@ public class ServerWindow : EditorWindow
             wslProcess = new ServerWSLProcess(LogMessage, debugMode);
         }
 
+        // Initialize dockerProcess to avoid null reference exceptions
+        if (dockerProcess == null)
+        {
+            dockerProcess = new ServerDockerProcess(LogMessage, debugMode);
+        }
+
         // Load server mode from Settings
         LoadServerModeFromSettings();
+        
+        // Initialize localCLIProvider based on current serverMode
+        if (string.IsNullOrEmpty(localCLIProvider))
+        {
+            localCLIProvider = serverMode == ServerMode.DockerServer ? "Docker" : "WSL";
+        }
         
         // Load the currently selected module if any (after initial settings refresh)
         LoadSelectedModuleFromSettings();
@@ -565,7 +594,7 @@ public class ServerWindow : EditorWindow
                 if (serverMode == ServerMode.CustomServer)
                 {
                     serverManager.SSHConnectionStatusAsync();
-                    isConnected = serverManager.IsSSHConnectionActive;
+                    isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
                 }
             }
             catch (Exception ex)
@@ -617,25 +646,14 @@ public class ServerWindow : EditorWindow
         }
         
         // Background status checks to update the UI without having to interact with it
-        if (windowFocused)
+        if (currentTime - lastCheckTime > statusUICheckInterval)
         {
-            if (currentTime - lastCheckTime > statusUICheckInterval)
+            if (serverMode == ServerMode.CustomServer) 
             {
-                if (serverMode == ServerMode.CustomServer) 
-                {
-                    // Update connection status asynchronously to avoid blocking UI
-                    if (serverMode == ServerMode.CustomServer)
-                    {
-                        serverManager.SSHConnectionStatusAsync();
-                        isConnected = serverManager.IsSSHConnectionActive;
-                    }
-                    else
-                    {
-                        isConnected = false;
-                    }
-                }
-                Repaint();
+                serverManager.SSHConnectionStatusAsync();
+                isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
             }
+            Repaint();
         }
     }
     
@@ -657,6 +675,7 @@ public class ServerWindow : EditorWindow
                         serverChangesDetected = newServerChangesDetected;
                     }
                     isWslRunning = serverManager.IsWslRunning;
+                    isDockerRunning = serverManager.IsDockerRunning;
                 }
             }
         }
@@ -781,13 +800,15 @@ public class ServerWindow : EditorWindow
                         serverManager.StopMaincloudLog();
                         if (debugMode) LogMessage("Stopped Maincloud log process before mode switch", 0);
 
-                        serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
+                        // Restore to last used local server mode (WSL or Docker)
+                        serverMode = (ServerMode)CCCPSettingsAdapter.GetLastLocalServerMode();
                         UpdateServerModeState();
                     }
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
-                    serverMode = ServerMode.WSLServer; // Default to WSL when switching to local
+                    // Restore to last used local server mode (WSL or Docker)
+                    serverMode = (ServerMode)CCCPSettingsAdapter.GetLastLocalServerMode();
                     UpdateServerModeState();
                     ClearModuleLogFile();
                     ClearDatabaseLog();
@@ -806,6 +827,8 @@ public class ServerWindow : EditorWindow
                 }
                 else if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
+                    // Save the current local mode before switching away
+                    CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)serverMode);
                     serverMode = ServerMode.CustomServer;
                     UpdateServerModeState();
                     ClearModuleLogFile();
@@ -818,15 +841,21 @@ public class ServerWindow : EditorWindow
             {
                 if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
-                    bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
-                    "Do you want to stop your Local server and change the server mode to Maincloud server?",
-                    "OK","Cancel");
-                    if (modeChange)
+                    if (serverMode == ServerMode.WSLServer)
                     {
-                        serverManager.StopServer();
-                        serverMode = ServerMode.MaincloudServer;
-                        UpdateServerModeState();
+                        bool modeChange = EditorUtility.DisplayDialog("Confirm Mode Change", 
+                        "Do you want to stop your Local server and change the server mode to Maincloud server?",
+                        "OK","Cancel");
+                        if (modeChange)
+                        {
+                            serverManager.StopServer();
+                        }
                     }
+
+                    // Save the current local mode before switching away
+                    CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)serverMode);
+                    serverMode = ServerMode.MaincloudServer;
+                    UpdateServerModeState();
                 } 
                 else if (serverMode == ServerMode.CustomServer)
                 {
@@ -853,24 +882,30 @@ public class ServerWindow : EditorWindow
             // Shared settings
             GUILayout.Label("Shared Settings", EditorStyles.centeredGreyMiniLabel);
 
-            // CLI Provider dropdown (only shown in Local mode)
+            // CLI Provider dropdown (only shown in Local mode) Equals to which local server mode is selected
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 EditorGUILayout.BeginHorizontal();
                 string cliProviderTooltip = 
-                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally. \n\n"+
-                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally. Docker is available for Linux, MacOS or Windows. \n\n"+
+                "Docker: Use Docker containers to run a SpacetimeDB CLI and Server locally.\n\n"+
+                "Docker supports Linux, MacOS or Windows. Fast 3 step setup, but requires Docker Desktop to run on your PC.\n\n"+
+                "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally.\n\n"+
+                "WSL supports Windows. Slower 9 step setup, but can run silently in the background.\n\n"+
                 "Both options provide a local development environment.";
                 EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
-                string[] cliProviderOptions = new string[] { "WSL (Windows)", "Docker (Any OS)" };
-                int cliProviderSelectedIndex = serverMode == ServerMode.WSLServer ? 0 : 1;
-                int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions, GUILayout.Width(150));
+                string[] cliProviderOptions = new string[] { "Docker (Windows, Linux and MacOS)", "WSL (Windows)" };
+                int cliProviderSelectedIndex = serverMode == ServerMode.DockerServer ? 0 : 1;
+                int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions);
                 if (newCliProviderSelectedIndex != cliProviderSelectedIndex)
                 {
-                    ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.WSLServer : ServerMode.DockerServer;
+                    ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.DockerServer : ServerMode.WSLServer;
                     serverMode = newMode;
+                    // Save the selected CLI provider as the last local mode
+                    CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)newMode);
+                    // Update localCLIProvider variable
+                    localCLIProvider = newCliProviderSelectedIndex == 0 ? "Docker" : "WSL";
                     UpdateServerModeState();
-                    LogMessage($"CLI Provider changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
+                    LogMessage($"Local server mode changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
                 }
                 GUILayout.Label(ServerUtilityProvider.GetStatusIcon(true), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
@@ -888,7 +923,7 @@ public class ServerWindow : EditorWindow
             string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
             int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
             if (unityLangSelectedIndex < 0) unityLangSelectedIndex = 1; // Default to Rust if not found
-            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions, GUILayout.Width(150));
+            int newunityLangSelectedIndex = EditorGUILayout.Popup(unityLangSelectedIndex, unityLangOptions);
             if (newunityLangSelectedIndex != unityLangSelectedIndex)
             {
                 unityLang = unityLangValues[newunityLangSelectedIndex];
@@ -905,7 +940,7 @@ public class ServerWindow : EditorWindow
             "Note: This should be placed in the Assets folder of your Unity project.";
             EditorGUILayout.LabelField(new GUIContent("Client Path:", clientDirectoryTooltip), GUILayout.Width(110));
             string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
-            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Height(20)))
             {
                 string path = EditorUtility.OpenFolderPanel("Select Client Path", Application.dataPath, "");
                 if (!string.IsNullOrEmpty(path))
@@ -929,7 +964,7 @@ public class ServerWindow : EditorWindow
             string[] serverLangValues = new string[] { "rust", "csharp" };
             int serverLangSelectedIndex = Array.IndexOf(serverLangValues, serverLang);
             if (serverLangSelectedIndex < 0) serverLangSelectedIndex = 0; // Default to Rust if not found
-            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions, GUILayout.Width(150));
+            int newServerLangSelectedIndex = EditorGUILayout.Popup(serverLangSelectedIndex, serverLangOptions);
             if (newServerLangSelectedIndex != serverLangSelectedIndex)
             {
                 serverLang = serverLangValues[newServerLangSelectedIndex];
@@ -937,7 +972,7 @@ public class ServerWindow : EditorWindow
                 LogMessage($"Server language set to: {serverLangOptions[newServerLangSelectedIndex]}", 0);
             }
             GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(serverLang)), GUILayout.Width(20));
-            EditorGUILayout.EndHorizontal();            
+            EditorGUILayout.EndHorizontal();
             
             // Add New Module Entry
             EditorGUILayout.BeginHorizontal();
@@ -948,7 +983,7 @@ public class ServerWindow : EditorWindow
             "Path: Directory of where Cargo.toml is located or to be created at.\n"+
             "Note: Create a new empty folder if the module has not been created yet.";            
             EditorGUILayout.LabelField(new GUIContent("Module New Entry:", moduleSettingsTooltip), GUILayout.Width(110));
-            newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput, GUILayout.Width(100));
+            newModuleNameInput = EditorGUILayout.TextField(newModuleNameInput);
             string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
             if (GUILayout.Button(new GUIContent("Add", serverDirButtonTooltip), GUILayout.Width(47), GUILayout.Height(20)))
             {
@@ -1010,7 +1045,7 @@ public class ServerWindow : EditorWindow
                 
                 // Adjust selectedModuleIndex for dropdown (add 1 because of "Select..." option)
                 int dropdownIndex = selectedModuleIndex >= 0 ? selectedModuleIndex + 1 : 0;
-                int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, moduleOptions, GUILayout.Width(150));
+                int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, moduleOptions);
                 
                 // Handle selection change
                 if (newDropdownIndex != dropdownIndex)
@@ -1028,11 +1063,13 @@ public class ServerWindow : EditorWindow
             else
             {
                 EditorGUI.BeginDisabledGroup(true);
-                EditorGUILayout.Popup(0, new string[] { "No saved modules" }, GUILayout.Width(150));
+                EditorGUILayout.Popup(0, new string[] { "No saved modules" });
                 EditorGUI.EndDisabledGroup();
             }
             GUILayout.Label(ServerUtilityProvider.GetStatusIcon(selectedModuleIndex != -1), GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
+
+            GUILayout.Label("Module Initialization", EditorStyles.centeredGreyMiniLabel);
 
             // Init a new module / Delete Selected Module
             EditorGUILayout.BeginHorizontal();
@@ -1060,7 +1097,7 @@ public class ServerWindow : EditorWindow
             }
             
             EditorGUI.BeginDisabledGroup(deleteMode && !hasSelectedModule);
-            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Width(150), GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Height(20)))
             {
                 if (deleteMode && hasSelectedModule)
                 {
@@ -1092,10 +1129,12 @@ public class ServerWindow : EditorWindow
                 }
             }
             EditorGUI.EndDisabledGroup();
+            GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
             EditorGUILayout.EndHorizontal();
             #endregion
 
-            #region Local Mode (WSL or Docker)
+            #region Local Modes
+            // Settings for local modes (WSL and Docker)
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 // Local Server Settings
@@ -1110,7 +1149,7 @@ public class ServerWindow : EditorWindow
                 "Backups for the server use little space, so you can commit this folder to your repository.";
                 EditorGUILayout.LabelField(new GUIContent("Backup Directory:", backupDirectoryTooltip), GUILayout.Width(110));
                 string backupDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(backupDirectory) ? "Not Set" : backupDirectory);
-                if (GUILayout.Button(new GUIContent("Set Backup Directory", backupDirButtonTooltip), GUILayout.Width(150), GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Set Backup Directory", backupDirButtonTooltip), GUILayout.Height(20)))
                 {
                     string path = EditorUtility.OpenFolderPanel("Select Backup Directory", Application.dataPath, "");
                     if (!string.IsNullOrEmpty(path))
@@ -1122,14 +1161,69 @@ public class ServerWindow : EditorWindow
                 }
                 GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(backupDirectory)), GUILayout.Width(20));
                 EditorGUILayout.EndHorizontal();
+            }
+            #endregion
 
+            #region Local Docker
+            if (serverMode == ServerMode.DockerServer)
+            {
+                // Local Docker URL
+                string dockerUrlTooltip = "The full URL of the Docker server with the OS port mapping you wish to use.\n\n" +
+                    "Example: http://0.0.0.0:3011/ \n\n" +
+                    "Note: The port number is required. Internally the spacetimedb server always runs on port 3000 by default.";
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(new GUIContent("URL:", dockerUrlTooltip), GUILayout.Width(110));
+                string newUrlDocker = EditorGUILayout.DelayedTextField(serverUrlDocker);
+                if (newUrlDocker != serverUrlDocker)
+                {
+                    serverUrlDocker = newUrlDocker;
+                    // Extract port from Docker URL
+                    int extractedPort = ServerUtilityProvider.ExtractPortFromUrl(serverUrlDocker);
+                    if (extractedPort > 0)
+                    {
+                        if (extractedPort != serverPortDocker)
+                        {
+                            serverPortDocker = extractedPort;
+                            
+                            if (debugMode) UnityEngine.Debug.Log($"[ServerWindow] Docker port updated to {serverPortDocker}");
+                        }
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogWarning("[ServerWindow] Could not extract port from Docker URL");
+                    }
+                }
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(serverUrlDocker)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+
+                // Local Docker Auth Token                
+                string tokenTooltip = GetAuthTokenTooltip(AuthTokenType.Docker,
+                "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
+                "Important: Keep this token secret and do not share it with anyone outside of your team.");
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
+                string newAuthTokenDocker = EditorGUILayout.PasswordField(authTokenDocker);
+                if (newAuthTokenDocker != authTokenDocker)
+                {
+                    authTokenDocker = newAuthTokenDocker;
+                }
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(authTokenDocker)), GUILayout.Width(20));
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.Space(5);
+            }
+            #endregion
+
+            #region Local WSL
+            if (serverMode == ServerMode.WSLServer)
+            {
                 // Debian Username setting
                 EditorGUILayout.BeginHorizontal();
                 string userNameTooltip = 
                 "The Debian username to use for Debian commands.\n\n"+
                 "Note: Needed for most server commands and utilities.";
                 EditorGUILayout.LabelField(new GUIContent("Debian Username:", userNameTooltip), GUILayout.Width(110));
-                string newUserName = EditorGUILayout.DelayedTextField(userName, GUILayout.Width(150));
+                string newUserName = EditorGUILayout.DelayedTextField(userName);
                 if (newUserName != userName)
                 {
                     userName = newUserName;
@@ -1146,7 +1240,7 @@ public class ServerWindow : EditorWindow
                 "Default: http://0.0.0.0:3000/\n" +
                 "Note: The port number is required.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.DelayedTextField(serverUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(serverUrl);
                 if (newUrl != serverUrl)
                 {
                     serverUrl = newUrl;
@@ -1179,7 +1273,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(authToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(authToken);
                 if (newAuthToken != authToken)
                 {
                     authToken = newAuthToken;
@@ -1189,16 +1283,46 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.EndHorizontal();
                 
                 EditorGUILayout.Space(3);
+            }
 
+            if (serverMode == ServerMode.DockerServer)
+            {
                 if (GUILayout.Button("Server Setup Window"))
-                        ServerSetupWindow.ShowWindow();
+                    ServerSetupWindow.ShowDockerWindow();
+            }
+            else if (serverMode == ServerMode.WSLServer)
+            {
+                if (GUILayout.Button("Server Setup Window"))
+                    ServerSetupWindow.ShowWSLWindow();
+            }
+
+            // Status and Setup for local modes (WSL and Docker)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
+            {
                 if (GUILayout.Button("Check Pre-Requisites", GUILayout.Height(20)))
                     CheckPrerequisites();
 
                 // Status display - show WSL/Docker status based on server mode
                 EditorGUILayout.BeginHorizontal();
+                string tooltipStatus;
+                if (isDockerRunning && serverMode == ServerMode.DockerServer)
+                {
+                    tooltipStatus = "Docker Desktop is running on your PC.";
+                }
+                else if (!isDockerRunning && serverMode == ServerMode.DockerServer)
+                {
+                    tooltipStatus = "Docker Desktop is not running on your PC. Please start Docker Desktop.";
+                }
+                else if (isWslRunning && serverMode == ServerMode.WSLServer)
+                {
+                    tooltipStatus = "Windows Subsystem for Linux is running on your PC.";
+                }
+                else // !isWslRunning && serverMode == ServerMode.WSLServer
+                {
+                    tooltipStatus = "Windows Subsystem for Linux is not running on your PC. It will start automatically when needed.";
+                }
                 string statusLabel = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? "Docker:" : "WSL:";
-                EditorGUILayout.LabelField(statusLabel, GUILayout.Width(110));
+                EditorGUILayout.LabelField(new GUIContent(statusLabel, tooltipStatus), GUILayout.Width(110));
                 Color originalStatusColor = connectedStyle.normal.textColor;
                 
                 bool serviceRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
@@ -1220,7 +1344,8 @@ public class ServerWindow : EditorWindow
                 // SSH Keygen button
                 EditorGUILayout.BeginHorizontal();
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
-                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                if (GUILayout.Button("Generate SSH Key Pair", GUILayout.Width(150)))
+                EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                
+                if (GUILayout.Button("Generate SSH Key Pair"))
                 {
                     if (wslProcess == null)
                     {
@@ -1232,6 +1357,7 @@ public class ServerWindow : EditorWindow
                     // Create .ssh directory first, then generate the key pair
                     wslProcess.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
                 }
+                GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();
                 
                 // SSH Private Key Path (button only)
@@ -1242,7 +1368,7 @@ public class ServerWindow : EditorWindow
                     keyPathTooltip += $"\n\nCurrent path: {sshPrivateKeyPath}";
                 }                
                 EditorGUILayout.LabelField(new GUIContent("Private Key Path:", keyPathTooltip), GUILayout.Width(110));
-                if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip), GUILayout.Width(150)))
+                if (GUILayout.Button(new GUIContent("Set Private Key Path", keyPathTooltip)))
                 {                    
                     // Use the same default .ssh directory as SSH key generation
                     string defaultSshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
@@ -1266,7 +1392,7 @@ public class ServerWindow : EditorWindow
                 string userNameTooltip = 
                 "The SSH username to use to login to your distro.";
                 EditorGUILayout.LabelField(new GUIContent("SSH Username:", userNameTooltip), GUILayout.Width(110));
-                string newUserName = EditorGUILayout.DelayedTextField(sshUserName, GUILayout.Width(150));
+                string newUserName = EditorGUILayout.DelayedTextField(sshUserName);
                 if (newUserName != sshUserName)
                 {
                     sshUserName = newUserName;
@@ -1285,7 +1411,7 @@ public class ServerWindow : EditorWindow
                 "Make sure port 22 (SSH, used automatically) and port 3000 (SpacetimeDB) are open.\n" +
                 "Press Enter after editing to apply changes.";
                 EditorGUILayout.LabelField(new GUIContent("URL:", urlTooltip), GUILayout.Width(110));
-                string newUrl = EditorGUILayout.DelayedTextField(customServerUrl, GUILayout.Width(150));
+                string newUrl = EditorGUILayout.DelayedTextField(customServerUrl);
                 if (newUrl != customServerUrl)
                 {
                     customServerUrl = newUrl;
@@ -1319,7 +1445,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(customServerAuthToken);
                 if (newAuthToken != customServerAuthToken)
                 {
                     customServerAuthToken = newAuthToken;
@@ -1339,20 +1465,9 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("Connection:", GUILayout.Width(110));
                 
-                // Update connection status asynchronously to avoid blocking UI
-                if (serverMode == ServerMode.CustomServer)
-                {
-                    serverManager.SSHConnectionStatusAsync();
-                    isConnected = serverManager.IsSSHConnectionActive;
-                }
-                else
-                {
-                    isConnected = false;
-                }
-                
                 Color originalColor = connectedStyle.normal.textColor;
-                connectedStyle.normal.textColor = isConnected ? originalColor : Color.gray;
-                string connectionStatusText = isConnected ? "CONNECTED SSH" : "DISCONNECTED";
+                connectedStyle.normal.textColor = isConnectedCustomSSH ? originalColor : Color.gray;
+                string connectionStatusText = isConnectedCustomSSH ? "CONNECTED SSH" : "DISCONNECTED SSH";
                 EditorGUILayout.LabelField(connectionStatusText, connectedStyle);
                 // Restore the original color after using it
                 connectedStyle.normal.textColor = originalColor;
@@ -1370,7 +1485,7 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 string loginTooltip = "Login to the official SpacetimeDB Maincloud using your Github account";
                 EditorGUILayout.LabelField(new GUIContent("Login:",loginTooltip), GUILayout.Width(110));
-                if (GUILayout.Button("Login to Maincloud", GUILayout.Width(150)))
+                if (GUILayout.Button("Login to Maincloud"))
                 {
                     if (wslProcess == null)
                     {
@@ -1378,6 +1493,7 @@ public class ServerWindow : EditorWindow
                     }
                     LogoutAndLogin();
                 }
+                GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();                
 
                 // Auth Token setting
@@ -1386,7 +1502,7 @@ public class ServerWindow : EditorWindow
                 "Required to modify the database and run reducers. See it by running the Show Login Info utility command after server startup and paste it here.\n\n"+
                 "Important: Keep this token secret and do not share it with anyone outside of your team.");
                 EditorGUILayout.LabelField(new GUIContent("Auth Token:", tokenTooltip), GUILayout.Width(110));
-                string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken, GUILayout.Width(150));
+                string newAuthToken = EditorGUILayout.PasswordField(maincloudAuthToken);
                 if (newAuthToken != maincloudAuthToken)
                 {
                     maincloudAuthToken = newAuthToken;
@@ -1484,8 +1600,8 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
             string autoPublishTooltip = 
-            "Automatic Publishing: The WSL CLI will automatically publish the module to your server when changes are detected. \n\n"+
-            "Manual Publish: The WSL CLI will not automatically publish the module and will require manual publishing.";
+            $"Automatic Publishing: The {localCLIProvider} CLI will automatically publish the module to your server when changes are detected. \n\n"+
+            $"Manual Publish: The {localCLIProvider} CLI will not automatically publish the module and will require manual publishing.";
             EditorGUILayout.LabelField(new GUIContent("Auto Publish Mode:", autoPublishTooltip), GUILayout.Width(120));
             GUIStyle autoPublishStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoPublishMode)
@@ -1536,23 +1652,23 @@ public class ServerWindow : EditorWindow
             // WSL Auto Close toggle
             EditorGUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
-            string wslCloseTooltip = 
-            "Close WSL at Unity Quit: The WSL CLI will close WSL when Unity is closed. \n"+
-            "Saves resources when WSL is not in use. WSL may otherwise leave several processes running.\n\n"+
-            "Keep Running: The WSL CLI will keep the WSL process running after Unity is closed.\n\n"+
-            "Recommended: Close WSL at Unity Quit";
-            EditorGUILayout.LabelField(new GUIContent("WSL Auto Close:", wslCloseTooltip), GUILayout.Width(120));
+            string cliCloseTooltip = 
+            $"Close {localCLIProvider} at Unity Quit: Your {localCLIProvider} virtualization and CLI will close when Unity is closed. \n"+
+            $"Saves resources when the virtualization is not in use. {localCLIProvider} may otherwise leave several processes running.\n\n"+
+            $"Keep Running: Your {localCLIProvider} virtualization and CLI will keep running after Unity is closed.\n\n"+
+            $"Recommended: Close {localCLIProvider} at Unity Quit unless having other applications besides SpacetimeDB depending on {localCLIProvider}.";
+            EditorGUILayout.LabelField(new GUIContent($"{localCLIProvider} Auto Close:", cliCloseTooltip), GUILayout.Width(120));
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
-            if (serverManager.AutoCloseWsl)
+            if (serverManager.AutoCloseCLI)
             {
                 wslCloseStyle.normal.textColor = warningColor;
                 wslCloseStyle.hover.textColor = warningColor;
             }
-            if (GUILayout.Button(serverManager.AutoCloseWsl ? "Close WSL at Unity Quit" : "Keep Running", wslCloseStyle))
+            if (GUILayout.Button(serverManager.AutoCloseCLI ? $"Close {localCLIProvider} at Unity Quit" : "Keep Running", wslCloseStyle))
             {
-                bool newAutoClose = !serverManager.AutoCloseWsl;
-                serverManager.autoCloseWsl = newAutoClose;
-                autoCloseWsl = newAutoClose; // Keep local field in sync
+                bool newAutoClose = !serverManager.AutoCloseCLI;
+                serverManager.autoCloseCLI = newAutoClose;
+                autoCloseCLI = newAutoClose; // Keep local field in sync
             }
             EditorGUILayout.EndHorizontal();
 
@@ -1625,10 +1741,11 @@ public class ServerWindow : EditorWindow
                 // Update other components that need to know about debug mode
                 ServerSetupWindow.debugMode = newDebugMode;
                 ServerOutputWindow.debugMode = newDebugMode;
-                ServerWindowInitializer.debugMode = newDebugMode;
+                ServerEditorStates.debugMode = newDebugMode;
                 ServerUpdateProcess.debugMode = newDebugMode;
                 ServerLogProcess.debugMode = newDebugMode;
                 ServerWSLProcess.debugMode = newDebugMode;
+                ServerDockerProcess.debugMode = newDebugMode;
                 ServerCustomProcess.debugMode = newDebugMode;
                 ServerDataWindow.debugMode = newDebugMode;
                 ServerReducerWindow.debugMode = newDebugMode;
@@ -1711,6 +1828,23 @@ public class ServerWindow : EditorWindow
                             CloseDatabaseAndReducerWindow();
                         }
                     }
+                } else if (serverMode == ServerMode.DockerServer)
+                {
+                    if (!serverRunning)
+                    {
+                        if (GUILayout.Button("Start SpacetimeDB Docker", GUILayout.Height(30)))
+                        {
+                            serverManager.StartServer();
+                        }
+                    }
+                    else
+                    {
+                        if (GUILayout.Button("Stop SpacetimeDB Docker", GUILayout.Height(30)))
+                        {
+                            serverManager.StopServer();
+                            CloseDatabaseAndReducerWindow();
+                        }
+                    }
                 } else if (serverMode == ServerMode.CustomServer)
                 {
                     if (!serverRunning)
@@ -1735,6 +1869,8 @@ public class ServerWindow : EditorWindow
         // Activation of Server Windows
         bool WSLServerActive = serverManager.IsServerStarted && serverMode == ServerMode.WSLServer;
         bool WSLServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.WSLServer;
+        bool dockerServerActive = serverManager.IsServerStarted && serverMode == ServerMode.DockerServer;
+        bool dockerServerActiveSilent = serverManager.SilentMode && serverMode == ServerMode.DockerServer;
         bool customServerActive = serverManager.IsServerStarted && serverMode == ServerMode.CustomServer;
         bool customServerActiveSilent = serverMode == ServerMode.CustomServer;
         bool maincloudActive = serverManager.IsMaincloudConnected && serverMode == ServerMode.MaincloudServer;
@@ -1743,7 +1879,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
                
         // View Logs
-        EditorGUI.BeginDisabledGroup(!WSLServerActiveSilent && !customServerActiveSilent && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActiveSilent && !dockerServerActiveSilent && !customServerActiveSilent && !maincloudActive);
         var logIcon = EditorGUIUtility.IconContent("d_Profiler.UIDetails").image;
         GUIContent logContent = new GUIContent("View Logs", "View detailed server logs");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1778,7 +1914,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                
         // Browse Database
-        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !dockerServerActive && !customServerActive && !maincloudActive);
         var dbIcon = EditorGUIUtility.IconContent("d_VerticalLayoutGroup Icon").image;
         GUIContent dbContent = new GUIContent("Browse DB", "Browse and query the SpacetimeDB database");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1813,7 +1949,7 @@ public class ServerWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
                 
         // Run Reducer
-        EditorGUI.BeginDisabledGroup(!WSLServerActive && !customServerActive && !maincloudActive);
+        EditorGUI.BeginDisabledGroup(!WSLServerActive && !dockerServerActive && !customServerActive && !maincloudActive);
         var playIcon = EditorGUIUtility.IconContent("d_PlayButton").image;
         GUIContent reducerContent = new GUIContent("Run Reducer", "Run database reducers");
         EditorGUILayout.BeginVertical(GUILayout.Height(40));
@@ -1901,7 +2037,9 @@ public class ServerWindow : EditorWindow
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
         if (serverMode == ServerMode.WSLServer)
-            EditorGUILayout.LabelField(spacetimeDBCurrentVersion, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionWSL, versionStyle, GUILayout.Width(25));
+        else if (serverMode == ServerMode.DockerServer)
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionDocker, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.CustomServer)
             EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
         else if (serverMode == ServerMode.MaincloudServer)
@@ -1932,12 +2070,14 @@ public class ServerWindow : EditorWindow
         {
             EditorGUILayout.Space(-10);
 
-            if (serverMode == ServerMode.WSLServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            if (serverMode == ServerMode.DockerServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local Docker", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            else if (serverMode == ServerMode.WSLServer)
+                EditorGUILayout.LabelField("SpacetimeDB Local WSL", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.CustomServer)
                 EditorGUILayout.LabelField("SpacetimeDB Remote", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.MaincloudServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local (Maincloud)", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Maincloud", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
@@ -1958,21 +2098,21 @@ public class ServerWindow : EditorWindow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
                     serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
             }
 
-            if (GUILayout.Button("Show Login Info With Token", GUILayout.Height(20)))
+            if (GUILayout.Button("Show Login Info With Auth Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
             }
 
             EditorGUI.BeginDisabledGroup(serverMode != ServerMode.MaincloudServer && !serverManager.IsServerStarted);
@@ -1980,23 +2120,37 @@ public class ServerWindow : EditorWindow
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime list", "Showing active modules");
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
                 }
             EditorGUI.EndDisabledGroup();
 
             if (serverMode != ServerMode.MaincloudServer)
-            if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
             {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.PingServer(true);
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                // Maincloud does not support ping command
+                if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+                {
+                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                    serverManager.PingServer(true);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                }
+                // Maincloud always uses the latest version
+                if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+                {
+                    if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
+                    serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -1);
+                }
             }
 
-            if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+            // Maincloud energy command
+            if (serverMode == ServerMode.MaincloudServer)
             {
-                if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
-                serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL) or remote (SSH) and it is available.", -1);
+                if (GUILayout.Button("Show Energy Balance", GUILayout.Height(20)))
+                {
+                    if (CLIAvailableLocal()) 
+                        serverManager.RunServerCommand("spacetime energy balance", "Showing SpacetimeDB Maincloud energy");
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL or Docker) and it is available.", -1);
+                }
             }
 
             // Service Status button (only in Custom Server mode)
@@ -2017,14 +2171,23 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            EditorGUILayout.LabelField("WSL Local Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField($"Local {localCLIProvider} CLI", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+            if (localCLIProvider == "WSL")
             {
-                serverManager.OpenDebianWindow();
+                if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+                {
+                    serverManager.OpenDebianWindow();
+                }
+            } else if (localCLIProvider == "Docker")
+            {
+                if (GUILayout.Button("Open Docker Window", GUILayout.Height(20)))
+                {
+                    serverManager.OpenDockerWindow();
+                }
             }
 
-            if (serverMode == ServerMode.WSLServer)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
                 string backupTooltip = "Creates a tar archive of the DATA folder in your SpacetimeDB server, which contains the database, logs and settings of your module.\n\nRequires a Backup Directory to be set in Pre-Requisites.";
@@ -2050,7 +2213,6 @@ public class ServerWindow : EditorWindow
                         "Clear Database",
                         "Cancel"))
                     {
-                        serverManager.StopServer();
                         CloseDatabaseAndReducerWindow();
                         serverManager.ClearServerData();
                     }
@@ -2226,7 +2388,7 @@ public class ServerWindow : EditorWindow
         {
             if (GUILayout.Button("Generate Client Code", GUILayout.Height(30)))
             {
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory, serverManager.CurrentServerMode.ToString());
                 serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y", "Generating Client Code");
                 LogMessage($"Generated Client Code to: {outDir}", 1);
             }
@@ -2242,135 +2404,190 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
-        // Ensure wslProcess is initialized before use
-        if (wslProcess == null)
+        if (localCLIProvider == "Docker")
         {
-            wslProcess = new ServerWSLProcess(LogMessage, debugMode);
+            if (dockerProcess == null)
+            {
+                dockerProcess = new ServerDockerProcess(LogMessage, debugMode);
+            }
+
+            dockerProcess.CheckPrerequisites((docker, compose, image, mounts) => {
+                EditorApplication.delayCall += () => {
+                    // Update local state for UI
+                    hasDocker = docker;
+                    hasDockerCompose = compose;
+                    hasDockerImage = image;
+                    hasDockerContainerMounts = mounts;
+                    wslPrerequisitesChecked = true; // Check if this is necessary
+                    
+                    // Load userName value 
+                    userName = serverManager.UserName;
+                    
+                    Repaint();
+                    
+                    bool essentialSoftwareDocker = 
+                        docker && compose && image;
+
+                    bool essentialUserSettingsDocker = 
+                        !string.IsNullOrEmpty(serverDirectory) &&
+                        !string.IsNullOrEmpty(clientDirectory) &&
+                        !string.IsNullOrEmpty(moduleName) &&
+                        !string.IsNullOrEmpty(serverLang);
+
+                    List<string> missingSoftware = new List<string>();
+                    if (!docker) missingSoftware.Add("- Docker");
+                    if (!compose) missingSoftware.Add("- Docker Compose");
+                    if (!image) missingSoftware.Add("- SpacetimeDB Docker Image");
+
+                    List<string> missingUserSettings = new List<string>();
+                    if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
+                    if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                    if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
+                    if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
+                    if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+
+                    HandlePrerequisitesResult(essentialSoftwareDocker, essentialUserSettingsDocker, missingSoftware, missingUserSettings);
+                };
+            });
         }
-        
-        wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
-            EditorApplication.delayCall += () => {
-                // Update local state for UI
-                hasWSL = wsl;
-                hasDebian = debian;
-                hasDebianTrixie = trixie;
-                hasCurl = curl;
-                hasSpacetimeDBServer = spacetime;
-                hasSpacetimeDBPath = spacetimePath;
-                hasSpacetimeDBService = spacetimeService;
-                hasSpacetimeDBLogsService = spacetimeLogsService;
-                hasRust = rust;
-                hasBinaryen = binaryen;
-                hasGit = git;
-                hasNETSDK = netSdk;
-                wslPrerequisitesChecked = true;
-                
-                // Load userName value 
-                userName = serverManager.UserName;
-                
+        else if (localCLIProvider == "WSL")
+        {
+            if (wslProcess == null)
+            {
+                wslProcess = new ServerWSLProcess(LogMessage, debugMode);
+            }
+            
+            wslProcess.CheckPrerequisites((wsl, debian, trixie, curl, spacetime, spacetimePath, rust, spacetimeService, spacetimeLogsService, binaryen, git, netSdk) => {
+                EditorApplication.delayCall += () => {
+                    // Update local state for UI
+                    hasWSL = wsl;
+                    hasDebian = debian;
+                    hasDebianTrixie = trixie;
+                    hasCurl = curl;
+                    hasSpacetimeDBServer = spacetime;
+                    hasSpacetimeDBPath = spacetimePath;
+                    hasSpacetimeDBService = spacetimeService;
+                    hasSpacetimeDBLogsService = spacetimeLogsService;
+                    hasRust = rust;
+                    hasBinaryen = binaryen;
+                    hasGit = git;
+                    hasNETSDK = netSdk;
+                    wslPrerequisitesChecked = true;
+                    
+                    // Load userName value 
+                    userName = serverManager.UserName;
+                    
+                    Repaint();
+                    
+                    bool essentialSoftwareWSL = 
+                        wsl && debian && trixie && curl && 
+                        spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
+
+                    bool essentialUserSettingsWSL = 
+                        !string.IsNullOrEmpty(userName) &&
+                        !string.IsNullOrEmpty(serverDirectory) &&
+                        !string.IsNullOrEmpty(clientDirectory) &&
+                        !string.IsNullOrEmpty(moduleName) &&
+                        !string.IsNullOrEmpty(serverLang);
+
+                    List<string> missingSoftware = new List<string>();
+                    if (!wsl) missingSoftware.Add("- WSL");
+                    if (!debian) missingSoftware.Add("- Debian");
+                    if (!trixie) missingSoftware.Add("- Debian Trixie Update");
+                    if (!spacetime) missingSoftware.Add("- SpacetimeDB Server");
+                    if (!spacetimePath) missingSoftware.Add("- SpacetimeDB Path");
+                    if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
+                    if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
+                    if (!git) missingSoftware.Add("- Git");
+
+                    List<string> missingUserSettings = new List<string>();
+                    if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
+                    if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
+                    if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
+                    if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
+                    if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
+
+                    HandlePrerequisitesResult(essentialSoftwareWSL, essentialUserSettingsWSL, missingSoftware, missingUserSettings);
+                };
+            });
+        }
+    }
+
+    private void HandlePrerequisitesResult(bool essentialSoftware, bool essentialUserSettings, List<string> missingSoftware, List<string> missingUserSettings)
+    {
+        if (!essentialSoftware || !essentialUserSettings)
+        {
+            bool needsInstallation = EditorUtility.DisplayDialog(
+                $"{localCLIProvider} Setup Required", 
+                $"You are missing some essential {localCLIProvider} software and/or settings to run SpacetimeDB.\n" +
+                $"Please setup the following Software in {localCLIProvider}:\n" +
+                string.Join("\n", missingSoftware) + "\n" +
+                $"Please set the following Pre-Requisites in {localCLIProvider}:\n" +
+                string.Join("\n", missingUserSettings),
+                "Server Setup Window", "Pre-Requisites"
+            );
+            if (needsInstallation)
+            {
+                ServerSetupWindow.ShowWindow();
+            }
+            else 
+            {
+                // Open the pre-requisites drawer
+                SetDrawerState(DrawerType.Prerequisites, true);
                 Repaint();
-                
-                bool essentialSoftware = 
-                    wsl && debian && trixie && curl && 
-                    spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
+            }
 
-                bool essentialUserSettings = 
-                    !string.IsNullOrEmpty(userName) &&
-                    !string.IsNullOrEmpty(serverDirectory) &&
-                    !string.IsNullOrEmpty(clientDirectory) &&
-                    !string.IsNullOrEmpty(moduleName) &&
-                    !string.IsNullOrEmpty(serverLang);
+            hasAllPrerequisites = false;
+            CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
+        }
+        else if (essentialSoftware && essentialUserSettings)
+        {
+            int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
+                $"{localCLIProvider} Setup Complete", 
+                $"You have everything necessary to run SpacetimeDB on {localCLIProvider}! \n\n" +
+                "Please proceed to Init New Module (if using a new module)\n\n" +
+                "Recommended: Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
+                "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
+                "Init Module and Refresh Login", "Refresh Login", "Cancel"
+            );
+            if (initModuleAndLogout == 0)
+            {
+                InitNewModule();
+                // Also logout and login again to ensure a safe online login
+                LogoutAndLogin();
+            } 
+            else if (initModuleAndLogout == 1)
+            {
+                // Only logout and login again to ensure a safe online login
+                LogoutAndLogin();
+            }
+            // If Cancel do nothing
 
-                List<string> missingSoftware = new List<string>();
-                if (!wsl) missingSoftware.Add("- WSL");
-                if (!debian) missingSoftware.Add("- Debian");
-                if (!trixie) missingSoftware.Add("- Debian Trixie Update");
-                if (!spacetime) missingSoftware.Add("- SpacetimeDB Server");
-                if (!spacetimePath) missingSoftware.Add("- SpacetimeDB Path");
-                if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
-                if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
-                if (!git) missingSoftware.Add("- Git");
+            hasAllPrerequisites = true;
+            CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
-                List<string> missingUserSettings = new List<string>();
-                if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
-                if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
-                if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
-                if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
-                if (string.IsNullOrEmpty(serverLang)) missingUserSettings.Add("- Server Language");
-
-                if (!essentialSoftware || !essentialUserSettings)
-                {
-                    bool needsInstallation = EditorUtility.DisplayDialog(
-                        "Missing Software", 
-                        "You are missing some essential software and/or settings to run SpacetimeDB.\n" +
-                        "Please install the following Software:\n" +
-                        string.Join("\n", missingSoftware) + "\n" +
-                        "Please set the following Pre-Requisites:\n" +
-                        string.Join("\n", missingUserSettings),
-                        "Server Setup Window", "Pre-Requisites"
-                    );
-                    if (needsInstallation)
-                    {
-                        ServerSetupWindow.ShowWindow();
-                    }
-                    else 
-                    {
-                        // Open the pre-requisites drawer
-                        SetDrawerState(DrawerType.Prerequisites, true);
-                        Repaint();
-                    }
-
-                    hasAllPrerequisites = false;
-                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
-                }
-                else if (essentialSoftware && essentialUserSettings)
-                {
-                    bool initModuleAndLogout = EditorUtility.DisplayDialog(
-                        "All Software Installed", 
-                        "You have everything necessary to run SpacetimeDB! \n\n" +
-                        "Please proceed to Init New Module (if using a new module)\n\n" +
-                        "Recommended: Logout and then Login again to switch to an online Login which is safer.\n\n" +
-                        "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                        "Init Module and Refresh Login", "Only Refresh Login"
-                    );
-                    if (initModuleAndLogout)
-                    {
-                        InitNewModule();
-                        // Also logout and login again to ensure a safe online login
-                        LogoutAndLogin();
-                    } 
-                    else
-                    {
-                        // Only logout and login again to ensure a safe online login
-                        LogoutAndLogin();
-                    }
-                    hasAllPrerequisites = true;
-                    CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
-
-                    publishFirstModule = true;
-                    CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
-                }
-                // After writing module name this will appear (when essential software and user settings)
-                else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Initialize First Module",
-                        "All requirements met to Initialize new server module. Please do this now and then Publish Module.\n" +
-                        "You can do this in Pre-Requisites > Shared Settings of the Main Window",
-                        "OK"
-                    );
-                }
-                else if (essentialSoftware && essentialUserSettings && initializedFirstModule && publishFirstModule)
-                {
-                    EditorUtility.DisplayDialog(
-                        "Ready to Publish", 
-                        "You are now ready to publish and start SpacetimeDB for the first time.\n" +
-                        "Please copy your token to the Pre-Requisites section to enable all functionality after your first publish.",
-                        "OK"
-                    );
-                }
-            };
-        });
+            publishFirstModule = true;
+            CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
+        }
+        // After writing module name this will appear (when essential software and user settings)
+        else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)
+        {
+            EditorUtility.DisplayDialog(
+                "Initialize First Module",
+                "All requirements met to Initialize new server module. Please do this now and then Publish Module.\n" +
+                "You can do this in Pre-Requisites > Shared Settings of the Main Window",
+                "OK"
+            );
+        }
+        else if (essentialSoftware && essentialUserSettings && initializedFirstModule && publishFirstModule)
+        {
+            EditorUtility.DisplayDialog(
+                "Ready to Publish", 
+                "You are now ready to publish and start SpacetimeDB for the first time.\n" +
+                "Please copy your token to the Pre-Requisites section to enable all functionality after your first publish.",
+                "OK"
+            );
+        }
     }
 
     public async void CheckPrerequisitesCustom()
@@ -2529,17 +2746,30 @@ public class ServerWindow : EditorWindow
             LogMessage("[LogoutAndLogin] Server Manager not initialized. Please restart Unity.", -1);
             return;
         }
-        if (serverRunning)
-        {
-            serverManager.StopServer();
+        if (localCLIProvider == "Docker") {
+            if (!serverRunning) // Docker starts and stops the whole container, so start it first if not running
+            {
+                serverManager.StartServer();
+                LogMessage("Waiting for Docker server to start in order to refresh login...", 0);
+                await Task.Delay(3000); // Wait for Docker server to start
+            }
+            serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
+            await Task.Delay(1000); // Wait for logout to complete
+            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
         }
-        await Task.Delay(2000); // Wait for server to stop
-        serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
-        await Task.Delay(1000); // Wait for logout to complete
-        serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
-        if (!serverRunning)
-        {
-            serverManager.StartServer();
+        else if (localCLIProvider == "WSL") {
+            if (serverRunning) // WSL is service based, so stop the spacetimedb service first if running
+            {
+                serverManager.StopServer();
+            }
+            await Task.Delay(3000); // Wait for WSL server to stop
+            serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
+            await Task.Delay(1000); // Wait for logout to complete
+            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
+            if (!serverRunning)
+            {
+                serverManager.StartServer();
+            }
         }
     }
 
@@ -2580,6 +2810,22 @@ public class ServerWindow : EditorWindow
         // Skip extra warning messages
         if (message.Contains("WARNING"))
         {
+            return;
+        }
+
+        // Check for Maincloud balance JSON pattern: {"balance": "123.45"}
+        var balanceMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"^\s*\{\s*""balance""\s*:\s*""?(?<val>[^\""}]+)""?\s*\}\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        if (balanceMatch.Success)
+        {
+            string val = balanceMatch.Groups["val"].Value.Trim();
+            // Show only the balance value in green with timestamp
+            commandOutputLog += $"<color=#575757>{DateTime.Now:HH:mm:ss}</color> <color=#00FF00>{val}</color>\n";
+
+            EditorApplication.delayCall += Repaint;
             return;
         }
         
@@ -2753,6 +2999,9 @@ public class ServerWindow : EditorWindow
         string storedToken = "";
         switch (tokenType)
         {
+            case AuthTokenType.Docker:
+                storedToken = CCCPSettingsAdapter.GetAuthTokenDocker();
+                break;
             case AuthTokenType.WSL:
                 storedToken = CCCPSettingsAdapter.GetAuthToken();
                 break;
@@ -2790,9 +3039,14 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableLocal()
     {
-        if (hasWSL)
+        if (hasDockerImage && localCLIProvider == "Docker")
         {
-            if (debugMode) LogMessage("SpacetimeDB Local CLI is available.", 1);
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is available via Docker.", 1);
+            return true;
+        }
+        else if (hasWSL && localCLIProvider == "WSL")
+        {
+            if (debugMode) LogMessage("SpacetimeDB Local CLI is available via WSL.", 1);
             return true;
         }
         else
@@ -2804,7 +3058,7 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableRemote()
     {
-        if (isConnected)
+        if (isConnectedCustomSSH)
         {
             if (debugMode) LogMessage("CLI Available on Remote Server", 1);
             return true;
@@ -2842,9 +3096,13 @@ public class ServerWindow : EditorWindow
         {
             if (debugMode) LogMessage($"Server mode transition: {previousServerMode} -> {serverMode}", 0);
             
+            // Reset server status when switching modes to prevent false positives
+            serverManager.ResetServerStatusOnModeChange();
+            if (debugMode) LogMessage("Server status reset for mode change", 0);
+            
             // Determine if we need to run a set-default command based on the transition
-            bool needsMaincloudSetDefault = (previousServerMode == ServerMode.WSLServer || previousServerMode == ServerMode.CustomServer) && serverMode == ServerMode.MaincloudServer;
-            bool needsLocalSetDefault = previousServerMode == ServerMode.MaincloudServer && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.CustomServer);
+            bool needsMaincloudSetDefault = (previousServerMode == ServerMode.WSLServer || previousServerMode == ServerMode.DockerServer || previousServerMode == ServerMode.CustomServer) && serverMode == ServerMode.MaincloudServer;
+            bool needsLocalSetDefault = previousServerMode == ServerMode.MaincloudServer && (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer || serverMode == ServerMode.CustomServer);
             
             if (needsMaincloudSetDefault)
             {
@@ -2858,7 +3116,7 @@ public class ServerWindow : EditorWindow
             }
             else
             {
-                // Transitioning between WSL and Custom modes doesn't require set-default changes
+                // Transitioning between WSL, Docker and Custom modes doesn't require set-default changes
                 if (debugMode) LogMessage("No set-default command needed for this transition", 0);
             }
             

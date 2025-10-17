@@ -77,6 +77,110 @@ public static class ServerUtilityProvider
         return -1; // Invalid or no port found
     }
 
+    /// <summary>
+    /// Parses and extracts URLs from command output, specifically looking for login URLs
+    /// </summary>
+    /// <param name="output">The command output to parse</param>
+    /// <returns>Array of extracted URLs</returns>
+    public static string[] ExtractUrlsFromOutput(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return new string[0];
+
+        var urls = new System.Collections.Generic.List<string>();
+        
+        try
+        {
+            // Use regex to find URLs in the format: (http://...) or (https://...) or just http://... or https://...
+            // This handles the specific case: "Opening https://spacetimedb.com/login/cli?token=... in your browser."
+            string urlPattern = @"(?:Opening\s+)?(?:\(?)(https?://[^\s\)]+)(?:\)?)";
+            var matches = System.Text.RegularExpressions.Regex.Matches(output, urlPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                if (match.Groups.Count > 1)
+                {
+                    string url = match.Groups[1].Value;
+                    if (!string.IsNullOrEmpty(url) && !urls.Contains(url))
+                    {
+                        urls.Add(url);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error extracting URLs from output: {ex.Message}");
+        }
+        
+        return urls.ToArray();
+    }
+
+    /// <summary>
+    /// Opens a URL in the system's default browser
+    /// </summary>
+    /// <param name="url">The URL to open</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool OpenUrlInBrowser(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return false;
+
+        try
+        {
+            // Use Unity's Application.OpenURL which works in both Editor and builds
+            // But it must be called from the main thread, so use delayCall for thread safety
+            UnityEditor.EditorApplication.delayCall += () => Application.OpenURL(url);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error opening URL {url}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Processes command output to automatically open any detected login URLs
+    /// </summary>
+    /// <param name="output">The command output to process</param>
+    /// <returns>The processed output with URL opening status</returns>
+    public static string ProcessOutputAndOpenUrls(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return output;
+
+        string[] urls = ExtractUrlsFromOutput(output);
+        string processedOutput = output;
+        
+        foreach (string url in urls)
+        {
+            // Check if this looks like a login URL (contains login/cli)
+            if (url.Contains("login/cli"))
+            {
+                if (OpenUrlInBrowser(url))
+                {
+                    // Replace the "Opening ... in your browser" text with confirmation
+                    string urlPattern = @"Opening\s+" + System.Text.RegularExpressions.Regex.Escape(url) + @"\s+in\s+your\s+browser";
+                    processedOutput = System.Text.RegularExpressions.Regex.Replace(
+                        processedOutput, 
+                        urlPattern, 
+                        $"Opening {url} in your browser... (URL opened automatically)", 
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                    
+                    // Also handle the case without "Opening" prefix
+                    if (processedOutput.Contains(url) && !processedOutput.Contains("URL opened automatically"))
+                    {
+                        processedOutput = processedOutput.Replace(url, $"{url} (URL opened automatically)");
+                    }
+                }
+            }
+        }
+        
+        return processedOutput;
+    }
+
     #endregion
 
     #region Path Utilities
@@ -85,8 +189,9 @@ public static class ServerUtilityProvider
     /// Gets the relative path for client directory in SpacetimeDB format
     /// </summary>
     /// <param name="clientDirectory">The client directory path</param>
+    /// <param name="serverMode">Optional server mode to handle path differently (e.g., "DockerServer")</param>
     /// <returns>Relative path formatted for SpacetimeDB</returns>
-    public static string GetRelativeClientPath(string clientDirectory)
+    public static string GetRelativeClientPath(string clientDirectory, string serverMode = null)
     {
         // Default path if nothing else works
         string defaultPath = "../Assets/Scripts/Server";
@@ -101,6 +206,34 @@ public static class ServerUtilityProvider
             // Normalize path to forward slashes
             string normalizedPath = clientDirectory.Replace('\\', '/');
             
+            // Docker mode: Use /unity mount point instead of ../Assets
+            if (!string.IsNullOrEmpty(serverMode) && serverMode.Equals("DockerServer", StringComparison.OrdinalIgnoreCase))
+            {
+                // Find the "Assets" directory in the path
+                int assetsIndex = normalizedPath.IndexOf("Assets/");
+                if (assetsIndex < 0)
+                {
+                    assetsIndex = normalizedPath.IndexOf("Assets");
+                }
+                
+                if (assetsIndex >= 0)
+                {
+                    // Extract from "Assets" to the end and use /unity/ mount point
+                    string dockerPath = "/unity/" + normalizedPath.Substring(assetsIndex);
+                    
+                    // Add quotes if path contains spaces
+                    if (dockerPath.Contains(" "))
+                    {
+                        return $"\"{dockerPath}\"";
+                    }
+                    return dockerPath;
+                }
+                
+                // Fallback to /unity/Assets for Docker
+                return "/unity/Assets";
+            }
+            
+            // WSL/Custom mode: Use ../Assets relative path
             // If the path already starts with "../Assets", use it directly
             if (normalizedPath.StartsWith("../Assets"))
             {
@@ -108,16 +241,16 @@ public static class ServerUtilityProvider
             }
             
             // Find the "Assets" directory in the path
-            int assetsIndex = normalizedPath.IndexOf("Assets/");
-            if (assetsIndex < 0)
+            int assetsIndexNormal = normalizedPath.IndexOf("Assets/");
+            if (assetsIndexNormal < 0)
             {
-                assetsIndex = normalizedPath.IndexOf("Assets");
+                assetsIndexNormal = normalizedPath.IndexOf("Assets");
             }
             
-            if (assetsIndex >= 0)
+            if (assetsIndexNormal >= 0)
             {
                 // Extract from "Assets" to the end and prepend "../"
-                string relativePath = "../" + normalizedPath.Substring(assetsIndex);
+                string relativePath = "../" + normalizedPath.Substring(assetsIndexNormal);
                 
                 // Ensure it has proper structure
                 if (!relativePath.Contains("/"))
@@ -283,6 +416,63 @@ public static class ServerUtilityProvider
                 window.Close();
             }
         }
+    }
+
+    #endregion
+
+    #region Platform Detection
+
+    /// <summary>
+    /// Determines if the current operating system is Windows
+    /// </summary>
+    public static bool IsWindows()
+    {
+        return Application.platform == RuntimePlatform.WindowsEditor;
+    }
+
+    /// <summary>
+    /// Determines if the current operating system is macOS
+    /// </summary>
+    public static bool IsMacOS()
+    {
+        return Application.platform == RuntimePlatform.OSXEditor;
+    }
+
+    /// <summary>
+    /// Determines if the current operating system is Linux
+    /// </summary>
+    public static bool IsLinux()
+    {
+        return Application.platform == RuntimePlatform.LinuxEditor;
+    }
+
+    /// <summary>
+    /// Gets the appropriate shell executable for the current platform
+    /// </summary>
+    /// <returns>Shell executable path (cmd.exe, bash, etc.)</returns>
+    public static string GetShellExecutable()
+    {
+        if (IsWindows())
+            return "cmd.exe";
+        else if (IsMacOS() || IsLinux())
+            return "/bin/bash";
+        else
+            return "sh"; // Fallback
+    }
+
+    /// <summary>
+    /// Gets the appropriate shell argument prefix for the current platform
+    /// </summary>
+    /// <param name="command">The command to wrap</param>
+    /// <returns>Shell arguments including the command</returns>
+    public static string GetShellArguments(string command)
+    {
+        if (IsWindows())
+            return $"/c {command}";
+        else if (IsMacOS() || IsLinux())
+            return $"-c \"{command}\"";
+        else
+            return $"-c \"{command}\""; // Fallback
     }
 
     #endregion

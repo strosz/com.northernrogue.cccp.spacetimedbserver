@@ -112,10 +112,10 @@ public class ServerManager
         get => Settings.clearDatabaseLogAtStart; 
         set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); 
     }
-    public bool autoCloseWsl 
+    public bool autoCloseCLI
     { 
-        get => Settings.autoCloseWsl; 
-        set => CCCPSettingsAdapter.SetAutoCloseWsl(value); 
+        get => Settings.autoCloseCLI; 
+        set => CCCPSettingsAdapter.SetAutoCloseCLI(value); 
     }
 
     // Prerequisites state
@@ -179,6 +179,21 @@ public class ServerManager
         get => Settings.hasGit; 
         set => CCCPSettingsAdapter.SetHasGit(value); 
     }
+    public bool hasDocker 
+    { 
+        get => Settings.hasDocker; 
+        set => CCCPSettingsAdapter.SetHasDocker(value); 
+    }
+    public bool hasDockerCompose 
+    { 
+        get => Settings.hasDockerCompose; 
+        set => CCCPSettingsAdapter.SetHasDockerCompose(value); 
+    }
+    public bool hasDockerImage 
+    { 
+        get => Settings.hasDockerImage; 
+        set => CCCPSettingsAdapter.SetHasDockerImage(value); 
+    }
     public bool wslPrerequisitesChecked 
     { 
         get => Settings.wslPrerequisitesChecked; 
@@ -203,8 +218,13 @@ public class ServerManager
     // Update SpacetimeDB
     public string spacetimeDBCurrentVersion 
     { 
-        get => Settings.spacetimeDBCurrentVersion; 
-        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(value); 
+        get => Settings.spacetimeDBCurrentVersionWSL; 
+        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); 
+    }
+    public string spacetimeDBCurrentVersionDocker 
+    { 
+        get => Settings.spacetimeDBCurrentVersionDocker; 
+        set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(value); 
     }
     public string spacetimeDBCurrentVersionCustom 
     { 
@@ -225,18 +245,33 @@ public class ServerManager
     // Update Rust
     public string rustCurrentVersion 
     { 
-        get => Settings.rustCurrentVersion; 
-        set => CCCPSettingsAdapter.SetRustCurrentVersion(value); 
+        get => Settings.rustCurrentVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustCurrentVersionWSL(value); 
     }
     public string rustLatestVersion 
     { 
-        get => Settings.rustLatestVersion; 
-        set => CCCPSettingsAdapter.SetRustLatestVersion(value); 
+        get => Settings.rustLatestVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustLatestVersionWSL(value); 
     }
     public string rustupVersion 
     { 
-        get => Settings.rustupVersion; 
-        set => CCCPSettingsAdapter.SetRustupVersion(value); 
+        get => Settings.rustupVersionWSL; 
+        set => CCCPSettingsAdapter.SetRustupVersionWSL(value); 
+    }
+    public string rustCurrentVersionDocker 
+    { 
+        get => Settings.rustCurrentVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustCurrentVersionDocker(value); 
+    }
+    public string rustLatestVersionDocker 
+    { 
+        get => Settings.rustLatestVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustLatestVersionDocker(value); 
+    }
+    public string rustupVersionDocker 
+    { 
+        get => Settings.rustupVersionDocker; 
+        set => CCCPSettingsAdapter.SetRustupVersionDocker(value); 
     }
 
     // Server output window settings
@@ -260,7 +295,7 @@ public class ServerManager
     public bool AutoPublishMode => autoPublishMode;
     public bool PublishAndGenerateMode => publishAndGenerateMode;
     public bool SilentMode => silentMode;
-    public bool AutoCloseWsl => autoCloseWsl;
+    public bool AutoCloseCLI => autoCloseCLI;
     public bool ClearModuleLogAtStart => clearModuleLogAtStart;
     public bool ClearDatabaseLogAtStart => clearDatabaseLogAtStart;
 
@@ -275,9 +310,17 @@ public class ServerManager
     public string ClientDirectory => Settings.clientDirectory;
     public string ServerLang => Settings.serverLang;
     public string ModuleName => moduleName;
+    public string LocalCLIProvider => Settings.localCLIProvider;
+
+    // WSL Server properties
     public string ServerUrl => Settings.serverUrl;
     public int ServerPort => Settings.serverPort;
     public string AuthToken => Settings.authToken;
+    
+    // Docker server properties
+    public string ServerUrlDocker => Settings.serverUrlDocker;
+    public int ServerPortDocker => Settings.serverPortDocker;
+    public string AuthTokenDocker => Settings.authTokenDocker;
 
     // Status properties
     public bool IsServerStarted => serverStarted;
@@ -366,12 +409,20 @@ public class ServerManager
             () => ServerOutputWindow.RefreshOpenWindow(), // Module log update callback
             () => ServerOutputWindow.RefreshDatabaseLogs(), // Database log update callback - uses high-priority refresh
             wslProcessor,
+            dockerProcessor,
             serverCustomProcess,
             debugMode
         );
         
-        // Initialize VersionProcessor
-        versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        // Initialize VersionProcessor based on the current server mode
+        if (LocalCLIProvider == "Docker")
+        {
+            versionProcessor = new ServerVersionProcess(dockerProcessor, LogMessage, debugMode);
+        }
+        else // Default to WSL
+        {
+            versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        }
         
         // Initialize ServerDetectionProcess
         detectionProcess = new ServerDetectionProcess();
@@ -384,8 +435,6 @@ public class ServerManager
         // Configure the server control delegates
         versionProcessor.ConfigureServerControlDelegates(
             () => serverStarted, // IsServerRunning
-            () => autoCloseWsl,  // GetAutoCloseWsl
-            (value) => { autoCloseWsl = value; }, // SetAutoCloseWsl
             () => StartServer(),  // StartServer
             () => StopServer()    // StopServer
         );
@@ -505,6 +554,23 @@ public class ServerManager
         {
             wslProcessor.ClearStatusCache();
         }
+        
+        // Reinitialize version processor based on new server mode
+        if (LocalCLIProvider == "Docker")
+        {
+            versionProcessor = new ServerVersionProcess(dockerProcessor, LogMessage, debugMode);
+        }
+        else // Default to WSL
+        {
+            versionProcessor = new ServerVersionProcess(wslProcessor, LogMessage, debugMode);
+        }
+        
+        // Reconfigure delegates
+        versionProcessor.ConfigureServerControlDelegates(
+            () => serverStarted,
+            () => StartServer(),
+            () => StopServer()
+        );
     }
 
     public void Configure()
@@ -547,7 +613,22 @@ public class ServerManager
                 {
                     try
                     {
-                        bool isActuallyRunning = await PingServerStatusAsync();
+                        // For MaincloudServer mode, skip ping verification since it's a remote service
+                        // We're only using the local CLI (Docker/WSL) as a tool, not hosting a server
+                        bool isActuallyRunning = false;
+                        if (serverMode == ServerMode.MaincloudServer)
+                        {
+                            // Maincloud is always available, just verify we can connect to it
+                            isActuallyRunning = true; // Assume Maincloud is online
+                            if (debugMode)
+                                LogMessage("[ServerManager] MaincloudServer mode - skipping local server ping, Maincloud is assumed available", 0);
+                        }
+                        else
+                        {
+                            // For WSL, Docker, and Custom servers, verify the server is actually running
+                            isActuallyRunning = await PingServerStatusAsync();
+                        }
+                        
                         if (!isActuallyRunning)
                         {
                             if (debugMode)
@@ -575,15 +656,63 @@ public class ServerManager
                                     if (debugMode)
                                         LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
                                 }
+                                else if (serverMode == ServerMode.DockerServer)
+                                {
+                                    logProcessor.ConfigureDocker(true);
+                                    if (debugMode)
+                                        LogMessage($"[ServerManager] Reconfigured Docker log processor", 1);
+                                }
                                 else if (serverMode == ServerMode.WSLServer)
                                 {
                                     logProcessor.ConfigureWSL(true);
                                     if (debugMode)
-                                        LogMessage("[ServerManager] Reconfigured WSL log processor", 1);
+                                        LogMessage($"[ServerManager] Reconfigured WSL log processor", 1);
+                                }
+                                else if (serverMode == ServerMode.MaincloudServer)
+                                {
+                                    // For Maincloud, configure based on localCLIProvider
+                                    if (LocalCLIProvider == "Docker")
+                                    {
+                                        logProcessor.ConfigureDocker(true);
+                                        if (debugMode)
+                                            LogMessage($"[ServerManager] Reconfigured Docker log processor for MaincloudServer mode", 1);
+                                    }
+                                    else // WSL
+                                    {
+                                        logProcessor.ConfigureWSL(true);
+                                        if (debugMode)
+                                            LogMessage($"[ServerManager] Reconfigured WSL log processor for MaincloudServer mode", 1);
+                                    }
                                 }
                                 
                                 logProcessor.SetServerRunningState(true);
                                 logProcessor.StartLogging();
+                                
+                                // Restart log reading processes to clear any stuck states from compilation
+                                if (serverMode == ServerMode.CustomServer)
+                                {
+                                    logProcessor.RestartSSHLogging();
+                                }
+                                else if (serverMode == ServerMode.DockerServer)
+                                {
+                                    logProcessor.RestartDockerLogging();
+                                }
+                                else if (serverMode == ServerMode.WSLServer)
+                                {
+                                    logProcessor.RestartWSLLogging();
+                                }
+                                else if (serverMode == ServerMode.MaincloudServer)
+                                {
+                                    if (LocalCLIProvider == "Docker")
+                                    {
+                                        logProcessor.RestartDockerLogging();
+                                    }
+                                    else // WSL
+                                    {
+                                        logProcessor.RestartWSLLogging();
+                                    }
+                                }
+                                
                                 if (debugMode)
                                     LogMessage("[ServerManager] Restarted log processor after compilation - server confirmed running.", 1);
                             }
@@ -804,35 +933,65 @@ public class ServerManager
                 bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
                 if (!dockerServiceRunning)
                 {
-                    LogMessage("Docker service is not running. Attempting to start Docker Desktop...", 0);
+                    LogMessage("Starting up Docker Desktop. This may take up to 30 seconds...", 0);
                     bool started = await dockerProcessor.StartDockerService();
                     if (!started)
                     {
-                        throw new Exception("Failed to start Docker service. Please start Docker Desktop manually.");
+                        throw new Exception("Failed to start Docker Desktop. Please start Docker Desktop manually.");
                     }
                     
-                    // Wait a moment for Docker service to fully initialize
-                    await Task.Delay(3000);
+                    // Wait for Docker service to become fully ready
+                    bool dockerReady = await dockerProcessor.WaitForDockerServiceReady(60); // Wait up to 60 seconds
+                    
+                    if (!dockerReady)
+                    {
+                        throw new Exception("Docker Desktop did not become ready in time. Please check if Docker Desktop is running and try again.");
+                    }
+                    
+                    LogMessage("Docker Desktop is now ready!", 1);
+                    
+                    // Give Docker daemon an extra moment to stabilize
+                    await Task.Delay(2000);
                 }
 
                 // Start Docker container
                 if (DebugMode) LogMessage("Starting SpacetimeDB Docker container...", 0);
+                
+                // First check if container is already running before attempting to start
+                var (containerExists, containerIsRunning) = dockerProcessor.CheckContainerExistsAndRunning();
+                bool containerWasAlreadyRunning = containerExists && containerIsRunning;
+                
                 Process containerProcess;
                 if (silentMode)
                 {
-                    containerProcess = dockerProcessor.StartSilentServerProcess(ServerDirectory);
+                    containerProcess = dockerProcessor.StartSilentServerProcess(ServerDirectory, ClientDirectory);
                 }
-                else
+                else // Should be removed
                 {
-                    containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory);
+                    containerProcess = dockerProcessor.StartVisibleServerProcess(ServerDirectory, ClientDirectory);
                 }
 
+                // Note: containerProcess can be null if container was already running - this is not an error
+                // The StartSilentServerProcess returns null when container is already running
                 if (containerProcess == null)
                 {
-                    throw new Exception("Failed to start Docker container");
+                    // Check if it was already running (null is expected in this case)
+                    if (!containerWasAlreadyRunning)
+                    {
+                        // Container wasn't running before, and we failed to start it
+                        bool dockerRunning = await dockerProcessor.IsDockerServiceRunning();
+                        if (!await dockerProcessor.CheckDockerProcessAsync(dockerRunning))
+                        {
+                            throw new Exception("Failed to start Docker container");
+                        }
+                    }
+                    else
+                    {
+                        if (DebugMode) LogMessage("Container was already running, continuing with startup confirmation...", 0);
+                    }
                 }
 
-                LogMessage("Docker Container Started Successfully!", 1);
+                LogMessage("Docker SpacetimeDB Container Started Successfully!", 1);
                 
                 // Wait a moment for container to initialize
                 await Task.Delay(2000);
@@ -849,13 +1008,14 @@ public class ServerManager
                     serverConfirmedRunning = true;
                     isStartingUp = false; // Skip the startup grace period since we confirmed container is running
                     
-                    // Update log processor state
+                    // Configure Docker log processor
+                    logProcessor.ConfigureDocker(true);
                     logProcessor.SetServerRunningState(true);
                     
                     if (silentMode)
                     {
-                        // Note: Docker logs would be handled differently than WSL logs
-                        if (debugMode) LogMessage("Docker server started in silent mode.", 1);
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("Docker log processors started successfully.", 1);
                     }
                     
                     // Check ping in background for additional confirmation
@@ -870,20 +1030,28 @@ public class ServerManager
                 }
                 else
                 {
-                    LogMessage("Container started, waiting for server to become ready...", 0);
+                    if (debugMode) LogMessage("Container started, waiting for server to become ready...", 0);
                     // Mark server as starting up for grace period monitoring
                     isStartingUp = true;
                     startupTime = (float)EditorApplication.timeSinceStartup;
                     serverStarted = true; // Assume starting, CheckServerStatus will verify
                     SaveServerStateToSessionState(); // Persist state across domain reloads
                     
-                    // Update log processor state
+                    // Configure Docker log processor
+                    logProcessor.ConfigureDocker(true);
                     logProcessor.SetServerRunningState(true);
+                    
+                    // Start logging if in silent mode
+                    if (silentMode)
+                    {
+                        logProcessor.StartLogging();
+                        if (debugMode) LogMessage("Docker log processors started successfully.", 1);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LogMessage($"Error during Docker server start sequence: {ex.Message}", -1);
+                if (debugMode) LogMessage($"Error during Docker server start sequence: {ex.Message}", -1);
                 serverStarted = false;
                 isStartingUp = false;
                 SaveServerStateToSessionState(); // Persist state across domain reloads
@@ -985,6 +1153,7 @@ public class ServerManager
                 () => { SafeRepaint(); },
                 () => { SafeRepaint(); },
                 wslProcessor,
+                dockerProcessor,
                 serverCustomProcess,
                 debugMode
             );
@@ -1103,10 +1272,10 @@ public class ServerManager
                 }
                 else
                 {
-                    if (stillRunning)
-                        LogMessage("Warning: Some SpacetimeDB processes may still be running.", -1);
-                    if (pingStillResponding)
-                        LogMessage("Warning: Server is still responding to ping requests.", -1);
+                    if (stillRunning && debugMode)
+                        LogMessage("Warning: Some SpacetimeDB processes may still be running.", 0);
+                    if (pingStillResponding && debugMode)
+                        LogMessage("Warning: Server is still responding to ping requests.", 0);
                         
                     // Still mark as stopped since we did our best
                     serverStarted = false;
@@ -1117,7 +1286,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Stop sequence completed. Check server status manually if needed.", 0);
+                    LogMessage("Stop sequence completed. Check server status manually if needed.", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -1179,11 +1348,11 @@ public class ServerManager
                 }
                 else
                 {
-                    if (stillRunning)
-                        LogMessage("Warning: Docker container may still be running.", -1);
-                    if (pingStillResponding)
-                        LogMessage("Warning: Server is still responding to ping requests.", -1);
-                        
+                    if (stillRunning && debugMode)
+                        LogMessage("Warning: Docker container may still be running.", 0);
+                    if (pingStillResponding && debugMode)
+                        LogMessage("Warning: Server is still responding to ping requests.", 0);
+
                     // Still mark as stopped since we did our best
                     serverStarted = false;
                     isStartingUp = false;
@@ -1193,7 +1362,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Stop sequence completed. Check Docker container status manually if needed.", 0);
+                    LogMessage("Stop sequence completed. Check Docker container status manually if needed.", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -1311,8 +1480,50 @@ public class ServerManager
                         isActuallyRunning = serverCustomProcess.cachedServerRunningStatus;
                         if (DebugMode) LogMessage($"Custom server check after grace period: {(isActuallyRunning ? "running" : "not running")}", 0);
                     }                
-                }                
-                else // WSL and other modes
+                }
+                else if (Settings.serverMode == ServerMode.DockerServer)
+                {
+                    // Docker mode - check Docker container status
+                    bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                    bool containerRunning = false;
+                    
+                    if (dockerServiceRunning)
+                    {
+                        containerRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                    }
+                    
+                    // During startup phase, prioritize container status
+                    if (containerRunning)
+                    {
+                        isActuallyRunning = true;
+                        
+                        // Optionally check ping for additional confirmation
+                        if (elapsedTime > 3.0f)
+                        {
+                            bool pingResponding = await PingServerStatusAsync();
+                            if (DebugMode) 
+                            {
+                                LogMessage($"Docker startup check - Container: running, Ping: {(pingResponding ? "responding" : "not responding")}, Elapsed: {elapsedTime:F1}s", 0);
+                            }
+                        }
+                        else
+                        {
+                            if (DebugMode) 
+                            {
+                                LogMessage($"Docker startup check - Container: running, Elapsed: {elapsedTime:F1}s (early startup, ping skipped)", 0);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        isActuallyRunning = false;
+                        if (DebugMode) 
+                        {
+                            LogMessage($"Docker startup check - Container: not running, Elapsed: {elapsedTime:F1}s", 0);
+                        }
+                    }
+                }
+                else // WSL mode
                 {
                     // Use instantCheck=true to bypass cache during startup for immediate status verification
                     bool serviceRunning = await wslProcessor.CheckServerRunning(instantCheck: true);
@@ -1350,7 +1561,8 @@ public class ServerManager
                             LogMessage($"WSL startup check - Service: inactive, Elapsed: {elapsedTime:F1}s, Result: not running", 0);
                         }
                     }
-                }                // If running during startup phase, confirm immediately
+                }
+                // If running during startup phase, confirm immediately
                 if (isActuallyRunning)
                 {
                     if (DebugMode) LogMessage($"Startup confirmed: Server service is active and running.", 1);
@@ -1377,7 +1589,9 @@ public class ServerManager
                         }
                     }
                     SafeRepaint();
-                    return;                }                // If grace period expires and still not running, assume failure
+                    return;                
+                }
+                // If grace period expires and still not running, assume failure
                 else if (elapsedTime >= serverStartupGracePeriod)
                 {
                     LogMessage($"Server failed to start within grace period ({serverStartupGracePeriod} seconds).", -1);
@@ -1385,10 +1599,32 @@ public class ServerManager
                     // Before giving up, do one final service check to be absolutely sure
                     try
                     {
-                        bool finalServiceCheck = await wslProcessor.CheckServerRunning(instantCheck: true);
+                        bool finalServiceCheck = false;
+                        
+                        // Use mode-specific check for final verification
+                        if (Settings.serverMode == ServerMode.DockerServer)
+                        {
+                            bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                            if (dockerServiceRunning)
+                            {
+                                finalServiceCheck = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                            }
+                        }
+                        else if (Settings.serverMode == ServerMode.CustomServer)
+                        {
+                            await serverCustomProcess.CheckServerRunning(true);
+                            finalServiceCheck = serverCustomProcess.cachedServerRunningStatus;
+                        }
+                        else // WSL mode
+                        {
+                            finalServiceCheck = await wslProcessor.CheckServerRunning(instantCheck: true);
+                        }
+                        
                         if (finalServiceCheck)
                         {
-                            LogMessage("Final service check shows server is actually running - recovering!", 1);
+                            string serverType = Settings.serverMode == ServerMode.CustomServer ? "Custom Remote Server" : 
+                                               Settings.serverMode == ServerMode.DockerServer ? "Docker Server" : "WSL Server";
+                            LogMessage($"Final service check shows server is actually running - recovering! ({serverType})", 1);
                             isStartingUp = false;
                             serverStarted = true;
                             SaveServerStateToSessionState(); // Persist state across domain reloads
@@ -1461,8 +1697,47 @@ public class ServerManager
                         if (DebugMode) LogMessage("Ignoring possible false negative server status check (server recently started)", 0);
                         return; // Skip this check, maintain current state
                     }                
-                }                
-                else // WSL and other modes
+                }
+                else if (Settings.serverMode == ServerMode.DockerServer)
+                {
+                    // Docker mode - check container and ping status
+                    bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+                    bool containerRunning = false;
+                    bool pingResponding = false;
+                    
+                    if (dockerServiceRunning)
+                    {
+                        containerRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+                        if (containerRunning)
+                        {
+                            pingResponding = await PingServerStatusAsync();
+                        }
+                    }
+                    
+                    // Special handling for recently stopped servers
+                    double timeSinceStop = EditorApplication.timeSinceStartup - stopInitiatedTime;
+                    bool recentlyStopped = justStopped && timeSinceStop < 10.0;
+                    
+                    if (recentlyStopped)
+                    {
+                        // Require both container AND ping to be active for recently stopped servers
+                        isActuallyRunning = containerRunning && pingResponding;
+                        if (DebugMode)
+                        {
+                            LogMessage($"Docker status (recently stopped) - Container: {(containerRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
+                    }
+                    else
+                    {
+                        // Normal operation: Server running if both container exists AND ping responds
+                        isActuallyRunning = containerRunning && pingResponding;
+                        if (DebugMode)
+                        {
+                            //LogMessage($"Docker status - Container: {(containerRunning ? "running" : "not running")}, Ping: {(pingResponding ? "responding" : "not responding")}, Result: {(isActuallyRunning ? "running" : "stopped")}", 0);
+                        }
+                    }
+                }
+                else // WSL mode
                 {
                     // Use a combination of service check and HTTP ping for better reliability
                     bool serviceRunning = await wslProcessor.CheckServerRunning();
@@ -1744,13 +2019,15 @@ public class ServerManager
                     if (debugMode) LogMessage("Custom Remote mode command failed to execute.", -2);
                 }
             }
-            else // WSL local commands, Custom Remote publish or Maincloud commands
+            else // WSL local commands, Docker commands, Custom Remote publish or Maincloud commands
             {
                 // Errors which causes the command to fail may be needed to be procesed directly in RunServerCommandAsync
-                var result = await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
+                var result = Settings.localCLIProvider == "Docker"
+                    ? await dockerProcessor.RunServerCommandAsync(command, ServerDirectory)
+                    : await wslProcessor.RunServerCommandAsync(command, ServerDirectory);
                 
-                // Display the results in the output log
-                if (!string.IsNullOrEmpty(result.output))
+                bool isLoginCommand = command.Contains("spacetime login") && !command.Contains("show --token");
+                if (!string.IsNullOrEmpty(result.output) && !isLoginCommand)
                 {
                     // Check if this is login info output and apply color formatting
                     string formattedOutput = ServerUtilityProvider.FormatLoginInfoOutput(result.output);
@@ -1758,7 +2035,7 @@ public class ServerManager
                     if (debugMode) UnityEngine.Debug.Log("Command output: " + formattedOutput);
                 }
                 
-                if (!string.IsNullOrEmpty(result.error))
+                if (!string.IsNullOrEmpty(result.error) && !isLoginCommand)
                 {
                     // Filter out formatting errors for generate commands that don't affect functionality
                     bool isGenerateCmd = command.Contains("spacetime generate");
@@ -1866,7 +2143,7 @@ public class ServerManager
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
-            else if (Settings.serverMode == ServerMode.WSLServer)
+            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
         }
         else
@@ -1875,7 +2152,7 @@ public class ServerManager
                 RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
             else if (Settings.serverMode == ServerMode.CustomServer)
                 RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
-            else if (Settings.serverMode == ServerMode.WSLServer)
+            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
                 RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
         }
 
@@ -1974,13 +2251,13 @@ public class ServerManager
 
         if (error.Contains("Identity") && error.Contains("is not valid"))
         {
-            if (serverMode == ServerMode.WSLServer)
+            if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             EditorUtility.DisplayDialog("Invalid Identity", 
-            "Please try to Logout and then Login again on your local WSL mode and then copy and paste the new auth token into your Pre-Requisites."
+            "Please try to Logout and then Login again on your local mode and then copy and paste the new auth token into your Pre-Requisites."
             ,"OK");
             else if (serverMode == ServerMode.CustomServer)
             EditorUtility.DisplayDialog("Invalid Identity",
-            "Please try to Logout and then Login again on your both your local WSL mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
+            "Please try to Logout and then Login again on your both your local mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
             ,"OK");
             successfulPublish = false;
         }
@@ -2016,13 +2293,13 @@ public class ServerManager
             if (successfulPublish)
             {
                 LogMessage("Publish successful, automatically generating Unity files...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files");
             }
             else // If unsuccessful Publish
             {
                 LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory);
+                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
                 RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (Publish failed)");
             }
         }
@@ -2102,11 +2379,21 @@ public class ServerManager
             return;
         }
 
-        string wslPath = wslProcessor.GetWslPath(ServerDirectory);
-        // Combine cd and init command
-        string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
-        wslProcessor.RunWslCommandSilent(command);
-        LogMessage("New module initialized", 1);
+        if (LocalCLIProvider == "Docker")
+        {
+            // For Docker the server directory needs to be mounted in the container, so we use the mount path /app directly
+            string command = $"cd /app && spacetime init --lang {ServerLang} .";
+            dockerProcessor.RunDockerCommandSilent($"exec {ServerDockerProcess.ContainerName} bash -c \"{command}\"");
+            LogMessage("New module initialized", 1);
+        }
+        else // WSL mode
+        {
+            string wslPath = wslProcessor.GetWslPath(ServerDirectory);
+            // Combine cd and init command
+            string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
+            wslProcessor.RunWslCommandSilent(command);
+            LogMessage("New module initialized", 1);
+        }
         
         // Reset the detection process tracking
         if (detectionProcess != null)
@@ -2176,13 +2463,18 @@ public class ServerManager
         wslProcessor.OpenDebianWindow(userNameReq);
     }
 
+    public void OpenDockerWindow()
+    {
+        dockerProcessor.OpenDockerWindow();
+    }
+
     public bool PingServerStatus()
     {
         PingServer(false);
         return pingShowsOnline;
     }
     
-    public async Task<bool> PingServerStatusAsync()
+    public async Task<bool> PingServerStatusAsync() // For the status checks
     {
         string url;
         if (Settings.serverMode == ServerMode.CustomServer)
@@ -2193,7 +2485,7 @@ public class ServerManager
         {
             url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
-        else
+        else // Docker or WSL local server // We don't use ServerUrlDocker since the server pings itself at port 3000 regardless of the external mapping
         {
             url = !string.IsNullOrEmpty(ServerUrl) ? ServerUrl : "http://127.0.0.1:3000";
         }
@@ -2205,11 +2497,20 @@ public class ServerManager
 
         try
         {
-            // Use wslProcessor's synchronous ping method for immediate result with timeout
+            // Use the appropriate processor based on LocalCLIProvider
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-            wslProcessor.PingServer(url, (isOnline, message) => {
-                tcs.TrySetResult(isOnline); // Use TrySetResult to avoid exceptions if timeout occurs
-            });
+            if (LocalCLIProvider == "Docker")
+            {
+                dockerProcessor.PingServer(url, (isOnline, message) => {
+                    tcs.TrySetResult(isOnline);
+                });
+            }
+            else
+            {
+                wslProcessor.PingServer(url, (isOnline, message) => {
+                    tcs.TrySetResult(isOnline);
+                });
+            }
             
             // Wait for the ping result with a 5-second timeout to prevent hanging during startup
             using (var timeoutCTS = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5)))
@@ -2226,7 +2527,7 @@ public class ServerManager
         }
     }
 
-    public void PingServer(bool showLog)
+    public void PingServer(bool showLog) // For manual ping
     {
         string url;
         if (Settings.serverMode == ServerMode.CustomServer)
@@ -2237,7 +2538,7 @@ public class ServerManager
         {
             url = !string.IsNullOrEmpty(Settings.maincloudUrl) ? Settings.maincloudUrl : "https://maincloud.spacetimedb.com/";
         }
-        else
+        else // Docker or WSL local server // We don't use ServerUrlDocker since the server pings itself at port 3000 regardless of the external mapping
         {
             url = !string.IsNullOrEmpty(ServerUrl) ? ServerUrl : "http://127.0.0.1:3000";
         }
@@ -2247,38 +2548,75 @@ public class ServerManager
             url = url.TrimEnd('/');
         }
         if (DebugMode) LogMessage($"Pinging server at {url}...", 0);
-        
-        wslProcessor.PingServer(url, (isOnline, message) => {
-            EditorApplication.delayCall += () => {
-                if (isOnline)
-                {
-                    if (showLog) LogMessage($"Server is online: {url}", 1);
-                    pingShowsOnline = true;
-                }
-                else
-                {
-                    if (showLog) LogMessage($"Server is offline: {message}", -1);
-                    pingShowsOnline = false;
-                }
-                
-                SafeRepaint();
-            };
-        });
+
+        if (LocalCLIProvider == "Docker"){
+            dockerProcessor.PingServer(url, (isOnline, message) => {
+                EditorApplication.delayCall += () => {
+                    if (isOnline && Settings.serverMode == ServerMode.DockerServer)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url} \n External mapping set to {ServerUrlDocker}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else if (isOnline && Settings.serverMode == ServerMode.CustomServer)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else
+                    {
+                        if (showLog) LogMessage($"Server is offline: {message} \n External mapping set to {ServerUrlDocker}", -1);
+                        pingShowsOnline = false;
+                    }
+                    
+                    SafeRepaint();
+                };
+            });
+        }
+        else if (LocalCLIProvider == "WSL"){
+            wslProcessor.PingServer(url, (isOnline, message) => {
+                EditorApplication.delayCall += () => {
+                    if (isOnline)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else
+                    {
+                        if (showLog) LogMessage($"Server is offline: {message}", -1);
+                        pingShowsOnline = false;
+                    }
+                    
+                    SafeRepaint();
+                };
+            });
+        }
     }
 
     public void BackupServerData()
     {
-        versionProcessor.BackupServerData(BackupDirectory, UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.BackupServerDataDocker(BackupDirectory);
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.BackupServerDataWSL(BackupDirectory, UserName);
+        }
     }
 
     public void ClearServerData()
     {
-        versionProcessor.ClearServerData(UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.ClearServerDataDocker();
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.ClearServerDataWSL(UserName);
+        }
     }
 
     public void RestoreServerData()
     {
-        versionProcessor.RestoreServerData(BackupDirectory, UserName);
+        if (LocalCLIProvider == "Docker") {
+            versionProcessor.RestoreServerDataDocker(BackupDirectory);
+        } else if (LocalCLIProvider == "WSL") {
+            versionProcessor.RestoreServerDataWSL(BackupDirectory, UserName);
+        }
     }
 
     public void ClearModuleLogFile()
@@ -2302,9 +2640,9 @@ public class ServerManager
         // For journalctl-based approach, database logs are part of the main logging
         if (serverStarted && silentMode)
         {
-            if (Settings.serverMode == ServerMode.WSLServer)
+            if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
             {
-                // Configure WSL and start logging for journalctl-based approach
+                // Configure WSL/Docker and start logging for journalctl-based approach
                 logProcessor.ConfigureWSL(true);
                 logProcessor.StartLogging();
             }
@@ -2379,9 +2717,9 @@ public class ServerManager
                 // Check SpacetimeDB version and update once every time WSL is confirmed running
                 if (isWslRunning)
                 {
-                    await CheckSpacetimeDBVersion();
+                    await CheckSpacetimeDBVersionWSL();
                     await CheckSpacetimeSDKVersion();
-                    await CheckRustVersion();
+                    await CheckRustVersionWSL();
                 }
             }
             
@@ -2406,6 +2744,8 @@ public class ServerManager
         if (currentTime - lastWslCheckTime < wslCheckInterval) // Reuse the same interval
             return;
         
+        lastWslCheckTime = currentTime; // Update the cache time
+        
         try
         {
             if (dockerProcessor == null)
@@ -2422,6 +2762,14 @@ public class ServerManager
             {
                 isDockerRunning = dockerServiceRunning;
                 if (debugMode) LogMessage($"Docker status updated to: {(isDockerRunning ? "Running" : "Stopped")}", 0);
+                
+                // Check SpacetimeDB version and update once every time Docker is confirmed running
+                if (isDockerRunning)
+                {
+                    await CheckSpacetimeDBVersionDocker();
+                    await CheckSpacetimeSDKVersion();
+                    await CheckRustVersionDocker();
+                }
             }
         }
         catch (Exception ex)
@@ -2585,9 +2933,27 @@ public class ServerManager
         }
     }
 
-
-
-
+    public void ResetServerStatusOnModeChange()
+    {
+        // Reset server status flags to prevent carrying over status from previous mode
+        serverConfirmedRunning = false;
+        serverStarted = false;
+        isStartingUp = false;
+        justStopped = false;
+        pingShowsOnline = false;
+        consecutiveFailedChecks = 0;
+        
+        // Update logProcessor state
+        if (logProcessor != null)
+        {
+            logProcessor.SetServerRunningState(false);
+        }
+        
+        // Save the reset state
+        SaveServerStateToSessionState();
+        
+        if (DebugMode) LogMessage("Server status reset for server mode change", 0);
+    }
 
     public void OpenSSHWindow()
     {
@@ -2631,6 +2997,17 @@ public class ServerManager
                 logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
             }
         }
+        else if (Settings.serverMode == ServerMode.DockerServer)
+        {
+            await CheckDockerStatus();
+            await CheckServerStatus();
+            
+            // Check Docker log processes only if editor has focus
+            if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
+            {
+                logProcessor.CheckLogProcesses(EditorApplication.timeSinceStartup);
+            }
+        }
         else if (Settings.serverMode == ServerMode.CustomServer)
         {
             await CheckServerStatus();
@@ -2667,92 +3044,81 @@ public class ServerManager
 
     #region Spacetime Version
 
-    public async Task CheckSpacetimeDBVersion() // Only runs in WSL once when WSL has started
+    public async Task CheckSpacetimeDBVersionWSL() // Only runs in WSL once when WSL has started
     {
-        if (debugMode) LogMessage("Checking SpacetimeDB version...", 0);
-        
-        // Only proceed if enough prerequisites are met
-        if (!hasWSL || !hasDebianTrixie || !hasSpacetimeDBServer || !hasSpacetimeDBPath)
+        if (wslProcessor == null)
         {
-            if (debugMode) LogMessage("Skipping SpacetimeDB version check - prerequisites not met", 0);
+            if (debugMode) LogMessage("WSL processor not initialized", -1);
             return;
         }
         
-        // Use RunServerCommandAsync to run the spacetime --version command (mark as status check for silent mode)
-        var result = await wslProcessor.RunServerCommandAsync("spacetime --version", serverDirectory, true);
+        var result = await wslProcessor.CheckSpacetimeDBVersionWSL(hasAllPrerequisites, serverDirectory);
         
-        if (string.IsNullOrEmpty(result.output))
-        {
-            if (debugMode) LogMessage("Failed to get SpacetimeDB version", -1);
-            return;
-        }
-        //UnityEngine.Debug.Log($"SpacetimeDB version output: {result.output}");
+        string version = result.version;
+        string toolversion = result.toolVersion;
+        string latestVersion = result.latestVersion;
+        bool updateAvailable = result.updateAvailable;
         
-        // Parse the version from output that looks like:
-        // "spacetime Path: /home/mchat/.local/share/spacetime/bin/1.3.1/spacetimedb-cli
-        // Commit: 
-        // spacetimedb tool version 1.3.0; spacetimedb-lib version 1.3.0;"
-        // Prefer the version from the path (1.3.1) over the tool version (1.3.0)
-        string version = "";
-        string toolversion = "";
-
-        // First try to extract version from the path (preferred method)
-        System.Text.RegularExpressions.Match pathMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"Path:\s+[^\r\n]*?/bin/([0-9]+\.[0-9]+\.[0-9]+)/");
-
-        if (pathMatch.Success && pathMatch.Groups.Count > 1)
+        if (!string.IsNullOrEmpty(toolversion))
         {
-            version = pathMatch.Groups[1].Value;
-            if (debugMode) LogMessage($"Detected SpacetimeDB version from path: {version}", 1);
-        }
-        else
-        {
-            // Fallback to tool version if path version not found
-            System.Text.RegularExpressions.Match fallbackToolMatch = 
-                System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
-
-            if (fallbackToolMatch.Success && fallbackToolMatch.Groups.Count > 1)
-            {
-                version = fallbackToolMatch.Groups[1].Value;
-                if (debugMode) LogMessage($"Detected SpacetimeDB version from tool output: {version}", 1);
-            }
-        }
-
-        // Also save the tool version for cargo.toml version update in Setup Window
-        System.Text.RegularExpressions.Match toolMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"spacetimedb tool version ([0-9]+\.[0-9]+\.[0-9]+)");
-
-        if (toolMatch.Success && toolMatch.Groups.Count > 1)
-        {
-            toolversion = toolMatch.Groups[1].Value;
             CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionTool(toolversion);
             spacetimeDBCurrentVersionTool = toolversion;
-
-            if (debugMode) LogMessage($"Detected SpacetimeDB tool version from output: {toolversion}", 1);
         }
 
         if (!string.IsNullOrEmpty(version))
         {
-            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersion(version);
-
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(version);
             spacetimeDBCurrentVersion = version;
 
-            // Check if update is available by comparing with the latest version from ServerUpdateProcess
-            spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
-            if (!string.IsNullOrEmpty(spacetimeDBLatestVersion) && version != spacetimeDBLatestVersion)
+            if (updateAvailable)
             {
                 // Only show the update message once per editor session (persists across script recompilations)
                 if (!SessionState.GetBool("SpacetimeDBWSLUpdateMessageShown", false))
                 {
-                    LogMessage($"SpacetimeDB update available for WSL! Click on the Setup Window update button to install. Current version: {version} and latest version: {spacetimeDBLatestVersion}", 1);
+                    LogMessage($"SpacetimeDB update available for WSL! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
                     SessionState.SetBool("SpacetimeDBWSLUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             }
         }
-        else
+    }
+    
+    public async Task CheckSpacetimeDBVersionDocker() // Only runs in Docker once when Docker has started
+    {
+        if (dockerProcessor == null)
         {
-            if (debugMode) LogMessage("Could not parse SpacetimeDB version from output", -1);
+            if (debugMode) LogMessage("Docker processor not initialized", -1);
+            return;
+        }
+        
+        var result = await dockerProcessor.CheckSpacetimeDBVersionDocker(hasDocker, hasDockerImage, serverDirectory);
+        
+        string version = result.version;
+        string toolversion = result.toolVersion;
+        string latestVersion = result.latestVersion;
+        bool updateAvailable = result.updateAvailable;
+        
+        if (!string.IsNullOrEmpty(toolversion))
+        {
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionTool(toolversion);
+            spacetimeDBCurrentVersionTool = toolversion;
+        }
+
+        if (!string.IsNullOrEmpty(version))
+        {
+            CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionDocker(version);
+            spacetimeDBCurrentVersionDocker = version;
+
+            if (updateAvailable)
+            {
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("SpacetimeDBDockerUpdateMessageShown", false))
+                {
+                    LogMessage($"SpacetimeDB update available for Docker! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
+                    SessionState.SetBool("SpacetimeDBDockerUpdateMessageShown", true);
+                }
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
+            }
         }
     }
     
@@ -2807,106 +3173,38 @@ public class ServerManager
     #endregion
     
     #region Rust Version
-    public async Task CheckRustVersion() // Only runs in WSL once when WSL has started
+    public async Task CheckRustVersionWSL() // Only runs in WSL once when WSL has started
     {
-        if (debugMode) LogMessage("Checking Rust version...", 0);
-        
-        // Only proceed if enough prerequisites are met
-        if (!hasWSL || !hasDebianTrixie || !hasRust)
+        if (wslProcessor == null)
         {
-            if (debugMode) LogMessage("Skipping Rust version check - prerequisites not met or Rust not installed", 0);
+            if (debugMode) LogMessage("WSL processor not initialized", -1);
             return;
         }
         
-        // Use RunServerCommandAsync to run the rustup check command (mark as status check for silent mode)
-        var result = await wslProcessor.RunServerCommandAsync("rustup check", serverDirectory, true);
+        var result = await wslProcessor.CheckRustVersionWSL(hasWSL, hasDebianTrixie, hasRust, serverDirectory);
         
-        if (string.IsNullOrEmpty(result.output))
-        {
-            if (debugMode) LogMessage("Failed to get Rust version information", -1);
-            return;
-        }
-        
-        // TODO: Remove this simulation line after testing
-        //result.output = "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)\nrustup - Up to date : 1.28.2";
-        
-        if (debugMode) LogMessage($"Rust check output: {result.output}", 0);
-        
-        // Parse the version from output that looks like:
-        // "stable-x86_64-unknown-linux-gnu - Up to date : 1.89.0 (29483883e 2025-08-04)
-        // rustup - Up to date : 1.28.2"
-        // Or when updates are available:
-        // "stable-x86_64-unknown-linux-gnu - Update available : 1.89.0 (29483883e 2025-08-04) -> 1.90.0 (5bc8c42bb 2025-09-04)
-        // rustup - Update available : 1.28.2 -> 1.29.0"
-        
-        string rustStableVersion = "";
-        string rustupCurrentVersion = "";
-        bool rustUpdateAvailable = false;
-        bool rustupUpdateAvailable = false;
-        
-        // Parse Rust stable version
-        System.Text.RegularExpressions.Match rustMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
-        
-        if (rustMatch.Success && rustMatch.Groups.Count > 1)
-        {
-            rustStableVersion = rustMatch.Groups[1].Value;
-            
-            // Check if update is available for Rust and extract latest version
-            if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Update available"))
-            {
-                rustUpdateAvailable = true;
-                
-                // Try to extract the latest version from "1.89.0 -> 1.90.0" format
-                System.Text.RegularExpressions.Match latestMatch = 
-                    System.Text.RegularExpressions.Regex.Match(result.output, @"stable-x86_64-unknown-linux-gnu.*?->\s*([0-9]+\.[0-9]+\.[0-9]+)");
-                
-                if (latestMatch.Success && latestMatch.Groups.Count > 1)
-                {
-                    string latestVersion = latestMatch.Groups[1].Value;
-                    CCCPSettingsAdapter.SetRustLatestVersion(latestVersion);
-                    rustLatestVersion = latestVersion;
-                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion} to {latestVersion}", 1);
-                }
-                else
-                {
-                    if (debugMode) LogMessage($"Rust update available from version: {rustStableVersion}", 1);
-                }
-            }
-            else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
-            {
-                // Clear the latest version when up to date
-                CCCPSettingsAdapter.SetRustLatestVersion("");
-                rustLatestVersion = "";
-                if (debugMode) LogMessage($"Rust is up to date at version: {rustStableVersion}", 1);
-            }
-        }
-        
-        // Parse rustup version
-        System.Text.RegularExpressions.Match rustupMatch = 
-            System.Text.RegularExpressions.Regex.Match(result.output, @"rustup.*?:\s*([0-9]+\.[0-9]+\.[0-9]+)");
-        
-        if (rustupMatch.Success && rustupMatch.Groups.Count > 1)
-        {
-            rustupCurrentVersion = rustupMatch.Groups[1].Value;
-            
-            // Check if update is available for rustup
-            if (result.output.Contains("rustup - Update available"))
-            {
-                rustupUpdateAvailable = true;
-                if (debugMode) LogMessage($"Rustup update available from version: {rustupCurrentVersion}", 1);
-            }
-            else if (result.output.Contains("rustup - Up to date"))
-            {
-                if (debugMode) LogMessage($"Rustup is up to date at version: {rustupCurrentVersion}", 1);
-            }
-        }
+        string rustStableVersion = result.rustVersion;
+        string rustLatestVersionResult = result.rustLatestVersion;
+        bool rustUpdateAvailable = result.rustUpdateAvailable;
+        string rustupCurrentVersion = result.rustupVersion;
+        bool rustupUpdateAvailable = result.rustupUpdateAvailable;
         
         // Save versions to Settings and local variables
         if (!string.IsNullOrEmpty(rustStableVersion))
         {
-            CCCPSettingsAdapter.SetRustCurrentVersion(rustStableVersion);
+            CCCPSettingsAdapter.SetRustCurrentVersionWSL(rustStableVersion);
             rustCurrentVersion = rustStableVersion;
+            
+            if (!string.IsNullOrEmpty(rustLatestVersionResult))
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionWSL(rustLatestVersionResult);
+                rustLatestVersion = rustLatestVersionResult;
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionWSL("");
+                rustLatestVersion = "";
+            }
             
             if (rustUpdateAvailable)
             {
@@ -2921,12 +3219,11 @@ public class ServerManager
         
         if (!string.IsNullOrEmpty(rustupCurrentVersion))
         {
-            CCCPSettingsAdapter.SetRustupVersion(rustupCurrentVersion);
+            CCCPSettingsAdapter.SetRustupVersionWSL(rustupCurrentVersion);
             rustupVersion = rustupCurrentVersion;
             
             if (rustupUpdateAvailable)
             {
-                //LogMessage($"Rustup update available for WSL! Click on the Setup Window update button to install the latest version: {rustupCurrentVersion}", 1);
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
             }
             else
@@ -2934,10 +3231,65 @@ public class ServerManager
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
             }
         }
-        
-        if (string.IsNullOrEmpty(rustStableVersion) && string.IsNullOrEmpty(rustupCurrentVersion))
+    }
+    
+    public async Task CheckRustVersionDocker() // Only runs in Docker once when Docker has started
+    {
+        if (dockerProcessor == null)
         {
-            if (debugMode) LogMessage("Could not parse Rust version information from output", -1);
+            if (debugMode) LogMessage("Docker processor not initialized", -1);
+            return;
+        }
+        
+        var result = await dockerProcessor.CheckRustVersionDocker(hasDocker, hasDockerImage, serverDirectory);
+        
+        string rustStableVersion = result.rustVersion;
+        string rustLatestVersionResult = result.rustLatestVersion;
+        bool rustUpdateAvailable = result.rustUpdateAvailable;
+        string rustupCurrentVersion = result.rustupVersion;
+        bool rustupUpdateAvailable = result.rustupUpdateAvailable;
+        
+        // Save versions to Settings and local variables
+        if (!string.IsNullOrEmpty(rustStableVersion))
+        {
+            CCCPSettingsAdapter.SetRustCurrentVersionDocker(rustStableVersion);
+            rustCurrentVersionDocker = rustStableVersion;
+            
+            if (!string.IsNullOrEmpty(rustLatestVersionResult))
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionDocker(rustLatestVersionResult);
+                rustLatestVersionDocker = rustLatestVersionResult;
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustLatestVersionDocker("");
+                rustLatestVersionDocker = "";
+            }
+            
+            if (rustUpdateAvailable)
+            {
+                LogMessage($"Rust update available for Docker! Click on the Setup Window update button to install. Current version: {rustCurrentVersionDocker} and latest version: {rustLatestVersionDocker}", 1);
+                CCCPSettingsAdapter.SetRustUpdateAvailable(true);
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustUpdateAvailable(false);
+            }
+        }
+        
+        if (!string.IsNullOrEmpty(rustupCurrentVersion))
+        {
+            CCCPSettingsAdapter.SetRustupVersionDocker(rustupCurrentVersion);
+            rustupVersionDocker = rustupCurrentVersion;
+            
+            if (rustupUpdateAvailable)
+            {
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(true);
+            }
+            else
+            {
+                CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
+            }
         }
     }
     
@@ -2948,6 +3300,12 @@ public class ServerManager
         {
             logProcessor.UpdateLogReadIntervals(interval);
         }
+    }
+    
+    // Public method to get the log processor (for ServerOutputWindow)
+    public ServerLogProcess GetLogProcessor()
+    {
+        return logProcessor;
     }
     
     // Public method to trigger log processing directly (for ServerOutputWindow)

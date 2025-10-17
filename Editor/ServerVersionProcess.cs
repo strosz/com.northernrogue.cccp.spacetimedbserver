@@ -3,7 +3,6 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using NorthernRogue.CCCP.Editor.Settings;
 
 // Processes the backup and restore commands of the local WSL Server ///
 
@@ -12,13 +11,12 @@ namespace NorthernRogue.CCCP.Editor {
 public class ServerVersionProcess
 {
     private ServerWSLProcess wslProcess;
+    private ServerDockerProcess dockerProcess;
     private bool debugMode;
     private Action<string, int> logCallback;
     
     // Server control delegates
     private Func<bool> isServerRunningDelegate;
-    private Func<bool> getAutoCloseWslDelegate;
-    private Action<bool> setAutoCloseWslDelegate;
     private Action startServerDelegate;
     private Action stopServerDelegate;
 
@@ -30,25 +28,31 @@ public class ServerVersionProcess
     }
     
     /// <summary>
+    /// Constructor for Docker-based server version processes
+    /// </summary>
+    public ServerVersionProcess(ServerDockerProcess dockerProcess, Action<string, int> logCallback, bool debugMode = false)
+    {
+        this.dockerProcess = dockerProcess;
+        this.logCallback = logCallback;
+        this.debugMode = debugMode;
+    }
+    
+    /// <summary>
     /// Configure the server control delegates after ServerWindow is fully initialized
     /// </summary>
     public void ConfigureServerControlDelegates(
         Func<bool> isServerRunningDelegate,
-        Func<bool> getAutoCloseWslDelegate,
-        Action<bool> setAutoCloseWslDelegate,
         Action startServerDelegate,
         Action stopServerDelegate)
     {
         this.isServerRunningDelegate = isServerRunningDelegate;
-        this.getAutoCloseWslDelegate = getAutoCloseWslDelegate;
-        this.setAutoCloseWslDelegate = setAutoCloseWslDelegate;
         this.startServerDelegate = startServerDelegate;
         this.stopServerDelegate = stopServerDelegate;
     }
 
-    #region Backup Server Data
+    #region Backup Server
 
-    public async void BackupServerData(string backupDirectory, string userName)
+    public async void BackupServerDataWSL(string backupDirectory, string userName)
     {
         if (string.IsNullOrEmpty(backupDirectory))
         {
@@ -67,7 +71,7 @@ public class ServerVersionProcess
         }
 
         // Construct the backup command with timestamp
-        string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}";
+        string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_wsl_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}";
         var result = await wslProcess.RunServerCommandAsync(backupCommand);
         
         if (result.success && debugMode)
@@ -76,16 +80,161 @@ public class ServerVersionProcess
             logCallback($"Backup may have failed: {result.error}", -1);
     }
 
+    public async void BackupServerDataDocker(string backupDirectory)
+    {
+        if (string.IsNullOrEmpty(backupDirectory))
+        {
+            logCallback("Error: Backup directory is not set or invalid.", -1);
+            return;
+        }
+
+        if (!Directory.Exists(backupDirectory))
+        {
+            logCallback("Error: Backup directory does not exist.", -1);
+            return;
+        }
+
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        string backupFileName = $"spacetimedb_docker_backup_{timestamp}.tar.gz";
+        string containerTempBackup = $"/tmp/{backupFileName}";
+        string hostBackupPath = Path.Combine(backupDirectory, backupFileName);
+
+        try
+        {
+            logCallback("Creating backup of Docker container data...", 0);
+
+            // First check if data directory exists and has content
+            string checkCommand = "[ -d /home/spacetime/.local/share/spacetime/data ] && [ \"$(ls -A /home/spacetime/.local/share/spacetime/data)\" ] && echo 'exists' || echo 'empty'";
+            var checkResult = await dockerProcess.RunServerCommandAsync(checkCommand);
+            
+            if (checkResult.output != null && checkResult.output.Trim() == "empty")
+            {
+                logCallback("Warning: SpacetimeDB data directory is empty. No backup created.", -2);
+                return;
+            }
+
+            // Create tar.gz backup inside the container - archive the data directory from its parent
+            string tarCommand = $"tar czf {containerTempBackup} -C /home/spacetime/.local/share/spacetime data";
+            var tarResult = await dockerProcess.RunServerCommandAsync(tarCommand);
+
+            if (!tarResult.success)
+            {
+                logCallback($"Failed to create backup inside container: {tarResult.error}", -1);
+                return;
+            }
+
+            // Copy backup file from container to host using cross-platform approach
+            string dockerCpCommand = $"docker cp {ServerDockerProcess.ContainerName}:{containerTempBackup} \"{hostBackupPath}\"";
+            
+            Process cpProcess = new Process();
+            cpProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            cpProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCpCommand);
+            cpProcess.StartInfo.UseShellExecute = false;
+            cpProcess.StartInfo.CreateNoWindow = true;
+            cpProcess.StartInfo.RedirectStandardOutput = true;
+            cpProcess.StartInfo.RedirectStandardError = true;
+            
+            cpProcess.Start();
+            string cpOutput = await cpProcess.StandardOutput.ReadToEndAsync();
+            string cpError = await cpProcess.StandardError.ReadToEndAsync();
+            cpProcess.WaitForExit();
+
+            if (cpProcess.ExitCode != 0)
+            {
+                logCallback($"Failed to copy backup from container: {cpError}", -1);
+                return;
+            }
+
+            // Clean up temp backup file in container
+            string cleanupCommand = $"rm {containerTempBackup}";
+            await dockerProcess.RunServerCommandAsync(cleanupCommand);
+
+            if (debugMode)
+                logCallback($"Docker server backup created successfully: {hostBackupPath}", 1);
+            else
+                logCallback("Server backup created successfully.", 1);
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error during Docker backup: {ex.Message}", -1);
+        }
+    }
+
     #endregion
 
-    #region Clear Server Data
+    #region Clear Server
 
-    public async void ClearServerData(string userName)
+    public async void ClearServerDataDocker()
+    {
+        // Check if server is running
+        bool wasRunning = ServerIsRunning();
+        
+        if (wasRunning)
+        {
+            logCallback("Stopping server to safely clear data...", 0);
+            StopServer();
+            // Docker container needs some time to stop
+            await Task.Delay(15000);
+        }
+
+        try
+        {
+            logCallback("Clearing Docker volume data...", 0);
+            
+            // Use a temporary alpine container to clear the volume
+            // Mount the volume at /data in the temp container
+            string clearCommand = $"docker run --rm -v spacetimedb-data:/data alpine sh -c \"rm -rf /data/*\"";
+            
+            Process clearProcess = new Process();
+            clearProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            clearProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(clearCommand);
+            clearProcess.StartInfo.UseShellExecute = false;
+            clearProcess.StartInfo.CreateNoWindow = true;
+            clearProcess.StartInfo.RedirectStandardOutput = true;
+            clearProcess.StartInfo.RedirectStandardError = true;
+            
+            clearProcess.Start();
+            string output = await clearProcess.StandardOutput.ReadToEndAsync();
+            string error = await clearProcess.StandardError.ReadToEndAsync();
+            clearProcess.WaitForExit();
+            
+            if (clearProcess.ExitCode == 0)
+            {
+                logCallback("Docker server data cleared successfully.", 1);
+            }
+            else
+            {
+                logCallback($"Clear operation failed: {error}", -1);
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+            {
+                logCallback("Restarting server...", 0);
+                await Task.Delay(1000);
+                StartServer();
+            }
+        }
+    }
+
+    public async void ClearServerDataWSL(string userName)
     {
         if (string.IsNullOrEmpty(userName))
         {
             logCallback("Error: Username is not set or invalid.", -1);
             return;
+        }
+
+        // Check if server is running
+        bool wasRunning = ServerIsRunning();
+        
+        if (wasRunning)
+        {
+            logCallback("Stopping server to safely clear data...", 0);
+            StopServer();
+            // WSL needs less time to stop
+            await Task.Delay(3000);
         }
 
         string spacetimePath = $"/home/{userName}/.local/share/spacetime/data";
@@ -104,9 +253,207 @@ public class ServerVersionProcess
 
     #endregion
 
-    #region Restore Server Data
+    #region Restore Server
 
-    public async void RestoreServerData(string backupDirectory, string userName, string backupFilePath = null)
+    public async void RestoreServerDataDocker(string backupDirectory, string backupFilePath = null)
+    {
+        // Ensure the backup directory is valid
+        if (string.IsNullOrEmpty(backupDirectory) || !Directory.Exists(backupDirectory))
+        {
+            logCallback("Error: Backup directory is not set or invalid.", -1);
+            return;
+        }
+
+        // If no backup file specified, show file selection dialog
+        if (string.IsNullOrEmpty(backupFilePath))
+        {
+            backupFilePath = EditorUtility.OpenFilePanel("Select Backup File", backupDirectory, "gz");
+            if (string.IsNullOrEmpty(backupFilePath))
+            {
+                logCallback("Restore canceled: No backup file selected.", 0);
+                return;
+            }
+        }
+
+        // Display confirmation dialog due to overwrite risk
+        if (EditorUtility.DisplayDialog(
+            "Confirm Restore",
+            "This will extract your backup and restore the data, replacing all current data in the Docker container.\n\nAre you sure you want to continue?",
+            "Yes, Continue",
+            "Cancel"))
+        {
+            // Ask if the user wants to create a backup first
+            bool createBackup = EditorUtility.DisplayDialog(
+                "Create Backup",
+                "Do you want to create a backup of your current data before restoring?\n\n" +
+                "This will create a .tar.gz backup file in your backup directory.",
+                "Yes, Create Backup",
+                "No, Skip Backup");
+                
+            if (createBackup)
+            {
+                await Task.Run(async () => {
+                    await CreatePreRestoreBackupDocker(backupDirectory);
+                });
+            }
+            
+            // Check if server is running and handle server stop/start
+            bool wasRunning = ServerIsRunning();
+            
+            if (wasRunning)
+            {
+                logCallback("Stopping server to safely restore data...", 0);
+                StopServer();
+                
+                // Docker container needs some time to stop
+                await Task.Delay(15000);
+            }
+            
+            try
+            {
+                await PerformRestoreDocker(backupFilePath);
+                
+                if (wasRunning)
+                {
+                    logCallback("Restarting server...", 0);
+                    await Task.Delay(1000);
+                    StartServer();
+                }
+            }
+            catch (Exception ex)
+            {
+                logCallback($"Restore failed: {ex.Message}", -1);
+                if (debugMode) logCallback($"Stack trace: {ex.StackTrace}", -1);
+            }
+        }
+        else
+        {
+            logCallback("Restore canceled by user.", 0);
+        }
+    }
+
+    private async Task CreatePreRestoreBackupDocker(string backupDirectory)
+    {
+        logCallback("Creating backup of current data before restoring...", 0);
+        
+        if (string.IsNullOrEmpty(backupDirectory) || !Directory.Exists(backupDirectory))
+        {
+            logCallback("Warning: Could not create backup. Backup directory is not set or invalid.", -2);
+            
+            // Ask if the user wants to continue without backup
+            if (!EditorUtility.DisplayDialog(
+                "Continue Without Backup?",
+                "Could not create a backup because the backup directory is not set or invalid.\n\n" +
+                "Do you want to continue with the restore without creating a backup?",
+                "Yes, Continue Anyway",
+                "No, Cancel Restore"))
+            {
+                logCallback("Restore canceled by user.", 0);
+                throw new Exception("Restore canceled due to backup failure");
+            }
+            return;
+        }
+        
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        string backupFileName = $"spacetimedb_docker_pre_restore_backup_{timestamp}.tar.gz";
+        string containerTempBackup = $"/tmp/{backupFileName}";
+        string hostBackupPath = Path.Combine(backupDirectory, backupFileName);
+
+        // Create backup inside container
+        string tarCommand = $"tar czf {containerTempBackup} -C /home/spacetime/.local/share/spacetime data";
+        var tarResult = await dockerProcess.RunServerCommandAsync(tarCommand);
+        
+        if (!tarResult.success)
+        {
+            logCallback($"Pre-restore backup may have failed: {tarResult.error}", -2);
+            return;
+        }
+
+        // Copy backup to host using cross-platform approach
+        string dockerCpCommand = $"docker cp {ServerDockerProcess.ContainerName}:{containerTempBackup} \"{hostBackupPath}\"";
+        
+        Process cpProcess = new Process();
+        cpProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+        cpProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCpCommand);
+        cpProcess.StartInfo.UseShellExecute = false;
+        cpProcess.StartInfo.CreateNoWindow = true;
+        cpProcess.StartInfo.RedirectStandardOutput = true;
+        cpProcess.StartInfo.RedirectStandardError = true;
+        
+        cpProcess.Start();
+        cpProcess.WaitForExit();
+
+        if (cpProcess.ExitCode == 0)
+        {
+            logCallback("Pre-restore backup created successfully in your backup directory.", 1);
+            
+            // Clean up temp file in container
+            await dockerProcess.RunServerCommandAsync($"rm {containerTempBackup}");
+        }
+        else
+        {
+            logCallback("Pre-restore backup may have failed.", -2);
+        }
+    }
+
+    private async Task PerformRestoreDocker(string backupFilePath)
+    {
+        logCallback("Starting Docker restore process...", 0);
+
+        try
+        {
+            // Get absolute path for the backup file
+            string absoluteBackupPath = Path.GetFullPath(backupFilePath);
+            string backupFileName = Path.GetFileName(absoluteBackupPath);
+            string backupDirectory = Path.GetDirectoryName(absoluteBackupPath);
+            
+            logCallback("Restoring data to Docker volume...", 0);
+            
+            // Use a temporary alpine container to:
+            // 1. Mount the volume at /data
+            // 2. Mount the backup directory at /backup (read-only)
+            // 3. Clear existing data and extract the backup
+            string restoreCommand = $"docker run --rm " +
+                $"-v spacetimedb-data:/data " +
+                $"-v \"{backupDirectory}:/backup:ro\" " +
+                $"alpine sh -c \"rm -rf /data/* && tar xzf /backup/{backupFileName} -C /data --strip-components=1\"";
+            
+            Process restoreProcess = new Process();
+            restoreProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+            restoreProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(restoreCommand);
+            restoreProcess.StartInfo.UseShellExecute = false;
+            restoreProcess.StartInfo.CreateNoWindow = true;
+            restoreProcess.StartInfo.RedirectStandardOutput = true;
+            restoreProcess.StartInfo.RedirectStandardError = true;
+            
+            restoreProcess.Start();
+            string output = await restoreProcess.StandardOutput.ReadToEndAsync();
+            string error = await restoreProcess.StandardError.ReadToEndAsync();
+            restoreProcess.WaitForExit();
+
+            if (restoreProcess.ExitCode != 0)
+            {
+                logCallback($"Failed to restore backup: {error}", -1);
+                return;
+            }
+
+            logCallback("Docker restore completed successfully!", 1);
+            
+            EditorUtility.DisplayDialog(
+                "Restore Completed",
+                "SpacetimeDB data has been successfully restored from backup to the Docker volume.\n\n" +
+                "The server will use this data when it starts.",
+                "OK"
+            );
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error during Docker restore: {ex.Message}", -1);
+            throw;
+        }
+    }
+
+    public async void RestoreServerDataWSL(string backupDirectory, string userName, string backupFilePath = null)
     {
         string wslBackupPath = wslProcess.GetWslPath(backupDirectory);
         
@@ -150,7 +497,7 @@ public class ServerVersionProcess
             {
                 await Task.Run(async () => {
                     try {
-                        await CreatePreRestoreBackupAsync(backupDirectory, userName);
+                        await CreatePreRestoreBackupWSL(backupDirectory, userName);
                     } catch (Exception ex) {
                         // Catch and log exceptions but allow process to continue
                         logCallback($"Pre-restore backup failed: {ex.Message}", -2);
@@ -160,13 +507,10 @@ public class ServerVersionProcess
             
             // Check if server is running and handle server stop/start
             bool wasRunning = ServerIsRunning();
-            bool autoCloseWslWasTrue = false;
             
             // Get the current autoCloseWsl setting
             if (wasRunning)
             {
-                autoCloseWslWasTrue = GetAutoCloseWsl();
-                SetAutoCloseWsl(false); // Disable auto close WSL
                 StopServer();
                 
                 // Small delay to ensure server has stopped
@@ -175,13 +519,7 @@ public class ServerVersionProcess
             
             try
             {
-                PerformRestore(backupFilePath, userName);
-                
-                // Restore the autoCloseWsl setting if it was changed
-                if (autoCloseWslWasTrue)
-                {
-                    SetAutoCloseWsl(true);
-                }
+                PerformRestoreWSL(backupFilePath, userName);
                 
                 // Restart server if it was running
                 if (wasRunning)
@@ -201,7 +539,7 @@ public class ServerVersionProcess
         }
     }
 
-    private async Task CreatePreRestoreBackupAsync(string backupDirectory, string userName)
+    private async Task CreatePreRestoreBackupWSL(string backupDirectory, string userName)
     {
         logCallback("Creating backup of current data before restoring...", 0);
         
@@ -228,7 +566,7 @@ public class ServerVersionProcess
         }
         
         // Create backup with timestamp
-        string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_pre_restore_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimeDataPath}";
+        string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_wsl_pre_restore_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimeDataPath}";
         var result = await wslProcess.RunServerCommandAsync(backupCommand);
         
         if (result.success)
@@ -236,15 +574,10 @@ public class ServerVersionProcess
         else
             logCallback($"Backup may have failed: {result.error}", -2);
     }
+    #endregion
 
-    // Keep the old method for compatibility but mark it as obsolete
-    [Obsolete("Use CreatePreRestoreBackupAsync instead")]
-    private async void CreatePreRestoreBackup(string backupDirectory, string userName)
-    {
-        await CreatePreRestoreBackupAsync(backupDirectory, userName);
-    }
-
-    private void PerformRestore(string backupFilePath, string userName)
+    #region Restore Helper Methods
+    private void PerformRestoreWSL(string backupFilePath, string userName)
     {
         logCallback("Starting automated file restore...", 0);
         
@@ -457,39 +790,17 @@ public class ServerVersionProcess
     }
     
     private void StopServer()
-    {
-        logCallback("Stopping server before restore...", 0);
-        
+    {       
         // If delegate is configured, use it
         if (stopServerDelegate != null)
             stopServerDelegate();
     }
     
     private void StartServer()
-    {
-        logCallback("Restarting server after restore...", 0);
-        
+    {       
         // If delegate is configured, use it
         if (startServerDelegate != null)
             startServerDelegate();
-    }
-    
-    private bool GetAutoCloseWsl()
-    {
-        // If delegate is configured, use it; otherwise fall back to Settings
-        if (getAutoCloseWslDelegate != null)
-            return getAutoCloseWslDelegate();
-            
-        return CCCPSettingsAdapter.GetAutoCloseWsl();
-    }
-    
-    private void SetAutoCloseWsl(bool value)
-    {
-        // If delegate is configured, use it; otherwise set Settings directly
-        if (setAutoCloseWslDelegate != null)
-            setAutoCloseWslDelegate(value);
-        else
-            CCCPSettingsAdapter.SetAutoCloseWsl(value);
     }
 
     #endregion

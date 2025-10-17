@@ -203,6 +203,26 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetServerUrlDocker() => Settings.serverUrlDocker;
+    public static void SetServerUrlDocker(string value) 
+    { 
+        if (Settings.serverUrlDocker != value)
+        {
+            Settings.serverUrlDocker = value; 
+            SaveSettings(); // Important setting - save immediately
+        }
+    }
+    
+    public static string GetAuthTokenDocker() => Settings.authTokenDocker;
+    public static void SetAuthTokenDocker(string value) 
+    { 
+        if (Settings.authTokenDocker != value)
+        {
+            Settings.authTokenDocker = value; 
+            SaveSettings(); // Important setting - save immediately
+        }
+    }
+    
     public static string GetBackupDirectory() => Settings.backupDirectory;
     public static void SetBackupDirectory(string value) 
     { 
@@ -323,12 +343,22 @@ public static class CCCPSettingsAdapter
         }
     }
     
-    public static string GetSpacetimeDBCurrentVersion() => Settings.spacetimeDBCurrentVersion;
-    public static void SetSpacetimeDBCurrentVersion(string value) 
+    public static string GetSpacetimeDBCurrentVersionWSL() => Settings.spacetimeDBCurrentVersionWSL;
+    public static void SetSpacetimeDBCurrentVersionWSL(string value) 
     { 
-        if (Settings.spacetimeDBCurrentVersion != value)
+        if (Settings.spacetimeDBCurrentVersionWSL != value)
         {
-            Settings.spacetimeDBCurrentVersion = value; 
+            Settings.spacetimeDBCurrentVersionWSL = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetSpacetimeDBCurrentVersionDocker() => Settings.spacetimeDBCurrentVersionDocker;
+    public static void SetSpacetimeDBCurrentVersionDocker(string value) 
+    { 
+        if (Settings.spacetimeDBCurrentVersionDocker != value)
+        {
+            Settings.spacetimeDBCurrentVersionDocker = value; 
             MarkDirty();
         }
     }
@@ -363,32 +393,62 @@ public static class CCCPSettingsAdapter
         }
     }
     
-    public static string GetRustCurrentVersion() => Settings.rustCurrentVersion;
-    public static void SetRustCurrentVersion(string value) 
+    public static string GetRustCurrentVersionWSL() => Settings.rustCurrentVersionWSL;
+    public static void SetRustCurrentVersionWSL(string value) 
     { 
-        if (Settings.rustCurrentVersion != value)
+        if (Settings.rustCurrentVersionWSL != value)
         {
-            Settings.rustCurrentVersion = value; 
+            Settings.rustCurrentVersionWSL = value; 
             MarkDirty();
         }
     }
     
-    public static string GetRustLatestVersion() => Settings.rustLatestVersion;
-    public static void SetRustLatestVersion(string value) 
+    public static string GetRustLatestVersionWSL() => Settings.rustLatestVersionWSL;
+    public static void SetRustLatestVersionWSL(string value) 
     { 
-        if (Settings.rustLatestVersion != value)
+        if (Settings.rustLatestVersionWSL != value)
         {
-            Settings.rustLatestVersion = value; 
+            Settings.rustLatestVersionWSL = value; 
             MarkDirty();
         }
     }
     
-    public static string GetRustupVersion() => Settings.rustupVersion;
-    public static void SetRustupVersion(string value) 
+    public static string GetRustupVersionWSL() => Settings.rustupVersionWSL;
+    public static void SetRustupVersionWSL(string value) 
     { 
-        if (Settings.rustupVersion != value)
+        if (Settings.rustupVersionWSL != value)
         {
-            Settings.rustupVersion = value; 
+            Settings.rustupVersionWSL = value; 
+            MarkDirty();
+        }
+    }
+
+    public static string GetRustCurrentVersionDocker() => Settings.rustCurrentVersionDocker;
+    public static void SetRustCurrentVersionDocker(string value) 
+    { 
+        if (Settings.rustCurrentVersionDocker != value)
+        {
+            Settings.rustCurrentVersionDocker = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetRustLatestVersionDocker() => Settings.rustLatestVersionDocker;
+    public static void SetRustLatestVersionDocker(string value) 
+    { 
+        if (Settings.rustLatestVersionDocker != value)
+        {
+            Settings.rustLatestVersionDocker = value; 
+            MarkDirty();
+        }
+    }
+    
+    public static string GetRustupVersionDocker() => Settings.rustupVersionDocker;
+    public static void SetRustupVersionDocker(string value) 
+    { 
+        if (Settings.rustupVersionDocker != value)
+        {
+            Settings.rustupVersionDocker = value; 
             MarkDirty();
         }
     }
@@ -483,6 +543,16 @@ public static class CCCPSettingsAdapter
         if (Settings.serverPort != value)
         {
             Settings.serverPort = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static int GetServerPortDocker() => Settings.serverPortDocker;
+    public static void SetServerPortDocker(int value) 
+    { 
+        if (Settings.serverPortDocker != value)
+        {
+            Settings.serverPortDocker = value; 
             SaveSettings(); 
         }
     }
@@ -751,6 +821,46 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static bool GetHasDocker() => Settings.hasDocker;
+    public static void SetHasDocker(bool value) 
+    { 
+        if (Settings.hasDocker != value)
+        {
+            Settings.hasDocker = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static bool GetHasDockerCompose() => Settings.hasDockerCompose;
+    public static void SetHasDockerCompose(bool value) 
+    { 
+        if (Settings.hasDockerCompose != value)
+        {
+            Settings.hasDockerCompose = value; 
+            SaveSettings(); 
+        }
+    }
+    
+    public static bool GetHasDockerImage() => Settings.hasDockerImage;
+    public static void SetHasDockerImage(bool value) 
+    { 
+        if (Settings.hasDockerImage != value)
+        {
+            Settings.hasDockerImage = value; 
+            SaveSettings(); 
+        }
+    }
+
+    public static bool GetHasDockerContainerMounts() => Settings.hasDockerContainerMounts;
+    public static void SetHasDockerContainerMounts(bool value) 
+    { 
+        if (Settings.hasDockerContainerMounts != value)
+        {
+            Settings.hasDockerContainerMounts = value; 
+            SaveSettings(); 
+        }
+    }
+
     public static bool GetHideWarnings() => Settings.hideWarnings;
     public static void SetHideWarnings(bool value) 
     { 
@@ -830,13 +940,13 @@ public static class CCCPSettingsAdapter
             MarkDirty(); 
         }
     }
-    
-    public static bool GetAutoCloseWsl() => Settings.autoCloseWsl;
-    public static void SetAutoCloseWsl(bool value) 
+
+    public static bool GetAutoCloseCLI() => Settings.autoCloseCLI;
+    public static void SetAutoCloseCLI(bool value) 
     { 
-        if (Settings.autoCloseWsl != value)
+        if (Settings.autoCloseCLI != value)
         {
-            Settings.autoCloseWsl = value; 
+            Settings.autoCloseCLI = value; 
             MarkDirty(); 
         }
     }
@@ -1099,6 +1209,26 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static NorthernRogue.CCCP.Editor.ServerManager.ServerMode GetLastLocalServerMode() => Settings.lastLocalServerMode;
+    public static void SetLastLocalServerMode(NorthernRogue.CCCP.Editor.ServerManager.ServerMode value) 
+    { 
+        if (Settings.lastLocalServerMode != value)
+        {
+            Settings.lastLocalServerMode = value; 
+            SaveSettings();
+        }
+    }
+    
+    public static string GetLocalCLIProvider() => Settings.localCLIProvider;
+    public static void SetLocalCLIProvider(string value) 
+    { 
+        if (Settings.localCLIProvider != value)
+        {
+            Settings.localCLIProvider = value; 
+            SaveSettings();
+        }
+    }
+    
     #endregion
     
     #region Module Management
@@ -1189,6 +1319,8 @@ public static class CCCPSettingsAdapter
             case "UserName": return GetUserName();
             case "ServerURL": return GetServerUrl();
             case "AuthToken": return GetAuthToken();
+            case "ServerURLDocker": return GetServerUrlDocker();
+            case "AuthTokenDocker": return GetAuthTokenDocker();
             case "BackupDirectory": return GetBackupDirectory();
             case "ServerDirectory": return GetServerDirectory();
             case "ClientDirectory": return GetClientDirectory();
@@ -1201,15 +1333,15 @@ public static class CCCPSettingsAdapter
             case "SSHPrivateKeyPath": return GetSSHPrivateKeyPath();
             case "CustomServerURL": return GetCustomServerUrl();
             case "CustomServerAuthToken": return GetCustomServerAuthToken();
-            case "SpacetimeDBVersion": return GetSpacetimeDBCurrentVersion();
+            case "SpacetimeDBVersion": return GetSpacetimeDBCurrentVersionWSL();
             case "SpacetimeDBVersionCustom": return GetSpacetimeDBCurrentVersionCustom();
             case "SpacetimeDBVersionTool": return GetSpacetimeDBCurrentVersionTool();
             case "SpacetimeDBLatestVersion": return GetSpacetimeDBLatestVersion();
             case "CCCPAssetStoreLatestVersion": return GetCCCPAssetStoreLatestVersion();
             case "SpacetimeSDKLatestVersion": return GetSpacetimeSDKLatestVersion();
-            case "RustVersion": return GetRustCurrentVersion();
-            case "RustLatestVersion": return GetRustLatestVersion();
-            case "RustupVersion": return GetRustupVersion();
+            case "RustVersion": return GetRustCurrentVersionWSL();
+            case "RustLatestVersion": return GetRustLatestVersionWSL();
+            case "RustupVersion": return GetRustupVersionWSL();
             case "DistributionType": return GetDistributionType();
             case "GithubLastCommitSha": return GetGithubLastCommitSha();
             case "OriginalFileInfo": return GetOriginalFileInfo();
@@ -1235,6 +1367,8 @@ public static class CCCPSettingsAdapter
             case "UserName": SetUserName(value); break;
             case "ServerURL": SetServerUrl(value); break;
             case "AuthToken": SetAuthToken(value); break;
+            case "ServerURLDocker": SetServerUrlDocker(value); break;
+            case "AuthTokenDocker": SetAuthTokenDocker(value); break;
             case "BackupDirectory": SetBackupDirectory(value); break;
             case "ServerDirectory": SetServerDirectory(value); break;
             case "ClientDirectory": SetClientDirectory(value); break;
@@ -1247,15 +1381,15 @@ public static class CCCPSettingsAdapter
             case "SSHPrivateKeyPath": SetSSHPrivateKeyPath(value); break;
             case "CustomServerURL": SetCustomServerUrl(value); break;
             case "CustomServerAuthToken": SetCustomServerAuthToken(value); break;
-            case "SpacetimeDBVersion": SetSpacetimeDBCurrentVersion(value); break;
+            case "SpacetimeDBVersion": SetSpacetimeDBCurrentVersionWSL(value); break;
             case "SpacetimeDBVersionCustom": SetSpacetimeDBCurrentVersionCustom(value); break;
             case "SpacetimeDBVersionTool": SetSpacetimeDBCurrentVersionTool(value); break;
             case "SpacetimeDBLatestVersion": SetSpacetimeDBLatestVersion(value); break;
             case "CCCPAssetStoreLatestVersion": SetCCCPAssetStoreLatestVersion(value); break;
             case "SpacetimeSDKLatestVersion": SetSpacetimeSDKLatestVersion(value); break;
-            case "RustVersion": SetRustCurrentVersion(value); break;
-            case "RustLatestVersion": SetRustLatestVersion(value); break;
-            case "RustupVersion": SetRustupVersion(value); break;
+            case "RustVersion": SetRustCurrentVersionWSL(value); break;
+            case "RustLatestVersion": SetRustLatestVersionWSL(value); break;
+            case "RustupVersion": SetRustupVersionWSL(value); break;
             case "DistributionType": SetDistributionType(value); break;
             case "GithubLastCommitSha": SetGithubLastCommitSha(value); break;
             case "OriginalFileInfo": SetOriginalFileInfo(value); break;
@@ -1313,7 +1447,7 @@ public static class CCCPSettingsAdapter
             case "DebugMode": return GetDebugMode();
             case "ClearModuleLogAtStart": return GetClearModuleLogAtStart();
             case "ClearDatabaseLogAtStart": return GetClearDatabaseLogAtStart();
-            case "AutoCloseWsl": return GetAutoCloseWsl();
+            case "AutoCloseWsl": return GetAutoCloseCLI();
             case "EchoToConsole": return GetEchoToConsole();
             case "ShowLocalTime": return GetShowLocalTime();
             case "RustUpdateAvailable": return GetRustUpdateAvailable();
@@ -1383,7 +1517,7 @@ public static class CCCPSettingsAdapter
             case "DebugMode": SetDebugMode(value); break;
             case "ClearModuleLogAtStart": SetClearModuleLogAtStart(value); break;
             case "ClearDatabaseLogAtStart": SetClearDatabaseLogAtStart(value); break;
-            case "AutoCloseWsl": SetAutoCloseWsl(value); break;
+            case "AutoCloseWsl": SetAutoCloseCLI(value); break;
             case "EchoToConsole": SetEchoToConsole(value); break;
             case "ShowLocalTime": SetShowLocalTime(value); break;
             case "RustUpdateAvailable": SetRustUpdateAvailable(value); break;
@@ -1423,6 +1557,7 @@ public static class CCCPSettingsAdapter
         switch (key.Replace(PrefsKeyPrefix, ""))
         {
             case "ServerPort": return GetServerPort();
+            case "ServerPortDocker": return GetServerPortDocker();
             case "SelectedModuleIndex": return GetSelectedModuleIndex();
             case "CustomServerPort": return GetCustomServerPort();
             case "ServerMode": return (int)GetServerMode();
@@ -1443,6 +1578,7 @@ public static class CCCPSettingsAdapter
         switch (key.Replace(PrefsKeyPrefix, ""))
         {
             case "ServerPort": SetServerPort(value); break;
+            case "ServerPortDocker": SetServerPortDocker(value); break;
             case "SelectedModuleIndex": SetSelectedModuleIndex(value); break;
             case "CustomServerPort": SetCustomServerPort(value); break;
             case "ServerMode": SetServerMode((NorthernRogue.CCCP.Editor.ServerManager.ServerMode)value); break;

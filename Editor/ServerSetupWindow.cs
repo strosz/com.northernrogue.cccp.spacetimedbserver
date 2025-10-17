@@ -15,53 +15,61 @@ public class ServerSetupWindow : EditorWindow
 {
     public static bool debugMode = false; // Set in ServerWindow
 
-    private List<InstallerItem> installerItems = new List<InstallerItem>();
-    private List<InstallerItem> customInstallerItems = new List<InstallerItem>();
-    private ServerWSLProcess wslProcess;
-    private ServerCustomProcess customProcess;
-    private ServerManager serverManager;
+    internal List<InstallerItem> installerItems = new List<InstallerItem>();
+    internal List<InstallerItem> customInstallerItems = new List<InstallerItem>();
+    internal List<InstallerItem> dockerInstallerItems = new List<InstallerItem>();
+    internal ServerWSLProcess wslProcess;
+    internal ServerCustomProcess customProcess;
+    internal ServerManager serverManager;
 
     // UI
     private Vector2 scrollPosition;
-    private string statusMessage = "Ready to install components.";
+    internal string statusMessage = "Ready to install components.";
     private bool userNamePrompt = false;
     private bool showUpdateButton = false;
-    private Color statusColor = Color.grey;
-    private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+    internal Color statusColor = Color.grey;
+    internal string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
     private double lastRepaintTime = 0;
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
     
     // Tab selection
-    private int currentTab; // 0 = WSL Installer, 1 = Custom Debian Installer
-    private readonly string[] tabNames = { "WSL Local Setup", "Custom Remote Setup" };
+    private int currentTab; // 0 = Docker, 1 = WSL, 2 = Custom
+    private string[] tabNames = new string[] { "Local Docker Setup", "Local WSL Setup", "Remote Custom Setup" };
+    private bool isAssetStoreBuild => ServerUpdateProcess.IsAssetStoreVersion();
+    private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
+    
+    // Tab indices - always 3 tabs
+    private int dockerTabIndex => 0;
+    private int wslTabIndex => 1;
+    private int customTabIndex => 2;
 
     // Settings access - no longer store in private variables
     private CCCPSettings Settings => CCCPSettings.Instance;
 
     // Convenience properties for frequently accessed settings in this window
-    private string userName => Settings.userName;
-    private string sshUserName => Settings.sshUserName;
-    private string serverDirectory => Settings.serverDirectory;
+    internal string userName => Settings.userName;
+    internal string sshUserName => Settings.sshUserName;
+    internal string serverDirectory => Settings.serverDirectory;
 
     // Temporary fields for username input
     private string tempUserNameInput = "";
-    private string tempCreateUserNameInput = ""; // For creating new user on remote SSH server
+    internal string tempCreateUserNameInput = ""; // For creating new user on remote SSH server
 
-    private string spacetimeDBCurrentVersion = "";
-    private string spacetimeDBCurrentVersionCustom = "";
-    private string spacetimeDBCurrentVersionTool = "";
-    private string spacetimeDBLatestVersion = "";
+    internal string spacetimeDBCurrentVersion = "";
+    internal string spacetimeDBCurrentVersionCustom = "";
+    internal string spacetimeDBCurrentVersionTool = "";
+    internal string spacetimeDBLatestVersion = "";
     
-    private string rustCurrentVersion = "";
-    private string rustLatestVersion = "";
-    private string rustupVersion = "";
+    internal string rustCurrentVersion = "";
+    internal string rustLatestVersion = "";
+    internal string rustupVersion = "";
     
-    private bool rustUpdateAvailable = false;
+    internal bool rustUpdateAvailable = false;
     
     // SpacetimeDB SDK version tracking
-    private string spacetimeSDKCurrentVersion = "";
-    private string spacetimeSDKLatestVersion = "";
-    private bool spacetimeSDKUpdateAvailable = false;
+    internal string spacetimeSDKCurrentVersion = "";
+    internal string spacetimeSDKLatestVersion = "";
+    internal bool spacetimeSDKUpdateAvailable = false;
     
     // Styles
     private GUIStyle titleStyle;
@@ -73,62 +81,92 @@ public class ServerSetupWindow : EditorWindow
     
     // WSL Installation states
     private bool isRefreshing = false;
-    private bool hasWSL = false;
-    private bool hasDebian = false;
-    private bool hasDebianTrixie = false;
-    private bool hasCurl = false;
-    private bool hasSpacetimeDBServer = false;
-    private bool hasSpacetimeDBPath = false;
-    private bool hasSpacetimeDBService = false;
-    private bool hasSpacetimeDBLogsService = false;
-    private bool hasRust = false;
-    private bool hasNETSDK = false;
-    private bool hasBinaryen = false;
-    private bool hasGit = false;
-    private bool hasSpacetimeDBUnitySDK = false;
+    internal bool hasWSL = false;
+    internal bool hasDebian = false;
+    internal bool hasDebianTrixie = false;
+    internal bool hasCurl = false;
+    internal bool hasSpacetimeDBServer = false;
+    internal bool hasSpacetimeDBPath = false;
+    internal bool hasSpacetimeDBService = false;
+    internal bool hasSpacetimeDBLogsService = false;
+    internal bool hasRust = false;
+    internal bool hasNETSDK = false;
+    internal bool hasBinaryen = false;
+    internal bool hasGit = false;
+    internal bool hasSpacetimeDBUnitySDK = false;
 
     // Custom SSH installation states
     private bool isCustomRefreshing = false;
-    private bool hasCustomDebianUser = false;
-    private bool hasCustomDebianTrixie = false;
-    private bool hasCustomCurl = false;
-    private bool hasCustomSpacetimeDBServer = false;
-    private bool hasCustomSpacetimeDBPath = false;
-    private bool hasCustomSpacetimeDBService = false;
-    private bool hasCustomSpacetimeDBLogsService = false;
+    internal bool hasCustomDebianUser = false;
+    internal bool hasCustomDebianTrixie = false;
+    internal bool hasCustomCurl = false;
+    internal bool hasCustomSpacetimeDBServer = false;
+    internal bool hasCustomSpacetimeDBPath = false;
+    internal bool hasCustomSpacetimeDBService = false;
+    internal bool hasCustomSpacetimeDBLogsService = false;
 
     private bool isConnectedSSH = false;
     
+    // Docker installation states
+    private bool isDockerRefreshing = false;
+    internal bool hasDocker = false;
+    internal bool hasDockerCompose = false;
+    internal bool hasDockerImage = false;
+    internal bool hasDockerContainerMounts = false;
+    internal ServerDockerProcess dockerProcess;
+    
     // WSL 1 requires unique install logic for Debian apps
-    private bool WSL1Installed;
+    internal bool WSL1Installed;
 
     // Debug install process
-    private bool visibleInstallProcesses = true;
-    private bool keepWindowOpenForDebug = true;
-    private bool alwaysShowInstall = false;
-    private bool installIfAlreadyInstalled = false;
-    private bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
+    internal bool visibleInstallProcesses = true;
+    internal bool keepWindowOpenForDebug = true;
+    internal bool alwaysShowInstall = false;
+    internal bool installIfAlreadyInstalled = false;
+    internal bool forceInstall = false; // Will toggle both alwaysShowInstall and installIfAlreadyInstalled
     
     // Settings
-    private bool updateCargoToml = false;
+    internal bool updateCargoToml = false;
+    
+    // Install process handler - only for non-Asset Store builds
+    private ServerInstallProcess installProcess;
 
     [MenuItem("Window/SpacetimeDB Server Manager/2. Setup Window")]
     public static void ShowWindow()
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 0; // Default to WSL tab
+        window.currentTab = 0; // Default to first tab
         window.InitializeInstallerItems();
-        window.CheckInstallationStatus();
+        window.CheckPrerequisitesDocker();
     }
     
+    public static void ShowDockerWindow()
+    {
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
+        window.minSize = new Vector2(500, 400);
+        window.currentTab = 0; // Docker tab is always index 0
+        window.InitializeInstallerItems();
+        window.CheckPrerequisitesDocker();
+    }
+
+    public static void ShowWSLWindow()
+    {
+        ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
+        window.minSize = new Vector2(500, 400);
+        window.currentTab = 1; // WSL tab is always index 1
+        window.InitializeInstallerItems();
+        window.CheckPrerequisitesWSL();
+    }
+
     public static void ShowCustomWindow()
     {
         ServerSetupWindow window = GetWindow<ServerSetupWindow>("Server Setup");
         window.minSize = new Vector2(500, 400);
-        window.currentTab = 1; // Set to Custom SSH tab
+        window.currentTab = 2; // Custom tab is always index 2
+        window.InitializeCustomInstallerWindow();
         window.InitializeInstallerItems();
-        window.CheckCustomInstallationStatus();
+        window.CheckPrerequisitesCustom();
     }
 
     #region OnEnable
@@ -137,10 +175,44 @@ public class ServerSetupWindow : EditorWindow
         // Initialize both processes
         wslProcess = new ServerWSLProcess(LogMessage, false);
         customProcess = new ServerCustomProcess(LogMessage, false);
-        serverManager = new ServerManager(LogMessage, () => Repaint());
+        dockerProcess = new ServerDockerProcess(LogMessage, false);
+        // Try to reuse ServerManager from the main ServerWindow if it's open to share SSH state
+        serverManager = null;
+        try
+        {
+            if (EditorWindow.HasOpenInstances<ServerWindow>())
+            {
+                var mainWindow = EditorWindow.GetWindow<ServerWindow>();
+                if (mainWindow != null)
+                {
+                    serverManager = mainWindow.GetServerManager();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore — fallback to creating a local ServerManager
+        }
+        // If no shared ServerManager found, create one (fallback)
+        if (serverManager == null)
+        {
+            serverManager = new ServerManager(LogMessage, Repaint);
+        }
+        // After loading or creating ServerManager, ensure it has the latest settings
+        serverManager.LoadSettings();
+        serverManager.Configure();
+        // Check SSH connection status
+        if (serverManager != null) serverManager.SSHConnectionStatusAsync();
+        isConnectedSSH = serverManager.IsSSHConnectionActive;
+
+        // Initialize install process (only for non-Asset Store builds)
+        if (!isAssetStoreBuild)
+        {
+            installProcess = new ServerInstallProcess(this);
+        }
         
         // Check if this is the first time the window is opened
-        if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
+        /*if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
         {
             // Show first-time information dialog
             EditorApplication.delayCall += () => {
@@ -158,7 +230,7 @@ public class ServerSetupWindow : EditorWindow
 
                 CCCPSettingsAdapter.SetFirstTimeOpenInstaller(false);
             };
-        }
+        }*/
         
         // Load WSL installation status from Settings
         hasWSL = CCCPSettingsAdapter.GetHasWSL();
@@ -184,6 +256,11 @@ public class ServerSetupWindow : EditorWindow
         hasCustomSpacetimeDBService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBService();
         hasCustomSpacetimeDBLogsService = CCCPSettingsAdapter.GetHasCustomSpacetimeDBLogsService();
 
+        // Load Docker installation status from Settings
+        hasDocker = CCCPSettingsAdapter.GetHasDocker();
+        hasDockerCompose = CCCPSettingsAdapter.GetHasDockerCompose();
+        hasDockerImage = CCCPSettingsAdapter.GetHasDockerImage();
+
         // WSL 1 requires unique install logic for Debian apps
         WSL1Installed = CCCPSettingsAdapter.GetWSL1Installed();
 
@@ -197,15 +274,15 @@ public class ServerSetupWindow : EditorWindow
         tempCreateUserNameInput = ""; // Initialize empty for the "Create User" functionality
         
         // Load version info of SpacetimeDB
-        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL();
         spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
         spacetimeDBCurrentVersionTool = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionTool();
         spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
 
         // Load version info of Rust
-        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
-        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
-        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersionWSL();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersionWSL();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersionWSL();
         rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
 
         // Load version info of SpacetimeDB SDK
@@ -225,16 +302,18 @@ public class ServerSetupWindow : EditorWindow
 
     private void OnFocus()
     {
-        InitializeCustomInstallerWindow();
+        if (currentTab == customTabIndex) {
+            InitializeCustomInstallerWindow();
+        }
     }
 
     private void InitializeCustomInstallerWindow()
     {
-        customProcess = new ServerCustomProcess(LogMessage, false);
-        isConnectedSSH = customProcess.IsSessionActive();
+        if (serverManager != null) serverManager.SSHConnectionStatusAsync();
+        isConnectedSSH = serverManager.IsSSHConnectionActive;
         if (isConnectedSSH)
         {
-            CheckCustomInstallationStatus();
+            CheckPrerequisitesCustom();
         }
     }
     
@@ -274,107 +353,107 @@ public class ServerSetupWindow : EditorWindow
         {
             new InstallerItem
             {
-                title = "Install WSL with Debian",
+                title = "Setup WSL with Debian",
                 description = "Windows Subsystem for Linux with Debian distribution\n"+
                 "Important: Will launch a checker tool that determines if your system supports WSL1 or WSL2\n"+
                 "Note: May require a system restart. If it reports as failed, please restart and try again\n"+
                 "Note: If you already have WSL installed, it will install Debian for your chosen WSL version",
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
-                installAction = InstallWSLDebian,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallWSLDebian()) : null,
                 sectionHeader = "Required Local Software"
             },
             new InstallerItem
             {
-                title = "Install Debian Trixie Update",
+                title = "Setup Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: Is now included by default in the WSL with Debian installer\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasDebianTrixie,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallDebianTrixie
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallDebianTrixie()) : null
             },
             new InstallerItem
             {
-                title = "Install cURL",
+                title = "Setup cURL",
                 description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCurl,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallCurl
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCurl()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Server",
+                title = "Setup SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
                 "Note: Only supports installing to the users home directory (SpacetimeDB default)",
                 isInstalled = hasSpacetimeDBServer,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallSpacetimeDBServer
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBServer()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB PATH",
+                title = "Setup SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasSpacetimeDBPath,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallSpacetimeDBPath
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBPath()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Service",
+                title = "Setup SpacetimeDB Service",
                 description = "Install SpacetimeDB as a system service that automatically starts on server boot\n" +
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasSpacetimeDBService,
                 isEnabled = hasWSL && hasDebian && hasSpacetimeDBServer && !String.IsNullOrEmpty(userName),
-                installAction = InstallSpacetimeDBService,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBService()) : null,
                 expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
             {
-                title = "Install Rust",
+                title = "Setup Rust",
                 description = "Rust is a programming language that can be 2x faster than C#\n"+
                 "Note: Required to use the SpacetimeDB Server with Rust Language",
                 isInstalled = hasRust,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallRust
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallRust()) : null
             },
             new InstallerItem
             {
-                title = "Install .NET SDK for C#",
+                title = "Setup .NET SDK for C#",
                 description = ".NET SDK 8.0 is Microsoft's software development kit for C#\n"+
                 "Note: Required to use the SpacetimeDB Server with C# Language",
                 isInstalled = hasNETSDK,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallNETSDK
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallNETSDK()) : null
             },
             new InstallerItem
             {
-                title = "Install Web Assembly Optimizer Binaryen",
+                title = "Setup Web Assembly Optimizer Binaryen",
                 description = "Binaryen is a compiler toolkit for WebAssembly\n"+
                 "SpacetimeDB make use of wasm-opt optimizer for improving performance",
                 isInstalled = hasBinaryen,
                 isEnabled = hasWSL && hasDebian && hasCurl && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallBinaryen
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallBinaryen()) : null
             },
             new InstallerItem
             {
-                title = "Install Git",
+                title = "Setup Git",
                 description = "Git is a distributed version control system\n"+
                 "SpacetimeDB may call git commands during the publish and generate process",
                 isInstalled = hasGit,
                 isEnabled = hasWSL && hasDebian && !String.IsNullOrEmpty(userName), // Only enabled if WSL and Debian are installed
-                installAction = InstallGit
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallGit()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Unity SDK",
+                title = "Setup SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
-                installAction = InstallSpacetimeDBUnitySDK,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -384,91 +463,148 @@ public class ServerSetupWindow : EditorWindow
         {   
             new InstallerItem
             {
-                title = "Install User",
+                title = "Setup User",
                 description = "Creates a new user on the SSH Debian server with proper permissions\n"+
                 "Will add your public SSH key to the user. Requires a manual SSH connection initially\n"+
                 "Note: You will be prompted to set a password for the new user",
                 isInstalled = hasCustomDebianUser,
                 isEnabled = isConnectedSSH,
-                installAction = InstallCustomUser,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomUser()) : null,
                 hasUsernameField = true,
                 usernameLabel = "Create Username:",
                 sectionHeader = "Required Remote Software"
             },
             new InstallerItem
             {
-                title = "Install Debian Trixie Update",
+                title = "Setup Debian Trixie Update",
                 description = "Debian Trixie Update (Debian Version 13)\n"+
                 "Required to run the SpacetimeDB Server\n"+
                 "Note: May take some minutes to install",
                 isInstalled = hasCustomDebianTrixie,
                 isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(sshUserName),
-                installAction = InstallCustomDebianTrixie
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomDebianTrixie()) : null
             },
             new InstallerItem
             {
-                title = "Install cURL",
+                title = "Setup cURL",
                 description = "cURL is a command-line tool for transferring data with URLs\n"+
                 "Required to install the SpacetimeDB Server",
                 isInstalled = hasCustomCurl,
                 isEnabled = customProcess.IsSessionActive() && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomCurl
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomCurl()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Server",
+                title = "Setup SpacetimeDB Server",
                 description = "SpacetimeDB Server Installation for Debian\n"+
                 "Note: Will install to the current SSH user session home directory (SpacetimedDB default)",
                 isInstalled = hasCustomSpacetimeDBServer,
                 isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomSpacetimeDBServer
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBServer()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB PATH",
+                title = "Setup SpacetimeDB PATH",
                 description = "Add SpacetimeDB to the PATH environment variable of your Debian user",
                 isInstalled = hasCustomSpacetimeDBPath,
                 isEnabled = customProcess.IsSessionActive() && hasCustomCurl && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomSpacetimeDBPath
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBPath()) : null
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Service",
+                title = "Setup SpacetimeDB Service",
                 description = "Install SpacetimeDB as a system service that automatically starts on boot\n" +
                               "Creates a systemd service file to run SpacetimeDB in the background\n" +
                               "Note: Also creates a lightweight logs service to capture SpacetimeDB database logs",
                 isInstalled = hasCustomSpacetimeDBService,
                 isEnabled = customProcess.IsSessionActive() && hasCustomSpacetimeDBServer && !String.IsNullOrEmpty(userName),
-                installAction = InstallCustomSpacetimeDBService,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallCustomSpacetimeDBService()) : null,
                 expectedModuleName = CCCPSettingsAdapter.GetModuleName() // Load from prefs or use default
             },
             new InstallerItem
             {
-                title = "Install SpacetimeDB Unity SDK",
+                title = "Setup SpacetimeDB Unity SDK",
                 description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
-                installAction = InstallSpacetimeDBUnitySDK,
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                sectionHeader = "Required Unity Plugin"
+            }
+        };
+        
+        // Initialize Docker installer items
+        dockerInstallerItems = new List<InstallerItem>
+        {
+            new InstallerItem
+            {
+                title = "Setup Docker Desktop",
+                description = "Docker Desktop provides containerization for running SpacetimeDB\n"+
+                "Note: Available for Windows, macOS, and Linux\n"+
+                "Note: Docker Desktop includes Docker Compose",
+                isInstalled = hasDocker,
+                isEnabled = true,
+                installAction = CheckDocker,
+                sectionHeader = "Required Docker Software"
+            },
+            new InstallerItem
+            {
+                title = "Setup SpacetimeDB Docker Image",
+                description = "Opens the official SpacetimeDB homepage for the Docker image (clockworklabs/spacetime) command\n"+
+                "After the image is pulled from the Docker Desktop terminal, it will be ready to use with the configured port mapping\n"+
+                "Note: This may take a few minutes depending on your internet connection",
+                isInstalled = hasDockerImage,
+                isEnabled = hasDocker && hasDockerCompose,
+                installAction = CheckDockerImage
+            },
+            new InstallerItem
+            {
+                title = "Setup Docker Container Volume Mounts",
+                description = "Ensures the Docker container has proper volume mounts for Unity file generation\n"+
+                "Verifies that the Unity Assets directory and Server Directory are mounted inside the container\n"+
+                "Note: Will recreate container if mounts are incorrect (server must be stopped)",
+                isInstalled = hasDockerContainerMounts,
+                isEnabled = hasDocker && hasDockerImage,
+                installAction = ReconfigureDockerContainer,
+            },
+            new InstallerItem
+            {
+                title = "Setup SpacetimeDB Unity SDK",
+                description = "SpacetimeDB SDK contains essential scripts for SpacetimeDB development in Unity \n"+
+                "Examples include a network manager that syncs the client state with the database",
+                isInstalled = hasSpacetimeDBUnitySDK,
+                isEnabled = true, // Always enabled as it doesn't depend on Docker
+                installAction = !isAssetStoreBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
                 sectionHeader = "Required Unity Plugin"
             }
         };
     }
+    #endregion
 
-    private void UpdateInstallerItemsStatus()
+    #region Installer Item Status
+    internal void UpdateInstallerItemsStatus()
     {
         bool repaintNeeded = false;
 
         // Update the correct list based on current tab
-        List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+        List<InstallerItem> itemsToUpdate;
+        if (currentTab == dockerTabIndex) {
+            itemsToUpdate = dockerInstallerItems;
+        } else if (currentTab == wslTabIndex) {
+            itemsToUpdate = installerItems;
+        } else if (currentTab == customTabIndex) {
+            itemsToUpdate = customInstallerItems;
+        } else {
+            return; // Invalid tab
+        }
 
         // Reload version information from Settings to ensure we have the latest data
-        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+        spacetimeDBCurrentVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL();
         spacetimeDBCurrentVersionCustom = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionCustom();
         spacetimeDBLatestVersion = CCCPSettingsAdapter.GetSpacetimeDBLatestVersion();
-        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersion();
-        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersion();
-        rustupVersion = CCCPSettingsAdapter.GetRustupVersion();
+        rustCurrentVersion = CCCPSettingsAdapter.GetRustCurrentVersionWSL();
+        rustLatestVersion = CCCPSettingsAdapter.GetRustLatestVersionWSL();
+        rustupVersion = CCCPSettingsAdapter.GetRustupVersionWSL();
         rustUpdateAvailable = CCCPSettingsAdapter.GetRustUpdateAvailable();
 
         // Reload SpacetimeDB SDK version information
@@ -476,10 +612,47 @@ public class ServerSetupWindow : EditorWindow
         spacetimeSDKLatestVersion = ServerUpdateProcess.SpacetimeSDKLatestVersion();
         spacetimeSDKUpdateAvailable = ServerUpdateProcess.IsSpacetimeSDKUpdateAvailable();
         
+        // For Docker installer items
+        if (currentTab == dockerTabIndex) {
+            foreach (var item in itemsToUpdate)
+            {
+                bool previousState = item.isInstalled;
+                bool previousEnabledState = item.isEnabled;
+                bool newState = previousState; // Default to no change
+                bool newEnabledState = previousEnabledState;
+                
+                if (item.title.Contains("Docker Desktop"))
+                {
+                    newState = hasDocker && hasDockerCompose;
+                    newEnabledState = true; // Always enabled
+                }
+                else if (item.title.Contains("Docker Image"))
+                {
+                    newState = hasDockerImage;
+                    newEnabledState = hasDocker && hasDockerCompose;
+                }
+                else if (item.title.Contains("Docker Container Volume Mounts"))
+                {
+                    newState = hasDockerContainerMounts;
+                    newEnabledState = hasDocker && hasDockerCompose;
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    newState = hasSpacetimeDBUnitySDK;
+                    newEnabledState = true; // Always enabled
+                }
+                
+                if (newState != previousState || newEnabledState != previousEnabledState)
+                {
+                    item.isInstalled = newState;
+                    item.isEnabled = newEnabledState;
+                    repaintNeeded = true; // Mark that a repaint is needed because item state changed
+                }
+            }
+        }
         // For WSL installer items
-        if (currentTab == 0) {
-            foreach (var item in itemsToUpdate
-            )
+        else if (currentTab == wslTabIndex) {
+            foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
                 bool previousEnabledState = item.isEnabled;
@@ -551,7 +724,7 @@ public class ServerSetupWindow : EditorWindow
             }
         }
         // For Custom SSH installer items
-        else {
+        else if (currentTab == customTabIndex) {
             foreach (var item in itemsToUpdate)
             {
                 bool previousState = item.isInstalled;
@@ -631,10 +804,12 @@ public class ServerSetupWindow : EditorWindow
         {
             currentTab = newTab;
             // When switching tabs, check the appropriate installation status
-            if (currentTab == 0) {
-                CheckInstallationStatus();
-            } else {
-                CheckCustomInstallationStatus();
+            if (currentTab == dockerTabIndex) {
+                CheckPrerequisitesDocker();
+            } else if (currentTab == wslTabIndex) {
+                CheckPrerequisitesWSL();
+            } else if (currentTab == customTabIndex) {
+                CheckPrerequisitesCustom();
             }
             UpdateInstallerItemsStatus();
         }
@@ -642,6 +817,7 @@ public class ServerSetupWindow : EditorWindow
         EditorGUILayout.Space(5);
         
         DrawInstallerItemsList();
+
         EditorGUILayout.Space(5);
         
         DrawStatusMessage();
@@ -680,19 +856,27 @@ public class ServerSetupWindow : EditorWindow
         
         stylesInitialized = true;
     }
+    #endregion
+    
+    #region Draw UI
     
     private void DrawToolbar()
     {
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-        
+
         // Refresh Button
-        EditorGUI.BeginDisabledGroup(currentTab == 0 ? isRefreshing : isCustomRefreshing);
+        bool isRefreshingCurrentTab = (currentTab == wslTabIndex && isRefreshing) || 
+                                       (currentTab == customTabIndex && isCustomRefreshing) ||
+                                       (currentTab == dockerTabIndex && isDockerRefreshing);
+        EditorGUI.BeginDisabledGroup(isRefreshingCurrentTab);
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(60)))
         {
-            if (currentTab == 0) {
-                CheckInstallationStatus();
-            } else {
-                CheckCustomInstallationStatus();
+            if (currentTab == wslTabIndex) {
+                CheckPrerequisitesWSL();
+            } else if (currentTab == customTabIndex) {
+                CheckPrerequisitesCustom();
+            } else if (currentTab == dockerTabIndex) {
+                CheckPrerequisitesDocker();
             }
             UpdateInstallerItemsStatus();
         }
@@ -744,32 +928,55 @@ public class ServerSetupWindow : EditorWindow
         
         EditorGUILayout.EndHorizontal();
     }
-    
+
     private void DrawInstallerItemsList()
     {
         // Use GUILayout group to reduce layout recalculations
         GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandHeight(true));
 
-        GUILayout.Label(currentTab == 0 ? "SpacetimeDB Local WSL Server Installer" : "SpacetimeDB Remote Custom Server Installer", titleStyle);
-        
-        string description = currentTab == 0 ? 
-            "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
-            "You get a local WSL CLI for spacetime commands.\n" +
-            "Required for all server modes to be able to publish your server." :
-            "Setup all the required software to run SpacetimeDB Server on a remote Debian server via SSH.\n" +
-            "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
-            "Note: The Local WSL or Docker setup is required to be able to publish to your remote server.";
+        string title;
+        string description;
+        if (currentTab == dockerTabIndex) {
+            title = "Local SpacetimeDB Docker Setup";
+            description =   "Setup Docker to run SpacetimeDB in containers.\n" +
+                            "Works on Windows, macOS, and Linux.\n" +
+                            "You get a local Docker SpacetimeDB CLI for spacetime commands.";
+        } else if (currentTab == wslTabIndex) {
+            title = "Local SpacetimeDB WSL Setup";
+            description =   "Setup all the required software to run your local SpacetimeDB Server in WSL.\n" +
+                            "Works on Windows 10 and 11 with WSL1 or WSL2.\n" +
+                            "You get a local WSL SpacetimeDB CLI for spacetime commands.";
+        } else if (currentTab == customTabIndex) {
+            title = "Remote Custom SpacetimeDB Server Setup";
+            description =   "Setup all the required software to run SpacetimeDB Server on a remote Linux Debian server via SSH.\n" +
+                            "Works on any fresh Debian 12 or 13 server from the ground up.\n" +
+                            "Note: The Local Docker or WSL setup is required to be able to publish to your remote server.";
+        } else {
+            title = "Unknown Tab";
+            description = "";
+        }
 
+        GUILayout.Label(title, titleStyle);
+        
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
 
-        // Show usernameprompt for clarity before SpacetimeDB install
+        // Show usernameprompt for clarity before SpacetimeDB install (WSL and Custom only, not Docker)
         bool showUsernamePrompt = String.IsNullOrEmpty(userName) && 
-            (currentTab == 0 ? (hasWSL && hasDebian) : customProcess.IsSessionActive());
+            ((currentTab == wslTabIndex && hasWSL && hasDebian) || 
+             (currentTab == customTabIndex && customProcess.IsSessionActive()));
         
         if (showUsernamePrompt)
         {
-            List<InstallerItem> itemsToUpdate = currentTab == 0 ? installerItems : customInstallerItems;
+            List<InstallerItem> itemsToUpdate;
+            if (currentTab == wslTabIndex) {
+                itemsToUpdate = installerItems;
+            } else if (currentTab == customTabIndex) {
+                itemsToUpdate = customInstallerItems;
+            } else {
+                itemsToUpdate = new List<InstallerItem>(); // Fallback
+            }
+            
             foreach (var item in itemsToUpdate) item.isEnabled = false;
             userNamePrompt = true;
 
@@ -804,10 +1011,10 @@ public class ServerSetupWindow : EditorWindow
                 // Use the current event to prevent it from propagating
                 e.Use();
 
-                if (currentTab == 0) {
-                    CheckInstallationStatus();
-                } else {
-                    CheckCustomInstallationStatus();
+                if (currentTab == wslTabIndex) {
+                    CheckPrerequisitesWSL();
+                } else if (currentTab == customTabIndex) {
+                    CheckPrerequisitesCustom();
                 }
             }
             
@@ -819,10 +1026,10 @@ public class ServerSetupWindow : EditorWindow
                 foreach (var item in itemsToUpdate) item.isEnabled = true;
                 userNamePrompt = false;
 
-                if (currentTab == 0) {
-                    CheckInstallationStatus();
-                } else {
-                    CheckCustomInstallationStatus();
+                if (currentTab == wslTabIndex) {
+                    CheckPrerequisitesWSL();
+                } else if (currentTab == customTabIndex) {
+                    CheckPrerequisitesCustom();
                 }
             }
             
@@ -839,7 +1046,16 @@ public class ServerSetupWindow : EditorWindow
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         
         // Get the appropriate list based on current tab
-        List<InstallerItem> displayItems = currentTab == 0 ? installerItems : customInstallerItems;
+        List<InstallerItem> displayItems;
+        if (currentTab == wslTabIndex) {
+            displayItems = installerItems;
+        } else if (currentTab == customTabIndex) {
+            displayItems = customInstallerItems;
+        } else if (currentTab == dockerTabIndex) {
+            displayItems = dockerInstallerItems;
+        } else {
+            displayItems = new List<InstallerItem>(); // Fallback
+        }
         
         if (displayItems.Count == 0)
         {
@@ -885,7 +1101,7 @@ public class ServerSetupWindow : EditorWindow
         // Title - reuse cached content when possible
         EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        
 
-        if (currentTab == 0) {
+        if (currentTab == wslTabIndex) {
             showUpdateButton = (item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
@@ -896,7 +1112,7 @@ public class ServerSetupWindow : EditorWindow
                               (item.title.Contains("SpacetimeDB Unity SDK") && 
                                     spacetimeSDKUpdateAvailable && 
                                     !string.IsNullOrEmpty(spacetimeSDKLatestVersion));
-        } else if (currentTab == 1) {
+        } else if (currentTab == customTabIndex) {
             showUpdateButton = item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
@@ -939,11 +1155,11 @@ public class ServerSetupWindow : EditorWindow
         {
             if (item.title.Contains("SpacetimeDB Server") && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
             {
-                if (currentTab == 0 && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
+                if (currentTab == wslTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
                 {
                     EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersion, installedStyle, GUILayout.Width(110));
                 }
-                else if (currentTab == 1 && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
+                else if (currentTab == customTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
                 {
                     EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
                 }
@@ -984,12 +1200,17 @@ public class ServerSetupWindow : EditorWindow
         // Add username field for installers that need it
         if (item.hasUsernameField || item.title.Contains("SpacetimeDB Server"))
         {
+            // Determine which tab we're on
+    
+    
+    
+            
             EditorGUILayout.BeginHorizontal();
             string labelText = item.hasUsernameField ? item.usernameLabel : "Install as Username:";
             EditorGUILayout.LabelField(labelText, GUILayout.Width(120));
             EditorGUI.BeginChangeCheck();
             
-            if (currentTab == 0) // For WSL mode, use the regular username
+            if (currentTab == wslTabIndex) // For WSL mode, use the regular username
             {
                 string newUserName = EditorGUILayout.TextField(userName, GUILayout.Width(150));
                 if (EditorGUI.EndChangeCheck() && newUserName != userName)
@@ -997,7 +1218,7 @@ public class ServerSetupWindow : EditorWindow
                     CCCPSettingsAdapter.SetUserName(newUserName);
                 }
             }
-            else if (currentTab == 1)
+            else if (currentTab == customTabIndex)
             {
                 if (item.title == "Install User") // Use temp name for Install User
                 {
@@ -1089,8 +1310,8 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region Check Installation Status
-    private async void CheckInstallationStatus()
+    #region WSL Prerequisites
+    internal async void CheckPrerequisitesWSL()
     {
         if (isRefreshing) return; // Don't start a new refresh if one is already running
         
@@ -1135,10 +1356,10 @@ public class ServerSetupWindow : EditorWindow
         });
 
         // Check SpacetimeDB version to update it if it was updated in the installer
-        await serverManager.CheckSpacetimeDBVersion();
+        await serverManager.CheckSpacetimeDBVersionWSL();
 
         // Check Rust version to update it if it was updated in the installer
-        await serverManager.CheckRustVersion();
+        await serverManager.CheckRustVersionWSL();
 
         // Update UI
         UpdateInstallerItemsStatus();
@@ -1150,7 +1371,7 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
     }
     
-    private async void CheckCustomInstallationStatus()
+    internal async void CheckPrerequisitesCustom()
     {
         await customProcess.StartSession();
         // Don't check if the SSH session isn't active
@@ -1255,1212 +1476,64 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region WSL Installation Methods
-    private async void InstallWSLDebian()
+    #region Docker Prerequisites
+    private void CheckPrerequisitesDocker()
     {
-        CheckInstallationStatus();
-        if (hasWSL && hasDebian && !installIfAlreadyInstalled)
-        {
-            SetStatus("WSL2 with Debian is already installed.", Color.green);
-            return;
-        }
-
-        EditorUtility.DisplayDialog("About WSL1 and WSL2", 
-        "WSL1 and WSL2 allows you to run a Linux distribution within Windows. This allows SpacetimeDB to run silently and be more easily controlled when running locally.\n\n" +
-        "WSL2 is the latest and recommended version.\n" +
-        "WSL1 has better compability with some systems.\n\n" +
-        "Cosmos Cove Control Panel will now run a compability test to determine if your PC supports Virtualization and Hyper-V which is necessary for WSL2.\n\n"
-        , "OK");
-
-        SetStatus("Running WSL compatibility test...", Color.green);
-
-        bool installedSuccessfully = false;
-
-        // Define installation actions for WSL1 and WSL2
-        Action installWSL1 = async () => 
-        {
-            SetStatus("Installing WSL1 with Debian...", Color.green);
-
-            if (EditorUtility.DisplayDialog("Install WSL1 with Debian",
-            "This will install WSL1 with Debian.\n"+
-            "You may have to press keys to create your user credentials during the installation process.\n"+
-            "Note: When you type the password it is updated even if you don't see it.\n"+
-            "Do you want to continue?", 
-            "Yes", "No"))
-            {
-                string dismCommand = "powershell.exe -Command \"Start-Process powershell -Verb RunAs -ArgumentList '-Command dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart'\"";
-                string wsl1SetupCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 1 && wsl --install -d Debian\"";
-
-                bool dismSuccess = await wslProcess.RunPowerShellInstallCommand(dismCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                if (dismSuccess)
-                {
-                    SetStatus("DISM successful. Proceeding with WSL1 setup...", Color.yellow);
-                    installedSuccessfully = await wslProcess.RunPowerShellInstallCommand(wsl1SetupCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                }
-                else
-                {
-                    installedSuccessfully = false;
-                    SetStatus("DISM command failed for WSL1 setup. Please check console output.", Color.red);
-                }
-
-                if (installedSuccessfully)
-                {
-                    CheckInstallationStatus();
-                    await Task.Delay(1000);
-                    if (hasWSL && hasDebian)
-                    {
-                        SetStatus("WSL1 with Debian installed successfully.", Color.green);
-
-                        WSL1Installed = true; // To handle WSL1 Debian installs uniquely
-                        CCCPSettingsAdapter.SetWSL1Installed(WSL1Installed);
-
-                        UpdateInstallerItemsStatus();
-
-                        // Display dialog informing user about Debian first-time setup
-                        EditorUtility.DisplayDialog(
-                            "Debian First-Time Setup",
-                            "Starting Debian for the first time so you can create your user credentials. You can close the Debian window afterwards.",
-                            "OK"
-                        );
-                        // Launch visible Debian window without username required
-                        bool userNameReq = false;
-                        wslProcess.OpenDebianWindow(userNameReq);
-                    }
-                    else
-                    {
-                        SetStatus("WSL1 with Debian installation failed or requires a restart. Please check console output and restart if prompted.", Color.red);
-                    }
-                } else {
-                    if(dismSuccess) // Only wsl1SetupCommand failed - common if DISM requires a restart
-                    {
-                        SetStatus("Please restart your PC and try to install WSL1 again.", Color.yellow);
-                        EditorUtility.DisplayDialog("Restart Needed","Please restart your PC and Unity and try to install WSL1 again.", "OK");
-                    }
-                }
-            } else {
-                SetStatus("WSL1 with Debian installation cancelled.", Color.yellow);
-            }
-        };
+        if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
         
-        Action installWSL2 = async () => 
+        isDockerRefreshing = true;
+        SetStatus("Checking Docker prerequisites...", Color.yellow);
+        
+        // Check Docker prerequisites asynchronously - now includes container mount check
+        dockerProcess.CheckPrerequisites((docker, compose, image, containerMounts) =>
         {
-            SetStatus("Installing WSL2 with Debian...", Color.green);
+            hasDocker = docker;
+            hasDockerCompose = compose;
+            hasDockerImage = image;
+            hasDockerContainerMounts = containerMounts;
             
-            if (EditorUtility.DisplayDialog("Install WSL2 with Debian", 
-            "This will install WSL2 with Debian.\n"+
-            "You may have to press keys to create your user credentials during the installation process.\n"+
-            "Note: When you type the password it is updated even if you don't see it.\n"+
-            "Do you want to continue?", 
-            "Yes", "No"))
-            {
-                string wsl2InstallCommand = "cmd.exe /c \"wsl --update & wsl --set-default-version 2 && wsl --install -d Debian\"";
-                await wslProcess.RunPowerShellInstallCommand(wsl2InstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug, true);
-                CheckInstallationStatus();
-                if (hasWSL && hasDebian)
-                {
-                    // Display dialog informing user about Debian first-time setup
-                    bool createDebianCredentials = EditorUtility.DisplayDialog(
-                        "Debian First-Time Setup",
-                        "Starting Debian for the first time so that you are asked to create your user credentials. You can close the Debian window afterwards.\n\n" +
-                        "Note! In some WSL versions the credentials were already created and you may skip.",
-                        "Create Credentials", "Skip"
-                    );
-
-                    if (createDebianCredentials)
-                    {
-                        // If the user proceeds, we will open Debian without username required
-                        bool userNameReq = false;
-                        wslProcess.OpenDebianWindow(userNameReq);
-                    }
-
-                    SetStatus("WSL2 with Debian installed successfully.", Color.green);
-                } else {
-                    EditorUtility.DisplayDialog(
-                        "Restart and Try Again",
-                        "Sometimes the WSL install process requires a system restart.\n\n" +
-                        "Please restart your PC and Unity and try to install WSL2 with Debian again.",
-                        "OK"
-                    );
-                    SetStatus("WSL2 with Debian installation failed or requires a restart.", Color.red);
-                }
-
-            } else {
-                SetStatus("WSL2 with Debian installation cancelled.", Color.yellow);
-            }
-        };
-
-        // Call CheckWSL2Support and wait for the user to make a choice in the dialog
-        // The actual installation will happen when the user clicks one of the buttons in the dialog,
-        // which will invoke either installWSL1 or installWSL2
-        await ServerCompabilityReport.CheckWSL2Support(true, installWSL1, installWSL2);
-    }
-
-    private async void InstallDebianTrixie()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasDebianTrixie && !installIfAlreadyInstalled)
-        {
-            SetStatus("Debian Trixie Update is already installed.", Color.green);
-            return;
-        }
-
-        EditorUtility.DisplayDialog(
-            "Debian Trixie Upgrade",
-            "Installer windows will appear during this installation which requires user input.\n\n" +
-            "Please press any key when asked and create and write down your new credentials when asked.\n\n" +
-            "There may be a window titled >Configuring libc6< and there you can press Yes.",
-            "OK"
-        );
-        
-        SetStatus("Installing Debian Trixie Update - Step 1: apt update", Color.yellow);
-        
-        // Step 1: Update
-        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!updateSuccess)
-        {
-            SetStatus("Failed to update Debian. Trixie installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000); // Wait longer to ensure command completes
-        
-        // Step 2: Upgrade
-        SetStatus("Installing Debian Trixie Update - Step 2: apt upgrade", Color.yellow);
-        string upgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt upgrade -y\"";
-        bool upgradeSuccess = await wslProcess.RunPowerShellInstallCommand(upgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!upgradeSuccess)
-        {
-            // It's common to get a failed install here, but the install process will work anyway
-            SetStatus("Failed to upgrade for Trixie install. Attempting to continue.", Color.green);
-        }
-        await Task.Delay(2000);
-        
-        // Step 3: Install update-manager-core
-        SetStatus("Installing Debian Trixie Update - Step 3: install update-manager-core", Color.yellow);
-        string coreCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y update-manager-core\"";
-        bool coreSuccess = await wslProcess.RunPowerShellInstallCommand(coreCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!coreSuccess)
-        {
-            // It's common to get a failed install here, but the install process will work anyway
-            SetStatus("Failed to install update-manager-core. Attempting to continue.", Color.green);
-        }
-        await Task.Delay(2000);
-        
-        // Step 4: Change sources.list to trixie
-        SetStatus("Installing Debian Trixie Update - Step 4: update sources to Trixie", Color.yellow);
-        string sourcesCommand = "wsl -d Debian -u root bash -c \"sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\"";
-        bool sourcesSuccess = await wslProcess.RunPowerShellInstallCommand(sourcesCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!sourcesSuccess)
-        {
-            SetStatus("Failed to update sources.list. Trixie installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000);
-        
-        // Step 5: Update again for Trixie
-        SetStatus("Installing Debian Trixie Update - Step 5: update package lists for Trixie", Color.yellow);
-        string updateTrixieCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateTrixieSuccess = await wslProcess.RunPowerShellInstallCommand(updateTrixieCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!updateTrixieSuccess)
-        {
-            SetStatus("Failed to update package lists for Trixie. Installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000);
-        
-        // Step 6: Full upgrade
-        SetStatus("Installing Debian Trixie Update - Step 6: performing full upgrade to Trixie", Color.yellow);
-        string fullUpgradeCommand = "wsl -d Debian -u root bash -c \"sudo apt full-upgrade -y\"";
-        bool fullUpgradeSuccess = await wslProcess.RunPowerShellInstallCommand(fullUpgradeCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!fullUpgradeSuccess)
-        {
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (WSL1Installed && hasDebianTrixie)
-            SetStatus("Debian Trixie Update installed successfully. (WSL1)", Color.green);
-            else
-            SetStatus("Failed to perform full upgrade to Trixie.", Color.red);
-
-            return;
-        }
-        await Task.Delay(2000);
-        
-        SetStatus("Debian Trixie Update installed. Shutting down WSL...", Color.green);
-
-        // WSL Shutdown
-        wslProcess.ShutdownWsl();
-        await Task.Delay(3000); // Longer wait for shutdown
-
-        // Restart WSL
-        wslProcess.StartWsl();
-        SetStatus("WSL restarted. Checking installation status...", Color.green);
-        await Task.Delay(5000); // Longer wait for startup
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        if (hasDebianTrixie)
-        {
-            SetStatus("Debian Trixie Update installed successfully.", Color.green);
-        }
-        else
-        {
-            SetStatus("Debian Trixie Update installation failed. Please check logs.", Color.red);
-        }
-    }
-    
-    private async void InstallCurl()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCurl && !installIfAlreadyInstalled)
-        {
-            SetStatus("curl is already installed.", Color.green);
-            return;
-        }
-                
-        SetStatus("Installing curl...", Color.green);
-        
-        string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
-        SetStatus("Running: apt update", Color.yellow);
-        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(
-            updateCommand, 
-            LogMessage, 
-            visibleInstallProcesses, 
-            keepWindowOpenForDebug
-        );
-        if (!updateSuccess)
-        {
-            SetStatus("Failed to update package list. Curl installation aborted.", Color.red);
-            return;
-        }
-        
-        // Delay between commands to ensure UI updates
-        await Task.Delay(1000);
-        
-        // Now install curl
-        string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing curl...' && sudo apt install -y curl\"";
-        SetStatus("Running: apt install -y curl", Color.yellow);
-        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
-            installCommand, 
-            LogMessage, 
-            visibleInstallProcesses, 
-            keepWindowOpenForDebug
-        );
-        if (!installSuccess)
-        {
-            CheckInstallationStatus();
-            await Task.Delay(2000);
-            if (WSL1Installed && hasCurl)
-            SetStatus("cURL installed successfully. (WSL1)", Color.green);
-            else
-            SetStatus("Failed to install cURL. Installation aborted.", Color.red);
+            // Save to settings
+            CCCPSettingsAdapter.SetHasDocker(hasDocker);
+            CCCPSettingsAdapter.SetHasDockerCompose(hasDockerCompose);
+            CCCPSettingsAdapter.SetHasDockerImage(hasDockerImage);
+            CCCPSettingsAdapter.SetHasDockerContainerMounts(hasDockerContainerMounts);
             
-            return;
-        }
-        
-        // Check installation status
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasCurl)
-        {
-            SetStatus("cURL installed successfully.", Color.green);
-        }
-        else
-        {
-            SetStatus("cURL installation failed. Please install manually.", Color.red);
-        }
-    }
-    
-    private async void InstallSpacetimeDBServer()
-    {
-        // Requires visible install processes and keep window open
-        // Because the user has to interact with the installer window
-        // Check if we can add yes to the command to auto-answer
-        visibleInstallProcesses = true;
-        keepWindowOpenForDebug = true;
-
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (!hasWSL)
-        {
-            SetStatus("WSL2 with Debian is required to install SpacetimeDB Server. Please install WSL2 with Debian first.", Color.red);
-            return;
-        }
-        if (!hasDebianTrixie)
-        {
-            SetStatus("Debian Trixie Update is required to install SpacetimeDB Server. Please install Debian Trixie Update first.", Color.red);
-            return;
-        }
-        if (!hasCurl )
-        {
-            SetStatus("curl is required to install SpacetimeDB Server. Please install curl first.", Color.red);
-            return;
-        }
-        if (string.IsNullOrEmpty(userName))
-        {
-            SetStatus("Please enter your Debian username to install SpacetimeDB Server.", Color.red);
-            return;
-        }
-        if (hasSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersion) && !installIfAlreadyInstalled)
-        {
-            SetStatus("The latest version of SpacetimeDB Server is already installed.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing SpacetimeDB Server...", Color.green);
-        
-        // Command to install SpacetimeDB Server
-        string spacetimeInstallCommand = $"wsl -d Debian -u " + userName + " bash -c \"echo y | curl -sSf https://install.spacetimedb.com | sh\"";
-
-        // Use the ServerwslProcess method to run the PowerShell command
-        bool success = await wslProcess.RunPowerShellInstallCommand(spacetimeInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        
-        if (success)
-        {
-            SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
-
-            await serverManager.CheckSpacetimeDBVersion();
-            spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
-            
-            CheckInstallationStatus();
-
-            await Task.Delay(1000);
-            
-            if (hasSpacetimeDBServer)
-            {
-                SetStatus("SpacetimeDB Server installed successfully.", Color.green);
-                // Update Cargo.toml spacetimedb version if needed
-                if (updateCargoToml) UpdateCargoSpacetimeDBVersion();
-            }
-            else
-            {
-                SetStatus("SpacetimeDB Server installation failed. Please install manually.", Color.red);
-            }
-
+            UpdateInstallerItemsStatus();
             Repaint();
-        }
-    }
-
-    private async void InstallSpacetimeDBPath()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        // If already installed, just update UI
-        if (hasSpacetimeDBPath)
-        {
-            SetStatus("SpacetimeDB PATH is already installed.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing SpacetimeDB PATH...", Color.green);
-        
-        // Use the ServerwslProcess method to run the PowerShell command
-        string command = string.Format(
-            "wsl -d Debian -u {0} bash -c \"echo \\\"export PATH=/home/{0}/.local/bin:\\$PATH\\\" >> ~/.bashrc\"",
-            userName
-        );
-        bool success = await wslProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-
-        if (success)
-        {
-            SetStatus("SpacetimeDB PATH installation started. This may take some time.", Color.green);
-            await Task.Delay(1000);
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (hasSpacetimeDBPath)
+            
+            isDockerRefreshing = false;
+            
+            // Provide more detailed status messages
+            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
             {
-                SetStatus("SpacetimeDB PATH installed successfully.", Color.green);
+                SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
+            }
+            else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMounts)
+            {
+                SetStatus("Docker ready but container needs volume mount configuration.", Color.yellow);
+            }
+            else if (hasDocker && hasDockerCompose)
+            {
+                SetStatus("Docker is installed. SpacetimeDB image will be pulled when needed.", Color.green);
+            }
+            else if (hasDocker && !hasDockerCompose)
+            {
+                SetStatus("Docker is installed but Docker Compose is not available. Please update Docker Desktop.", Color.yellow);
+            }
+            else if (!hasDocker)
+            {
+                SetStatus("Docker is not installed or not in system PATH. Please install Docker Desktop.", Color.yellow);
             }
             else
             {
-                SetStatus("SpacetimeDB PATH installation failed. Please install manually.", Color.red);
+                SetStatus("Docker prerequisites check complete.", Color.yellow);
             }
-        }    
-    }
-
-    private async void InstallSpacetimeDBService()
-    {
-        // Check prerequisites
-        if (!hasWSL)
-        {
-            SetStatus("WSL is not installed. Please install WSL first.", Color.red);
-            return;
-        }
-
-        if (!hasDebian)
-        {
-            SetStatus("Debian is not installed on WSL. Please install Debian first.", Color.red);
-            return;
-        }
-
-        if (!hasSpacetimeDBServer)
-        {
-            SetStatus("SpacetimeDB Server is not installed. Please install SpacetimeDB Server first.", Color.red);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(userName))
-        {
-            SetStatus("Please enter a username first.", Color.red);
-            return;
-        }
-
-        // Get the expected module name from the installer item or Settings
-        string expectedModuleName = "";
-        foreach (var item in installerItems)
-        {
-            if (item.title == "Install SpacetimeDB Service")
-            {
-                expectedModuleName = item.expectedModuleName;
-                break;
-            }
-        }
-
-        // If expectedModuleName is empty, try to get it from Settings
-        if (string.IsNullOrEmpty(expectedModuleName))
-        {
-            expectedModuleName = CCCPSettingsAdapter.GetModuleName();
-        }
-        
-        if (string.IsNullOrEmpty(expectedModuleName))
-        {
-            EditorUtility.DisplayDialog("Module Name Required",
-            "You haven't added any module in Pre-Requisites. It is required to install the SpacetimeDB Service.",
-            "OK");
-            SetStatus("Module name is not set. Please add one in Pre-Requisites.", Color.yellow);
-            return;
-        }
-
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasSpacetimeDBService && !installIfAlreadyInstalled)
-        {
-            SetStatus("SpacetimeDB Service is already installed.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing SpacetimeDB Service...", Color.yellow);
-        
-        // Create a bash script for SpacetimeDB Service installation via WSL
-        string bashScript = 
-            "#!/bin/bash\n\n" +
-            "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
-            
-            "# Create directory for SpacetimeDB if it doesn't exist\n" +
-            $"sudo mkdir -p /home/{userName}/.local/share/spacetime\n" +
-            $"sudo chown {userName}:{userName} /home/{userName}/.local/share/spacetime\n\n" +
-            
-            "# Create the service file\n" +
-            "echo \"Creating systemd service file...\"\n" +
-            "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
-            "[Unit]\n" +
-            "Description=SpacetimeDB Server\n" +
-            "After=network.target\n\n" +
-            "[Service]\n" +
-            $"User={userName}\n" +
-            $"Environment=HOME=/home/{userName}\n" +
-            $"ExecStart=/home/{userName}/.local/bin/spacetime --root-dir=/home/{userName}/.local/share/spacetime start --listen-addr=0.0.0.0:3000\n" +
-            "Restart=always\n" +
-            $"WorkingDirectory=/home/{userName}\n\n"+
-            "[Install]\n" +
-            "WantedBy=multi-user.target\n" +
-            "EOF\n\n" +
-            
-            "# Reload systemd to recognize the new service\n" +
-            "echo \"Reloading systemd...\"\n" +
-            "sudo systemctl daemon-reload\n\n" +
-            
-            "# Enable and start the service\n" +
-            "echo \"Enabling and starting SpacetimeDB service...\"\n" +
-            "sudo systemctl enable spacetimedb.service\n" +
-            "sudo systemctl start spacetimedb.service\n\n" +
-            
-            "# Check service status\n" +
-            "echo \"Checking service status...\"\n" +
-            "sudo systemctl is-active spacetimedb.service && echo \"SpacetimeDB service is active\" || echo \"SpacetimeDB service is not active\"\n" +
-            "sudo systemctl is-enabled spacetimedb.service && echo \"SpacetimeDB service is enabled\" || echo \"SpacetimeDB service is not enabled\"\n\n" +
-            
-            "# Create the database logs wrapper script for dynamic module switching\n" +
-            "echo \"Creating SpacetimeDB database logs wrapper script...\"\n" +
-            $"sudo tee /home/{userName}/.local/bin/spacetime-database-logs-switching.sh << 'EOF'\n" +
-            "#!/bin/bash\n" +
-            "# SpacetimeDB Database Logs Service Wrapper\n" +
-            "# Dynamically reads current module from config file\n" +
-            "\n" +
-            "# Remove strict error handling to prevent unnecessary exits\n" +
-            "set -u  # Only exit on undefined variables, not on all errors\n" +
-            "\n" +
-            $"CURRENT_MODULE_FILE=\"/home/{userName}/.local/current_spacetime_module\"\n" +
-            $"SPACETIME_PATH=\"/home/{userName}/.local/bin/spacetime\"\n" +
-            "LOG_FILE=\"/tmp/spacetime-logs-wrapper.log\"\n" +
-            "\n" +
-            "# Function to log with timestamp (only to file, not stdout to avoid spam)\n" +
-            "log_debug() {\n" +
-            "    echo \"$(date '+%Y-%m-%d %H:%M:%S') - $1\" >> \"$LOG_FILE\"\n" +
-            "}\n" +
-            "\n" +
-            "# Function to handle script termination gracefully\n" +
-            "cleanup() {\n" +
-            "    log_debug \"Wrapper script received termination signal\"\n" +
-            "    exit 0\n" +
-            "}\n" +
-            "\n" +
-            "# Set up signal handlers\n" +
-            "trap cleanup SIGTERM SIGINT\n" +
-            "\n" +
-            "# Validate config file exists and is readable\n" +
-            "if [ ! -f \"$CURRENT_MODULE_FILE\" ]; then\n" +
-            "    log_debug \"ERROR: Module config file does not exist: $CURRENT_MODULE_FILE\"\n" +
-            "    sleep 30  # Wait before exiting to prevent rapid restarts\n" +
-            "    exit 1\n" +
-            "fi\n" +
-            "\n" +
-            "if [ ! -r \"$CURRENT_MODULE_FILE\" ]; then\n" +
-            "    log_debug \"ERROR: Cannot read module config file: $CURRENT_MODULE_FILE\"\n" +
-            "    sleep 30\n" +
-            "    exit 1\n" +
-            "fi\n" +
-            "\n" +
-            "# Read and validate module name\n" +
-            "MODULE=$(cat \"$CURRENT_MODULE_FILE\" | tr -d '\\n\\r' | xargs)\n" +
-            "\n" +
-            "if [ -z \"$MODULE\" ]; then\n" +
-            "    log_debug \"ERROR: Module config file is empty: $CURRENT_MODULE_FILE\"\n" +
-            "    sleep 30\n" +
-            "    exit 1\n" +
-            "fi\n" +
-            "\n" +
-            "# Validate spacetime binary exists\n" +
-            "if [ ! -x \"$SPACETIME_PATH\" ]; then\n" +
-            "    log_debug \"ERROR: SpacetimeDB binary not found or not executable: $SPACETIME_PATH\"\n" +
-            "    sleep 30\n" +
-            "    exit 1\n" +
-            "fi\n" +
-            "\n" +
-            "# Log start (only once to debug file, not to systemd logs)\n" +
-            "log_debug \"Starting database logs for module: $MODULE\"\n" +
-            "\n" +
-            "# Start logging - use exec to replace shell process\n" +
-            "exec \"$SPACETIME_PATH\" logs \"$MODULE\" -f\n" +
-            "EOF\n\n" +
-            
-            "# Make the wrapper script executable\n" +
-            $"sudo chmod +x /home/{userName}/.local/bin/spacetime-database-logs-switching.sh\n\n" +
-            
-            "# Create initial module config file with expected module\n" +
-            $"mkdir -p /home/{userName}/.local\n" +
-            $"echo '{expectedModuleName}' > /home/{userName}/.local/current_spacetime_module\n" +
-            $"chmod 644 /home/{userName}/.local/current_spacetime_module\n" +
-            $"chown {userName}:{userName} /home/{userName}/.local/current_spacetime_module\n\n" +
-            
-            "# Create the database logs service file\n" +
-            "echo \"Creating SpacetimeDB database logs service...\"\n" +
-            "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
-            "[Unit]\n" +
-            "Description=SpacetimeDB Database Logs\n" +
-            "After=spacetimedb.service\n" +
-            "Requires=spacetimedb.service\n\n" +
-            "[Service]\n" +
-            $"User={userName}\n" +
-            $"Environment=HOME=/home/{userName}\n" +
-            "Type=simple\n" +
-            "Restart=on-failure\n" +
-            "RestartSec=30\n" +
-            "StartLimitIntervalSec=300\n" +
-            "StartLimitBurst=3\n" +
-            $"ExecStart=/home/{userName}/.local/bin/spacetime-database-logs-switching.sh\n" +
-            $"WorkingDirectory=/home/{userName}\n\n" +
-            "[Install]\n" +
-            "WantedBy=multi-user.target\n" +
-            "EOF\n\n" +
-            
-            "# Reload systemd to recognize the new service\n" +
-            "sudo systemctl daemon-reload\n\n" +
-            
-            "# Enable and start the database logs service\n" +
-            "echo \"Enabling SpacetimeDB database logs service...\"\n" +
-            "sudo systemctl enable spacetimedb-logs.service\n" +
-            "sudo systemctl start spacetimedb-logs.service\n\n" +
-            "# Check database logs service status\n" +
-            "echo \"Checking SpacetimeDB database logs service status...\"\n" +
-            "sudo systemctl is-active spacetimedb-logs.service && echo \"SpacetimeDB logs service is active\" || echo \"SpacetimeDB logs service is not active\"\n" +
-            "sudo systemctl is-enabled spacetimedb-logs.service && echo \"SpacetimeDB logs service is enabled\" || echo \"SpacetimeDB logs service is not enabled\"\n\n" +
-            
-            "# Configure sudoers to allow systemctl commands without password\n"+
-            "echo \"Configuring sudoers for passwordless systemctl operations...\"\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl start spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl start spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl stop spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl restart spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            $"echo '{userName} ALL=(root) NOPASSWD: /usr/bin/systemctl status spacetimedb-logs.service' | sudo tee -a /etc/sudoers.d/spacetimedb\n" +
-            "sudo chmod 440 /etc/sudoers.d/spacetimedb\n" +
-            "echo \"Sudoers configuration completed.\"\n\n" +
-
-            "echo \"===== Done! =====\"\n" +
-            $"echo \"Database logs service configured for module: {expectedModuleName}\"\n" +
-            $"echo \"Sudoers configured to allow passwordless systemctl operations for {userName}\"";
-          // Create a temporary script file and execute it via WSL
-        SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
-        
-        // Create a temporary script file path
-        string tempScriptPath = System.IO.Path.GetTempFileName() + ".sh";
-        
-        try
-        {
-            // Write the bash script to the temporary file
-            await System.IO.File.WriteAllTextAsync(tempScriptPath, bashScript);
-            
-            // Convert Windows path to WSL path for the script
-            string wslScriptPath = tempScriptPath.Replace("\\", "/").Replace("C:", "/mnt/c");
-            
-            // Execute the script via WSL
-            string command = $"wsl -d Debian -u {userName} bash {wslScriptPath}";
-              bool success = await wslProcess.RunPowerShellInstallCommand(command, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-            
-            if (success)
-            {
-                SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
-                await Task.Delay(2000);
-                
-                CheckInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasSpacetimeDBService)
-                {
-                    string logsServiceStatus = hasSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
-                    SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
-                }
-                else
-                {
-                    SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        catch (System.Exception ex)
-        {
-            SetStatus($"Error during SpacetimeDB Service installation: {ex.Message}", Color.red);
-            Debug.LogError($"InstallSpacetimeDBService error: {ex}");
-        }
-        finally
-        {
-            // Clean up the temporary script file
-            try
-            {
-                if (System.IO.File.Exists(tempScriptPath))
-                {
-                    System.IO.File.Delete(tempScriptPath);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning($"Failed to delete temporary script file: {ex.Message}");
-            }
-        }
-    }
-
-    private async void InstallRust()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        bool isUpdate = hasRust && rustUpdateAvailable && !string.IsNullOrEmpty(rustLatestVersion);
-        
-        if (hasRust && !installIfAlreadyInstalled && !isUpdate)
-        {
-            SetStatus("Rust is already installed.", Color.green);
-            return;
-        }
-
-        if (!hasCurl)
-        {
-            SetStatus("curl is required to install Rust. Please install curl first.", Color.red);
-            return;
-        }
-        
-        if (isUpdate)
-        {
-            SetStatus($"Updating Rust from v{rustCurrentVersion} to v{rustLatestVersion} - Step 1: Running rustup update", Color.yellow);
-        }
-        else
-        {
-            SetStatus("Installing Rust - Step 1: Update package list", Color.yellow);
-        }
-        
-        // Handle Rust update case
-        if (isUpdate)
-        {
-            SetStatus($"Updating Rust from v{rustCurrentVersion} to v{rustLatestVersion} - Running rustup update", Color.yellow);
-            string rustUpdateCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\" && rustup update\"";
-            bool rustUpdateSuccess = await wslProcess.RunPowerShellInstallCommand(rustUpdateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-            
-            if (rustUpdateSuccess)
-            {
-                // Update the current version to the latest version
-                rustCurrentVersion = rustLatestVersion;
-                CCCPSettingsAdapter.SetRustCurrentVersion(rustCurrentVersion);
-
-                // Clear the update available flags
-                rustUpdateAvailable = false;
-                rustLatestVersion = "";
-                CCCPSettingsAdapter.SetRustUpdateAvailable(false);
-                CCCPSettingsAdapter.SetRustLatestVersion("");
-                
-                SetStatus($"Rust updated successfully to v{rustCurrentVersion}!", Color.green);
-            }
-            else
-            {
-                SetStatus("Failed to update Rust. Update aborted.", Color.red);
-            }
-            
-            UpdateInstallerItemsStatus();
-            return;
-        }
-        
-        // First update package list
-        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!updateSuccess)
-        {
-            SetStatus("Failed to update package list. Rust installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000); // Shorter delay
-        
-        // Then install Rust using rustup
-        SetStatus("Installing Rust - Step 2: Installing rustup", Color.yellow);
-        string rustInstallCommand = $"wsl -d Debian -u {userName} bash -c \"echo 1 | curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\"";
-        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(rustInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!installSuccess)
-        {
-            if (WSL1Installed)
-            {
-                SetStatus("Rust installation continuing. (WSL1)", Color.green);
-            } else {
-                SetStatus("Failed to install Rust. Installation aborted.", Color.red);
-                return;
-            }
-        }
-
-        // Source the cargo environment
-        SetStatus("Installing Rust - Step 3: Setting up Rust environment", Color.yellow);
-        string sourceCommand = $"wsl -d Debian -u {userName} bash -c \". \\\"$HOME/.cargo/env\\\"\"";
-        bool sourceSuccess = await wslProcess.RunPowerShellInstallCommand(sourceCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!sourceSuccess)
-        {   
-            if (WSL1Installed)
-            {
-                SetStatus("Rust installation continuing. (WSL1)", Color.green);
-            } else {
-                SetStatus("Warning: Failed to source cargo environment. Rust may not be available in current session.", Color.yellow);
-                return;
-            }
-        }
-
-        // Install build-essential package
-        SetStatus("Installing Rust - Step 4: Installing build-essential", Color.yellow);
-        string buildEssentialCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y build-essential\"";
-        bool buildEssentialSuccess = await wslProcess.RunPowerShellInstallCommand(buildEssentialCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!buildEssentialSuccess)
-        {
-            CheckInstallationStatus(); // If failed to install build-essential, we still check if Rust is installed
-            await Task.Delay(1000);
-            if (WSL1Installed && hasRust)
-            {
-                SetStatus("Rust installed successfully. (WSL1)", Color.green); // If WSL1 Rust is successfully installed here
-                return;
-            } else {
-                SetStatus("Warning: Failed to install build-essential. Some Rust packages may not compile correctly.", Color.yellow);
-                return;
-            }
-        }
-
-        // Check installation status
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasRust)
-        {
-            // Fetch the actual Rust version for immediate display
-            await serverManager.CheckRustVersion();
-            UpdateInstallerItemsStatus();
-            SetStatus("Rust installed successfully.", Color.green);
-        }
-        else
-        {
-            SetStatus("Rust installation failed. Please install manually.", Color.red);
-        }
-
-        Repaint();
-    }
-
-    private async void InstallNETSDK()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasNETSDK && !installIfAlreadyInstalled)
-        {
-            SetStatus(".NET SDK 8.0 is already installed.", Color.green);
-            return;
-        }
-
-        if (!hasCurl)
-        {
-            SetStatus("curl is required to install .NET SDK 8.0. Please install curl first.", Color.red);
-            return;
-        }
-        
-        SetStatus("Installing .NET SDK 8.0 - Step 1: Update package list", Color.yellow);
-        
-        // First update package list
-        string updateCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(updateCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!updateSuccess)
-        {
-            SetStatus("Failed to update package list. .NET SDK 8.0 installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000);
-        
-        // Install required packages for .NET SDK
-        SetStatus("Installing .NET SDK 8.0 - Step 2: Installing required packages", Color.yellow);
-        string prereqCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y wget\"";
-        bool prereqSuccess = await wslProcess.RunPowerShellInstallCommand(prereqCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!prereqSuccess)
-        {
-            SetStatus("Failed to install prerequisites for .NET SDK 8.0. Installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000);
-        
-        // Download Microsoft package signing key
-        SetStatus("Installing .NET SDK 8.0 - Step 3: Adding Microsoft package signing key", Color.yellow);
-        string keyCommand = $"wsl -d Debian -u {userName} bash -c \"wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb\"";
-        bool keySuccess = await wslProcess.RunPowerShellInstallCommand(keyCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!keySuccess)
-        {
-            if (WSL1Installed) // WSL1 continues despite if some commands are unsuccessful
-            {
-                SetStatus(".NET SDK 8.0 installation continuing. (WSL1)", Color.green);
-            } else {
-                SetStatus("Failed to download Microsoft package signing key. Installation aborted.", Color.red);
-                return;
-            }
-        }
-        await Task.Delay(2000);
-        
-        // Install Microsoft package
-        SetStatus("Installing .NET SDK 8.0 - Step 4: Installing Microsoft package repository", Color.yellow);
-        string installMSPackageCommand = $"wsl -d Debian -u {userName} bash -c \"sudo dpkg -i packages-microsoft-prod.deb && rm packages-microsoft-prod.deb\"";
-        bool installMSPackageSuccess = await wslProcess.RunPowerShellInstallCommand(installMSPackageCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!installMSPackageSuccess)
-        {
-            if (WSL1Installed)
-            {
-                SetStatus(".NET SDK 8.0 installation continuing. (WSL1)", Color.green);
-            } else {
-                SetStatus("Failed to install Microsoft package repository. Installation aborted.", Color.red);
-                return;
-            }
-        }
-        await Task.Delay(2000);
-        
-        // Update package list again with Microsoft repository
-        SetStatus("Installing .NET SDK 8.0 - Step 5: Updating package list with Microsoft repository", Color.yellow);
-        string updateMSCommand = "wsl -d Debian -u root bash -c \"sudo apt update\"";
-        bool updateMSSuccess = await wslProcess.RunPowerShellInstallCommand(updateMSCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!updateMSSuccess)
-        {
-            SetStatus("Failed to update package list with Microsoft repository. Installation aborted.", Color.red);
-            return;
-        }
-        await Task.Delay(2000);
-        
-        // Install .NET SDK 8.0
-        SetStatus("Installing .NET SDK 8.0 - Step 6: Installing .NET SDK 8.0", Color.yellow);
-        string netSDKInstallCommand = "wsl -d Debian -u root bash -c \"sudo apt install -y dotnet-sdk-8.0\"";
-        bool netSDKInstallSuccess = await wslProcess.RunPowerShellInstallCommand(netSDKInstallCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!netSDKInstallSuccess)
-        {
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            if (WSL1Installed && hasNETSDK)
-            {
-                SetStatus(".NET SDK 8.0 installed successfully.", Color.green);
-            } else {
-                SetStatus("Failed to install .NET SDK 8.0. Installation aborted.", Color.red);
-                return;
-            }
-        }
-
-        // Install WASI experimental workload
-        SetStatus("Installing .NET SDK 8.0 - Step 7: Installing WASI experimental workload", Color.yellow);
-        string wasiWorkloadCommand = "wsl -d Debian -- sudo dotnet workload install wasi-experimental";
-        bool wasiWorkloadSuccess = await wslProcess.RunPowerShellInstallCommand(wasiWorkloadCommand, LogMessage, visibleInstallProcesses, keepWindowOpenForDebug);
-        if (!wasiWorkloadSuccess)
-        {
-            if (WSL1Installed)
-            {
-                SetStatus(".NET SDK 8.0 with WASI workload installed successfully.", Color.green);
-            } else {
-                SetStatus("Warning: Failed to install WASI experimental workload. SpacetimeDB C# modules may not compile correctly.", Color.yellow);
-            }
-        }
-
-        // Check installation status
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasNETSDK)
-        {
-            SetStatus(".NET SDK 8.0 with WASI experimental workload installed successfully.", Color.green);
-            UpdateInstallerItemsStatus();
-        }
-        else
-        {
-            SetStatus(".NET SDK 8.0 installation failed. Please install manually.", Color.red);
-        }
-
-        Repaint();
-    }
-
-    private async void InstallBinaryen()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasBinaryen && !installIfAlreadyInstalled)
-        {
-            SetStatus("Binaryen is already installed.", Color.green);
-            return;
-        }
-
-        if (!hasCurl)
-        {
-            SetStatus("curl is required to install Binaryen. Please install curl first.", Color.red);
-            return;
-        }
-        
-        SetStatus("Installing Web Assembly Optimizer Binaryen...", Color.yellow);
-        
-        try
-        {
-            // Install Binaryen with the specific version directly in the URL
-            string installCommand = $"wsl -d Debian -u {userName} bash -c \"" +
-                "curl -L \\\"https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz\\\" | " +
-                "sudo tar -xz --strip-components=2 -C /usr/local/bin binaryen-version_123/bin\"";
-            
-            bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
-                installCommand, 
-                LogMessage, 
-                visibleInstallProcesses, 
-                keepWindowOpenForDebug
-            );
-            
-            if (!installSuccess)
-            {
-                CheckInstallationStatus();
-                await Task.Delay(2000);
-                if (WSL1Installed && hasBinaryen)
-                {
-                    SetStatus("Binaryen installed successfully.", Color.green);
-                }
-                else
-                {
-                    SetStatus("Failed to install Binaryen. Installation aborted.", Color.red);
-                }
-                return;
-            }
-            
-            // Check installation status
-            CheckInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasBinaryen)
-            {
-                SetStatus("Binaryen (Web Assembly Optimizer) installed successfully.", Color.green);
-            }
-            else
-            {
-                SetStatus("Binaryen installation failed. Please install manually.", Color.red);
-            }
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error during Binaryen installation: {ex.Message}", Color.red);
-            LogMessage($"Binaryen installation error: {ex}", -1);
-        }
-    }
-    
-    private async void InstallGit()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasGit && !installIfAlreadyInstalled)
-        {
-            SetStatus("Git is already installed.", Color.green);
-            return;
-        }
-        
-        SetStatus("Installing Git...", Color.green);
-        
-        string updateCommand = $"wsl -d Debian -u root bash -c \"echo 'Updating package lists...' && sudo apt update\"";
-        SetStatus("Running: apt update", Color.yellow);
-        bool updateSuccess = await wslProcess.RunPowerShellInstallCommand(
-            updateCommand, 
-            LogMessage, 
-            visibleInstallProcesses, 
-            keepWindowOpenForDebug
-        );
-        if (!updateSuccess)
-        {
-            SetStatus("Failed to update package list. Git installation aborted.", Color.red);
-            return;
-        }
-        
-        // Delay between commands to ensure UI updates
-        await Task.Delay(1000);
-        
-        // Now install git
-        string installCommand = $"wsl -d Debian -u root bash -c \"echo 'Installing git...' && sudo apt install -y git\"";
-        SetStatus("Running: apt install -y git", Color.yellow);
-        bool installSuccess = await wslProcess.RunPowerShellInstallCommand(
-            installCommand, 
-            LogMessage, 
-            visibleInstallProcesses, 
-            keepWindowOpenForDebug
-        );
-        if (!installSuccess)
-        {
-            CheckInstallationStatus();
-            await Task.Delay(2000);
-            if (WSL1Installed && hasGit)
-                SetStatus("Git installed successfully.", Color.green);
-            else
-                SetStatus("Failed to install Git. Installation aborted.", Color.red);
-            
-            return;
-        }
-        
-        // Check installation status
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        if (hasGit)
-        {
-            SetStatus("Git installed successfully.", Color.green);
-        }
-        else
-        {
-            SetStatus("Git installation failed. Please install manually.", Color.red);
-        }
-    }
-    
-    private async void InstallSpacetimeDBUnitySDK()
-    {
-        CheckInstallationStatus();
-        await Task.Delay(1000);
-        
-        // Check if this is an update or fresh install
-        bool isUpdate = hasSpacetimeDBUnitySDK && spacetimeSDKUpdateAvailable && !string.IsNullOrEmpty(spacetimeSDKLatestVersion);
-        
-        if (hasSpacetimeDBUnitySDK && !installIfAlreadyInstalled && !isUpdate)
-        {
-            SetStatus("SpacetimeDB Unity SDK is already installed.", Color.green);
-            return;
-        }
-        
-        // Set appropriate status message
-        if (isUpdate)
-        {
-            SetStatus($"Updating SpacetimeDB Unity SDK from v{spacetimeSDKCurrentVersion} to v{spacetimeSDKLatestVersion}...", Color.yellow);
-        }
-        else
-        {
-            SetStatus("Installing SpacetimeDB Unity SDK...", Color.yellow);
-        }
-
-        // Display appropriate dialog
-        string dialogTitle = isUpdate ? "SpacetimeDB SDK Update" : "SpacetimeDB SDK Installation";
-        string dialogMessage = isUpdate 
-            ? $"Updating the SpacetimeDB SDK from v{spacetimeSDKCurrentVersion} to v{spacetimeSDKLatestVersion} will download the latest package from GitHub and may trigger a script reload.\n\n" +
-              "The update process may take up to a minute. Please don't close Unity during this time.\n\n" +
-              "If you encounter any errors or warnings you can safely dismiss them after the update is complete."
-            : "Installing the SpacetimeDB SDK will add a package from GitHub and may trigger a script reload.\n\n" +
-              "The installation process may take up to a minute. Please don't close Unity during this time.\n\n" +
-              "If you encounter any errors or warnings you can safely dismiss them after the install is complete.";
-
-        string actionButton = isUpdate ? "Update" : "Install";
-        
-        if (EditorUtility.DisplayDialog(dialogTitle, dialogMessage, actionButton, "Cancel"))
-        {
-            // Use the ServerSpacetimeSDKInstaller to install/update the SDK
-            // Pass isUpdate as forceUpdate so the package is refreshed when updating
-            ServerSpacetimeSDKInstaller.InstallSDK((success, errorMessage) => 
-            {
-                if (success)
-                {
-                    if (isUpdate)
-                    {
-                        SetStatus($"SpacetimeDB Unity SDK updated successfully to v{spacetimeSDKLatestVersion}!", Color.green);
-                        
-                        // Clear the update available flags after successful update
-                        spacetimeSDKUpdateAvailable = false;
-                        spacetimeSDKCurrentVersion = spacetimeSDKLatestVersion;
-                    }
-                    else
-                    {
-                        SetStatus("SpacetimeDB Unity SDK installed successfully.", Color.green);
-                    }
-                    
-                    hasSpacetimeDBUnitySDK = true;
-                    CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(true);
-                    UpdateInstallerItemsStatus();
-                    
-                    // After successful installation, ensure the window updates properly
-                    CheckInstallationStatus();
-                }
-                else
-                {
-                    string errorMsg = string.IsNullOrEmpty(errorMessage) ? "Unknown error" : errorMessage;
-                    string failureMessage = isUpdate 
-                        ? $"SpacetimeDB Unity SDK update failed: {errorMsg}"
-                        : $"SpacetimeDB Unity SDK installation failed: {errorMsg}";
-                    
-                    SetStatus(failureMessage, Color.red);
-                    
-                    // Show a more detailed error dialog
-                    EditorUtility.DisplayDialog(
-                        isUpdate ? "Update Failed" : "Installation Failed",
-                        $"{failureMessage}\n\n" +
-                        "You can try again later or install it manually via Package Manager (Window > Package Manager > Add package from git URL).",
-                        "OK");
-                }
-            }, isUpdate);
-        }
-        else
-        {
-            string cancelMessage = isUpdate ? "SpacetimeDB Unity SDK update cancelled." : "SpacetimeDB Unity SDK installation cancelled.";
-            SetStatus(cancelMessage, Color.yellow);
-        }
+        });
     }
     #endregion
     
     #region Cargo.toml Update
-    private void UpdateCargoSpacetimeDBVersion()
+    internal void UpdateCargoSpacetimeDBVersion()
     {
         // LogMessages are behind debugMode because this method is more of an extra check
         try
@@ -2544,714 +1617,158 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region Custom Installation
-    private async void InstallCustomUser()
+    #region Docker Setup
+
+    private void CheckDocker()
     {
-        try
+        SetStatus("Docker Desktop required. Please visit: https://www.docker.com/products/docker-desktop/", Color.yellow);
+        
+        if (EditorUtility.DisplayDialog("Docker Desktop Required",
+            "Docker Desktop needs to be installed to run a SpacetimeDB CLI and Server in Docker mode.\n\n" +
+            "Please visit the official Docker Desktop homepage and install your desired distribution.\n\n" +
+            "After installation, click Refresh to verify.",
+            "Open Docker Homepage", "Cancel"))
         {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(tempCreateUserNameInput))
-            {
-                SetStatus("Please enter a username to create.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(CCCPSettingsAdapter.GetSSHPrivateKeyPath()))
-            {
-                SetStatus("Please first generate a SSH private key and enter the path.", Color.red);
-                return;
-            }
-            
-            string newUserName = tempCreateUserNameInput;
-
-            // Check if the username already exists
-            var checkUserResult = await customProcess.RunCustomCommandAsync($"id -u {newUserName} > /dev/null 2>&1 && echo 'exists' || echo 'notexists'");
-            if (checkUserResult.success && checkUserResult.output.Trim() == "exists")
-            {
-                SetStatus($"User '{newUserName}' already exists on the remote server.", Color.yellow);
-                return;
-            }
-
-            // Create commands to be executed in the terminal
-            string commands = 
-                "# Step 0: Install Sudo\n" +
-                $"apt install -y sudo\n\n" +
-                "# Step 1: Create new user (will prompt for password)\n" +
-                $"adduser {newUserName}\n\n" +
-                "# Step 2: Add user to sudo group\n" +
-                $"usermod -aG sudo {newUserName}\n\n" +
-                "# Step 3: Create SSH directory for the new user\n" +
-                $"mkdir -p /home/{newUserName}/.ssh\n" +
-                $"chmod 700 /home/{newUserName}/.ssh\n\n" +
-                "# Step 4: Copy authorized_keys from root to new user (if exists)\n" +
-                "if [ -f /root/.ssh/authorized_keys ]; then\n" +
-                $"  cp /root/.ssh/authorized_keys /home/{newUserName}/.ssh/\n" +
-                "fi\n\n" +
-                "# Step 5: Set correct ownership and permissions\n" +
-                $"chown -R {newUserName}:{newUserName} /home/{newUserName}/.ssh\n" +
-                $"if [ -f /home/{newUserName}/.ssh/authorized_keys ]; then\n" +
-                $"  chmod 600 /home/{newUserName}/.ssh/authorized_keys\n" +
-                "fi\n\n" +
-                "# Step 6: NOPASSWD for sudo - create with cat instead of printf\n" +
-                $"cat > /etc/sudoers.d/{newUserName} << EOF\n" +
-                $"{newUserName} ALL=(ALL) NOPASSWD: ALL\n" +
-                "EOF\n" +
-                $"chmod 0440 /etc/sudoers.d/{newUserName}\n\n" +
-                
-                "# Confirm success\n" +
-                "echo \"\"\n" +
-                "echo \"=======================\"\n" +
-                $"echo \"User {newUserName} has been successfully created and added to the sudo group.\"\n" +
-                "echo \"=======================\"\n";
-
-            SetStatus($"Creating user '{newUserName}' on remote server. Please follow the prompts in the terminal window...", Color.yellow);
-
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            // This is needed since adduser command requires interactive input for password
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                // Update the SSH username if it's not already set
-                if (string.IsNullOrEmpty(sshUserName))
-                {
-                    CCCPSettingsAdapter.SetSSHUserName(newUserName);
-                }
-                
-                SetStatus($"User '{newUserName}' created successfully on remote server.", Color.green);
-                
-                // Update UI
-                CheckCustomInstallationStatus();
-
-                EditorUtility.DisplayDialog(
-                    "New User Created",
-                    $"User '{newUserName}' has been created successfully.\n\n" +
-                    $"Please close the installer window and enter '{newUserName}' as your SSH username.\n\n" +
-                    "Then press 'Check Pre-Requisites and Connect' and continue installing as your new user.",
-                    "OK"
-                );
-            }
-            else
-            {
-                SetStatus($"Failed to create user '{newUserName}' on remote server. Please check terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }    
-
-    private async void InstallCustomDebianTrixie()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomDebianTrixie && !installIfAlreadyInstalled)
-            {
-                SetStatus("Remote Debian Trixie Update is already installed.", Color.green);
-                return;
-            }
-            
-            SetStatus("Installing Debian Trixie Update on remote server...", Color.yellow);
-            
-            // Create a single bash script with all the steps
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Step 1: Updating package lists =====\"\n" +
-                "sudo apt update\n" +
-                "if [ $? -ne 0 ]; then\n" +
-                "  echo \"ERROR: Failed to update package lists\"\n" +
-                "  exit 1\n" +
-                "fi\n\n" +
-                
-                "echo \"===== Step 2: Upgrading packages =====\"\n" +
-                "sudo apt upgrade -y\n" +
-                "# Continue even if this step has issues\n\n" +
-                
-                "echo \"===== Step 3: Installing update-manager-core =====\"\n" +
-                "sudo apt install -y update-manager-core\n" +
-                "# Continue even if this step has issues\n\n" +
-                
-                "echo \"===== Step 4: Updating sources.list to Trixie =====\"\n" +
-                "sudo sed -i 's/bookworm/trixie/g' /etc/apt/sources.list\n" +
-                "if [ $? -ne 0 ]; then\n" +
-                "  echo \"ERROR: Failed to update sources.list\"\n" +
-                "  exit 1\n" +
-                "fi\n\n" +
-                
-                "echo \"===== Step 5: Updating package lists for Trixie =====\"\n" +
-                "sudo apt update\n" +
-                "if [ $? -ne 0 ]; then\n" +
-                "  echo \"ERROR: Failed to update Trixie package lists\"\n" +
-                "  exit 1\n" +
-                "fi\n\n" +
-                
-                "echo \"===== Step 6: Performing full upgrade to Trixie =====\"\n" +
-                "sudo apt full-upgrade -y\n" +
-                "if [ $? -ne 0 ]; then\n" +
-                "  echo \"WARNING: Full upgrade encountered issues. Check system status.\"\n" +
-                "else\n" +
-                "  echo \"===== Trixie upgrade completed successfully! =====\"\n" +
-                "fi\n\n" +
-                
-                "echo \"===== Done! =====\"\n";
-
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Running Debian Trixie upgrade in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("Debian Trixie Update installation completed. Checking installation status...", Color.green);
-                
-                // Wait for changes to apply
-                await Task.Delay(3000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomDebianTrixie)
-                {
-                    SetStatus("Debian Trixie Update installed successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("Debian Trixie Update verification failed. The installation might still be successful.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("Debian Trixie Update installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
+            Application.OpenURL("https://www.docker.com/products/docker-desktop/");
         }
     }
-
-    private async void InstallCustomCurl()
+    
+    private void CheckDockerImage()
+    {
+        SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
+        
+        if (EditorUtility.DisplayDialog("SpacetimeDB Docker Image Required",
+            "The SpacetimeDB Docker image needs to be pulled manually.\n\n" +
+            "1. Visit the official SpacetimeDB installation page and copy the Docker command.\n\n" +
+            "2. Replace the port 3000:3000 with your desired port mapping (i.e. 3011:3000) in the Docker command and run it in your Docker Desktop terminal.\n\n" +
+            "3. After pulling the image, click Refresh to verify.",
+            "Open SpacetimeDB Homepage", "Cancel"))
+        {
+            Application.OpenURL("https://spacetimedb.com/install#docker");
+        }
+    }
+    
+    /// <summary>
+    /// Recreates the Docker container with correct volume mounts
+    /// </summary>
+    private async void ReconfigureDockerContainer()
     {
         try
         {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
+            SetStatusInternal("Reconfiguring Docker container...", Color.yellow);
+            
+            // Check if container is running using dockerProcess
+            var (exists, isRunning) = dockerProcess.CheckContainerExistsAndRunning();
 
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
+            bool userConfirmed = EditorUtility.DisplayDialog(
+                "Confirm Container Reconfiguration",
+                "The Docker container must be stopped and recreated to reconfigure volume mounts.\n\n" +
+                "This will apply the following mounts:\n" +
+                "- Server directory -> /app\n" +
+                "- Unity project -> /unity\n" +
+                "- Persistent SpacetimeDB data volume\n\n" +
+                "The local SpacetimeDB Docker server database WILL BE RESET and the module needs to be Published again.\n\n" +
+                "Do you wish to reconfigure? This is required to complete the setup.",
+                "Yes, Reconfigure",
+                "Cancel"
+            );
 
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomCurl && !installIfAlreadyInstalled)
+            if (!userConfirmed)
             {
-                SetStatus("cURL is already installed on the remote server.", Color.green);
+                SetStatusInternal("Container reconfiguration cancelled.", Color.grey);
                 return;
             }
             
-            SetStatus("Installing cURL on remote server...", Color.yellow);
-            
-            // Create a bash script for curl installation
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Updating package lists =====\"\n" +
-                "sudo apt update\n\n" +
-                "echo \"===== Installing cURL =====\"\n" +
-                "sudo apt install -y curl\n\n" +
-                "# Check if curl was installed successfully\n" +
-                "if command -v curl &> /dev/null; then\n" +
-                "  echo \"===== cURL installed successfully! =====\"\n" +
-                "  curl --version\n" +
-                "else\n" +
-                "  echo \"ERROR: cURL installation failed\"\n" +
-                "  exit 1\n" +
-                "fi\n\n" +
-                "echo \"===== Done! =====\"\n";
-            
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Installing cURL in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
+            if (isRunning)
             {
-                SetStatus("cURL installation completed. Checking installation status...", Color.green);
-                
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomCurl)
+                // Stop the server through server manager
+                if (serverManager != null)
                 {
-                    SetStatus("cURL installed successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("cURL installation verification failed. Please check the terminal output.", Color.yellow);
+                    SetStatusInternal("Stopping server...", Color.yellow);
+                    serverManager.StopServer();
+                    await Task.Delay(2000); // Wait for graceful shutdown
                 }
             }
-            else
+            
+            if (exists)
             {
-                SetStatus("cURL installation process encountered issues. Please check the terminal output.", Color.red);
+                // Remove the existing container
+                SetStatusInternal("Removing old container...", Color.yellow);
+                EditorUtility.DisplayProgressBar("Reconfiguring Docker Container", "Removing old container...", 0.3f);
+                
+                var removeProcess = new System.Diagnostics.Process();
+                removeProcess.StartInfo.FileName = "docker";
+                removeProcess.StartInfo.Arguments = $"rm -f {ServerDockerProcess.ContainerName}";
+                removeProcess.StartInfo.UseShellExecute = false;
+                removeProcess.StartInfo.RedirectStandardOutput = true;
+                removeProcess.StartInfo.RedirectStandardError = true;
+                removeProcess.StartInfo.CreateNoWindow = true;
+                
+                removeProcess.Start();
+                string removeOutput = removeProcess.StandardOutput.ReadToEnd();
+                string removeError = removeProcess.StandardError.ReadToEnd();
+                removeProcess.WaitForExit();
+                
+                if (removeProcess.ExitCode != 0)
+                {
+                    SetStatusInternal($"Failed to remove container: {removeError}", Color.red);
+                    EditorUtility.ClearProgressBar();
+                    return;
+                }
+                
+                LogMessageInternal("Old container removed successfully", 1);
+            }
+            
+            EditorUtility.DisplayProgressBar("Reconfiguring Docker Container", "Configuration updated", 1.0f);
+            
+            SetStatusInternal("Container reconfigured! Volume mounts will be applied on next server start.", Color.green);
+            LogMessageInternal("Container reconfigured successfully. Volume mounts will be correct on next server start.", 1);
+            
+            // Update status
+            hasDockerContainerMounts = true;
+            UpdateInstallerItemsStatus();
+        }
+        catch (Exception ex)
+        {
+            SetStatusInternal($"Error reconfiguring container: {ex.Message}", Color.red);
+            LogMessageInternal($"Container reconfiguration error: {ex.Message}", -1);
+            
+            if (debugMode)
+            {
+                UnityEngine.Debug.LogError($"[ServerSetupWindow] Reconfiguration error: {ex}");
             }
         }
         finally
         {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
+            EditorUtility.ClearProgressBar();
+            Repaint();
         }
     }
-
-    private async void InstallCustomSpacetimeDBServer()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomSpacetimeDBServer && (spacetimeDBLatestVersion == spacetimeDBCurrentVersionCustom) && !installIfAlreadyInstalled)
-            {
-                SetStatus("The latest version of SpacetimeDB Server is already installed on the remote server.", Color.green);
-                return;
-            }
-            
-            SetStatus("Installing SpacetimeDB Server on remote server...", Color.yellow);
-            
-            // Create a bash script for SpacetimeDB Server installation
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Installing SpacetimeDB Server =====\"\n" +
-                $"# As user {sshUserName}\n" +
-                $"curl -sSf https://install.spacetimedb.com/ | sh\n\n" +
-                "# Check if installation was successful\n" +
-                $"if [ -f /home/{sshUserName}/.local/bin/spacetime ]; then\n" +
-                "  echo \"===== SpacetimeDB Server installed successfully! =====\"\n" +
-                $"  sudo -u {sshUserName} /home/{sshUserName}/.local/bin/spacetime --version\n" +
-                "else\n" +
-                "  echo \"WARNING: SpacetimeDB installation verification failed\"\n" +
-                "  echo \"Please verify installation manually\"\n" +
-                "fi\n\n" +
-                "echo \"===== Done! =====\"\n";
-            
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Installing SpacetimeDB Server in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
-
-                await customProcess.CheckSpacetimeDBVersionCustom(); // Extra check to ensure version is updated
-                spacetimeDBCurrentVersionCustom = spacetimeDBLatestVersion;
-
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-
-                await Task.Delay(1000);
-                
-                if (hasCustomSpacetimeDBServer)
-                {
-                    SetStatus("SpacetimeDB Server installed successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("SpacetimeDB Server installation verification failed. Please check the terminal output.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("SpacetimeDB Server installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }
-
-    private async void InstallCustomSpacetimeDBPath()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomSpacetimeDBPath && !installIfAlreadyInstalled)
-            {
-                SetStatus("SpacetimeDB PATH is already configured on the remote server.", Color.green);
-                return;
-            }
-            
-            SetStatus("Configuring SpacetimeDB PATH on remote server...", Color.yellow);
-            
-            // Create a bash script for SpacetimeDB PATH configuration
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Configuring SpacetimeDB PATH =====\"\n" +
-                $"# Check if spacetime is already in PATH for user {sshUserName}\n" +
-                $"if ! grep -q \"HOME/.spacetime/bin\" /home/{sshUserName}/.bashrc && ! grep -q \"HOME/.local/bin\" /home/{sshUserName}/.bashrc; then\n" +
-                "  echo \"Adding SpacetimeDB to PATH in .bashrc file\"\n" +
-                $"  echo 'export PATH=\"$HOME/.spacetime/bin:$HOME/.local/bin:$PATH\"' >> /home/{sshUserName}/.bashrc\n" +
-                $"  chown {sshUserName}:{sshUserName} /home/{sshUserName}/.bashrc\n" +
-                "  echo \"===== PATH updated successfully! =====\"\n" +
-                "else\n" +
-                "  echo \"===== SpacetimeDB PATH already configured! =====\"\n" +
-                "fi\n\n" +
-                
-                $"# Show the current PATH configuration for user {sshUserName}\n" +
-                $"echo \"Current PATH entries in /home/{sshUserName}/.bashrc:\"\n" +
-                $"grep -i \"PATH\" /home/{sshUserName}/.bashrc | cat\n\n" +
-                "echo \"===== Done! =====\"\n";
-            
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Configuring SpacetimeDB PATH in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("SpacetimeDB PATH configuration completed. Checking status...", Color.green);
-                
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomSpacetimeDBPath)
-                {
-                    SetStatus("SpacetimeDB PATH configured successfully on remote server.", Color.green);
-                }
-                else
-                {
-                    SetStatus("SpacetimeDB PATH configuration verification may need a server restart to take effect.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("SpacetimeDB PATH configuration process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }
-
-    private async void InstallCustomSpacetimeDBService()
-    {
-        try
-        {
-            // Ensure SSH session is active
-            if (!customProcess.IsSessionActive())
-            {
-                SetStatus("SSH connection not active. Please connect first.", Color.red);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(sshUserName))
-            {
-                SetStatus("Please enter a SSH username first.", Color.red);
-                return;
-            }
-
-            // Get the expected module name from the installer item or Settings
-            string expectedModuleName = "";
-            foreach (var item in customInstallerItems)
-            {
-                if (item.title == "Install SpacetimeDB Service")
-                {
-                    expectedModuleName = item.expectedModuleName;
-                    break;
-                }
-            }
-
-            // If expectedModuleName is empty, try to get it from Settings
-            if (string.IsNullOrEmpty(expectedModuleName))
-            {
-                expectedModuleName = CCCPSettingsAdapter.GetModuleName();
-            }
-            
-            if (string.IsNullOrEmpty(expectedModuleName))
-            {
-                EditorUtility.DisplayDialog("Module Name Required",
-                "You haven't added any module in Pre-Requisites. It is required to install the SpacetimeDB Service.",
-                "OK");
-                SetStatus("Module name is not set. Please add one in Pre-Requisites.", Color.yellow);
-                return;
-            }
-
-            CheckCustomInstallationStatus();
-            await Task.Delay(1000);
-            
-            if (hasCustomSpacetimeDBService && !installIfAlreadyInstalled)
-            {
-                SetStatus("SpacetimeDB Service is already installed on the remote server.", Color.green);
-                return;
-            }
-            
-            SetStatus("Installing SpacetimeDB Service on remote server...", Color.yellow);
-            
-            // Create a bash script for SpacetimeDB Service installation
-            string commands = 
-                "#!/bin/bash\n\n" +
-                "echo \"===== Installing SpacetimeDB Service =====\"\n\n" +
-                
-                "# Create directory for SpacetimeDB if it doesn't exist\n" +
-                $"sudo mkdir -p /home/{sshUserName}/.local/share/spacetime\n" +
-                $"sudo chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/share/spacetime\n\n" +
-                
-                "# Create the service file\n" +
-                "echo \"Creating systemd service file...\"\n" +
-                "sudo tee /etc/systemd/system/spacetimedb.service << 'EOF'\n" +
-                "[Unit]\n" +
-                "Description=SpacetimeDB Server\n" +
-                "After=network.target\n\n" +
-                "[Service]\n" +
-                $"User={sshUserName}\n" +
-                $"Environment=HOME=/home/{sshUserName}\n" +
-                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime \\\\\n" +
-                $"    --root-dir=/home/{sshUserName}/.local/share/spacetime \\\\\n" +
-                "    start \\\\\n" +
-                "    --listen-addr=0.0.0.0:3000\n" +
-                "Restart=always\n" +
-                $"WorkingDirectory=/home/{sshUserName}\n\n" +
-                "[Install]\n" +
-                "WantedBy=multi-user.target\n" +
-                "EOF\n\n" +
-                
-                "# Reload systemd to recognize the new service\n" +
-                "echo \"Reloading systemd...\"\n" +
-                "sudo systemctl daemon-reload\n\n" +
-                
-                "# Enable and start the service\n" +
-                "echo \"Enabling and starting SpacetimeDB service...\"\n" +
-                "sudo systemctl enable spacetimedb.service\n" +
-                "sudo systemctl start spacetimedb.service\n\n" +
-                
-                "# Check service status\n" +
-                "echo \"Checking service status...\"\n" +
-                "sudo systemctl status spacetimedb.service\n\n" +
-                
-                "# Create the database logs wrapper script for dynamic module switching\n" +
-                "echo \"Creating SpacetimeDB database logs wrapper script...\"\n" +
-                $"sudo tee /home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh << 'EOF'\n" +
-                "#!/bin/bash\n" +
-                "# SpacetimeDB Database Logs Service Wrapper\n" +
-                "# Dynamically reads current module from config file\n" +
-                "\n" +
-                "# Remove strict error handling to prevent unnecessary exits\n" +
-                "set -u  # Only exit on undefined variables, not on all errors\n" +
-                "\n" +
-                $"CURRENT_MODULE_FILE=\"/home/{sshUserName}/.local/current_spacetime_module\"\n" +
-                $"SPACETIME_PATH=\"/home/{sshUserName}/.local/bin/spacetime\"\n" +
-                "LOG_FILE=\"/tmp/spacetime-logs-wrapper.log\"\n" +
-                "\n" +
-                "# Function to log with timestamp (only to file, not stdout to avoid spam)\n" +
-                "log_debug() {\n" +
-                "    echo \"$(date '+%Y-%m-%d %H:%M:%S') - $1\" >> \"$LOG_FILE\"\n" +
-                "}\n" +
-                "\n" +
-                "# Function to handle script termination gracefully\n" +
-                "cleanup() {\n" +
-                "    log_debug \"Wrapper script received termination signal\"\n" +
-                "    exit 0\n" +
-                "}\n" +
-                "\n" +
-                "# Set up signal handlers\n" +
-                "trap cleanup SIGTERM SIGINT\n" +
-                "\n" +
-                "# Validate config file exists and is readable\n" +
-                "if [ ! -f \"$CURRENT_MODULE_FILE\" ]; then\n" +
-                "    log_debug \"ERROR: Module config file does not exist: $CURRENT_MODULE_FILE\"\n" +
-                "    sleep 30  # Wait before exiting to prevent rapid restarts\n" +
-                "    exit 1\n" +
-                "fi\n" +
-                "\n" +
-                "if [ ! -r \"$CURRENT_MODULE_FILE\" ]; then\n" +
-                "    log_debug \"ERROR: Cannot read module config file: $CURRENT_MODULE_FILE\"\n" +
-                "    sleep 30\n" +
-                "    exit 1\n" +
-                "fi\n" +
-                "\n" +
-                "# Read and validate module name\n" +
-                "MODULE=$(cat \"$CURRENT_MODULE_FILE\" | tr -d '\\n\\r' | xargs)\n" +
-                "\n" +
-                "if [ -z \"$MODULE\" ]; then\n" +
-                "    log_debug \"ERROR: Module config file is empty: $CURRENT_MODULE_FILE\"\n" +
-                "    sleep 30\n" +
-                "    exit 1\n" +
-                "fi\n" +
-                "\n" +
-                "# Validate spacetime binary exists\n" +
-                "if [ ! -x \"$SPACETIME_PATH\" ]; then\n" +
-                "    log_debug \"ERROR: SpacetimeDB binary not found or not executable: $SPACETIME_PATH\"\n" +
-                "    sleep 30\n" +
-                "    exit 1\n" +
-                "fi\n" +
-                "\n" +
-                "# Log start (only once to debug file, not to systemd logs)\n" +
-                "log_debug \"Starting database logs for module: $MODULE\"\n" +
-                "\n" +
-                "# Start logging - use exec to replace shell process\n" +
-                "exec \"$SPACETIME_PATH\" logs \"$MODULE\" -f\n" +
-                "EOF\n\n" +
-                
-                "# Make the wrapper script executable\n" +
-                $"sudo chmod +x /home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh\n\n" +
-                
-                "# Create initial module config file with expected module\n" +
-                $"mkdir -p /home/{sshUserName}/.local\n" +
-                $"echo '{expectedModuleName}' > /home/{sshUserName}/.local/current_spacetime_module\n" +
-                $"chmod 644 /home/{sshUserName}/.local/current_spacetime_module\n" +
-                $"chown {sshUserName}:{sshUserName} /home/{sshUserName}/.local/current_spacetime_module\n\n" +
-                
-                "# Create the database logs service file\n" +
-                "echo \"Creating SpacetimeDB database logs service...\"\n" +
-                "sudo tee /etc/systemd/system/spacetimedb-logs.service << 'EOF'\n" +
-                "[Unit]\n" +
-                "Description=SpacetimeDB Database Logs\n" +
-                "After=spacetimedb.service\n" +
-                "Requires=spacetimedb.service\n\n" +
-                "[Service]\n" +
-                $"User={sshUserName}\n" +
-                $"Environment=HOME=/home/{sshUserName}\n" +
-                "Type=simple\n" +
-                "Restart=on-failure\n" +
-                "RestartSec=30\n" +
-                "StartLimitIntervalSec=300\n" +
-                "StartLimitBurst=3\n" +
-                $"ExecStart=/home/{sshUserName}/.local/bin/spacetime-database-logs-switching.sh\n" +
-                $"WorkingDirectory=/home/{sshUserName}\n\n" +
-                "[Install]\n" +
-                "WantedBy=multi-user.target\n" +
-                "EOF\n\n" +
-                
-                "# Reload systemd to recognize the new service\n" +
-                "sudo systemctl daemon-reload\n\n" +
-                
-                "# Enable and start the database logs service\n" +
-                "echo \"Enabling SpacetimeDB database logs service...\"\n" +
-                "sudo systemctl enable spacetimedb-logs.service\n" +
-                "sudo systemctl start spacetimedb-logs.service\n\n" +
-
-                "# Check database logs service status\n" +
-                "echo \"Checking SpacetimeDB database logs service status...\"\n" +
-                "sudo systemctl status spacetimedb-logs.service\n\n" +
-
-                "echo \"===== Done! =====\"\n" +
-                $"echo \"Database logs service configured for module: {expectedModuleName}\"";
-            
-            // Use the RunVisibleSSHCommand method which won't block Unity's main thread
-            SetStatus("Installing SpacetimeDB Service in terminal window. Please follow the progress there...", Color.yellow);
-            bool success = await customProcess.RunVisibleSSHCommand(commands);
-            
-            if (success)
-            {
-                SetStatus("SpacetimeDB Service installation completed. Checking status...", Color.green);
-                
-                await Task.Delay(2000);
-                
-                CheckCustomInstallationStatus();
-                await Task.Delay(1000);
-                
-                if (hasCustomSpacetimeDBService)
-                {
-                    string logsServiceStatus = hasCustomSpacetimeDBLogsService ? "Both SpacetimeDB services" : "SpacetimeDB service";
-                    SetStatus($"{logsServiceStatus} installed successfully. Database logs configured for module: {expectedModuleName}", Color.green);
-                }
-                else
-                {
-                    SetStatus("SpacetimeDB Service installation verification failed. Please check the terminal output.", Color.yellow);
-                }
-            }
-            else
-            {
-                SetStatus("SpacetimeDB Service installation process encountered issues. Please check the terminal output.", Color.red);
-            }
-        }
-        finally
-        {
-            // Always refresh session status, regardless of how the method exits
-            await customProcess.RefreshSessionStatus();
-        }
-    }
+    
     #endregion
 
     #region Log Messages
-    private void LogMessage(string message, int type)
+    internal void LogMessageInternal(string message, int type)
     {
         switch (type)
         {
             case -1:
-                SetStatus(message, Color.red);
+                SetStatusInternal(message, Color.red);
                 break;
             case 0:
-                SetStatus(message, Color.yellow);
+                SetStatusInternal(message, Color.yellow);
                 break;
             case 1:
-                SetStatus(message, Color.green);
+                SetStatusInternal(message, Color.green);
                 break;
             default:
-                SetStatus(message, Color.grey);
+                SetStatusInternal(message, Color.grey);
                 break;
         }
         RequestRepaint(); // Always request repaint on status change, but throttled
     }
     
-    private void SetStatus(string message, Color color)
+    internal void SetStatusInternal(string message, Color color)
     {
         statusMessage = message;
         statusColor = color;
@@ -3267,6 +1784,17 @@ public class ServerSetupWindow : EditorWindow
             lastRepaintTime = currentTime;
             Repaint();
         }
+    }
+    
+    // Public methods that can be called by external code
+    private void LogMessage(string message, int type)
+    {
+        LogMessageInternal(message, type);
+    }
+    
+    private void SetStatus(string message, Color color)
+    {
+        SetStatusInternal(message, color);
     }
     #endregion
     

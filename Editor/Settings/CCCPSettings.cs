@@ -13,10 +13,17 @@ public class CCCPSettings : ScriptableObject
 
     [Header("Server Configuration")]
     public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
+    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode lastLocalServerMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
+    public string localCLIProvider = "Docker"; // or WSL
     public string userName = "";
     public string serverUrl = "http://0.0.0.0:3000/";
     public int serverPort = 3000;
     public string authToken = "";
+    
+    [Header("Docker Server Configuration")]
+    public string serverUrlDocker = "http://0.0.0.0:3011/";
+    public int serverPortDocker = 3011;
+    public string authTokenDocker = "";
     
     [Header("Directory Settings")]
     public string backupDirectory = "";
@@ -67,6 +74,12 @@ public class CCCPSettings : ScriptableObject
     public bool hasCustomSpacetimeDBService = false;
     public bool hasCustomSpacetimeDBLogsService = false;
     
+    [Header("Docker Prerequisites Status")]
+    public bool hasDocker = false;
+    public bool hasDockerCompose = false;
+    public bool hasDockerImage = false;
+    public bool hasDockerContainerMounts = false;
+    
     [Header("Workflow Settings")]
     public bool wslPrerequisitesChecked = false;
     public bool initializedFirstModule = false;
@@ -82,20 +95,24 @@ public class CCCPSettings : ScriptableObject
     public bool debugMode = false;
     public bool clearModuleLogAtStart = true;
     public bool clearDatabaseLogAtStart = true;
-    public bool autoCloseWsl = true;
+    public bool autoCloseCLI = true;
     public bool echoToConsole = true;
     public bool showLocalTime = true;
     public bool welcomeWindowShown = false;
 
     [Header("Version Information")]
-    public string spacetimeDBCurrentVersion = "";
+    public string spacetimeDBCurrentVersionWSL = "";
+    public string spacetimeDBCurrentVersionDocker = "";
     public string spacetimeDBCurrentVersionCustom = "";
     public string spacetimeDBCurrentVersionTool = "";
     public string spacetimeDBLatestVersion = "";
     public string spacetimeSDKLatestVersion = "";
-    public string rustCurrentVersion = "";
-    public string rustLatestVersion = "";
-    public string rustupVersion = "";
+    public string rustCurrentVersionWSL = "";
+    public string rustLatestVersionWSL = "";
+    public string rustupVersionWSL = "";
+    public string rustCurrentVersionDocker = "";
+    public string rustLatestVersionDocker = "";
+    public string rustupVersionDocker = "";
     public string CCCPAssetStoreLatestVersion = "";
     public bool rustupUpdateAvailable = false;
     public bool rustUpdateAvailable = false;
@@ -229,6 +246,11 @@ public class CCCPSettings : ScriptableObject
         serverUrl = "http://0.0.0.0:3000/";
         serverPort = 3000;
         authToken = "";
+        
+        serverUrlDocker = "http://0.0.0.0:3011/";
+        serverPortDocker = 3011;
+        authTokenDocker = "";
+        
         backupDirectory = "";
         serverDirectory = "";
         clientDirectory = "";
@@ -281,19 +303,19 @@ public class CCCPSettings : ScriptableObject
         debugMode = false;
         clearModuleLogAtStart = true;
         clearDatabaseLogAtStart = true;
-        autoCloseWsl = true;
+        autoCloseCLI = true;
         echoToConsole = true;
         showLocalTime = true;
         welcomeWindowShown = false;
 
-        spacetimeDBCurrentVersion = "";
+        spacetimeDBCurrentVersionWSL = "";
         spacetimeDBCurrentVersionCustom = "";
         spacetimeDBCurrentVersionTool = "";
         spacetimeDBLatestVersion = "";
         spacetimeSDKLatestVersion = "";
-        rustCurrentVersion = "";
-        rustLatestVersion = "";
-        rustupVersion = "";
+        rustCurrentVersionWSL = "";
+        rustLatestVersionWSL = "";
+        rustupVersionWSL = "";
         CCCPAssetStoreLatestVersion = "";
         rustUpdateAvailable = false;
         rustupUpdateAvailable = false;

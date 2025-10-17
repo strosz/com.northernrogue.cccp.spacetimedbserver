@@ -623,7 +623,7 @@ public class ServerUpdateProcess
             if (debugMode) Debug.Log($"Latest SpacetimeDB version: {spacetimeDBLatestVersion}");
             
             // Compare with current installed version
-            string currentSpacetimeDBVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersion();
+            string currentSpacetimeDBVersion = CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL();
             if (!string.IsNullOrEmpty(currentSpacetimeDBVersion) && currentSpacetimeDBVersion != spacetimeDBLatestVersion)
             {
                 if (debugMode) Debug.Log($"SpacetimeDB update available! Current: {currentSpacetimeDBVersion}, Latest: {spacetimeDBLatestVersion}");

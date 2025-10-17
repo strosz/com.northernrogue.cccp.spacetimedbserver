@@ -162,8 +162,9 @@ public class ServerOutputWindow : EditorWindow
         }
         else
         {
+            // All other modes (WSL, Docker, Custom) use standard 4-tab layout
             tabs = new string[] { "Module All", "Module Errors", "Database All", "Database Errors" };
-            // Map previous database-only tab selection back to full tabs
+            // Map previous tab selection
             if (previousServerMode.Equals("MaincloudServer", StringComparison.OrdinalIgnoreCase) && previousSelectedTab < 2)
             {
                 selectedTab = previousSelectedTab + 2; // Map back to Database tabs (2 or 3)
@@ -1136,6 +1137,18 @@ public class ServerOutputWindow : EditorWindow
                         serverWindow.ForceSSHLogRefresh();
                         if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered SSH log refresh for custom server");
                         
+                        // Restart SSH log processes to clear any stuck states
+                        var serverMgr = serverWindow.GetServerManager();
+                        if (serverMgr != null)
+                        {
+                            var logProcessor = serverMgr.GetLogProcessor();
+                            if (logProcessor != null)
+                            {
+                                logProcessor.RestartSSHLogging();
+                                if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Restarted SSH log processes");
+                            }
+                        }
+                        
                         // Update log size when refresh button is clicked for custom server
                         UpdateLogSizeForCustomServer();
                     }
@@ -1147,6 +1160,18 @@ public class ServerOutputWindow : EditorWindow
                             serverWindow.ForceWSLLogRefresh();
                             if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered WSL log refresh for WSL server");
                             
+                            // Restart WSL log processes to clear any stuck states
+                            var serverMgr = serverWindow.GetServerManager();
+                            if (serverMgr != null)
+                            {
+                                var logProcessor = serverMgr.GetLogProcessor();
+                                if (logProcessor != null)
+                                {
+                                    logProcessor.RestartWSLLogging();
+                                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Restarted WSL log processes");
+                                }
+                            }
+                            
                             // Update log size when refresh button is clicked for WSL server
                             UpdateLogSizeForWSLServer();
                         }
@@ -1154,6 +1179,18 @@ public class ServerOutputWindow : EditorWindow
                         {
                             // For Docker mode, we could add ForceDockerLogRefresh if needed
                             if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Triggered Docker log refresh for Docker server");
+                            
+                            // Restart Docker log processes to clear any stuck states
+                            var serverMgr = serverWindow.GetServerManager();
+                            if (serverMgr != null)
+                            {
+                                var logProcessor = serverMgr.GetLogProcessor();
+                                if (logProcessor != null)
+                                {
+                                    logProcessor.RestartDockerLogging();
+                                    if (debugMode) UnityEngine.Debug.Log("[ServerOutputWindow] Restarted Docker log processes");
+                                }
+                            }
                             
                             // Update log size when refresh button is clicked for Docker server
                             // UpdateLogSizeForDockerServer(); // Could be added later
