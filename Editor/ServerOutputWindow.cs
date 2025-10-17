@@ -85,7 +85,7 @@ public class ServerOutputWindow : EditorWindow
     private GUIStyle logStyle;
     private GUIStyle containerStyle;
     private GUIStyle toolbarButtonStyle;
-    private Font consolasFont;
+    private Font consoleFont;
     private bool stylesInitialized = false;
     private Color cmdBackgroundColor = new Color(0.1f, 0.1f, 0.1f);
     private Color cmdTextColor = new Color(0.8f, 0.8f, 0.8f);
@@ -937,23 +937,29 @@ public class ServerOutputWindow : EditorWindow
             // EditorStyles not ready yet, defer initialization
             return;
         }
-        
-        // Try to find Consolas font
-        consolasFont = Font.CreateDynamicFontFromOSFont("Consolas", 12);
-        if (consolasFont == null)
-        {
-            // Fallback options if Consolas is not available
-            string[] preferredFonts = new string[] { "Courier New", "Courier", "Lucida Console", "Monaco", "Monospace" };
-            foreach (string fontName in preferredFonts)
+        // Try to find Windows Consolas font
+        if (ServerUtilityProvider.IsWindows()) {
+            consoleFont = Font.CreateDynamicFontFromOSFont("Consolas", 12);
+            if (consoleFont == null)
             {
-                consolasFont = Font.CreateDynamicFontFromOSFont(fontName, 12);
-                if (consolasFont != null) break;
+                // Fallback options if Consolas is not available
+                string[] preferredFonts = new string[] { "Courier New", "Courier", "Lucida Console", "Monaco", "Monospace" };
+                foreach (string fontName in preferredFonts)
+                {
+                    consoleFont = Font.CreateDynamicFontFromOSFont(fontName, 12);
+                    if (consoleFont != null) break;
+                }
+                
+                // Ultimate fallback to default monospace font
+                if (consoleFont == null)
+                {
+                    consoleFont = EditorStyles.standardFont;
+                }
             }
-            
-            // Ultimate fallback to default monospace font
-            if (consolasFont == null)
+        } else { // Linux or Mac
+            if (consoleFont == null)
             {
-                consolasFont = EditorStyles.standardFont;
+                consoleFont = EditorStyles.standardFont;
             }
         }
         
@@ -975,7 +981,7 @@ public class ServerOutputWindow : EditorWindow
         // Initialize text area style for CMD-like appearance
         logStyle = new GUIStyle(EditorStyles.textArea);
         logStyle.richText = true;
-        logStyle.font = consolasFont;
+        logStyle.font = consoleFont;
         logStyle.normal.textColor = cmdTextColor;
         logStyle.normal.background = backgroundTexture;
         logStyle.focused.background = backgroundTexture;
