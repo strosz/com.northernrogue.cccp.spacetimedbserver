@@ -361,7 +361,7 @@ public class ServerCustomProcess
         }
     }
     
-    // Check if the server is reachable via ping - now optimized to be more lightweight
+    // Check if the server is reachable via ping - now optimized to be more lightweight with platform support
     public async Task<bool> CheckServerReachable()
     {
         LoadSettings();
@@ -374,10 +374,12 @@ public class ServerCustomProcess
         
         try
         {
-            // Only use a short timeout
+            // Get platform-specific ping command
+            var (executable, arguments) = ServerUtilityProvider.GetPingCommand(customServerUrl, 1000);
+            
             var process = new Process();
-            process.StartInfo.FileName = "ping";
-            process.StartInfo.Arguments = $"{customServerUrl} -n 1 -w 1000"; // 1 second timeout
+            process.StartInfo.FileName = executable;
+            process.StartInfo.Arguments = arguments;
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.CreateNoWindow = true;
@@ -393,7 +395,8 @@ public class ServerCustomProcess
                 return false;
             }
             
-            return process.ExitCode == 0 || output.Contains("Reply from") || output.Contains("bytes=");
+            // Check for success indicators across platforms
+            return process.ExitCode == 0 || output.Contains("Reply from") || output.Contains("bytes=") || output.Contains("time=");
         }
         catch (Exception)
         {
@@ -565,8 +568,8 @@ public class ServerCustomProcess
             }
             else
             {
-                // Use the full path to spacetime executable
-                string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
+                // Use the platform-appropriate path to spacetime executable
+                string spacetimePath = GetSpacetimeDBExecutablePath(isRemote: true);
 
                 // Start the server
                 if (debugMode) Log("Starting SpacetimeDB server in server custom process ...", 0);
@@ -637,7 +640,8 @@ public class ServerCustomProcess
         else
         {
             Log("Stopping SpacetimeDB on remote machine...", 0);
-            await RunCustomCommandAsync("pkill -9 -f spacetime", 3000);
+            string stopCommand = GetStopProcessCommand("spacetime", isRemote: true);
+            await RunCustomCommandAsync(stopCommand, 3000);
         }
         
         await Task.Delay(1000);
@@ -672,7 +676,7 @@ public class ServerCustomProcess
         return await RunCustomCommandAsync("sudo systemctl status spacetimedb", 3000);
     }
 
-    // Check if the SpacetimeDB server is running - optimized with caching
+    // Check if the SpacetimeDB server is running - optimized with caching and platform awareness
     public async Task<bool> CheckServerRunning(bool instantCheck)
     {
         double currentTime = EditorApplication.timeSinceStartup;
@@ -684,8 +688,9 @@ public class ServerCustomProcess
             }
         }
         
-        // Run actual check if cache expired
-        var result = await RunCustomCommandAsync("ps aux | grep spacetimedb-standalone | grep -v grep", 3000);
+        // Get platform-aware command to check if process is running
+        string checkCommand = GetCheckProcessCommand("spacetimedb-standalone", isRemote: true);
+        var result = await RunCustomCommandAsync(checkCommand, 3000);
         bool running = result.success && result.output.Contains("spacetimedb-standalone");
 
         // Update cache
@@ -703,8 +708,8 @@ public class ServerCustomProcess
     {
         if (debugMode) Log("Checking SpacetimeDB version on custom server...", 0);
         
-        // Use the full path to spacetime executable
-        string spacetimePath = $"/home/{sshUserName}/.local/bin/spacetime";
+        // Use the platform-appropriate path to spacetime executable
+        string spacetimePath = GetSpacetimeDBExecutablePath(isRemote: true);
         
         // Run the spacetime --version command via SSH
         var result = await RunCustomCommandAsync($"{spacetimePath} --version", 3000);
@@ -1053,6 +1058,139 @@ public class ServerCustomProcess
             callback(false, false, false, false, false);
         }
     }
+    #endregion
+
+    #region Platform-Specific Commands
+
+    /// <summary>
+    /// Gets the appropriate command to stop a process on the current or remote platform
+    /// </summary>
+    /// <param name="processPattern">The process name or pattern to stop</param>
+    /// <param name="isRemote">Whether this is for a remote SSH command</param>
+    /// <returns>The command string to execute</returns>
+    private string GetStopProcessCommand(string processPattern, bool isRemote = true)
+    {
+        if (isRemote || ServerUtilityProvider.IsLinux() || ServerUtilityProvider.IsMacOS())
+        {
+            // For Linux/macOS/remote: use pkill with force signal
+            return $"pkill -9 -f {processPattern}";
+        }
+        else
+        {
+            // For Windows: use taskkill
+            return $"taskkill /F /IM {processPattern}.exe";
+        }
+    }
+
+    /// <summary>
+    /// Gets the appropriate command to check if a process is running on the current or remote platform
+    /// </summary>
+    /// <param name="processPattern">The process name or pattern to check</param>
+    /// <param name="isRemote">Whether this is for a remote SSH command</param>
+    /// <returns>The command string to execute</returns>
+    private string GetCheckProcessCommand(string processPattern, bool isRemote = true)
+    {
+        if (isRemote || ServerUtilityProvider.IsLinux() || ServerUtilityProvider.IsMacOS())
+        {
+            // For Linux/macOS/remote: use ps with grep
+            return $"ps aux | grep {processPattern} | grep -v grep";
+        }
+        else
+        {
+            // For Windows: use tasklist
+            return $"tasklist | findstr {processPattern}";
+        }
+    }
+
+    /// <summary>
+    /// Gets the appropriate command to get the home directory on the current or remote platform
+    /// </summary>
+    /// <param name="isRemote">Whether this is for a remote SSH command</param>
+    /// <returns>The command string to execute</returns>
+    private string GetHomeDirectoryCommand(bool isRemote = true)
+    {
+        if (isRemote || ServerUtilityProvider.IsLinux() || ServerUtilityProvider.IsMacOS())
+        {
+            // For Linux/macOS/remote: use ~ or $HOME
+            return "echo $HOME";
+        }
+        else
+        {
+            // For Windows: use %USERPROFILE%
+            return "echo %USERPROFILE%";
+        }
+    }
+
+    /// <summary>
+    /// Gets the appropriate path for SpacetimeDB executable based on the platform
+    /// </summary>
+    /// <param name="isRemote">Whether this is for a remote SSH connection</param>
+    /// <returns>The path to the SpacetimeDB executable</returns>
+    private string GetSpacetimeDBExecutablePath(bool isRemote = true)
+    {
+        if (isRemote)
+        {
+            // For remote (Linux): use full path or which
+            return $"/home/{sshUserName}/.local/bin/spacetime";
+        }
+        else if (ServerUtilityProvider.IsLinux() || ServerUtilityProvider.IsMacOS())
+        {
+            // For local Linux/macOS: check common locations
+            return "~/.local/bin/spacetime";
+        }
+        else
+        {
+            // For Windows: assume it's in PATH or AppData
+            return "spacetime.exe";
+        }
+    }
+
+    /// <summary>
+    /// Gets the appropriate service manager command for the platform
+    /// </summary>
+    /// <param name="action">The action to perform (start, stop, status, restart)</param>
+    /// <param name="serviceName">The name of the service</param>
+    /// <param name="isRemote">Whether this is for a remote SSH command</param>
+    /// <returns>The command string to execute</returns>
+    private string GetServiceCommand(string action, string serviceName, bool isRemote = true)
+    {
+        if (isRemote || ServerUtilityProvider.IsLinux() || ServerUtilityProvider.IsMacOS())
+        {
+            // For Linux/macOS/remote: use systemctl (if available) or service command
+            return $"sudo systemctl {action} {serviceName}";
+        }
+        else
+        {
+            // For Windows: use net command
+            string actionMap = action switch
+            {
+                "start" => "start",
+                "stop" => "stop",
+                "restart" => "stop && net start",
+                "status" => "query",
+                _ => action
+            };
+            return $"net {actionMap} {serviceName}";
+        }
+    }
+
+    /// <summary>
+    /// Detects if the remote system is running a Debian-based Linux distribution
+    /// </summary>
+    /// <returns>True if the remote system appears to be Debian-based</returns>
+    public async Task<bool> IsRemoteSystemDebian()
+    {
+        try
+        {
+            var result = await RunCustomCommandAsync("test -f /etc/os-release && cat /etc/os-release | grep -i debian || echo 'NOT_DEBIAN'", 3000);
+            return result.success && (result.output.Contains("debian") || result.output.Contains("ubuntu") || result.output.Contains("raspbian"));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     #endregion
 
     #region SSH Commands

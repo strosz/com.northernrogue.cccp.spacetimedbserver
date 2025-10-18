@@ -475,6 +475,116 @@ public static class ServerUtilityProvider
             return $"-c \"{command}\""; // Fallback
     }
 
+    /// <summary>
+    /// Gets the appropriate ping command for the current platform
+    /// </summary>
+    /// <param name="hostname">The hostname to ping</param>
+    /// <param name="timeoutMs">Timeout in milliseconds</param>
+    /// <returns>Tuple of (executable, arguments)</returns>
+    public static (string executable, string arguments) GetPingCommand(string hostname, int timeoutMs = 1000)
+    {
+        if (IsWindows())
+        {
+            // Windows ping: -n (count) -w (timeout in ms)
+            int timeoutSec = Mathf.Max(1, timeoutMs / 1000);
+            return ("ping", $"{hostname} -n 1 -w {timeoutMs}");
+        }
+        else if (IsMacOS())
+        {
+            // macOS ping: -c (count) -W (timeout in ms)
+            return ("ping", $"-c 1 -W {timeoutMs} {hostname}");
+        }
+        else if (IsLinux())
+        {
+            // Linux ping: -c (count) -W (timeout in ms)
+            return ("ping", $"-c 1 -W {timeoutMs / 1000} {hostname}");
+        }
+        else
+        {
+            // Fallback to basic ping
+            return ("ping", $"-c 1 {hostname}");
+        }
+    }
+
+    /// <summary>
+    /// Gets the command to check if a process is running on the current platform
+    /// </summary>
+    /// <param name="processName">Name of the process to check</param>
+    /// <returns>Tuple of (executable, arguments)</returns>
+    public static (string executable, string arguments) GetCheckProcessCommand(string processName)
+    {
+        if (IsWindows())
+        {
+            // Windows: tasklist command
+            return ("tasklist", $"/FI \"IMAGENAME eq {processName}*\"");
+        }
+        else if (IsMacOS() || IsLinux())
+        {
+            // Unix-like: pgrep command
+            return ("pgrep", $"-f {processName}");
+        }
+        else
+        {
+            return ("pgrep", $"-f {processName}"); // Fallback
+        }
+    }
+
+    /// <summary>
+    /// Gets the command to check if a file exists on the current platform
+    /// </summary>
+    /// <param name="filePath">Path to the file</param>
+    /// <returns>Tuple of (executable, arguments)</returns>
+    public static (string executable, string arguments) GetFileExistsCommand(string filePath)
+    {
+        if (IsWindows())
+        {
+            // Windows: test for file existence
+            return ("cmd.exe", $"/c if exist \"{filePath}\" (echo EXISTS) else (echo NOT_EXISTS)");
+        }
+        else if (IsMacOS() || IsLinux())
+        {
+            // Unix-like: test command
+            return ("test", $"-f {filePath} && echo EXISTS || echo NOT_EXISTS");
+        }
+        else
+        {
+            return ("test", $"-f {filePath} && echo EXISTS || echo NOT_EXISTS"); // Fallback
+        }
+    }
+
+    /// <summary>
+    /// Gets the command to check if an executable exists and is executable on the current platform
+    /// </summary>
+    /// <param name="executablePath">Path to the executable</param>
+    /// <returns>Tuple of (executable, arguments)</returns>
+    public static (string executable, string arguments) GetExecutableExistsCommand(string executablePath)
+    {
+        if (IsWindows())
+        {
+            // Windows: where or test for file
+            return ("cmd.exe", $"/c if exist \"{executablePath}\" (echo EXISTS_AND_EXECUTABLE) else (echo NOT_EXECUTABLE)");
+        }
+        else if (IsMacOS() || IsLinux())
+        {
+            // Unix-like: test for executable
+            return ("test", $"-x {executablePath} && echo EXISTS_AND_EXECUTABLE || echo NOT_EXECUTABLE");
+        }
+        else
+        {
+            return ("test", $"-x {executablePath} && echo EXISTS_AND_EXECUTABLE || echo NOT_EXECUTABLE"); // Fallback
+        }
+    }
+
+    /// <summary>
+    /// Gets the success pattern to look for when checking command execution on the current platform
+    /// </summary>
+    /// <returns>Success pattern string</returns>
+    public static string GetSuccessPattern()
+    {
+        // Universal pattern for most commands
+        return "EXISTS|SUCCESS|RUNNING";
+    }
+
     #endregion
 }
 

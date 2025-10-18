@@ -1793,7 +1793,6 @@ public class ServerSetupWindow : EditorWindow
                 "- Server directory -> /app\n" +
                 "- Unity project -> /unity\n" +
                 "- Persistent SpacetimeDB data and auth volume\n\n" +
-                "The local SpacetimeDB Docker server database WILL BE RESET and the module needs to be Published again.\n\n" +
                 "Do you wish to reconfigure? This is required to complete the setup.",
                 "Yes, Reconfigure",
                 "Cancel"
