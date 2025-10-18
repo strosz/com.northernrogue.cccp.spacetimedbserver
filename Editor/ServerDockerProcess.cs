@@ -255,6 +255,10 @@ public class ServerDockerProcess
             volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
             if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB data", 0);
             
+            // Add persistent volume for SpacetimeDB authentication config
+            volumeMounts += " -v spacetimedb-auth:/home/spacetime/.config/spacetime";
+            if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB authentication config", 0);
+            
             // Add Unity Assets directory as a volume mount if provided
             if (!string.IsNullOrEmpty(unityAssetsDirectory))
             {
@@ -285,8 +289,8 @@ public class ServerDockerProcess
             
             // Start Docker container with interactive mode
             // Note: NOT using --rm so container persists and can be stopped/restarted
-            // Override entrypoint and use --user root to ensure permissions on the volume
-            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && su spacetime -c 'spacetime start'\"";
+            // Override entrypoint and use --user root to ensure permissions on the volumes
+            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
             
             process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
             process.StartInfo.UseShellExecute = true;
@@ -356,6 +360,10 @@ public class ServerDockerProcess
             volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
             if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB data", 0);
             
+            // Add persistent volume for SpacetimeDB authentication config
+            volumeMounts += " -v spacetimedb-auth:/home/spacetime/.config/spacetime";
+            if (debugMode) logCallback("Mounting persistent volume for SpacetimeDB authentication config", 0);
+            
             // Add Unity Assets directory as a volume mount if provided
             if (!string.IsNullOrEmpty(unityAssetsDirectory))
             {
@@ -386,8 +394,8 @@ public class ServerDockerProcess
             
             // Container doesn't exist, create new one
             // Start Docker container in detached mode
-            // Override entrypoint and use --user root to ensure permissions on the volume
-            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && su spacetime -c 'spacetime start'\"";
+            // Override entrypoint and use --user root to ensure permissions on the volumes
+            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
             
             if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
             
