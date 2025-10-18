@@ -12,8 +12,8 @@ public class CCCPSettings : ScriptableObject
     public static bool debug = false;
 
     [Header("Server Configuration")]
-    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
-    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode lastLocalServerMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
+    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer;
+    public NorthernRogue.CCCP.Editor.ServerManager.ServerMode lastLocalServerMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer;
     public string localCLIProvider = "Docker"; // or WSL
     public string userName = "";
     public string serverUrl = "http://0.0.0.0:3000/";
@@ -244,7 +244,8 @@ public class CCCPSettings : ScriptableObject
     // Reset to defaults
     public void ResetToDefaults()
     {
-        serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.WSLServer;
+        serverMode = NorthernRogue.CCCP.Editor.ServerManager.ServerMode.DockerServer;
+        localCLIProvider = "Docker";
         userName = "";
         serverUrl = "http://0.0.0.0:3000/";
         serverPort = 3000;

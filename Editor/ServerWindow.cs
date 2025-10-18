@@ -24,8 +24,8 @@ public class ServerWindow : EditorWindow
     private ServerDockerProcess dockerProcess;
     
     // Server mode
-    private ServerMode serverMode = ServerMode.WSLServer;
-    private ServerMode previousServerMode = ServerMode.WSLServer;
+    private ServerMode serverMode = ServerMode.DockerServer;
+    private ServerMode previousServerMode = ServerMode.DockerServer;
     private string localCLIProvider { get => CCCPSettingsAdapter.GetLocalCLIProvider(); set => CCCPSettingsAdapter.SetLocalCLIProvider(value); }
 
     // Pre-requisites WSL - Direct property access to settings
