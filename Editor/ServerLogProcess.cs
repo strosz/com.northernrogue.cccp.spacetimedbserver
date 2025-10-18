@@ -2673,10 +2673,10 @@ public class ServerLogProcess
                 {
                     if (DateTime.TryParse(timestampStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime utcTime))
                     {
-                        // Convert to local time
-                        DateTime localTime = utcTime.ToLocalTime();
+                        // Adjust for Docker timestamp offset
+                        DateTime adjustedTime = utcTime.AddHours(0);
                         // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
-                        string formattedTime = "[" + localTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
+                        string formattedTime = "[" + adjustedTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
                         return formattedTime + remainder;
                     }
                 }
@@ -2706,8 +2706,10 @@ public class ServerLogProcess
                 
                 if (parsedTime > DateTime.MinValue)
                 {
+                    // Adjust for Docker timestamp offset: -4 hours for non-localtime
+                    DateTime adjustedTime = parsedTime.AddHours(-4);
                     // Format as "[YYYY-MM-DD HH:mm:ss]" to match SSH logs
-                    string formattedTime = "[" + parsedTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
+                    string formattedTime = "[" + adjustedTime.ToString("yyyy-MM-dd HH:mm:ss") + "]";
                     return formattedTime + remainder;
                 }
             }
