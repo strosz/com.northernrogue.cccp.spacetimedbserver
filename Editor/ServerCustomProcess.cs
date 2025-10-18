@@ -347,6 +347,14 @@ public class ServerCustomProcess
                         return;
                     }
 
+                    // Ignore locale configuration warnings (non-fatal on remote systems)
+                    if (args.Data.Contains("setlocale") && args.Data.Contains("LC_ALL"))
+                    {
+                        // Treat as non-fatal warning; log at normal level if debug
+                        if (debugMode) Log($"SSH Locale Info: {args.Data}", 0);
+                        return;
+                    }
+
                     // Treat "Saving config" messages as informational output, not errors
                     if (args.Data.Contains("Saving config"))
                     {

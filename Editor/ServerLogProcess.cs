@@ -680,8 +680,14 @@ public class ServerLogProcess
             {
                 if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH module log read error: {error}");
                 
+                // Filter out non-fatal locale warnings that are common on remote systems
+                if (error.Contains("setlocale") && error.Contains("LC_ALL") && error.Contains("cannot change locale"))
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Ignoring harmless locale warning: {error}");
+                    // Don't display this as an error - it's not a real issue
+                }
                 // Provide succinct status message for the status bar
-                if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
+                else if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
                     ServerOutputWindow.SetStatus("Module logs: Service not found", Color.red);
@@ -1541,8 +1547,14 @@ public class ServerLogProcess
             {
                 if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] WSL module log read error: {error}");
                 
+                // Filter out non-fatal locale warnings that are common on remote systems
+                if (error.Contains("setlocale") && error.Contains("LC_ALL") && error.Contains("cannot change locale"))
+                {
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Ignoring harmless locale warning: {error}");
+                    // Don't display this as an error - it's not a real issue
+                }
                 // Provide succinct status message for the status bar
-                if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
+                else if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
                     ServerOutputWindow.SetStatus("Module logs: Service not found", Color.red);
