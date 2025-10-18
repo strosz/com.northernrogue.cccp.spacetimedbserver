@@ -742,8 +742,11 @@ public class ServerReducerWindow : EditorWindow
                 return;
             }
         }
-        
-        if (string.IsNullOrEmpty(authToken))
+
+        if ((CCCPSettingsAdapter.GetLocalCLIProvider() == "WSL" && string.IsNullOrEmpty(authToken)) ||
+            (CCCPSettingsAdapter.GetLocalCLIProvider() == "Docker" && string.IsNullOrEmpty(authTokenDocker)) ||
+            (serverMode == "CustomServer" && string.IsNullOrEmpty(customServerAuthToken)) ||
+            (serverMode == "MaincloudServer" && string.IsNullOrEmpty(maincloudAuthToken)))
         {
             SetStatus("Authentication token is required to run reducers.", Color.red);
             return;

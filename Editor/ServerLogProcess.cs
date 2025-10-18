@@ -656,6 +656,7 @@ public class ServerLogProcess
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onModuleLogUpdated?.Invoke();
+                    ServerOutputWindow.SetStatus("Module logs updated", Color.green);
                 }
                 else 
                 {
@@ -679,16 +680,22 @@ public class ServerLogProcess
             {
                 if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH module log read error: {error}");
                 
-                // If service doesn't exist, provide helpful message
+                // Provide succinct status message for the status bar
                 if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
+                    ServerOutputWindow.SetStatus("Module logs: Service not found", Color.red);
+                }
+                else
+                {
+                    ServerOutputWindow.SetStatus($"Module logs error: {error}", Color.red);
                 }
             }
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading SSH module logs: {ex.Message}");
+            ServerOutputWindow.SetStatus($"Module logs error: {ex.Message}", Color.red);
         }
     }
     
@@ -834,6 +841,7 @@ public class ServerLogProcess
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
+                    ServerOutputWindow.SetStatus("Database logs updated", Color.green);
                 }
                 else 
                 {
@@ -859,16 +867,19 @@ public class ServerLogProcess
                 if (error.Contains("Unit " + SpacetimeDatabaseLogServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log service not found yet - this is expected until the service is created");
+                    ServerOutputWindow.SetStatus("Database logs: Service not found (expected)", Color.yellow);
                 }
                 else if (debugMode)
                 {
                     UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH database log read error: {error}");
+                    ServerOutputWindow.SetStatus($"Database logs error: {error}", Color.red);
                 }
             }
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading SSH database logs: {ex.Message}");
+            ServerOutputWindow.SetStatus($"Database logs error: {ex.Message}", Color.red);
         }
     }    
     
@@ -1514,6 +1525,7 @@ public class ServerLogProcess
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onModuleLogUpdated?.Invoke();
+                    ServerOutputWindow.SetStatus("Module logs updated", Color.green);
                 }
                 else 
                 {
@@ -1529,26 +1541,34 @@ public class ServerLogProcess
             {
                 if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] WSL module log read error: {error}");
                 
-                // If service doesn't exist, provide helpful message
+                // Provide succinct status message for the status bar
                 if (error.Contains("Unit " + SpacetimeServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] SpacetimeDB service not found - ensure SpacetimeDB is running as a systemd service");
+                    ServerOutputWindow.SetStatus("Module logs: Service not found", Color.red);
                 }
                 // If permissions issue, provide helpful guidance
                 else if (error.Contains("permission denied") || error.Contains("Permission denied") || error.Contains("access denied"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Permission denied accessing journalctl. User '{userName}' may need to be added to 'systemd-journal' group. Run: sudo usermod -a -G systemd-journal {userName}");
+                    ServerOutputWindow.SetStatus("Module logs: Permission denied", Color.red);
                 }
                 // If sudo password required, provide guidance
                 else if (error.Contains("password is required") || error.Contains("sudo:"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Sudo password required for journalctl. Consider adding user '{userName}' to 'systemd-journal' group to avoid needing sudo: sudo usermod -a -G systemd-journal {userName}");
+                    ServerOutputWindow.SetStatus("Module logs: Sudo password required", Color.red);
+                }
+                else
+                {
+                    ServerOutputWindow.SetStatus($"Module logs error: {error}", Color.red);
                 }
             }
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading WSL module logs: {ex.Message}");
+            ServerOutputWindow.SetStatus($"Module logs error: {ex.Message}", Color.red);
         }        finally
         {
             // Reset the protection flag
@@ -1803,6 +1823,7 @@ public class ServerLogProcess
                     
                     // Notify of log update
                     EditorApplication.delayCall += () => onDatabaseLogUpdated?.Invoke();
+                    ServerOutputWindow.SetStatus("Database logs updated", Color.green);
                 } else 
                 {
                     // Even if no new logs, advance timestamp slightly to prevent infinite queries
@@ -1824,26 +1845,31 @@ public class ServerLogProcess
                 if (error.Contains("Unit " + SpacetimeDatabaseLogServiceName + " could not be found"))
                 {
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log service not found yet - this is expected until the service is created");
+                    ServerOutputWindow.SetStatus("Database logs: Service not found (expected)", Color.yellow);
                 }
                 // If permissions issue, provide helpful guidance
                 else if (error.Contains("permission denied") || error.Contains("Permission denied") || error.Contains("access denied"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Permission denied accessing journalctl for database logs. User '{userName}' may need to be added to 'systemd-journal' group. Run: sudo usermod -a -G systemd-journal {userName}");
+                    ServerOutputWindow.SetStatus("Database logs: Permission denied", Color.red);
                 }
                 // If sudo password required, provide guidance
                 else if (error.Contains("password is required") || error.Contains("sudo:"))
                 {
                     if (debugMode) UnityEngine.Debug.LogWarning($"[ServerLogProcess] Sudo password required for journalctl database logs. Consider adding user '{userName}' to 'systemd-journal' group to avoid needing sudo: sudo usermod -a -G systemd-journal {userName}");
+                    ServerOutputWindow.SetStatus("Database logs: Sudo password required", Color.red);
                 }
                 else if (debugMode)
                 {
                     UnityEngine.Debug.LogWarning($"[ServerLogProcess] WSL database log read error: {error}");
+                    ServerOutputWindow.SetStatus($"Database logs error: {error}", Color.red);
                 }
             }
         }
         catch (Exception ex)
         {
             if (debugMode) UnityEngine.Debug.LogError($"[ServerLogProcess] Error reading WSL database logs: {ex.Message}");
+            ServerOutputWindow.SetStatus($"Database logs error: {ex.Message}", Color.red);
         }
 
         finally
@@ -2199,6 +2225,12 @@ public class ServerLogProcess
                 if (debugMode) logCallback("[ServerLogProcess] ERROR: Docker processor is NULL!", -1);
                 return;
             }
+
+            if (isReadingDockerModuleLogs)
+            {
+                if (debugMode) logCallback("[ServerLogProcess] WARNING: Already reading Docker module logs, skipping this call", 0);
+                return;
+            }
             
             if (debugMode) logCallback("[ServerLogProcess] Getting Docker logs (non-blocking)...", 0);
             
@@ -2345,6 +2377,7 @@ public class ServerLogProcess
                 
                 onModuleLogUpdated?.Invoke();
                 if (debugMode) logCallback($"[ServerLogProcess] SUCCESS: Read {formattedLines.Count} Docker module log lines", 1);
+                ServerOutputWindow.SetStatus("Module logs updated", Color.green);
             }
             else
             {
@@ -2361,6 +2394,7 @@ public class ServerLogProcess
         {
             if (debugMode) logCallback($"[ServerLogProcess] EXCEPTION in ReadDockerModuleLogsAsync: {ex.Message}", -1);
             UnityEngine.Debug.LogError($"[ServerLogProcess] EXCEPTION in ReadDockerModuleLogsAsync: {ex}");
+            ServerOutputWindow.SetStatus($"Module logs error: {ex.Message}", Color.red);
         }
         finally
         {
@@ -2422,6 +2456,7 @@ public class ServerLogProcess
             if (completedTask == timeoutTask)
             {
                 if (debugMode) logCallback("[ServerLogProcess] ERROR: Docker command timed out after 15 seconds!", -1);
+                ServerOutputWindow.SetStatus("Docker database logs: Timeout", Color.red);
                 return;
             }
             
@@ -2434,13 +2469,18 @@ public class ServerLogProcess
                 if (!string.IsNullOrEmpty(result.error))
                 {
                     if (debugMode) logCallback($"[ServerLogProcess] ERROR getting Docker database logs: {result.error}", -1);
+                    ServerOutputWindow.SetStatus($"Docker database logs: {result.error}", Color.red);
                 }
-                if (string.IsNullOrEmpty(result.output))
+                else if (string.IsNullOrEmpty(result.output))
                 {
                     if (debugMode) logCallback("[ServerLogProcess] WARNING: Docker database log output was empty", 0);
+                    ServerOutputWindow.SetStatus("Docker database logs: No output", Color.yellow);
                 }
                 return;
             }
+            
+            // Success - clear any error message or show success briefly
+            ServerOutputWindow.SetStatus("Database logs updated", Color.green);
             
             if (debugMode) logCallback($"[ServerLogProcess] Raw output preview: {result.output.Substring(0, Math.Min(200, result.output.Length))}...", 0);
             
@@ -2690,11 +2730,11 @@ public class ServerLogProcess
         }
         
         // Skip if there's already a scheduled Docker log processing task
-        /*if (isDockerLogProcessingScheduled)
+        if (isDockerLogProcessingScheduled)
         {
             if (debugMode) logCallback("[ServerLogProcess] Docker log processing already scheduled, skipping", 0);
             return;
-        }*/
+        }
         
         if (currentTime - lastDockerLogReadTime > dockerLogReadInterval)
         {

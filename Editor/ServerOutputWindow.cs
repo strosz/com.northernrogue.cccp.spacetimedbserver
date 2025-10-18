@@ -102,6 +102,13 @@ public class ServerOutputWindow : EditorWindow
     private ServerWSLProcess wslProcess;
     private ServerManager serverManager;
     
+    // Status bar fields
+    private string statusMessage = "Ready.";
+    private Color statusColor = Color.grey;
+    private string statusTimestamp = "";
+    private double statusMessageSetTime = 0; // Time when status was set (using EditorApplication.timeSinceStartup)
+    private const double STATUS_MESSAGE_DURATION = 5.0; // Display status for 5 seconds
+    
     // Track data changes
     private bool scrollToBottom = false;
     private string displayedText = string.Empty;
@@ -245,6 +252,30 @@ public class ServerOutputWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Sets the status message in the status bar at the bottom of the window
+    /// </summary>
+    public static void SetStatus(string message, Color color)
+    {
+        if (currentInstance != null)
+        {
+            currentInstance.SetStatusInternal(message, color);
+        }
+    }
+
+    /// <summary>
+    /// Internal method to set status
+    /// </summary>
+    private void SetStatusInternal(string message, Color color)
+    {
+        statusMessage = message;
+        statusColor = color;
+        statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+        statusMessageSetTime = EditorApplication.timeSinceStartup;
+        needsRepaint = true;
+        Repaint();
+    }
+
     #region OnEnable
     private void OnEnable()
     {
@@ -273,6 +304,12 @@ public class ServerOutputWindow : EditorWindow
         echoToConsole = CCCPSettingsAdapter.GetEchoToConsole();
         showLocalTime = CCCPSettingsAdapter.GetShowLocalTime();
         logUpdateFrequency = CCCPSettingsAdapter.GetLogUpdateFrequency();
+
+        // Initialize status bar
+        statusMessage = "Ready.";
+        statusColor = Color.grey;
+        statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+        statusMessageSetTime = EditorApplication.timeSinceStartup;
 
         // Apply log update frequency to intervals
         UpdateRefreshIntervals(logUpdateFrequency);
@@ -1395,6 +1432,9 @@ public class ServerOutputWindow : EditorWindow
                
         GUI.EndScrollView();
         
+        // Draw status bar at the bottom
+        DrawStatusBar();
+        
         // Only request repaint if needed and not too frequent
         if (needsRepaint && (EditorApplication.timeSinceStartup - lastRepaintTime) >= MIN_REPAINT_INTERVAL)
         {
@@ -1402,6 +1442,53 @@ public class ServerOutputWindow : EditorWindow
             needsRepaint = false;
             Repaint();
         }
+    }
+
+    private void DrawStatusBar()
+    {
+        // Check if status message has expired
+        if (EditorApplication.timeSinceStartup - statusMessageSetTime > STATUS_MESSAGE_DURATION)
+        {
+            // Only reset if we're not currently showing a fresh message
+            if (statusMessage != "Ready.")
+            {
+                statusMessage = "Ready.";
+                statusColor = Color.grey;
+            }
+        }
+
+        // Match ServerReducerWindow's status message style
+        EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+        
+        // Timestamp section with light grey color
+        GUIStyle timeStyle = new GUIStyle(EditorStyles.label);
+        timeStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Light grey
+        timeStyle.alignment = TextAnchor.MiddleLeft;
+        timeStyle.fontStyle = FontStyle.Italic;
+        EditorGUILayout.LabelField(statusTimestamp, timeStyle, GUILayout.Width(60), GUILayout.Height(16));
+        
+        // Message section with status color - truncate if needed
+        GUIStyle msgStyle = new GUIStyle(EditorStyles.label);
+        msgStyle.normal.textColor = statusColor;
+        msgStyle.alignment = TextAnchor.MiddleLeft;
+        
+        // Calculate available width (window width - timestamp width - padding)
+        float availableWidth = position.width*2 - 70;
+        
+        // Estimate character width using font metrics
+        float charWidth = msgStyle.CalcSize(new GUIContent("W")).x; // Use 'W' as average width
+        int maxChars = Mathf.Max(10, (int)(availableWidth / charWidth)); // At least 10 characters
+        
+        // Truncate message if needed
+        string displayMessage = statusMessage;
+        if (statusMessage.Length > maxChars)
+        {
+            displayMessage = statusMessage.Substring(0, Mathf.Max(3, maxChars - 3)) + "...";
+        }
+        
+        EditorGUILayout.LabelField(displayMessage, msgStyle, GUILayout.Height(16));
+        
+        EditorGUILayout.EndHorizontal();
     }
 
     // Update refresh intervals for RefreshOpenWindow rate limiting
