@@ -194,6 +194,13 @@ public class ServerCustomProcess
         {
             // Use a very basic test command with short timeout
             Log("Testing SSH connection with " + sshUserName + " to " + customServerUrl + " with simple test command...", 0);
+            
+            // On Linux, provide extra diagnostics
+            if (ServerUtilityProvider.IsLinux())
+            {
+                Log("Verifying SSH key permissions and connectivity...", 0);
+            }
+
             var result = await RunSimpleCommandAsync("echo CONNECTION_TEST_OK", 3000);
             
             if (result.success && result.output.Contains("CONNECTION_TEST_OK"))
@@ -203,6 +210,20 @@ public class ServerCustomProcess
             }
             else
             {
+                // Provide better diagnostics on Linux for common SSH issues
+                if (ServerUtilityProvider.IsLinux())
+                {
+                    Log($"SSH connection failed. Common causes on Linux:", 0);
+                    Log($"1. SSH key permissions too open (should be 600). File: {sshPrivateKeyPath}", -1);
+                    Log($"2. SSH service not running on {customServerUrl}", -1);
+                    Log($"3. Incorrect username: {sshUserName}", -1);
+                    Log($"4. Host key verification issues (we use StrictHostKeyChecking=no)", -1);
+                    if (!string.IsNullOrEmpty(result.error))
+                    {
+                        Log($"5. SSH error: {result.error}", -1);
+                    }
+                }
+                
                 if (debugMode) Log($"SSH verification failed: {result.error}", -1);
                 return false;
             }
@@ -214,6 +235,48 @@ public class ServerCustomProcess
         }
     }
     
+    // Fix SSH private key permissions on Linux/macOS (required by SSH)
+    private void EnsureSSHKeyPermissions(string keyPath)
+    {
+        if (!ServerUtilityProvider.IsLinux() && !ServerUtilityProvider.IsMacOS())
+            return; // Not needed on Windows
+
+        try
+        {
+            if (debugMode) Log($"Ensuring SSH key permissions on {keyPath}...", 0);
+
+            // Check if file exists first
+            if (!File.Exists(keyPath))
+                return;
+
+            // On Unix-like systems, SSH requires strict permissions (600 or 400)
+            // Use chmod to set permissions to 600
+            Process process = new Process();
+            process.StartInfo.FileName = "/bin/bash";
+            process.StartInfo.Arguments = $"-c \"chmod 600 '{keyPath}'\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.CreateNoWindow = true;
+
+            process.Start();
+            bool exited = process.WaitForExit(2000);
+
+            if (exited && process.ExitCode == 0)
+            {
+                if (debugMode) Log($"SSH key permissions set to 600 (secure)", 1);
+            }
+            else
+            {
+                if (debugMode) Log($"Warning: Could not verify SSH key permissions - SSH might fail if permissions are too open", 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) Log($"Note: Unable to auto-fix SSH key permissions: {ex.Message}. Please ensure key has 600 permissions.", 0);
+        }
+    }
+
     // Run a command process using SSH key
     private async Task<(bool success, string output, string error)> RunSimpleCommandAsync(string command, int timeoutMs = 5000)
     {
@@ -230,6 +293,9 @@ public class ServerCustomProcess
                 Log($"SSH Private Key file not found at: {sshPrivateKeyPath}", -1);
                 return (false, "", "SSH Private Key file not found");
             }
+
+            // Ensure correct permissions on SSH key (critical on Linux/macOS)
+            EnsureSSHKeyPermissions(sshPrivateKeyPath);
             
             // Check cache first to avoid repeated calls
             string cacheKey = $"{command}";
