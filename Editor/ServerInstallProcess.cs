@@ -117,7 +117,7 @@ public class ServerInstallProcess
     private void Repaint() => window.Repaint();
     private void UpdateCargoSpacetimeDBVersion() => window.UpdateCargoSpacetimeDBVersion();
     
-    #region WSL Installation Methods
+    #region WSL Install
     public async void InstallWSLDebian()
     {
         CheckPrerequisitesWSL();
@@ -1336,7 +1336,7 @@ public class ServerInstallProcess
     }
     #endregion
 
-    #region Custom Installation
+    #region Custom Install
     public async void InstallCustomUser()
     {
         try

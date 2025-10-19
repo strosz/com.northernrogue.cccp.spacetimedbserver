@@ -464,7 +464,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
-                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : (Action)ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -539,7 +539,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
-                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : (Action)ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -595,7 +595,7 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Docker
-                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : null,
+                installAction = isGithubBuild ? (Action)(() => installProcess?.InstallSpacetimeDBUnitySDK()) : (Action)ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -884,6 +884,36 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
+    #region SDK Installation Dialog
+    
+    /// <summary>
+    /// Shows a dialog for installing SpacetimeDB SDK via Package Manager Git URL (Asset Store builds only)
+    /// </summary>
+    private void ShowSpacetimeDBSDKDialog()
+    {
+        const string sdkGitUrl = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git";
+        
+        int choice = EditorUtility.DisplayDialogComplex(
+            "Install SpacetimeDB SDK",
+            "To install the SpacetimeDB SDK, add it through Unity's Package Manager:\n\n" +
+            "1. Open Package Manager\n" +
+            "2. Click the '+' button\n" +
+            "3. Select 'Add package from git URL...'\n" +
+            "4. Paste the official repository URL\n\n" +
+            "Official Git Repository:\n" + sdkGitUrl,
+            "Official Website",
+            "Cancel",
+            ""
+        );
+        
+        if (choice == 0) // "Official Git" button pressed
+        {
+            Application.OpenURL(sdkGitUrl);
+        }
+    }
+    
+    #endregion
+    
     #region Draw UI
     
     private void DrawToolbar()
@@ -1152,38 +1182,74 @@ public class ServerSetupWindow : EditorWindow
         // Status (installed or install button)
         if (showUpdateButton)
         {
-            EditorGUILayout.Space(2);
-            EditorGUI.BeginDisabledGroup(isDisabled);
+            // Hide update buttons for Asset Store builds on WSL and Custom tabs
+            bool shouldShowUpdateButton = isGithubBuild || currentTab == dockerTabIndex;
             
-            string updateButtonText;
-            if (item.title.Contains("Install Rust"))
+            if (shouldShowUpdateButton)
             {
-                updateButtonText = "Update to v" + rustLatestVersion;
-            }
-            else if (item.title.Contains("SpacetimeDB Server"))
-            {
-                updateButtonText = "Update to v" + spacetimeDBLatestVersion;
-            }
-            else if (item.title.Contains("SpacetimeDB Unity SDK"))
-            {
-                updateButtonText = "Update to v" + spacetimeSDKLatestVersion;
-            }
-            else if (item.title.Contains("Setup SpacetimeDB Docker Image"))
-            {
-                updateButtonText = "Update to " + dockerImageLatestTag;
+                EditorGUILayout.Space(2);
+                EditorGUI.BeginDisabledGroup(isDisabled);
+                
+                string updateLabelText;
+                if (item.title.Contains("Install Rust"))
+                {
+                    updateLabelText = "Update to v" + rustLatestVersion;
+                }
+                else if (item.title.Contains("SpacetimeDB Server"))
+                {
+                    updateLabelText = "Update to v" + spacetimeDBLatestVersion;
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    updateLabelText = "Update to v" + spacetimeSDKLatestVersion;
+                }
+                else if (item.title.Contains("Setup SpacetimeDB Docker Image"))
+                {
+                    updateLabelText = "Update to " + dockerImageLatestTag;
+                }
+                else
+                {
+                    updateLabelText = "Update";
+                }
+                
+                if (GUILayout.Button(updateLabelText, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
+                {
+                    EditorApplication.delayCall += () => {
+                        item.installAction?.Invoke();
+                    };
+                }
+                EditorGUI.EndDisabledGroup();
             }
             else
             {
-                updateButtonText = "Update";
+                EditorGUILayout.Space(2);
+                EditorGUI.BeginDisabledGroup(isDisabled);
+                
+                string updateLabelText;
+                if (item.title.Contains("Install Rust"))
+                {
+                    updateLabelText = "Update Found\nv" + rustLatestVersion;
+                }
+                else if (item.title.Contains("SpacetimeDB Server"))
+                {
+                    updateLabelText = "Update Found\nv" + spacetimeDBLatestVersion;
+                }
+                else if (item.title.Contains("SpacetimeDB Unity SDK"))
+                {
+                    updateLabelText = "Update Found\nv" + spacetimeSDKLatestVersion;
+                }
+                else if (item.title.Contains("Setup SpacetimeDB Docker Image"))
+                {
+                    updateLabelText = "Update Found\n" + dockerImageLatestTag;
+                }
+                else
+                {
+                    updateLabelText = "Update Found";
+                }
+
+                GUILayout.Label(updateLabelText, installedStyle, GUILayout.Width(100), GUILayout.Height(30));
+                EditorGUI.EndDisabledGroup();
             }
-            
-            if (GUILayout.Button(updateButtonText, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
-            {
-                EditorApplication.delayCall += () => {
-                    item.installAction?.Invoke();
-                };
-            }
-            EditorGUI.EndDisabledGroup();
         }
         else if (item.isInstalled && !alwaysShowInstall)
         {
@@ -1191,20 +1257,20 @@ public class ServerSetupWindow : EditorWindow
             {
                 if (currentTab == wslTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersion))
                 {
-                    EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersion, installedStyle, GUILayout.Width(110));
+                    EditorGUILayout.LabelField("✓ Installed v" + spacetimeDBCurrentVersion, installedStyle, GUILayout.Width(110));
                 }
                 else if (currentTab == customTabIndex && !string.IsNullOrEmpty(spacetimeDBCurrentVersionCustom))
                 {
-                    EditorGUILayout.LabelField("✓ Installed v " + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
+                    EditorGUILayout.LabelField("✓ Installed v" + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
                 }
             }
             else if (item.title.Contains("Install Rust") && !string.IsNullOrEmpty(rustCurrentVersion))
             {
-                EditorGUILayout.LabelField("✓ Installed v " + rustCurrentVersion, installedStyle, GUILayout.Width(110));
+                EditorGUILayout.LabelField("✓ Installed v" + rustCurrentVersion, installedStyle, GUILayout.Width(110));
             }
             else if (item.title.Contains("SpacetimeDB Unity SDK") && !string.IsNullOrEmpty(spacetimeSDKCurrentVersion))
             {
-                EditorGUILayout.LabelField("✓ Installed v " + spacetimeSDKCurrentVersion, installedStyle, GUILayout.Width(110));
+                EditorGUILayout.LabelField("✓ Installed v" + spacetimeSDKCurrentVersion, installedStyle, GUILayout.Width(110));
             }
             else if (item.title.Contains("Setup SpacetimeDB Docker Image") && !string.IsNullOrEmpty(dockerImageCurrentTag))
             {
@@ -1219,16 +1285,38 @@ public class ServerSetupWindow : EditorWindow
         {
             EditorGUILayout.Space(2);
             
-            // Install button
-            EditorGUI.BeginDisabledGroup(isDisabled);
-            if (GUILayout.Button("Install", installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
+            // Determine button text and visibility based on tab and build type
+            string buttonText = "Install";
+            bool shouldShowButton = true;
+            
+            if (currentTab == dockerTabIndex)
             {
-                // Use delayCall to avoid issues with GUI during install action
-                EditorApplication.delayCall += () => {
-                    item.installAction?.Invoke();
-                };
+                buttonText = "Setup";
             }
-            EditorGUI.EndDisabledGroup();
+            else if (!isGithubBuild && (currentTab == wslTabIndex || currentTab == customTabIndex))
+            {
+                // For Asset Store builds, only hide install buttons on WSL and Custom tabs
+                // Keep showing for other items or Docker tab
+                shouldShowButton = false;
+            }
+            
+            if (shouldShowButton)
+            {
+                EditorGUI.BeginDisabledGroup(isDisabled);
+                if (GUILayout.Button(buttonText, installButtonStyle, GUILayout.Width(100), GUILayout.Height(30)))
+                {
+                    // Use delayCall to avoid issues with GUI during install action
+                    EditorApplication.delayCall += () => {
+                        item.installAction?.Invoke();
+                    };
+                }
+                EditorGUI.EndDisabledGroup();
+            }
+            else
+            {
+                // For Asset Store builds on WSL/Custom tabs, show status instead of button
+                EditorGUILayout.LabelField("Install Manually\nRefresh to Check", EditorStyles.centeredGreyMiniLabel, GUILayout.Width(110), GUILayout.Height(30));
+            }
         }
         
         EditorGUILayout.EndHorizontal();
