@@ -875,6 +875,10 @@ public class ServerLogProcess
                     if (debugMode) UnityEngine.Debug.Log($"[ServerLogProcess] Database log service not found yet - this is expected until the service is created");
                     ServerOutputWindow.SetStatus("Database logs: Service not found (expected)", Color.yellow);
                 }
+                else if (error.Contains("setlocale") && error.Contains("LC_ALL") && error.Contains("cannot change locale"))
+                {
+                    // Don't display this as an error - it's not a real issue
+                }
                 else if (debugMode)
                 {
                     UnityEngine.Debug.LogWarning($"[ServerLogProcess] SSH database log read error: {error}");

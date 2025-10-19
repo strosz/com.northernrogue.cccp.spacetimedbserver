@@ -15,10 +15,10 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Features
 
-🌌 **WSL Local, Custom Remote or Maincloud**
+🌌 **Local, Custom Remote or Maincloud**
    - Use your server mode of choice.
    - Control any SpacetimeDB server running on a Debian based distro.
-   - Quickly start developing using SpacetimeDB with a local WSL server then publish the exact same project to a custom server or Maincloud.
+   - Quickly start developing using SpacetimeDB with a local Docker or WSL server then publish the exact same project to a remote custom server or Maincloud.
 
 🚀 **Silent Server and One-Click Server Management**
    - Start your server silently in a second.
@@ -30,11 +30,11 @@ Install directly in your Unity Package Manager with this git URL
    - Auto Publish/Generate mode keeps your server up-to-date.
    - Create new server modules and switch between them.
 
-🌱 **Automatic Installer**
-   - Server Installer Window which installs everything necessary from the ground up.
-   - If starting fresh you will have your own local WSL or custom remote SpacetimeDB server in no-time.
+🌱 **Easy Setup**
+   - Server Setup Window which checks and installs everything necessary from the ground up.
+   - If starting fresh you will have your own local Docker, local WSL or custom remote SpacetimeDB server in no-time.
    - Extra compability checks for important steps.
-   - Get notified of new SpacetimeDB server, Rust and SpacetimeDB SDK updates and update them in the Installer Window.
+   - Get notified of new SpacetimeDB server, Rust and SpacetimeDB SDK updates and update them in the Setup Window.
 
 📊 **Real-time Monitoring**
    - Monitor server status directly in Unity and send utility commands.
@@ -42,7 +42,7 @@ Install directly in your Unity Package Manager with this git URL
    - Server log errors are mirrored in the Unity console for easy debugging.
 
 💾 **Backup and Restore**
-   - Create and restore highly compressed backups of your entire SpacetimeDB within WSL Local.
+   - Create and restore highly compressed backups of your entire SpacetimeDB data within local Docker or WSL.
    - Restore previous states in seconds.
 
 🔍 **Database Browser**
@@ -95,8 +95,8 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Supported Platforms
 
-   *   Includes an automatic installer for WSL and all other pre-requisites required to use SpacetimeDB® within Unity® for Windows®.
-   *   **Windows:** Requires WSL (Windows Subsystem for Linux) with Debian (installer provided).
+   *   **Linux and MacOS:** Requires Docker Desktop with SpacetimeDB image (setup provided).
+   *   **Windows:** Requires Docker Desktop or WSL (Windows Subsystem for Linux) with Debian (automatic setup provided).
 
 ## Quick Start
    Install the asset using this .git URL in the Package Manager´s + menu.<br>
@@ -104,15 +104,11 @@ Install directly in your Unity Package Manager with this git URL
    
    A Welcome Window displays if successful with a link to the Main Window and the Installer Window.
 
-   1. Enter the essential Pre-Requisite settings for your server in the Main Window.
-   2. Install the listed free and publicly available software one by one for Local WSL starting from the top in the Installer Window.
+   1. Open the Main Window. Enter the essential Pre-Requisite settings for your server.
+   2. Open the Setup Window. Check and setup the essential Software for either a Docker or WSL Local CLI.
    3. Now you can run SpacetimeDB directly from Unity!
 
-   **Note:** The Installer Window works by automatically calling install commands from public repositories for you. It creates a temporary bat file in your Windows temp folder in order to reliably run the installer process. For a manual install process please check the documentation button available in the Welcome Window.
-
-## Upcoming Features
-   - New command interface with all commands.
-   - Better user experience and tips for how to solve common STDB questions.
+   **Note:** For a manual WSL install process please check the documentation button available in the Welcome Window.
 
 ## Community Made
    - If you like this asset, please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>. It is much appreciated and allows this asset to improve further.
