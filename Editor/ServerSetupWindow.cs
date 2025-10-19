@@ -1682,19 +1682,13 @@ public class ServerSetupWindow : EditorWindow
                 return;
             }
             
-            // Convert WSL path to Windows path if needed
-            string cargoTomlPath;
-            if (serverDirectory.StartsWith("/home/") || serverDirectory.StartsWith("/mnt/"))
+            // Use ServerUtilityProvider to get the correct file path for the current platform
+            string cargoTomlPath = ServerUtilityProvider.GetPlatformSpecificFilePath(serverDirectory, "Cargo.toml");
+            
+            if (string.IsNullOrEmpty(cargoTomlPath))
             {
-                // This is a WSL path, convert to Windows path
-                // For WSL paths like /home/username/server, we need to access via \\wsl$\Debian\home\username\server
-                string wslPath = serverDirectory.Replace("/", "\\");
-                cargoTomlPath = $"\\\\wsl$\\Debian{wslPath}\\Cargo.toml";
-            }
-            else
-            {
-                // Assume it's already a Windows path
-                cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+                if (debugMode) LogMessage("Failed to determine Cargo.toml path.", 0);
+                return;
             }
             
             // Check if Cargo.toml exists

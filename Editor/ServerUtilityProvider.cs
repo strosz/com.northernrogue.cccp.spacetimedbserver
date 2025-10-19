@@ -380,6 +380,154 @@ public static class ServerUtilityProvider
 
     #endregion
 
+    #region Path Style Detection
+
+    /// <summary>
+    /// Determines if a path uses Windows style conventions (contains backslashes or drive letters)
+    /// </summary>
+    /// <param name="path">The path to check</param>
+    /// <returns>True if path appears to be Windows style</returns>
+    public static bool IsPathWindowsStyle(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return false;
+        
+        // Check for drive letter pattern (C:\, D:\, etc.)
+        if (path.Length >= 2 && char.IsLetter(path[0]) && path[1] == ':')
+            return true;
+        
+        // Check for UNC path pattern (\\server\share)
+        if (path.StartsWith("\\\\"))
+            return true;
+        
+        // Check for backslashes
+        if (path.Contains("\\"))
+            return true;
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Determines if a path uses Unix style conventions (starts with / or ~)
+    /// </summary>
+    /// <param name="path">The path to check</param>
+    /// <returns>True if path appears to be Unix style</returns>
+    public static bool IsPathUnixStyle(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return false;
+        
+        // Check for absolute Unix path
+        if (path.StartsWith("/"))
+            return true;
+        
+        // Check for home directory shorthand
+        if (path.StartsWith("~"))
+            return true;
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Determines if a path is a WSL path (Unix path on Windows via WSL)
+    /// </summary>
+    /// <param name="path">The path to check</param>
+    /// <returns>True if path appears to be a WSL path</returns>
+    public static bool IsPathWSLStyle(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return false;
+        
+        // WSL paths typically start with /home/, /mnt/, or /root/
+        if (path.StartsWith("/home/") || path.StartsWith("/mnt/") || path.StartsWith("/root/"))
+            return true;
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Converts a WSL path to a Windows UNC path accessible from Windows
+    /// </summary>
+    /// <param name="wslPath">The WSL path to convert (e.g., /mnt/c/Users/username or /home/username)</param>
+    /// <returns>Windows UNC path (e.g., \\wsl$\Debian\mnt\c\Users\username or C:\Users\username)</returns>
+    public static string ConvertWSLPathToWindowsPath(string wslPath)
+    {
+        if (string.IsNullOrEmpty(wslPath))
+            return wslPath;
+        
+        // If it's /mnt/x/... it's accessing Windows drives, convert directly
+        if (wslPath.StartsWith("/mnt/"))
+        {
+            // /mnt/c/Users/... becomes C:\Users\...
+            string pathWithoutMnt = wslPath.Substring(5); // Remove "/mnt/"
+            if (pathWithoutMnt.Length > 1 && char.IsLetter(pathWithoutMnt[0]) && pathWithoutMnt[1] == '/')
+            {
+                string drive = char.ToUpper(pathWithoutMnt[0]).ToString();
+                string rest = pathWithoutMnt.Substring(2).Replace('/', '\\');
+                return $"{drive}:{rest}";
+            }
+        }
+        
+        // For /home/, /root/, and other paths, use \\wsl$\Debian\ access
+        // This allows Windows access to the WSL filesystem
+        string normalizedPath = wslPath.Replace('/', '\\');
+        return $"\\\\wsl$\\Debian{normalizedPath}";
+    }
+
+    /// <summary>
+    /// Gets the appropriate file path for the current platform and server directory configuration
+    /// </summary>
+    /// <param name="serverDirectory">The server directory path (may be Windows, WSL, or Unix style)</param>
+    /// <param name="fileName">The file name to append</param>
+    /// <returns>The appropriate file path for accessing the file on the current platform</returns>
+    public static string GetPlatformSpecificFilePath(string serverDirectory, string fileName)
+    {
+        if (string.IsNullOrEmpty(serverDirectory) || string.IsNullOrEmpty(fileName))
+            return null;
+        
+        string filePath;
+        
+        // Determine path style and current platform
+        bool isWSLPath = IsPathWSLStyle(serverDirectory);
+        bool isWindowsPath = IsPathWindowsStyle(serverDirectory);
+        bool isUnixPath = IsPathUnixStyle(serverDirectory) && !isWSLPath;
+        bool runningOnWindows = IsWindows();
+        
+        if (runningOnWindows && isWSLPath)
+        {
+            // Running on Windows, accessing WSL path - convert to Windows UNC path
+            string windowsPath = ConvertWSLPathToWindowsPath(serverDirectory);
+            filePath = Path.Combine(windowsPath, fileName);
+        }
+        else if (runningOnWindows && isWindowsPath)
+        {
+            // Running on Windows with Windows path - use as is
+            filePath = Path.Combine(serverDirectory, fileName);
+        }
+        else if (!runningOnWindows && isUnixPath)
+        {
+            // Running on Unix (Mac/Linux) with Unix path - use forward slashes
+            string normalizedDir = serverDirectory.TrimEnd('/');
+            filePath = $"{normalizedDir}/{fileName}";
+        }
+        else if (!runningOnWindows && isWindowsPath)
+        {
+            // Running on Unix but have a Windows path - this is unusual, try to handle it
+            // Replace backslashes with forward slashes
+            string normalizedDir = serverDirectory.Replace('\\', '/').TrimEnd('/');
+            filePath = $"{normalizedDir}/{fileName}";
+        }
+        else
+        {
+            // Fallback - try Path.Combine which should work on current platform
+            filePath = Path.Combine(serverDirectory, fileName);
+        }
+        
+        return filePath;
+    }
+
+    #endregion
+
     #region UI Utilities
 
     /// <summary>
