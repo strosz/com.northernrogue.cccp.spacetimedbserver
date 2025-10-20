@@ -17,8 +17,7 @@ Install directly in your Unity Package Manager with this git URL
 
 🌌 **Local, Custom Remote or Maincloud**
    - Use your server mode of choice.
-   - Control any SpacetimeDB server running on a Debian based distro.
-   - Quickly start developing using SpacetimeDB with a local Docker or WSL server then publish the exact same project to a remote custom server or Maincloud.
+   - Quickly start developing using SpacetimeDB with local Docker or WSL then publish the exact same project to a remote custom server or Maincloud. Docker CLI is multiplatform with Windows, Linux or MacOS supported.
 
 🚀 **Silent Server and One-Click Server Management**
    - Start your server silently in a second.
@@ -95,8 +94,8 @@ Install directly in your Unity Package Manager with this git URL
 
 ## Supported Platforms
 
-   *   **Linux and MacOS:** Requires Docker Desktop with SpacetimeDB image (setup provided).
-   *   **Windows:** Requires Docker Desktop or WSL (Windows Subsystem for Linux) with Debian (automatic setup provided).
+   *   **Linux and MacOS:** Requires Docker Desktop with SpacetimeDB image (setup guide provided).
+   *   **Windows:** Requires Docker Desktop or WSL (Windows Subsystem for Linux) with Debian (setup guide provided).
 
 ## Quick Start
    Install the asset using this .git URL in the Package Manager´s + menu.<br>
@@ -106,9 +105,9 @@ Install directly in your Unity Package Manager with this git URL
 
    1. Open the Main Window. Enter the essential Pre-Requisite settings for your server.
    2. Open the Setup Window. Check and setup the essential Software for either a Docker or WSL Local CLI.
-   3. Now you can run SpacetimeDB directly from Unity!
+   3. Now you can manage and publish your SpacetimeDB server directly from Unity!
 
-   **Note:** For a manual WSL install process please check the documentation button available in the Welcome Window.
+   **Note:** For a detailed install process please check the documentation button available in the Welcome Window.
 
 ## Community Made
    - If you like this asset, please consider <a href="https://ko-fi.com/northernrogue">buying me a coffee</a>. It is much appreciated and allows this asset to improve further.

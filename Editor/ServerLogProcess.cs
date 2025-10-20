@@ -2230,6 +2230,117 @@ public class ServerLogProcess
         if (debugMode) logCallback("[ServerLogProcess] Docker logs cleared", 1);
     }
     
+    public async void SwitchModuleDocker(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    {
+        if (debugMode) logCallback($"[Docker] Starting module switch to: {newModuleName}", 0);
+        
+        if (string.IsNullOrEmpty(newModuleName))
+        {
+            if (debugMode) logCallback("[Docker] Module name is empty, cannot switch", -1);
+            return;
+        }
+
+        if (debugMode) logCallback($"Switching Docker database logs from module '{this.moduleName}' to '{newModuleName}'", 0);
+
+        string oldModuleName = this.moduleName;
+        this.moduleName = newModuleName;
+
+        // Update the database log service configuration
+        UpdateDockerDatabaseLogService(newModuleName);
+
+        // Clear database logs if requested
+        if (clearDatabaseLogOnSwitch)
+        {
+            lock (logLock)
+            {
+                databaseLogContent = "";
+                cachedDatabaseLogContent = "";
+                
+                SessionState.SetString(SessionKeyDatabaseLog, "");
+                SessionState.SetString(SessionKeyCachedDatabaseLog, "");
+            }
+
+            // Add a separator message to indicate the switch
+            string timestamp = DateTime.Now.ToString("[yyyy-MM-dd HH:mm:ss]");
+            string switchMessage = $"{timestamp} [MODULE SWITCHED - Docker] Logs for module '{oldModuleName}' stopped. Now showing logs for module: {newModuleName}\n";
+            
+            lock (logLock)
+            {
+                databaseLogContent += switchMessage;
+                cachedDatabaseLogContent += switchMessage;
+
+                // Update SessionState immediately
+                SessionState.SetString(SessionKeyDatabaseLog, databaseLogContent);
+                SessionState.SetString(SessionKeyCachedDatabaseLog, cachedDatabaseLogContent);
+            }
+        }
+
+        // Brief pause to allow the old process to fully terminate and release resources
+        System.Threading.Thread.Sleep(250); // 250ms delay
+
+        // Reset cutoff timestamps to capture new module's logs
+        dockerDatabaseLogCutoffTimestamp = DateTime.UtcNow;
+
+        // If the server is running, trigger an immediate refresh of Docker logs to pick up the new module's logs.
+        if (serverRunning && isDockerServer)
+        {
+            EditorApplication.delayCall += async () => 
+            {
+                await ReadDockerDatabaseLogsAsync();
+            };
+        }
+
+        // Notify of log update
+        onDatabaseLogUpdated?.Invoke();
+    }
+
+    // Update the module config file and restart the database logs service for Docker
+    public async void UpdateDockerDatabaseLogService(string newModuleName)
+    {
+        if (dockerProcessor == null)
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] Docker processor not available for service update", 0);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(newModuleName))
+        {
+            if (debugMode) logCallback?.Invoke("[ServerLogProcess] Module name is empty, cannot update Docker service", -1);
+            return;
+        }
+
+        try
+        {
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Updating Docker database log service to module: {newModuleName}", 0);
+            
+            // For Docker, we write the module name to a config file in the container
+            string configFile = $"/home/docker/.local/current_spacetime_module";
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Writing module '{newModuleName}' to Docker config file: {configFile}", 0);
+
+            // Create the directory if it doesn't exist and write the module name to the config file
+            string setupCommand = $"mkdir -p $(dirname {configFile}) && chmod 755 $(dirname {configFile})";
+            await dockerProcessor.RunServerCommandAsync(setupCommand, null, false);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Docker directory setup completed", 0);
+
+            // Write module name to config file
+            string updateConfigCommand = $"echo '{newModuleName}' > {configFile}";
+            await dockerProcessor.RunServerCommandAsync(updateConfigCommand, null, false);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Docker config update completed for module: {newModuleName}", 0);
+
+            // Restart the service to pick up new module
+            string restartCommand = "systemctl restart spacetimedb-logs.service";
+            await dockerProcessor.RunServerCommandAsync(restartCommand, null, false);
+            
+            if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Docker database log service restart completed", 0);
+        }
+        catch (Exception ex)
+        {
+            logCallback?.Invoke($"Error updating Docker database log service: {ex.Message}", -1);
+        }
+    }
+    
     private async Task ReadDockerModuleLogsAsync()
     {
         try
@@ -3070,6 +3181,10 @@ public class ServerLogProcess
         if (isCustomServer)
         {
             SwitchModuleSSH(newModuleName, clearDatabaseLogOnSwitch);
+        }
+        else if (isDockerServer)
+        {
+            SwitchModuleDocker(newModuleName, clearDatabaseLogOnSwitch);
         }
         else
         {

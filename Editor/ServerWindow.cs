@@ -893,7 +893,7 @@ public class ServerWindow : EditorWindow
                 "WSL supports Windows. Slower 9 step setup, but can run silently in the background.\n\n"+
                 "Both options provide a local development environment.";
                 EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
-                string[] cliProviderOptions = new string[] { "Docker (Windows, Linux and MacOS)", "WSL (Windows)" };
+                string[] cliProviderOptions = new string[] { "Docker (Windows, Linux or MacOS)", "WSL (Windows)" };
                 int cliProviderSelectedIndex = serverMode == ServerMode.DockerServer ? 0 : 1;
                 int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions);
                 if (newCliProviderSelectedIndex != cliProviderSelectedIndex)
