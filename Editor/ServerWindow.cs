@@ -126,7 +126,6 @@ public class ServerWindow : EditorWindow
     private bool viewLogsWindowOpen = false;
     private bool browseDbWindowOpen = false;
     private bool runReducerWindowOpen = false;
-    private Color windowToggleColor = new Color(0.6f, 1.6f, 0.6f);
     
     // Session state key for domain reload - Check if yet needed
     private const string SessionKeyWasRunningSilently = "ServerWindow_WasRunningSilently";
@@ -231,8 +230,8 @@ public class ServerWindow : EditorWindow
             // Subtitle
             GUIStyle subTitleStyle = new GUIStyle(EditorStyles.label);
             subTitleStyle.fontSize = 10;
-            subTitleStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
-            subTitleStyle.hover.textColor = new Color(0.43f, 0.43f, 0.43f);
+            subTitleStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
+            subTitleStyle.hover.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
             subTitleStyle.alignment = TextAnchor.MiddleCenter;
 
             //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
@@ -253,7 +252,7 @@ public class ServerWindow : EditorWindow
             // Logo version and color control
             GUIStyle titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
             titleControlStyle.fontSize = 10;
-            titleControlStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+            titleControlStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
             string tooltipVersion = "Click to change logo color\n" + "Type: " + ServerUpdateProcess.GetCachedDistributionType();
             if (GUILayout.Button(new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion), titleControlStyle))
             {
@@ -295,7 +294,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(2);
         GUIStyle autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
         autoscrollStyle.fontSize = 12;
-        autoscrollStyle.normal.textColor = autoscroll ? new Color(0.5f, 0.5f, 0.5f) : new Color(0.34f, 0.34f, 0.34f);
+        autoscrollStyle.normal.textColor = autoscroll ? ServerUtilityProvider.ColorManager.AutoscrollEnabled : ServerUtilityProvider.ColorManager.AutoscrollDisabled;
         autoscrollStyle.hover.textColor = autoscrollStyle.normal.textColor; // Explicitly define hover textColor        
         if (GUILayout.Button(new GUIContent("autoscroll"), autoscrollStyle, GUILayout.Width(75)))
         {
@@ -319,7 +318,7 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(2);
         GUIStyle clearStyle = new GUIStyle(EditorStyles.miniLabel);
         clearStyle.fontSize = 12;
-        clearStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+        clearStyle.normal.textColor = ServerUtilityProvider.ColorManager.ClearButton;
         clearStyle.hover.textColor = clearStyle.normal.textColor; // Explicitly define hover textColor
         if (GUILayout.Button(new GUIContent("clear"), clearStyle, GUILayout.Width(35)))
         {
@@ -372,17 +371,17 @@ public class ServerWindow : EditorWindow
             GUIStyle updateButtonStyle = new GUIStyle(GUI.skin.button);
             if (isUpdatingCCCP)
             {
-                updateButtonStyle.normal.textColor = Color.green;
-                updateButtonStyle.hover.textColor = Color.green;
-                updateButtonStyle.active.textColor = Color.green;
-                updateButtonStyle.focused.textColor = Color.green;
+                updateButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.Processing;
+                updateButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Processing;
+                updateButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.Processing;
+                updateButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.Processing;
             }
             else
             {
-                updateButtonStyle.normal.textColor = Color.white;
-                updateButtonStyle.hover.textColor = Color.white;
-                updateButtonStyle.active.textColor = Color.white;
-                updateButtonStyle.focused.textColor = Color.white;
+                updateButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+                updateButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+                updateButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+                updateButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
             }
             
             // Create horizontal layout for update button and dismiss button
@@ -407,10 +406,10 @@ public class ServerWindow : EditorWindow
             
             // Dismiss button (X)
             GUIStyle dismissButtonStyle = new GUIStyle(GUI.skin.button);
-            dismissButtonStyle.normal.textColor = Color.white;
-            dismissButtonStyle.hover.textColor = Color.orange;
-            dismissButtonStyle.active.textColor = Color.orange;
-            dismissButtonStyle.focused.textColor = Color.white;
+            dismissButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+            dismissButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
+            dismissButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.Warning;
+            dismissButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
             dismissButtonStyle.fontSize = 12;
 
             string dismissButtonTooltip = "Dismiss Update Notification";
@@ -429,15 +428,15 @@ public class ServerWindow : EditorWindow
         // For all connection status labels
         connectedStyle = new GUIStyle(EditorStyles.label);
         connectedStyle.fontSize = 11;
-        connectedStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
+        connectedStyle.normal.textColor = ServerUtilityProvider.ColorManager.ConnectedText;
         connectedStyle.fontStyle = FontStyle.Bold;
         
         // Create custom button style with white text
         buttonStyle = new GUIStyle(GUI.skin.button);
-        buttonStyle.normal.textColor = Color.white;
-        buttonStyle.hover.textColor = Color.white;
-        buttonStyle.active.textColor = Color.white;
-        buttonStyle.focused.textColor = Color.white;
+        buttonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+        buttonStyle.hover.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+        buttonStyle.active.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+        buttonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
         buttonStyle.fontSize = 12;
         buttonStyle.fontStyle = FontStyle.Normal;
         buttonStyle.alignment = TextAnchor.MiddleCenter;
@@ -450,6 +449,9 @@ public class ServerWindow : EditorWindow
 
     private void OnEnable()
     {
+        // Ensure colors are initialized from the centralized ColorManager
+        ServerUtilityProvider.ColorManager.EnsureInitialized();
+        
         // Refresh settings cache to ensure we have the latest data (including migrated modules)
         // This is critical after EditorPrefs migration as the cached settings may not reflect
         // the newly migrated data until the cache is explicitly refreshed
@@ -774,16 +776,16 @@ public class ServerWindow : EditorWindow
 
             // Draw a visible 3px high dark line across the window
             Rect lineRect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(1.7f), GUILayout.ExpandWidth(true));
-            Color lineColor = EditorGUIUtility.isProSkin ? new Color(0.15f, 0.15f, 0.15f, 1f) : new Color(0.6f, 0.6f, 0.6f, 1f);
+            Color lineColor = EditorGUIUtility.isProSkin ? ServerUtilityProvider.ColorManager.LineDark : ServerUtilityProvider.ColorManager.LineLight;
             EditorGUI.DrawRect(lineRect, lineColor);
 
             // Style Active serverMode
             GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            activeToolbarButton.normal.textColor = Color.green;
+            activeToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.ActiveToolbar;
 
             // Style Inactive serverMode
             GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            inactiveToolbarButton.normal.textColor = Color.gray;
+            inactiveToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.InactiveToolbar;
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             string localModeTooltip = "Run a local server with SpacetimeDB";
@@ -1555,13 +1557,8 @@ public class ServerWindow : EditorWindow
 
         if (showSettings && serverManager != null)
         {   
-            Color recommendedColor = Color.green;
-            Color warningColor;
-            ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
-            Color hiddenColor;
-            ColorUtility.TryParseHtmlString("#808080", out hiddenColor); // Grey
-            Color debugColor;
-            ColorUtility.TryParseHtmlString("#30C099", out debugColor); // Cyan
+            // All colors are pre-initialized in OnEnable for memory efficiency
+            // Just use the cached color variables directly
                    
             // Server Change Detection toggle
             EditorGUILayout.Space(5);
@@ -1574,8 +1571,8 @@ public class ServerWindow : EditorWindow
             if (serverManager.DetectServerChanges)
             {
                 // Use green for active detection
-                changeToggleStyle.normal.textColor = recommendedColor;
-                changeToggleStyle.hover.textColor = recommendedColor;
+                changeToggleStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+                changeToggleStyle.hover.textColor = ServerUtilityProvider.ColorManager.Recommended;
             }
             if (GUILayout.Button(serverManager.DetectServerChanges ? "Detecting Changes" : "Not Detecting Changes", changeToggleStyle))
             {
@@ -1607,8 +1604,8 @@ public class ServerWindow : EditorWindow
             if (serverManager.AutoPublishMode)
             {
                 // Use green for active auto-publish
-                autoPublishStyle.normal.textColor = recommendedColor;
-                autoPublishStyle.hover.textColor = recommendedColor;
+                autoPublishStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+                autoPublishStyle.hover.textColor = ServerUtilityProvider.ColorManager.Recommended;
             }
             if (GUILayout.Button(serverManager.AutoPublishMode ? "Automatic Publishing" : "Manual Publish", autoPublishStyle))
             {
@@ -1638,8 +1635,8 @@ public class ServerWindow : EditorWindow
             if (serverManager.PublishAndGenerateMode)
             {
                 // Use green for active auto-generate
-                publishGenerateStyle.normal.textColor = recommendedColor;
-                publishGenerateStyle.hover.textColor = recommendedColor;
+                publishGenerateStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+                publishGenerateStyle.hover.textColor = ServerUtilityProvider.ColorManager.Recommended;
             }
             if (GUILayout.Button(serverManager.PublishAndGenerateMode ? "Publish will Generate" : "Separate Generate", publishGenerateStyle))
             {
@@ -1661,8 +1658,8 @@ public class ServerWindow : EditorWindow
             GUIStyle wslCloseStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.AutoCloseCLI)
             {
-                wslCloseStyle.normal.textColor = warningColor;
-                wslCloseStyle.hover.textColor = warningColor;
+                wslCloseStyle.normal.textColor = ServerUtilityProvider.ColorManager.Warning;
+                wslCloseStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
             }
             if (GUILayout.Button(serverManager.AutoCloseCLI ? $"Close {localCLIProvider} at Unity Quit" : "Keep Running", wslCloseStyle))
             {
@@ -1685,8 +1682,8 @@ public class ServerWindow : EditorWindow
                 GUIStyle moduleLogToggleStyle = new GUIStyle(GUI.skin.button);
                 if (serverManager.ClearModuleLogAtStart)
                 {
-                    moduleLogToggleStyle.normal.textColor = warningColor;
-                    moduleLogToggleStyle.hover.textColor = warningColor;
+                    moduleLogToggleStyle.normal.textColor = ServerUtilityProvider.ColorManager.Warning;
+                    moduleLogToggleStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
                 }
                 if (GUILayout.Button(serverManager.ClearModuleLogAtStart ? "Clear at Server Start" : "Keeping Module Log", moduleLogToggleStyle))
                 {
@@ -1707,8 +1704,8 @@ public class ServerWindow : EditorWindow
                 GUIStyle databaseLogToggleStyle = new GUIStyle(GUI.skin.button);
                 if (serverManager.ClearDatabaseLogAtStart)
                 {
-                    databaseLogToggleStyle.normal.textColor = warningColor;
-                    databaseLogToggleStyle.hover.textColor = warningColor;
+                    databaseLogToggleStyle.normal.textColor = ServerUtilityProvider.ColorManager.Warning;
+                    databaseLogToggleStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
                 }
                 if (GUILayout.Button(serverManager.ClearDatabaseLogAtStart ? "Clear at Server Start" : "Keeping Database Log", databaseLogToggleStyle))
                 {
@@ -1729,8 +1726,8 @@ public class ServerWindow : EditorWindow
             GUIStyle debugToggleStyle = new GUIStyle(GUI.skin.button);
             if (serverManager.DebugMode)
             {
-                debugToggleStyle.normal.textColor = debugColor;
-                debugToggleStyle.hover.textColor = debugColor;
+                debugToggleStyle.normal.textColor = ServerUtilityProvider.ColorManager.Debug;
+                debugToggleStyle.hover.textColor = ServerUtilityProvider.ColorManager.Debug;
             }
             if (GUILayout.Button(serverManager.DebugMode ? "Debug Mode" : "Debug Disabled", debugToggleStyle))
             {
@@ -1890,10 +1887,10 @@ public class ServerWindow : EditorWindow
         GUILayout.FlexibleSpace();       
         GUILayout.EndHorizontal();
         
-        // Set button color based on window state
+        // Not using Hex ServerUtilityProvider.ColorManager.WindowToggle here since backgroundColor is funky and appears darker
         Color originalColor = GUI.backgroundColor;
         if (viewLogsWindowOpen)
-            GUI.backgroundColor = windowToggleColor; // Light green tint when active
+            GUI.backgroundColor = new Color(0.6f, 1.6f, 0.6f); // Light green tint when active
 
         if (GUILayout.Button(logContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
@@ -1928,7 +1925,7 @@ public class ServerWindow : EditorWindow
         // Set button color based on window state
         Color originalColor2 = GUI.backgroundColor;
         if (browseDbWindowOpen)
-            GUI.backgroundColor = windowToggleColor; // Light green tint when active
+            GUI.backgroundColor = ServerUtilityProvider.ColorManager.WindowToggle; // Light green tint when active
         
         if (GUILayout.Button(dbContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
@@ -1963,7 +1960,7 @@ public class ServerWindow : EditorWindow
         // Set button color based on window state
         Color originalColor3 = GUI.backgroundColor;
         if (runReducerWindowOpen)
-            GUI.backgroundColor = windowToggleColor; // Light green tint when active
+            GUI.backgroundColor = ServerUtilityProvider.ColorManager.WindowToggle; // Light green tint when active
 
         if (GUILayout.Button(reducerContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
@@ -2033,7 +2030,7 @@ public class ServerWindow : EditorWindow
         // SpacetimeDB version display
         GUIStyle versionStyle = new GUIStyle(EditorStyles.miniLabel);
         versionStyle.fontSize = 10;
-        versionStyle.normal.textColor = new Color(0.43f, 0.43f, 0.43f);
+        versionStyle.normal.textColor = ServerUtilityProvider.ColorManager.VersionText;
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
         if (serverMode == ServerMode.WSLServer)
@@ -2245,8 +2242,8 @@ public class ServerWindow : EditorWindow
         if (serverManager.ServerChangesDetected)
         {
             GUIStyle updateStyle = new GUIStyle(EditorStyles.boldLabel);
-            updateStyle.normal.textColor = Color.green;
-            updateStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
+            updateStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+            updateStyle.hover.textColor = ServerUtilityProvider.ColorManager.HoverGreen;
             updateStyle.fontStyle = FontStyle.Bold;
             
             // Add clickable visual indicator
@@ -2271,8 +2268,8 @@ public class ServerWindow : EditorWindow
         if (publishFirstModule)
         {
             GUIStyle firstModuleStyle = new GUIStyle(EditorStyles.boldLabel);
-            firstModuleStyle.normal.textColor = Color.green;
-            firstModuleStyle.hover.textColor = new Color(0.0f, 0.8f, 0.0f); // Darker green on hover
+            firstModuleStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+            firstModuleStyle.hover.textColor = ServerUtilityProvider.ColorManager.HoverGreen;
             firstModuleStyle.fontStyle = FontStyle.Bold;
             firstModuleStyle.alignment = TextAnchor.MiddleCenter;
 
@@ -2336,16 +2333,14 @@ public class ServerWindow : EditorWindow
         if (resetDatabase)
         {
             // Orange color for database reset warning
-            Color warningColor;
-            ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
-            publishButtonStyle.normal.textColor = warningColor;
-            publishButtonStyle.hover.textColor = warningColor;
+            publishButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.Warning;
+            publishButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
             Repaint();
         }
         if (serverManager.ServerChangesDetected || publishFirstModule)
         {
-            publishButtonStyle.normal.textColor = Color.green;
-            publishButtonStyle.hover.textColor = Color.green;
+            publishButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+            publishButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Recommended;
         }
 
         string buttonText;
@@ -2822,6 +2817,7 @@ public class ServerWindow : EditorWindow
 
     #region LogMessage
     
+    // Has its own color system since the colors sometimes need to be applied to specific parts of the message
     public void LogMessage(string message, int style)
     {
         if (debugMode) UnityEngine.Debug.Log($"[LogMessage] Received message: '{message}' (length: {message?.Length ?? 0}, trimmed length: {message?.Trim()?.Length ?? 0}, style: {style})");

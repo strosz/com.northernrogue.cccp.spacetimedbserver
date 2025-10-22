@@ -54,7 +54,7 @@ public class ServerDataWindow : EditorWindow
     private List<string> tableNames = new List<string>(); // Fetched from schema
     private string selectedTable = null;
     private string statusMessage = "Ready. Load settings via ServerWindow and Refresh.";
-    private Color statusColor = Color.grey;
+    private Color statusColor = Color.grey; // Needed for dynamic coloring of messages
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss"); // Track when status was set
     private bool isRefreshing = false;
     private bool isImporting = false; // Added flag for import process
@@ -94,7 +94,7 @@ public class ServerDataWindow : EditorWindow
     private class SqlRequest { public string query; }
     // SqlResponse structure is complex (includes schema + rows), handle dynamically with JObject for now
 
-    private GUIStyle cmdButtonStyle;
+    private GUIStyle clrButtonStyle;
     private GUIStyle titleStyle;
     private bool stylesInitialized = false;
 
@@ -140,6 +140,9 @@ public class ServerDataWindow : EditorWindow
 
     private void OnEnable()
     {
+        // Ensure colors are initialized from the centralized ColorManager
+        ServerUtilityProvider.ColorManager.EnsureInitialized();
+        
         // Set unique instance ID if missing
         if (string.IsNullOrEmpty(instanceId))
         {
@@ -162,9 +165,9 @@ public class ServerDataWindow : EditorWindow
     private void InitializeStyles()
     {
         // Command button style (for CLR and DEL buttons)
-        cmdButtonStyle = new GUIStyle(GUI.skin.button);
-        cmdButtonStyle.fontSize = 10;
-        cmdButtonStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f);
+        clrButtonStyle = new GUIStyle(GUI.skin.button);
+        clrButtonStyle.fontSize = 10;
+        clrButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ClearDataButton;
 
         // Style for titles like table name and list of tables
         titleStyle = new GUIStyle(EditorStyles.largeLabel);
@@ -361,7 +364,7 @@ public class ServerDataWindow : EditorWindow
         
         // Timestamp section - using stored timestamp instead of current time
         GUIStyle timeStyle = new GUIStyle(EditorStyles.label);
-        timeStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Light grey
+        timeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusTime; // Light grey
         timeStyle.alignment = TextAnchor.MiddleLeft;
         timeStyle.fontStyle = FontStyle.Italic;
         EditorGUILayout.LabelField(statusTimestamp, timeStyle, GUILayout.Width(60), GUILayout.Height(16)); 
@@ -406,19 +409,19 @@ public class ServerDataWindow : EditorWindow
         // Use tableNames list fetched from schema
         foreach (var tableName in tableNames)
         {
-            // Create a horizontal layout for each table row to add the CLR button
+            // Create a horizontal layout for each table row and add the CLR button
             EditorGUILayout.BeginHorizontal();
             
             bool isSelected = tableName == selectedTable;
-            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
+            GUIStyle tableStyle = new GUIStyle(GUI.skin.button);
             if (isSelected)
             {
-                buttonStyle.normal.textColor = new Color(0.3f, 0.8f, 0.3f);
-                buttonStyle.fontStyle = FontStyle.Bold;
+                tableStyle.normal.textColor = ServerUtilityProvider.ColorManager.TableSelected;
+                tableStyle.fontStyle = FontStyle.Bold;
             }
 
             // Table name button (primary button)
-            if (GUILayout.Button(tableName, buttonStyle, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(tableName, tableStyle, GUILayout.ExpandWidth(true)))
             {
                 tableToSelect = tableName;
                 // Save selected table to Settings
@@ -427,7 +430,7 @@ public class ServerDataWindow : EditorWindow
             
             // Add clear button with the custom style
             EditorGUI.BeginDisabledGroup(isRefreshing || isImporting);
-            if (GUILayout.Button("CLR", cmdButtonStyle, GUILayout.Width(30)))
+            if (GUILayout.Button("CLR", clrButtonStyle, GUILayout.Width(30)))
             {
                 if (EditorUtility.DisplayDialog(
                     "Clear Table", 
@@ -648,7 +651,7 @@ public class ServerDataWindow : EditorWindow
                     
                     // Add compact Delete button for each row
                     EditorGUI.BeginDisabledGroup(isRefreshing || isImporting);
-                    if (GUILayout.Button("DEL", cmdButtonStyle, GUILayout.Width(30)))
+                    if (GUILayout.Button("DEL", clrButtonStyle, GUILayout.Width(30)))
                     {
                         // Find the primary key column and value for this row
                         if (TryGetPrimaryKeyInfo(columns, rowValues, out string pkColumn, out string pkValue))
@@ -718,7 +721,7 @@ public class ServerDataWindow : EditorWindow
                     // Draw separator line
                     Rect separatorRect = EditorGUILayout.GetControlRect(false, 1);
                     separatorRect.height = 1;
-                    EditorGUI.DrawRect(separatorRect, new Color(0.5f, 0.5f, 0.5f, 0.1f));
+                    EditorGUI.DrawRect(separatorRect, ServerUtilityProvider.ColorManager.Separator);
                 }
 
                 EditorGUILayout.EndScrollView(); // End scroll view for data

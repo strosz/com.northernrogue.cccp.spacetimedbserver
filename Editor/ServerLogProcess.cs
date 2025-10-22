@@ -2230,7 +2230,7 @@ public class ServerLogProcess
         if (debugMode) logCallback("[ServerLogProcess] Docker logs cleared", 1);
     }
     
-    public async void SwitchModuleDocker(string newModuleName, bool clearDatabaseLogOnSwitch = true)
+    public void SwitchModuleDocker(string newModuleName, bool clearDatabaseLogOnSwitch = true)
     {
         if (debugMode) logCallback($"[Docker] Starting module switch to: {newModuleName}", 0);
         
@@ -2601,7 +2601,7 @@ public class ServerLogProcess
                 else if (string.IsNullOrEmpty(result.output))
                 {
                     if (debugMode) logCallback("[ServerLogProcess] WARNING: Docker database log output was empty", 0);
-                    ServerOutputWindow.SetStatus("Docker database logs: No output", Color.yellow);
+                    ServerOutputWindow.SetStatus("Docker database logs: Waiting for output", Color.green);
                 }
                 return;
             }

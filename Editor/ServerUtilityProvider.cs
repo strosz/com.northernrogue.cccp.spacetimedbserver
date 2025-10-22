@@ -10,6 +10,273 @@ namespace NorthernRogue.CCCP.Editor {
 /// </summary>
 public static class ServerUtilityProvider
 {
+    #region Color Management
+
+    /// <summary>
+    /// Centralized static color manager for consistent UI theming across all server windows.
+    /// All colors are stored as HTML hex strings and cached as Color objects for efficiency.
+    /// Colors are initialized lazily on first access, ensuring minimal startup overhead.
+    /// </summary>
+    public static class ColorManager
+    {
+        private const string WINDOW_TOGGLE = "#99FF99";              // Light green for active toggles
+        private const string SUBTITLE_TEXT = "#6E6E6E";              // Neutral gray for subtitles
+        private const string AUTOSCROLL_ENABLED = "#808080";         // Medium gray when enabled
+        private const string AUTOSCROLL_DISABLED = "#575757";        // Dark gray when disabled
+        private const string CLEAR_BUTTON = "#808080";               // Medium gray for clear button
+        private const string BUTTON_TEXT = "#FFFFFF";                // White for button text
+        private const string BUTTON_DISABLED = "#C0C0C0";            // Light gray when disabled
+        private const string CONNECTED_TEXT = "#4CFF4C";             // Bright green for connected
+        private const string PROCESSING = "#00FF00";                 // Bright green for processing
+        private const string RECOMMENDED = "#00FF00";                // Bright green for recommended
+        private const string WARNING = "#FFA500";                    // Orange for warnings
+        private const string HIDDEN = "#808080";                     // Gray for hidden elements
+        private const string DEBUG = "#30C099";                      // Cyan for debug mode
+        private const string LINE_DARK = "#262626";                  // Very dark for separators (pro skin)
+        private const string LINE_LIGHT = "#999999";                 // Light gray for separators (light skin)
+        private const string ACTIVE_TOOLBAR = "#00FF00";             // Bright green for active toolbar
+        private const string INACTIVE_TOOLBAR = "#808080";           // Gray for inactive toolbar
+        private const string VERSION_TEXT = "#6E6E6E";               // Neutral gray for version
+        private const string HOVER_GREEN = "#00CC00";                // Darker green for hover states
+
+        // Log Window Colors
+        private const string CMD_BACKGROUND = "#1A1A1A";              // Very dark background for log console
+        private const string CMD_TEXT = "#CCCCCC";                    // Light gray text for log console
+
+        // Data Window Colors
+        private const string TABLE_SELECTED = "#4DCC4D";            // Darker green for selected table
+        private const string CLR_BUTTON = "#999999";               // Bright gray for clear button
+
+        // Reducer Window Colors
+        private const string RUN_BUTTON_NORMAL = "#33B333";         // Bright green for normal run button
+        private const string RUN_BUTTON_HOVER = "#4DCC4D";          // Darker green for hover state
+        private const string SEPARATOR = "#8080800D";                // Dark gray for separator lines
+
+        // Status Message Colors
+        private const string STATUS_NEUTRAL = "#A0A0A0";              // Neutral gray for status messages
+        private const string STATUS_SUCCESS = "#4CFF4C";              // Bright green for success status
+        private const string STATUS_ERROR = "#FF6B6B";                // Bright red for error status
+        private const string STATUS_WARNING = "#FFA500";              // Orange for warning status
+        private const string STATUS_INFO = "#87CEEB";                 // Sky blue for info status
+        private const string STATUS_TIME = "#999999";                // Grey for timestamp text
+
+        // Setup Window Colors
+        private const string INSTALLED_TEXT = "#00BF00";             // Bright green for installed state
+        private const string INSTALL_BUTTON_NORMAL = "#33B333";      // Green for install button normal state
+        private const string INSTALL_BUTTON_HOVER = "#4DCC4D";       // Lighter green for install button hover
+        private const string SECTION_HEADER = "#808080";             // Medium gray for section headers
+
+        // Public static properties for accessing colors
+        public static Color WindowToggle { get; private set; }
+        public static Color SubtitleText { get; private set; }
+        public static Color AutoscrollEnabled { get; private set; }
+        public static Color AutoscrollDisabled { get; private set; }
+        public static Color ClearButton { get; private set; }
+        public static Color ButtonText { get; private set; }
+        public static Color ButtonDisabled { get; private set; }
+        public static Color ConnectedText { get; private set; }
+        public static Color Processing { get; private set; }
+        public static Color Recommended { get; private set; }
+        public static Color Warning { get; private set; }
+        public static Color Hidden { get; private set; }
+        public static Color Debug { get; private set; }
+        public static Color LineDark { get; private set; }
+        public static Color LineLight { get; private set; }
+        public static Color ActiveToolbar { get; private set; }
+        public static Color InactiveToolbar { get; private set; }
+        public static Color VersionText { get; private set; }
+        public static Color HoverGreen { get; private set; }
+
+        // Log Colors
+        public static Color CmdBackground { get; private set; }
+        public static Color CmdText { get; private set; }
+
+        // Data Window Colors
+        public static Color TableSelected { get; private set; }
+        public static Color ClearDataButton { get; private set; }
+
+        // Reducer Window Colors
+        public static Color RunButtonNormal { get; private set; }
+        public static Color RunButtonHover { get; private set; }
+        public static Color Separator { get; private set; }
+
+        // Status Message Colors
+        public static Color StatusNeutral { get; private set; }
+        public static Color StatusSuccess { get; private set; }
+        public static Color StatusError { get; private set; }
+        public static Color StatusWarning { get; private set; }
+        public static Color StatusInfo { get; private set; }
+        public static Color StatusTime { get; private set; }
+
+        // Setup Window Colors
+        public static Color InstalledText { get; private set; }
+        public static Color InstallButtonNormal { get; private set; }
+        public static Color InstallButtonHover { get; private set; }
+        public static Color SectionHeader { get; private set; }
+
+        // Cached color tracking
+        private static bool _initialized = false;
+
+        /// <summary>
+        /// Initializes all colors from hex strings. Called automatically on first access via lazy initialization.
+        /// This ensures colors are only parsed once and cached for the entire application lifetime.
+        /// </summary>
+        private static void Initialize()
+        {
+            if (_initialized)
+                return;
+
+            // Parse all hex colors to Color objects
+            ColorUtility.TryParseHtmlString(WINDOW_TOGGLE, out var windowToggle);
+            ColorUtility.TryParseHtmlString(SUBTITLE_TEXT, out var subtitleText);
+            ColorUtility.TryParseHtmlString(AUTOSCROLL_ENABLED, out var autoscrollEnabled);
+            ColorUtility.TryParseHtmlString(AUTOSCROLL_DISABLED, out var autoscrollDisabled);
+            ColorUtility.TryParseHtmlString(CLEAR_BUTTON, out var clearButton);
+            ColorUtility.TryParseHtmlString(BUTTON_TEXT, out var buttonText);
+            ColorUtility.TryParseHtmlString(BUTTON_DISABLED, out var buttonDisabled);
+            ColorUtility.TryParseHtmlString(CONNECTED_TEXT, out var connectedText);
+            ColorUtility.TryParseHtmlString(PROCESSING, out var processing);
+            ColorUtility.TryParseHtmlString(RECOMMENDED, out var recommended);
+            ColorUtility.TryParseHtmlString(WARNING, out var warning);
+            ColorUtility.TryParseHtmlString(HIDDEN, out var hidden);
+            ColorUtility.TryParseHtmlString(DEBUG, out var debug);
+            ColorUtility.TryParseHtmlString(LINE_DARK, out var lineDark);
+            ColorUtility.TryParseHtmlString(LINE_LIGHT, out var lineLight);
+            ColorUtility.TryParseHtmlString(ACTIVE_TOOLBAR, out var activeToolbar);
+            ColorUtility.TryParseHtmlString(INACTIVE_TOOLBAR, out var inactiveToolbar);
+            ColorUtility.TryParseHtmlString(VERSION_TEXT, out var versionText);
+            ColorUtility.TryParseHtmlString(HOVER_GREEN, out var hoverGreen);
+
+            // Parse new log and status colors
+            ColorUtility.TryParseHtmlString(CMD_BACKGROUND, out var cmdBackground);
+            ColorUtility.TryParseHtmlString(CMD_TEXT, out var cmdText);
+
+            // Parse data window colors
+            ColorUtility.TryParseHtmlString(TABLE_SELECTED, out var tableSelected);
+            ColorUtility.TryParseHtmlString(CLR_BUTTON, out var clearDataButton);
+
+            // Parse reducer window colors
+            ColorUtility.TryParseHtmlString(RUN_BUTTON_NORMAL, out var runButtonNormal);
+            ColorUtility.TryParseHtmlString(RUN_BUTTON_HOVER, out var runButtonHover);
+            ColorUtility.TryParseHtmlString(SEPARATOR, out var separator);
+
+            // Parse status colors
+            ColorUtility.TryParseHtmlString(STATUS_NEUTRAL, out var statusNeutral);
+            ColorUtility.TryParseHtmlString(STATUS_SUCCESS, out var statusSuccess);
+            ColorUtility.TryParseHtmlString(STATUS_ERROR, out var statusError);
+            ColorUtility.TryParseHtmlString(STATUS_WARNING, out var statusWarning);
+            ColorUtility.TryParseHtmlString(STATUS_INFO, out var statusInfo);
+            ColorUtility.TryParseHtmlString(STATUS_TIME, out var statusTime);
+
+            // Parse setup window colors
+            ColorUtility.TryParseHtmlString(INSTALLED_TEXT, out var installedText);
+            ColorUtility.TryParseHtmlString(INSTALL_BUTTON_NORMAL, out var installButtonNormal);
+            ColorUtility.TryParseHtmlString(INSTALL_BUTTON_HOVER, out var installButtonHover);
+            ColorUtility.TryParseHtmlString(SECTION_HEADER, out var sectionHeader);
+
+            // Cache the parsed colors
+            WindowToggle = windowToggle;
+            SubtitleText = subtitleText;
+            AutoscrollEnabled = autoscrollEnabled;
+            AutoscrollDisabled = autoscrollDisabled;
+            ClearButton = clearButton;
+            ButtonText = buttonText;
+            ButtonDisabled = buttonDisabled;
+            ConnectedText = connectedText;
+            Processing = processing;
+            Recommended = recommended;
+            Warning = warning;
+            Hidden = hidden;
+            Debug = debug;
+            LineDark = lineDark;
+            LineLight = lineLight;
+            ActiveToolbar = activeToolbar;
+            InactiveToolbar = inactiveToolbar;
+            VersionText = versionText;
+            HoverGreen = hoverGreen;
+            CmdBackground = cmdBackground;
+            CmdText = cmdText;
+            TableSelected = tableSelected;
+            ClearDataButton = clearDataButton;
+            RunButtonNormal = runButtonNormal;
+            RunButtonHover = runButtonHover;
+            Separator = separator;
+            StatusNeutral = statusNeutral;
+            StatusSuccess = statusSuccess;
+            StatusError = statusError;
+            StatusWarning = statusWarning;
+            StatusInfo = statusInfo;
+            StatusTime = statusTime;
+
+            // Cache setup window colors
+            InstalledText = installedText;
+            InstallButtonNormal = installButtonNormal;
+            InstallButtonHover = installButtonHover;
+            SectionHeader = sectionHeader;
+
+            _initialized = true;
+        }
+
+        /// <summary>
+        /// Ensures colors are initialized before use. Called automatically by property accessors.
+        /// </summary>
+        public static void EnsureInitialized()
+        {
+            Initialize();
+        }
+
+        /// <summary>
+        /// Gets color by name as a string (useful for runtime selection or debugging).
+        /// </summary>
+        public static Color GetColorByName(string colorName)
+        {
+            EnsureInitialized();
+            
+            return colorName switch
+            {
+                "WindowToggle" => WindowToggle,
+                "SubtitleText" => SubtitleText,
+                "AutoscrollEnabled" => AutoscrollEnabled,
+                "AutoscrollDisabled" => AutoscrollDisabled,
+                "ClearButton" => ClearButton,
+                "ButtonText" => ButtonText,
+                "ButtonDisabled" => ButtonDisabled,
+                "ConnectedText" => ConnectedText,
+                "Processing" => Processing,
+                "Recommended" => Recommended,
+                "Warning" => Warning,
+                "Hidden" => Hidden,
+                "Debug" => Debug,
+                "LineDark" => LineDark,
+                "LineLight" => LineLight,
+                "ActiveToolbar" => ActiveToolbar,
+                "InactiveToolbar" => InactiveToolbar,
+                "VersionText" => VersionText,
+                "HoverGreen" => HoverGreen,
+                "CmdBackground" => CmdBackground,
+                "CmdText" => CmdText,
+                "TableSelected" => TableSelected,
+                "ClearDataButton" => ClearDataButton,
+                "RunButtonNormal" => RunButtonNormal,
+                "RunButtonHover" => RunButtonHover,
+                "Separator" => Separator,
+                "StatusNeutral" => StatusNeutral,
+                "StatusSuccess" => StatusSuccess,
+                "StatusError" => StatusError,
+                "StatusWarning" => StatusWarning,
+                "StatusInfo" => StatusInfo,
+                "StatusTime" => StatusTime,
+                "InstalledText" => InstalledText,
+                "InstallButtonNormal" => InstallButtonNormal,
+                "InstallButtonHover" => InstallButtonHover,
+                "SectionHeader" => SectionHeader,
+                _ => Color.white,
+            };
+        }
+    }
+
+    #endregion
+
     #region URL and Network Utilities
 
     /// <summary>
@@ -722,17 +989,6 @@ public static class ServerUtilityProvider
             return ("test", $"-x {executablePath} && echo EXISTS_AND_EXECUTABLE || echo NOT_EXECUTABLE"); // Fallback
         }
     }
-
-    /// <summary>
-    /// Gets the success pattern to look for when checking command execution on the current platform
-    /// </summary>
-    /// <returns>Success pattern string</returns>
-    public static string GetSuccessPattern()
-    {
-        // Universal pattern for most commands
-        return "EXISTS|SUCCESS|RUNNING";
-    }
-
     #endregion
 }
 

@@ -28,7 +28,7 @@ public class ServerSetupWindow : EditorWindow
     internal string statusMessage = "Ready to install components.";
     private bool userNamePrompt = false;
     private bool showUpdateButton = false;
-    internal Color statusColor = Color.grey;
+    internal Color statusColor = Color.grey; // Dynamic color based on status
     internal string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
     private double lastRepaintTime = 0;
     private const double minRepaintInterval = 0.5; // Minimum time between repaints in seconds
@@ -214,6 +214,9 @@ public class ServerSetupWindow : EditorWindow
         {
             installProcess = TryCreateInstallProcess();
         }
+
+        // Ensure colors are initialized from the centralized ColorManager
+        ServerUtilityProvider.ColorManager.EnsureInitialized();
         
         // Check if this is the first time the window is opened
         /*if (CCCPSettingsAdapter.GetFirstTimeOpenInstaller())
@@ -862,20 +865,20 @@ public class ServerSetupWindow : EditorWindow
         
         // Installed style (green text with checkmark)
         installedStyle = new GUIStyle(EditorStyles.label);
-        installedStyle.normal.textColor = new Color(0.0f, 0.75f, 0.0f);
+        installedStyle.normal.textColor = ServerUtilityProvider.ColorManager.InstalledText;
         installedStyle.fontSize = 12;
         
         // Install button style
         installButtonStyle = new GUIStyle(GUI.skin.button);
         installButtonStyle.fontSize = 10;
-        installButtonStyle.normal.textColor = new Color(0.2f, 0.7f, 0.2f);
-        installButtonStyle.hover.textColor = new Color(0.3f, 0.8f, 0.3f);
+        installButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.InstallButtonNormal;
+        installButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.InstallButtonHover;
         installButtonStyle.fontStyle = FontStyle.Bold;
         
         // Section header style
         sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel);
         sectionHeaderStyle.fontSize = 12;
-        sectionHeaderStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+        sectionHeaderStyle.normal.textColor = ServerUtilityProvider.ColorManager.SectionHeader;
         sectionHeaderStyle.margin = new RectOffset(0, 0, 10, 5);
         
         stylesInitialized = true;
@@ -1419,14 +1422,14 @@ public class ServerSetupWindow : EditorWindow
         
         // Timestamp section with light grey color
         GUIStyle timeStyle = new GUIStyle(EditorStyles.label);
-        timeStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Light grey
+        timeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusTime; // Light grey
         timeStyle.alignment = TextAnchor.MiddleLeft;
         timeStyle.fontStyle = FontStyle.Italic;
         EditorGUILayout.LabelField(statusTimestamp, timeStyle, GUILayout.Width(60), GUILayout.Height(16));
         
         // Message section with status color
         GUIStyle msgStyle = new GUIStyle(EditorStyles.label);
-        msgStyle.normal.textColor = statusColor;
+        msgStyle.normal.textColor = statusColor; // Dynamic color based on status
         msgStyle.alignment = TextAnchor.MiddleLeft;
         EditorGUILayout.LabelField(statusMessage, msgStyle, GUILayout.Height(16));
         

@@ -54,13 +54,13 @@ public class ServerReducerWindow : EditorWindow
     // UI
     private Vector2 scrollPosition;
     private string statusMessage = "Ready. Load settings via ServerWindow and Refresh.";
-    private Color statusColor = Color.grey;
+    private Color statusColor = Color.grey; // Dynamic color based on status
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
     
     // Styles
     private GUIStyle titleStyle;
     private GUIStyle reducerTitleStyle;
-    private GUIStyle cmdButtonStyle;
+    private GUIStyle runButtonStyle;
     private bool stylesInitialized = false;
     
     // HTTP Client
@@ -207,6 +207,9 @@ public class ServerReducerWindow : EditorWindow
     
     private void OnEnable()
     {
+        // Ensure colors are initialized from the centralized ColorManager
+        ServerUtilityProvider.ColorManager.EnsureInitialized();
+        
         // Set unique instance ID if missing
         if (string.IsNullOrEmpty(instanceId))
         {
@@ -262,11 +265,11 @@ public class ServerReducerWindow : EditorWindow
         reducerTitleStyle = new GUIStyle(EditorStyles.largeLabel);
         reducerTitleStyle.fontSize = 14;
         
-        cmdButtonStyle = new GUIStyle(GUI.skin.button);
-        cmdButtonStyle.fontSize = 10;
-        cmdButtonStyle.normal.textColor = new Color(0.2f, 0.7f, 0.2f);
-        cmdButtonStyle.hover.textColor = new Color(0.3f, 0.8f, 0.3f);
-        cmdButtonStyle.fontStyle = FontStyle.Bold;
+        runButtonStyle = new GUIStyle(GUI.skin.button);
+        runButtonStyle.fontSize = 10;
+        runButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.RunButtonNormal;
+        runButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.RunButtonHover;
+        runButtonStyle.fontStyle = FontStyle.Bold;
         
         stylesInitialized = true;
     }
@@ -295,14 +298,14 @@ public class ServerReducerWindow : EditorWindow
         
         // Timestamp section with light grey color
         GUIStyle timeStyle = new GUIStyle(EditorStyles.label);
-        timeStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Light grey
+        timeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusTime; // Light grey
         timeStyle.alignment = TextAnchor.MiddleLeft;
         timeStyle.fontStyle = FontStyle.Italic;
         EditorGUILayout.LabelField(statusTimestamp, timeStyle, GUILayout.Width(60), GUILayout.Height(16));
         
         // Message section with status color
         GUIStyle msgStyle = new GUIStyle(EditorStyles.label);
-        msgStyle.normal.textColor = statusColor;
+        msgStyle.normal.textColor = statusColor; // Dynamic color based on status
         msgStyle.alignment = TextAnchor.MiddleLeft;
         EditorGUILayout.LabelField(statusMessage, msgStyle, GUILayout.Height(16));
         
@@ -377,7 +380,7 @@ public class ServerReducerWindow : EditorWindow
         EditorGUILayout.Space(2);
 
         // Run button
-        if (GUILayout.Button("RUN", cmdButtonStyle, GUILayout.Width(60), GUILayout.Height(30)))
+        if (GUILayout.Button("RUN", runButtonStyle, GUILayout.Width(60), GUILayout.Height(30)))
         {
             RunReducer(reducer);
         }
@@ -393,11 +396,6 @@ public class ServerReducerWindow : EditorWindow
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(" Parameters", EditorStyles.label, GUILayout.Width(100));
             EditorGUILayout.EndHorizontal();
-            
-            // Draw separator line
-            //Rect separatorRect = EditorGUILayout.GetControlRect(false, 1);
-            //separatorRect.height = 4;
-            //EditorGUI.DrawRect(separatorRect, new Color(0.5f, 0.5f, 0.5f, 0.1f));
             
             for (int i = 0; i < parameters.Count; i++)
             {
@@ -471,7 +469,7 @@ public class ServerReducerWindow : EditorWindow
                 {
                     Rect paramSeparatorRect = EditorGUILayout.GetControlRect(false, 1);
                     paramSeparatorRect.height = 1;
-                    EditorGUI.DrawRect(paramSeparatorRect, new Color(0.5f, 0.5f, 0.5f, 0.05f));
+                    EditorGUI.DrawRect(paramSeparatorRect, ServerUtilityProvider.ColorManager.Separator);
                 }
 
                 EditorGUILayout.Space(2);

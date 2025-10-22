@@ -87,8 +87,6 @@ public class ServerOutputWindow : EditorWindow
     private GUIStyle toolbarButtonStyle;
     private Font consoleFont;
     private bool stylesInitialized = false;
-    private Color cmdBackgroundColor = new Color(0.1f, 0.1f, 0.1f);
-    private Color cmdTextColor = new Color(0.8f, 0.8f, 0.8f);
     private Texture2D backgroundTexture;
 
     // Server log size tracking for custom server mode
@@ -104,7 +102,7 @@ public class ServerOutputWindow : EditorWindow
     
     // Status bar fields
     private string statusMessage = "Ready.";
-    private Color statusColor = Color.grey;
+    private Color statusColor = Color.grey; // Dynamic color based on status
     private string statusTimestamp = "";
     private double statusMessageSetTime = 0; // Time when status was set (using EditorApplication.timeSinceStartup)
     private const double STATUS_MESSAGE_DURATION = 5.0; // Display status for 5 seconds
@@ -287,6 +285,9 @@ public class ServerOutputWindow : EditorWindow
         {
             openWindows.Add(this);
         }
+
+        // Ensure colors are initialized from the centralized ColorManager
+        ServerUtilityProvider.ColorManager.EnsureInitialized();
         
         CacheServerManager();
         
@@ -307,7 +308,7 @@ public class ServerOutputWindow : EditorWindow
 
         // Initialize status bar
         statusMessage = "Ready.";
-        statusColor = Color.grey;
+        statusColor = ServerUtilityProvider.ColorManager.StatusNeutral;
         statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
         statusMessageSetTime = EditorApplication.timeSinceStartup;
 
@@ -1006,7 +1007,7 @@ public class ServerOutputWindow : EditorWindow
             DestroyImmediate(backgroundTexture);
         }
         backgroundTexture = new Texture2D(1, 1);
-        backgroundTexture.SetPixel(0, 0, cmdBackgroundColor);
+        backgroundTexture.SetPixel(0, 0, ServerUtilityProvider.ColorManager.CmdBackground);
         backgroundTexture.Apply();
         
         // Initialize container style with dark background
@@ -1019,14 +1020,14 @@ public class ServerOutputWindow : EditorWindow
         logStyle = new GUIStyle(EditorStyles.textArea);
         logStyle.richText = true;
         logStyle.font = consoleFont;
-        logStyle.normal.textColor = cmdTextColor;
+        logStyle.normal.textColor = ServerUtilityProvider.ColorManager.CmdText;
         logStyle.normal.background = backgroundTexture;
         logStyle.focused.background = backgroundTexture;
         logStyle.active.background = backgroundTexture;
         logStyle.hover.background = backgroundTexture;
-        logStyle.focused.textColor = cmdTextColor;
-        logStyle.hover.textColor = cmdTextColor;
-        logStyle.active.textColor = cmdTextColor;
+        logStyle.focused.textColor = ServerUtilityProvider.ColorManager.CmdText;
+        logStyle.hover.textColor = ServerUtilityProvider.ColorManager.CmdText;
+        logStyle.active.textColor = ServerUtilityProvider.ColorManager.CmdText;
         logStyle.wordWrap = false; // Allow horizontal scrolling
         
         // Toolbar button style
@@ -1453,7 +1454,7 @@ public class ServerOutputWindow : EditorWindow
             if (statusMessage != "Ready.")
             {
                 statusMessage = "Ready.";
-                statusColor = Color.grey;
+                statusColor = ServerUtilityProvider.ColorManager.StatusNeutral;
             }
         }
 
@@ -1462,14 +1463,14 @@ public class ServerOutputWindow : EditorWindow
         
         // Timestamp section with light grey color
         GUIStyle timeStyle = new GUIStyle(EditorStyles.label);
-        timeStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Light grey
+        timeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusTime; // Light grey
         timeStyle.alignment = TextAnchor.MiddleLeft;
         timeStyle.fontStyle = FontStyle.Italic;
         EditorGUILayout.LabelField(statusTimestamp, timeStyle, GUILayout.Width(60), GUILayout.Height(16));
         
         // Message section with status color - truncate if needed
         GUIStyle msgStyle = new GUIStyle(EditorStyles.label);
-        msgStyle.normal.textColor = statusColor;
+        msgStyle.normal.textColor = statusColor; // Set to current status color
         msgStyle.alignment = TextAnchor.MiddleLeft;
         
         // Calculate available width (window width - timestamp width - padding)
