@@ -2017,47 +2017,101 @@ public class ServerSetupWindow : EditorWindow
         try
         {
             // Try to find the ServerInstallProcess type by name
+            // First try the simple way
             Type installProcessType = System.Type.GetType("NorthernRogue.CCCP.Editor.ServerInstallProcess");
+            
+            // If not found, search through loaded assemblies
+            if (installProcessType == null)
+            {
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    installProcessType = assembly.GetType("NorthernRogue.CCCP.Editor.ServerInstallProcess");
+                    if (installProcessType != null)
+                    {
+                        if (debugMode)
+                            Debug.Log($"Found ServerInstallProcess in assembly: {assembly.FullName}");
+                        break;
+                    }
+                }
+            }
             
             if (installProcessType == null)
             {
                 // Type not found - this is expected in Asset Store builds
-                if (debugMode)
-                    Debug.LogWarning("ServerInstallProcess type not found. Install functionality will be disabled.");
+                Debug.LogWarning("ServerInstallProcess type not found in any loaded assembly. Install functionality will be disabled. This is expected for Asset Store builds. For GitHub builds, ensure ServerInstallProcess.cs is in the project and compiles without errors.");
                 return null;
             }
             
             // Try to find constructor that takes ServerSetupWindow parameter
-            var constructor = installProcessType.GetConstructor(new[] { typeof(ServerSetupWindow) });
+            var constructors = installProcessType.GetConstructors();
+            if (debugMode)
+                Debug.Log($"Found {constructors.Length} constructor(s) on ServerInstallProcess");
+            
+            var constructor = installProcessType.GetConstructor(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance, null, new[] { typeof(ServerSetupWindow) }, null);
             
             if (constructor == null)
             {
-                if (debugMode)
-                    Debug.LogWarning("ServerInstallProcess constructor not found with expected signature.");
+                Debug.LogError($"ServerInstallProcess constructor not found with expected signature (taking ServerSetupWindow parameter). Available constructors: {constructors.Length}");
+                foreach (var ctor in constructors)
+                {
+                    var parms = string.Join(", ", System.Array.ConvertAll(ctor.GetParameters(), p => p.ParameterType.Name));
+                    Debug.LogError($"  - Constructor with parameters: ({parms})");
+                }
                 return null;
             }
             
-            // Invoke the constructor
-            object instance = Activator.CreateInstance(installProcessType, this);
-            return instance;
+            // Invoke the constructor directly using ConstructorInfo.Invoke()
+            try
+            {
+                object instance = constructor.Invoke(new object[] { this });
+                if (debugMode)
+                    Debug.Log("ServerInstallProcess created successfully via reflection");
+                return instance;
+            }
+            catch (System.Reflection.TargetInvocationException invocationEx)
+            {
+                // TargetInvocationException wraps the real exception
+                Debug.LogError($"Failed to instantiate ServerInstallProcess: {invocationEx.InnerException?.GetType().Name}: {invocationEx.InnerException?.Message}");
+                if (debugMode && invocationEx.InnerException != null)
+                    Debug.LogException(invocationEx.InnerException);
+                return null;
+            }
+            catch (Exception activationEx)
+            {
+                Debug.LogError($"Failed to instantiate ServerInstallProcess: {activationEx.GetType().Name}: {activationEx.Message}");
+                if (debugMode)
+                    Debug.LogException(activationEx);
+                return null;
+            }
         }
         catch (Exception ex)
         {
+            Debug.LogWarning($"Failed to create ServerInstallProcess via reflection: {ex.Message}");
             if (debugMode)
-                Debug.LogWarning($"Failed to create ServerInstallProcess via reflection: {ex.Message}");
+                Debug.LogException(ex);
             return null;
         }
     }
     
     /// <summary>
     /// Helper to invoke methods on the install process object using reflection
+    /// Uses lazy initialization to ensure installProcess is available when the action is invoked
     /// </summary>
     private Action CreateReflectionAction(string methodName)
     {
         return () =>
         {
+            // Ensure installProcess exists - lazy initialization in case it was created late
+            if (installProcess == null && isGithubBuild)
+            {
+                installProcess = TryCreateInstallProcess();
+            }
+            
             if (installProcess == null)
+            {
+                Debug.LogError($"Cannot invoke {methodName}: ServerInstallProcess is not available. Ensure ServerInstallProcess.cs is in the project for GitHub builds.");
                 return;
+            }
             
             try
             {
@@ -2066,11 +2120,14 @@ public class ServerSetupWindow : EditorWindow
                 {
                     method.Invoke(installProcess, null);
                 }
+                else
+                {
+                    Debug.LogError($"Method {methodName} not found on ServerInstallProcess type");
+                }
             }
             catch (Exception ex)
             {
-                if (debugMode)
-                    Debug.LogError($"Error invoking {methodName}: {ex.Message}");
+                Debug.LogError($"Error invoking {methodName}: {ex.Message}");
             }
         };
     }

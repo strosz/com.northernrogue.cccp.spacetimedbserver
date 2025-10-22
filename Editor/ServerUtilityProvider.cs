@@ -26,7 +26,7 @@ public static class ServerUtilityProvider
         private const string CLEAR_BUTTON = "#808080";               // Medium gray for clear button
         private const string BUTTON_TEXT = "#FFFFFF";                // White for button text
         private const string BUTTON_DISABLED = "#C0C0C0";            // Light gray when disabled
-        private const string CONNECTED_TEXT = "#4CFF4C";             // Bright green for connected
+        private const string CONNECTED_TEXT = "#4DCC4D";             // Green for connected
         private const string PROCESSING = "#00FF00";                 // Bright green for processing
         private const string RECOMMENDED = "#00FF00";                // Bright green for recommended
         private const string WARNING = "#FFA500";                    // Orange for warnings
@@ -37,7 +37,7 @@ public static class ServerUtilityProvider
         private const string ACTIVE_TOOLBAR = "#00FF00";             // Bright green for active toolbar
         private const string INACTIVE_TOOLBAR = "#808080";           // Gray for inactive toolbar
         private const string VERSION_TEXT = "#6E6E6E";               // Neutral gray for version
-        private const string HOVER_GREEN = "#00CC00";                // Darker green for hover states
+        private const string HOVER_GREEN = "#00CC00";                // Green for hover states
 
         // Log Window Colors
         private const string CMD_BACKGROUND = "#1A1A1A";              // Very dark background for log console
