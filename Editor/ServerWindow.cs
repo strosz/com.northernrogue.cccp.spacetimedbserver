@@ -278,7 +278,7 @@ public class ServerWindow : EditorWindow
         DrawSettingsSection();
         EditorGUILayout.Space(5);
 
-        DrawServerSection();
+        DrawServerControlSection();
         EditorGUILayout.Space(5);
         
         DrawCommandsSection();
@@ -1781,9 +1781,9 @@ public class ServerWindow : EditorWindow
     }
     #endregion
 
-    #region ServerUI
+    #region ServerControlUI
 
-    private void DrawServerSection()
+    private void DrawServerControlSection()
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         
@@ -1925,7 +1925,7 @@ public class ServerWindow : EditorWindow
         // Set button color based on window state
         Color originalColor2 = GUI.backgroundColor;
         if (browseDbWindowOpen)
-            GUI.backgroundColor = ServerUtilityProvider.ColorManager.WindowToggle; // Light green tint when active
+            GUI.backgroundColor = new Color(0.6f, 1.6f, 0.6f); // Light green tint when active
         
         if (GUILayout.Button(dbContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {
@@ -1960,7 +1960,7 @@ public class ServerWindow : EditorWindow
         // Set button color based on window state
         Color originalColor3 = GUI.backgroundColor;
         if (runReducerWindowOpen)
-            GUI.backgroundColor = ServerUtilityProvider.ColorManager.WindowToggle; // Light green tint when active
+            GUI.backgroundColor = new Color(0.6f, 1.6f, 0.6f); // Light green tint when active
 
         if (GUILayout.Button(reducerContent, buttonStyle, GUILayout.ExpandHeight(true)))
         {

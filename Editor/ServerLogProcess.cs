@@ -2381,7 +2381,7 @@ public class ServerLogProcess
                 else
                 {
                     if (debugMode) logCallback("[ServerLogProcess] WARNING: GetDockerLogs timed out", 0);
-                    UnityEngine.Debug.LogWarning("[ServerLogProcess] WARNING: GetDockerLogs timed out");
+                    if (debugMode) UnityEngine.Debug.LogWarning("[ServerLogProcess] WARNING: GetDockerLogs timed out");
                 }
             }
             catch (Exception ex)

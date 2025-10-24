@@ -3,7 +3,7 @@
 <a href="https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver"><img src="https://img.shields.io/badge/Made%20with-Unity-57b9d3.svg?style=flat&logo=unity"></a>
 <a href="https://ko-fi.com/northernrogue"><img src="https://img.shields.io/badge/donate%20a%20cup%20of%20ko-fi-8A2BE2"></a>
 </p>
-<img src="https://northernrogue.se/cosmos_cover_newupdate.png" alt="Alt text" width="900">
+<img src="https://northernrogue.se/cosmos_cover_MAIN_new.png" alt="Alt text" width="900">
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
@@ -69,24 +69,13 @@ Install directly in your Unity Package Manager with this git URL
   <table style="max-width: 600px;">
     <tr>
       <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_manager.png" alt="CCCP Manager" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_screenshot_main_easilymanage_new.png" alt="CCCP Manager" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
       </td>
       <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_logs.png" alt="CCCP Logs" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_screenshot_setup_new.png" alt="CCCP Logs" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
       </td>
       <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_database.png" alt="CCCP Database" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_reducers.png" alt="CCCP Reducers" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
-      </td>
-      <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_installer.png" alt="CCCP Installer" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
-      </td>
-      <td style="text-align: center;">
-        <img src="https://www.northernrogue.se/CCCP/cccp_settings.png" alt="CCCP Settings" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
+        <img src="https://www.northernrogue.se/CCCP/cccp_screenshot_output_new.png" alt="CCCP Database" style="width: 100%; max-width: 250px; height: auto; display: block; margin-left: auto; margin-right: auto;">
       </td>
     </tr>
   </table>
