@@ -552,8 +552,7 @@ public class ServerSetupWindow : EditorWindow
             {
                 title = "Setup Docker Desktop",
                 description = "Docker Desktop provides containerization for running SpacetimeDB\n"+
-                "Note: Available for Windows, macOS, and Linux\n"+
-                "Note: Docker Desktop includes Docker Compose",
+                "Note: Available for Windows, Linux and MacOS",
                 isInstalled = hasDocker,
                 isEnabled = true,
                 installAction = CheckDocker,
@@ -761,7 +760,7 @@ public class ServerSetupWindow : EditorWindow
                 
                 bool isSessionActive = customProcess.IsSessionActive();
 
-                if (item.title.Contains("Install User"))
+                if (item.title.Contains("User"))
                 {
                     newState = hasCustomDebianUser;
                     newEnabledState = isSessionActive && !String.IsNullOrEmpty(sshUserName);

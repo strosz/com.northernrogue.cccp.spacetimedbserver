@@ -61,7 +61,6 @@ Install directly in your Unity Package Manager with this git URL
 
 🔧 **Source Available, Free and soon Open Source**
    - The full source code is available on Github for free.
-   - Unity Asset Store version is the same version.
    - Soon releasing it under MIT license.
 
 ## Screenshots
