@@ -115,7 +115,8 @@ public static class CCCPSettingsAdapter
             if (EditorApplication.isCompiling || 
                 EditorApplication.isUpdating ||
                 EditorApplication.isPlayingOrWillChangePlaymode ||
-                (!EditorApplication.isPlaying && EditorApplication.isPaused))
+                (!EditorApplication.isPlaying && EditorApplication.isPaused) ||
+                AssetDatabase.IsAssetImportWorkerProcess())
             {
                 // Retry later if we're not in a safe state
                 _pendingSave = true;
@@ -1235,7 +1236,7 @@ public static class CCCPSettingsAdapter
         if (Settings.serverMode != value)
         {
             Settings.serverMode = value; 
-            SaveSettings(); // Important setting - save immediately
+            MarkDirty(); // Use deferred save to avoid asset postprocessing issues
         }
     }
     
@@ -1245,7 +1246,7 @@ public static class CCCPSettingsAdapter
         if (Settings.lastLocalServerMode != value)
         {
             Settings.lastLocalServerMode = value; 
-            SaveSettings();
+            MarkDirty(); // Use deferred save to avoid asset postprocessing issues
         }
     }
     

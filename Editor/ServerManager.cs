@@ -2487,6 +2487,14 @@ public class ServerManager
 
     public bool PingServerStatus()
     {
+        // For Custom Server, we should use async to avoid blocking
+        if (Settings.serverMode == ServerMode.CustomServer)
+        {
+            // Return cached value and start async update
+            _ = PingServerStatusAsync();
+            return pingShowsOnline;
+        }
+        
         PingServer(false);
         return pingShowsOnline;
     }
@@ -2514,7 +2522,26 @@ public class ServerManager
 
         try
         {
-            // Use the appropriate processor based on LocalCLIProvider
+            // For Custom Server, use the async method directly
+            if (Settings.serverMode == ServerMode.CustomServer)
+            {
+                if (serverCustomProcess == null)
+                {
+                    if (DebugMode) LogMessage("Custom server process not initialized", -1);
+                    pingShowsOnline = false;
+                    return false;
+                }
+
+                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync($"server ping {url}", 5000);
+                bool isOnline = result.success && result.output.Contains("Server is online");
+                
+                // Update cached ping status
+                pingShowsOnline = isOnline;
+                
+                return isOnline;
+            }
+            
+            // Use the appropriate processor based on LocalCLIProvider for WSL/Docker
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
             if (LocalCLIProvider == "Docker")
             {
@@ -2534,17 +2561,19 @@ public class ServerManager
             {
                 timeoutCTS.Token.Register(() => tcs.TrySetResult(false));
                 bool result = await tcs.Task.ConfigureAwait(false);
+                pingShowsOnline = result;
                 return result;
             }
         }
         catch (Exception ex)
         {
             if (DebugMode) LogMessage($"Error during async ping: {ex.Message}", -1);
+            pingShowsOnline = false;
             return false;
         }
     }
 
-    public void PingServer(bool showLog) // For manual ping
+    public async void PingServer(bool showLog) // For manual ping
     {
         string url;
         if (Settings.serverMode == ServerMode.CustomServer)
@@ -2565,6 +2594,51 @@ public class ServerManager
             url = url.TrimEnd('/');
         }
         if (DebugMode) LogMessage($"Pinging server at {url}...", 0);
+
+        // For Custom Server, use async approach to avoid UI blocking
+        if (Settings.serverMode == ServerMode.CustomServer)
+        {
+            if (serverCustomProcess == null)
+            {
+                if (showLog) LogMessage("Custom server process not initialized", -1);
+                pingShowsOnline = false;
+                SafeRepaint();
+                return;
+            }
+
+            try
+            {
+                // Run the ping asynchronously
+                var result = await serverCustomProcess.RunSpacetimeDBCommandAsync($"server ping {url}", 5000);
+                
+                EditorApplication.delayCall += () => {
+                    bool isOnline = result.success && result.output.Contains("Server is online");
+                    
+                    if (isOnline)
+                    {
+                        if (showLog) LogMessage($"Server is online: {url}", 1);
+                        pingShowsOnline = true;
+                    }
+                    else
+                    {
+                        string errorMsg = !string.IsNullOrEmpty(result.error) ? result.error : result.output;
+                        if (showLog) LogMessage($"Server is offline: {errorMsg}", -1);
+                        pingShowsOnline = false;
+                    }
+                    
+                    SafeRepaint();
+                };
+            }
+            catch (Exception ex)
+            {
+                if (DebugMode) LogMessage($"Error during custom server ping: {ex.Message}", -1);
+                if (showLog) LogMessage($"Server ping failed: {ex.Message}", -1);
+                pingShowsOnline = false;
+                SafeRepaint();
+            }
+            
+            return;
+        }
 
         if (LocalCLIProvider == "Docker"){
             dockerProcessor.PingServer(url, (isOnline, message) => {
