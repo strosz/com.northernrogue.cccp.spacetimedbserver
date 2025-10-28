@@ -7,7 +7,7 @@
 
 **Bring the power of SpacetimeDB directly into your Unity Editor!**
 
-SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel is a Unity integration for SpacetimeDB, allowing anyone to get started creating an online world in a free and highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
+SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel for SpacetimeDB allows anyone to get started creating an online world in a highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
 
 Install directly in your Unity Package Manager with this git URL
 

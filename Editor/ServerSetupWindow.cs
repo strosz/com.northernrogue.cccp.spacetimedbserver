@@ -1017,6 +1017,21 @@ public class ServerSetupWindow : EditorWindow
         EditorGUILayout.LabelField(description,
             EditorStyles.centeredGreyMiniLabel, GUILayout.Height(43));
 
+        if (!isGithubBuild && currentTab != dockerTabIndex)
+        {
+            // Add a button
+            EditorGUILayout.Space(5);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Online Documentation", GUILayout.Height(25), GUILayout.Width(160)))
+            {
+                Application.OpenURL(ServerWindow.Documentation);
+            }
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(5);
+        }
+
         // Show usernameprompt for clarity before SpacetimeDB install (WSL and Custom only, not Docker)
         bool showUsernamePrompt = String.IsNullOrEmpty(userName) && 
             ((currentTab == wslTabIndex && hasWSL && hasDebian) || 
