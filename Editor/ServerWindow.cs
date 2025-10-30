@@ -1347,17 +1347,10 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.BeginHorizontal();
                 string keygenTooltip = "Generates a new SSH key pair using Ed25519 algorithm.";
                 EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                
-                if (GUILayout.Button("Generate SSH Key Pair"))
+                if (GUILayout.Button(new GUIContent("Generate SSH Key Pair", keygenTooltip)))
                 {
-                    if (wslProcess == null)
-                    {
-                        wslProcess = new ServerWSLProcess(LogMessage, debugMode);
-                    }
-                    // Generate SSH key pair with default path and empty passphrase non-interactively
-                    string sshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
-                    string defaultKeyPath = Path.Combine(sshDir, "id_ed25519");
-                    // Create .ssh directory first, then generate the key pair
-                    wslProcess.RunPowerShellCommand($"New-Item -ItemType Directory -Path '{sshDir}' -Force | Out-Null; ssh-keygen -t ed25519 -f '{defaultKeyPath}' -N '' -q", LogMessage);
+                    // Use the cross-platform SSH key generation utility
+                    GenerateSSHKeyPairAsync();
                 }
                 GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();
@@ -2778,20 +2771,19 @@ public class ServerWindow : EditorWindow
 
     private async void CheckCLIUpdates()
     {
+        bool manualCheck = true;
         if (localCLIProvider == "Docker")
         {
-            await serverManager.CheckSpacetimeDBVersionDocker();
-            await serverManager.CheckDockerImageTag();
-            await serverManager.CheckSpacetimeSDKVersion();
-            await serverManager.CheckRustVersionDocker();
+            await serverManager.CheckSpacetimeDBVersionDocker(manualCheck);
+            await serverManager.CheckDockerImageTag(manualCheck);
+            await serverManager.CheckRustVersionDocker(manualCheck);
         }
         else if (localCLIProvider == "WSL")
         {
-            await serverManager.CheckSpacetimeDBVersionWSL();
-            await serverManager.CheckSpacetimeSDKVersion();
-            await serverManager.CheckRustVersionWSL();
+            await serverManager.CheckSpacetimeDBVersionWSL(manualCheck);
+            await serverManager.CheckRustVersionWSL(manualCheck);
         }
-        await serverManager.CheckSpacetimeSDKVersion();
+        await serverManager.CheckSpacetimeSDKVersion(manualCheck);
     }
 
     private async void CheckServiceStatus()
@@ -3057,6 +3049,39 @@ public class ServerWindow : EditorWindow
     {
         ServerUtilityProvider.CloseWindow<ServerDataWindow>();
         ServerUtilityProvider.CloseWindow<ServerReducerWindow>();
+    }
+
+    private async void GenerateSSHKeyPairAsync()
+    {
+        try
+        {
+            LogMessage("Starting SSH key pair generation...", 0);
+            
+            // Use the cross-platform utility method
+            var result = await ServerUtilityProvider.GenerateSSHKeyPairAsync(null, "", LogMessage);
+            
+            if (result.success)
+            {
+                LogMessage("SSH key pair generated successfully!", 1);
+                LogMessage($"Private key: {result.privateKeyPath}", 1);
+                LogMessage($"Public key: {result.publicKeyPath}", 1);
+                
+                // Automatically set the private key path in settings
+                if (!string.IsNullOrEmpty(result.privateKeyPath))
+                {
+                    sshPrivateKeyPath = result.privateKeyPath;
+                    LogMessage($"Private key path automatically set in settings.", 1);
+                }
+            }
+            else
+            {
+                LogMessage($"SSH key generation failed: {result.errorMessage}", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Exception during SSH key generation: {ex.Message}", -1);
+        }
     }
 
     public bool CLIAvailableLocal()

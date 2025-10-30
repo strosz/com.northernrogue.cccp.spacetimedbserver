@@ -485,7 +485,7 @@ public class ServerInstallProcess
         {
             SetStatus("SpacetimeDB Server installation completed. Checking installation status...", Color.green);
 
-            await serverManager.CheckSpacetimeDBVersionWSL();
+            await serverManager.CheckSpacetimeDBVersionWSL(manualCheck: false);
             spacetimeDBCurrentVersion = spacetimeDBLatestVersion;
             
             CheckPrerequisitesWSL();
@@ -955,7 +955,7 @@ public class ServerInstallProcess
         if (hasRust)
         {
             // Fetch the actual Rust version for immediate display
-            await serverManager.CheckRustVersionWSL();
+            await serverManager.CheckRustVersionWSL(manualCheck: false);
             UpdateInstallerItemsStatus();
             SetStatus("Rust installed successfully.", Color.green);
         }

@@ -1853,8 +1853,8 @@ public class ServerDockerProcess
             }
             else if (result.output.Contains("stable-x86_64-unknown-linux-gnu - Up to date"))
             {
-                // Clear the latest version when up to date
-                rustLatestVersion = "";
+                // When up to date, latest version is the same as current version
+                rustLatestVersion = rustStableVersion;
                 if (debugMode) logCallback($"Rust is up to date at version: {rustStableVersion}", 1);
             }
         }

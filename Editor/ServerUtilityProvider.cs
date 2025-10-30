@@ -990,6 +990,249 @@ public static class ServerUtilityProvider
         }
     }
     #endregion
+
+    #region SSH Utilities
+
+    /// <summary>
+    /// Generates an SSH key pair using Ed25519 algorithm in a cross-platform compatible way
+    /// </summary>
+    /// <param name="keyPath">Optional path for the key file. If null, uses default (~/.ssh/id_ed25519)</param>
+    /// <param name="passphrase">Optional passphrase for the key. Empty string for no passphrase</param>
+    /// <param name="logCallback">Optional callback for logging messages</param>
+    /// <returns>Tuple of (success, publicKeyPath, privateKeyPath, errorMessage)</returns>
+    public static async System.Threading.Tasks.Task<(bool success, string publicKeyPath, string privateKeyPath, string errorMessage)> GenerateSSHKeyPairAsync(
+        string keyPath = null, 
+        string passphrase = "", 
+        System.Action<string, int> logCallback = null)
+    {
+        try
+        {
+            // Determine the .ssh directory and key path based on platform
+            string sshDir;
+            string defaultKeyPath;
+            
+            if (IsWindows())
+            {
+                sshDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+                defaultKeyPath = System.IO.Path.Combine(sshDir, "id_ed25519");
+            }
+            else if (IsMacOS() || IsLinux())
+            {
+                sshDir = System.IO.Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "~", ".ssh");
+                defaultKeyPath = System.IO.Path.Combine(sshDir, "id_ed25519");
+            }
+            else
+            {
+                return (false, null, null, "Unsupported platform for SSH key generation");
+            }
+
+            // Use provided key path or default
+            string finalKeyPath = string.IsNullOrEmpty(keyPath) ? defaultKeyPath : keyPath;
+            
+            // Ensure .ssh directory exists
+            if (!System.IO.Directory.Exists(sshDir))
+            {
+                try
+                {
+                    System.IO.Directory.CreateDirectory(sshDir);
+                    logCallback?.Invoke($"Created .ssh directory: {sshDir}", 1);
+                }
+                catch (Exception ex)
+                {
+                    return (false, null, null, $"Failed to create .ssh directory: {ex.Message}");
+                }
+            }
+
+            // Build the ssh-keygen command based on platform
+            string executable;
+            string arguments;
+            
+            if (IsWindows())
+            {
+                // On Windows, ssh-keygen is available via OpenSSH (built into Windows 10+)
+                // We need to run it through PowerShell or cmd to handle path creation properly
+                executable = "powershell.exe";
+                
+                // Normalize the path for Windows
+                string normalizedKeyPath = finalKeyPath.Replace("/", "\\");
+                string normalizedSshDir = sshDir.Replace("/", "\\");
+                
+                // PowerShell command to ensure directory exists and generate key
+                string psCommand = $"New-Item -ItemType Directory -Path '{normalizedSshDir}' -Force | Out-Null; " +
+                                 $"ssh-keygen -t ed25519 -f '{normalizedKeyPath}' -N '{passphrase}' -q";
+                
+                arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psCommand}\"";
+            }
+            else if (IsMacOS() || IsLinux())
+            {
+                // On Unix-like systems, use ssh-keygen directly
+                executable = "ssh-keygen";
+                arguments = $"-t ed25519 -f {finalKeyPath} -N \"{passphrase}\" -q";
+            }
+            else
+            {
+                return (false, null, null, "Unsupported platform");
+            }
+
+            logCallback?.Invoke($"Generating SSH key pair at: {finalKeyPath}", 0);
+
+            // Execute the command asynchronously
+            var result = await System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    using (var process = new System.Diagnostics.Process())
+                    {
+                        process.StartInfo.FileName = executable;
+                        process.StartInfo.Arguments = arguments;
+                        process.StartInfo.UseShellExecute = false;
+                        process.StartInfo.RedirectStandardOutput = true;
+                        process.StartInfo.RedirectStandardError = true;
+                        process.StartInfo.CreateNoWindow = true;
+
+                        var outputBuilder = new System.Text.StringBuilder();
+                        var errorBuilder = new System.Text.StringBuilder();
+
+                        process.OutputDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                outputBuilder.AppendLine(args.Data);
+                            }
+                        };
+
+                        process.ErrorDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                errorBuilder.AppendLine(args.Data);
+                            }
+                        };
+
+                        process.Start();
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+
+                        bool finished = process.WaitForExit(30000); // 30 second timeout
+                        if (!finished)
+                        {
+                            try { process.Kill(); } catch { }
+                            return (false, "", "SSH key generation timed out");
+                        }
+
+                        string output = outputBuilder.ToString();
+                        string error = errorBuilder.ToString();
+                        bool success = process.ExitCode == 0;
+
+                        return (success, output, error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return (false, "", $"Exception during SSH key generation: {ex.Message}");
+                }
+            });
+
+            if (result.Item1)
+            {
+                // Verify the key files were created
+                string publicKeyPath = finalKeyPath + ".pub";
+                bool privateKeyExists = System.IO.File.Exists(finalKeyPath);
+                bool publicKeyExists = System.IO.File.Exists(publicKeyPath);
+
+                if (privateKeyExists && publicKeyExists)
+                {
+                    logCallback?.Invoke($"SSH key pair generated successfully!", 1);
+                    logCallback?.Invoke($"Private key: {finalKeyPath}", 1);
+                    logCallback?.Invoke($"Public key: {publicKeyPath}", 1);
+                    
+                    // Set appropriate permissions on Unix-like systems
+                    if (IsMacOS() || IsLinux())
+                    {
+                        try
+                        {
+                            // Set private key to 600 (rw-------)
+                            var chmodProcess = new System.Diagnostics.Process();
+                            chmodProcess.StartInfo.FileName = "chmod";
+                            chmodProcess.StartInfo.Arguments = $"600 {finalKeyPath}";
+                            chmodProcess.StartInfo.UseShellExecute = false;
+                            chmodProcess.StartInfo.CreateNoWindow = true;
+                            chmodProcess.Start();
+                            chmodProcess.WaitForExit(5000);
+                            
+                            logCallback?.Invoke("Set private key permissions to 600", 1);
+                        }
+                        catch (Exception ex)
+                        {
+                            logCallback?.Invoke($"Warning: Could not set key permissions: {ex.Message}", -1);
+                        }
+                    }
+                    
+                    return (true, publicKeyPath, finalKeyPath, null);
+                }
+                else
+                {
+                    string missingFiles = "";
+                    if (!privateKeyExists) missingFiles += "private key ";
+                    if (!publicKeyExists) missingFiles += "public key ";
+                    return (false, null, null, $"SSH key generation completed but {missingFiles}file(s) not found");
+                }
+            }
+            else
+            {
+                string errorMessage = !string.IsNullOrEmpty(result.Item3) ? result.Item3 : "Unknown error during SSH key generation";
+                logCallback?.Invoke($"SSH key generation failed: {errorMessage}", -1);
+                return (false, null, null, errorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            logCallback?.Invoke($"Exception in GenerateSSHKeyPairAsync: {ex.Message}", -1);
+            return (false, null, null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Gets the default SSH directory for the current platform
+    /// </summary>
+    /// <returns>Path to the .ssh directory</returns>
+    public static string GetDefaultSSHDirectory()
+    {
+        if (IsWindows())
+        {
+            return System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+        }
+        else if (IsMacOS() || IsLinux())
+        {
+            return System.IO.Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "~", ".ssh");
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the default SSH private key path for the current platform
+    /// </summary>
+    /// <returns>Path to the default id_ed25519 private key</returns>
+    public static string GetDefaultSSHPrivateKeyPath()
+    {
+        string sshDir = GetDefaultSSHDirectory();
+        return sshDir != null ? System.IO.Path.Combine(sshDir, "id_ed25519") : null;
+    }
+
+    /// <summary>
+    /// Gets the default SSH public key path for the current platform
+    /// </summary>
+    /// <returns>Path to the default id_ed25519.pub public key</returns>
+    public static string GetDefaultSSHPublicKeyPath()
+    {
+        string sshDir = GetDefaultSSHDirectory();
+        return sshDir != null ? System.IO.Path.Combine(sshDir, "id_ed25519.pub") : null;
+    }
+
+    #endregion
 }
 
 } // Namespace

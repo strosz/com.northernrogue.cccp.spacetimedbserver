@@ -950,7 +950,7 @@ public class ServerManager
                 bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
                 if (!dockerServiceRunning)
                 {
-                    LogMessage("Starting up Docker Desktop. This may take up to 30 seconds...", 0);
+                    LogMessage("Starting up Docker Desktop. This may take a few seconds...", 0);
                     bool started = await dockerProcessor.StartDockerService();
                     if (!started)
                     {
@@ -2808,9 +2808,10 @@ public class ServerManager
                 // Check SpacetimeDB version and update once every time WSL is confirmed running
                 if (isWslRunning)
                 {
-                    await CheckSpacetimeDBVersionWSL();
-                    await CheckSpacetimeSDKVersion();
-                    await CheckRustVersionWSL();
+                    bool manualCheck = false;
+                    await CheckSpacetimeDBVersionWSL(manualCheck);
+                    await CheckSpacetimeSDKVersion(manualCheck);
+                    await CheckRustVersionWSL(manualCheck);
                 }
             }
             
@@ -2857,10 +2858,11 @@ public class ServerManager
                 // Check SpacetimeDB version and update once every time Docker is confirmed running
                 if (isDockerRunning)
                 {
-                    await CheckSpacetimeDBVersionDocker();
-                    await CheckDockerImageTag();
-                    await CheckSpacetimeSDKVersion();
-                    await CheckRustVersionDocker();
+                    bool manualCheck = false;
+                    await CheckSpacetimeDBVersionDocker(manualCheck);
+                    await CheckDockerImageTag(manualCheck);
+                    await CheckSpacetimeSDKVersion(manualCheck);
+                    await CheckRustVersionDocker(manualCheck);
                 }
             }
         }
@@ -3136,7 +3138,7 @@ public class ServerManager
 
     #region Spacetime Version
 
-    public async Task CheckSpacetimeDBVersionWSL() // Only runs in WSL once when WSL has started
+    public async Task CheckSpacetimeDBVersionWSL(bool manualCheck) // Only runs in WSL once when WSL has started
     {
         if (wslProcessor == null)
         {
@@ -3171,11 +3173,17 @@ public class ServerManager
                     SessionState.SetBool("SpacetimeDBWSLUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
+            } else {
+                if (manualCheck)
+                {
+                    LogMessage($"SpacetimeDB is up to date in WSL (version {version})", 1);
+                }
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(false);
             }
         }
     }
     
-    public async Task CheckSpacetimeDBVersionDocker() // Only runs in Docker once when Docker has started
+    public async Task CheckSpacetimeDBVersionDocker(bool manualCheck) // Only runs in Docker once when Docker has started
     {
         if (dockerProcessor == null)
         {
@@ -3210,11 +3218,16 @@ public class ServerManager
                     SessionState.SetBool("SpacetimeDBDockerUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
+            } else {
+                if (manualCheck) {
+                    LogMessage($"SpacetimeDB is up to date in Docker (version {version})", 1);
+                }
+                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(false);
             }
         }
     }
-    
-    public async Task CheckDockerImageTag() // Only runs in Docker once when Docker has started
+
+    public async Task CheckDockerImageTag(bool manualCheck) // Only runs in Docker once when Docker has started
     {
         if (dockerProcessor == null)
         {
@@ -3251,6 +3264,10 @@ public class ServerManager
             }
             else
             {
+                if (manualCheck)
+                {
+                    LogMessage($"SpacetimeDB Docker image is up to date ({currentTag})", 1);
+                }
                 CCCPSettingsAdapter.SetDockerImageUpdateAvailable(false);
             }
         }
@@ -3275,7 +3292,8 @@ public class ServerManager
                 // Reset the update flag and refresh version info
                 CCCPSettingsAdapter.SetDockerImageUpdateAvailable(false);
                 SessionState.SetBool("DockerImageUpdateMessageShown", false);
-                await CheckDockerImageTag();
+                bool manualCheck = false;
+                await CheckDockerImageTag(manualCheck);
             }
             else
             {
@@ -3291,7 +3309,7 @@ public class ServerManager
         }
     }
     
-    public async Task CheckSpacetimeSDKVersion() // Check for SDK updates when WSL starts
+    public async Task CheckSpacetimeSDKVersion(bool manualCheck) // Check for SDK updates when WSL starts
     {
         if (debugMode) LogMessage("Checking SpacetimeDB SDK version...", 0);
         
@@ -3331,7 +3349,7 @@ public class ServerManager
             }
             else if (!string.IsNullOrEmpty(latestSDKVersion))
             {
-                if (debugMode) LogMessage($"SpacetimeDB SDK is up to date (version {currentSDKVersion})", 1);
+                if (debugMode || manualCheck) LogMessage($"SpacetimeDB SDK is up to date (version {currentSDKVersion})", 1);
             }
         }
         else
@@ -3342,7 +3360,7 @@ public class ServerManager
     #endregion
     
     #region Rust Version
-    public async Task CheckRustVersionWSL() // Only runs in WSL once when WSL has started
+    public async Task CheckRustVersionWSL(bool manualCheck) // Only runs in WSL once when WSL has started
     {
         if (wslProcessor == null)
         {
@@ -3382,6 +3400,7 @@ public class ServerManager
             }
             else
             {
+                if (debugMode || manualCheck) LogMessage($"Rust is up to date (version {rustCurrentVersion})", 1);
                 CCCPSettingsAdapter.SetRustUpdateAvailable(false);
             }
         }
@@ -3401,8 +3420,8 @@ public class ServerManager
             }
         }
     }
-    
-    public async Task CheckRustVersionDocker() // Only runs in Docker once when Docker has started
+
+    public async Task CheckRustVersionDocker(bool manualCheck) // Only runs in Docker once when Docker has started
     {
         if (dockerProcessor == null)
         {
@@ -3442,6 +3461,7 @@ public class ServerManager
             }
             else
             {
+                if (debugMode || manualCheck) LogMessage($"Rust is up to date (version {rustCurrentVersionDocker})", 1);
                 CCCPSettingsAdapter.SetRustUpdateAvailable(false);
             }
         }

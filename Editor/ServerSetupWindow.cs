@@ -1279,7 +1279,7 @@ public class ServerSetupWindow : EditorWindow
                     EditorGUILayout.LabelField("✓ Installed v" + spacetimeDBCurrentVersionCustom, installedStyle, GUILayout.Width(110));
                 }
             }
-            else if (item.title.Contains("Install Rust") && !string.IsNullOrEmpty(rustCurrentVersion))
+            else if (item.title.Contains("Rust") && !string.IsNullOrEmpty(rustCurrentVersion))
             {
                 EditorGUILayout.LabelField("✓ Installed v" + rustCurrentVersion, installedStyle, GUILayout.Width(110));
             }
@@ -1497,10 +1497,10 @@ public class ServerSetupWindow : EditorWindow
         });
 
         // Check SpacetimeDB version to update it if it was updated in the installer
-        await serverManager.CheckSpacetimeDBVersionWSL();
+        await serverManager.CheckSpacetimeDBVersionWSL(manualCheck: false);
 
         // Check Rust version to update it if it was updated in the installer
-        await serverManager.CheckRustVersionWSL();
+        await serverManager.CheckRustVersionWSL(manualCheck: false);
 
         // Update UI
         UpdateInstallerItemsStatus();

@@ -7,13 +7,13 @@
 
 ## Important Notice
 
-This Unity package provides **automated installation tools** for SpacetimeDB development environment setup. **No third-party software is bundled or distributed with this asset.** All external software is downloaded from official sources during the optional installation process.
+**No third-party software is bundled or distributed with this asset.** All external software is downloaded from official sources during the manual setup process.
 
-By using the automated installer features, you acknowledge and agree to the respective license terms of any downloaded software.
+By following the setup window and setup guide included in this asset, you acknowledge and agree to the respective license terms of any downloaded software.
 
 ---
 
-## Third-Party Software Downloaded During Installation
+## Third-Party Software Downloaded During Setup
 
 ### 1. Windows Subsystem for Linux (WSL)
 - **Publisher:** Microsoft Corporation
@@ -121,9 +121,9 @@ Copyright (c) 2015-2025 WebAssembly Community Group participants
 
 ---
 
-## Manual Installation Alternative
+## Manual Installation Documentation
 
-Complete manual installation instructions are provided in the package documentation as an alternative to the automated installer. Users may choose to install all required software manually if they prefer to manage licenses independently.
+Complete manual installation instructions are provided in the package documentation. Users may choose to install different software depending on their configuration needs which means that they will manage licenses independently.
 
 ---
 
@@ -137,8 +137,8 @@ For questions regarding third-party software licensing or this notice:
 
 ---
 
-**Last Updated:** August 30, 2025  
-**Package Version:** 0.4.2
+**Last Updated:** October 30, 2025  
+**Package Version:** 0.5.0
 
 ---
 
