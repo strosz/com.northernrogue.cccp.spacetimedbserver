@@ -1349,8 +1349,14 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.LabelField(new GUIContent("SSH Keygen:", keygenTooltip), GUILayout.Width(110));                
                 if (GUILayout.Button(new GUIContent("Generate SSH Key Pair", keygenTooltip)))
                 {
-                    // Use the cross-platform SSH key generation utility
-                    GenerateSSHKeyPairAsync();
+                    // Display editor dialog to confirm overwriting existing keys
+                    if (EditorUtility.DisplayDialog("Confirm SSH Key Generation", 
+                    "Are you sure you want to overwrite any existing SSH key pair?\n\n"+ 
+                    "If you have not yet generated an SSH key pair, one will be created.", 
+                    "Generate SSH Key Pair", "Cancel"))
+                    {
+                        GenerateSSHKeyPairAsync();
+                    }
                 }
                 GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();
