@@ -2207,15 +2207,15 @@ public class ServerWindow : EditorWindow
                         serverManager.ClearServerData();
                     }
                 }
-
-                EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.HasAllPrerequisites);
-                string checkForUpdateTooltip = $"Checks for SpacetimeDB {localCLIProvider} CLI updates if available.";
-                if (GUILayout.Button(new GUIContent($"Check for {localCLIProvider} CLI Update", checkForUpdateTooltip), GUILayout.Height(20)))
-                {
-                    CheckCLIUpdates();
-                }
-                EditorGUI.EndDisabledGroup();
             }
+
+            EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.HasAllPrerequisites);
+            string checkForUpdateTooltip = $"Checks for SpacetimeDB {localCLIProvider} CLI updates if available.";
+            if (GUILayout.Button(new GUIContent($"Check for {localCLIProvider} CLI Update", checkForUpdateTooltip), GUILayout.Height(20)))
+            {
+                CheckCLIUpdates();
+            }
+            EditorGUI.EndDisabledGroup();
 
             if (debugMode && serverMode == ServerMode.WSLServer)
             {
