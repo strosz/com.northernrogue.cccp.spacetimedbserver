@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using NorthernRogue.CCCP.Editor.Settings;
 using ModuleInfo = NorthernRogue.CCCP.Editor.Settings.ModuleInfo;
+using NUnit.Framework;
 
 // The main Comos Cove Control Panel that controls the server state and launches all features ///
 
@@ -41,7 +42,6 @@ public class ServerWindow : EditorWindow
     private bool hasNETSDK { get => CCCPSettingsAdapter.GetHasNETSDK(); set => CCCPSettingsAdapter.SetHasNETSDK(value); }
     private bool hasBinaryen { get => CCCPSettingsAdapter.GetHasBinaryen(); set => CCCPSettingsAdapter.SetHasBinaryen(value); }
     private bool hasGit { get => CCCPSettingsAdapter.GetHasGit(); set => CCCPSettingsAdapter.SetHasGit(value); }
-    private bool wslPrerequisitesChecked { get => CCCPSettingsAdapter.GetWslPrerequisitesChecked(); set => CCCPSettingsAdapter.SetWslPrerequisitesChecked(value); }
 
     // Pre-requisites Docker - Direct property access to settings
     private bool hasDocker { get => CCCPSettingsAdapter.GetHasDocker(); set => CCCPSettingsAdapter.SetHasDocker(value); }
@@ -52,6 +52,7 @@ public class ServerWindow : EditorWindow
     // Pre-requisites General - Direct property access to settings
     private bool initializedFirstModule { get => CCCPSettingsAdapter.GetInitializedFirstModule(); set => CCCPSettingsAdapter.SetInitializedFirstModule(value); }
     private bool publishFirstModule { get => CCCPSettingsAdapter.GetPublishFirstModule(); set => CCCPSettingsAdapter.SetPublishFirstModule(value); }
+    private bool hasSpacetimeDBUnitySDK { get => CCCPSettingsAdapter.GetHasSpacetimeDBUnitySDK(); set => CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(value); }
     private bool hasAllPrerequisites { get => CCCPSettingsAdapter.GetHasAllPrerequisites(); set => CCCPSettingsAdapter.SetHasAllPrerequisites(value); }
 
     // Server Configuration - Direct property access to settings
@@ -989,7 +990,32 @@ public class ServerWindow : EditorWindow
             string serverDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(serverDirectory) ? "Not Set" : serverDirectory);
             if (GUILayout.Button(new GUIContent("Add", serverDirButtonTooltip), GUILayout.Width(47), GUILayout.Height(20)))
             {
-                string path = EditorUtility.OpenFolderPanel("Select Module Path", Application.dataPath, "");
+                // Show guidance dialog if this is the first module
+                if (savedModules.Count == 0)
+                {
+                    EditorUtility.DisplayDialog(
+                        "First Module Setup",
+                        "If this is your first new server module you can create the module folder anywhere outside of the Assets folder.\n\n" +
+                        "For example, you can create a /Server folder in the root of your project directory.\n\n" +
+                        "Click OK to open the folder browser and select or create a folder for your module.",
+                        "OK"
+                    );
+                }
+
+                // Open folder panel to select module path
+                string projectPath;
+                try
+                {
+                    var parent = Directory.GetParent(Application.dataPath);
+                    projectPath = parent != null ? parent.FullName : Application.dataPath;
+                }
+                catch (Exception ex)
+                {
+                    // Fallback to Assets folder if we can't determine project root
+                    projectPath = Application.dataPath;
+                    if (debugMode) LogMessage($"Failed to determine project root, opening Assets folder: {ex.Message}", -2);
+                }
+                string path = EditorUtility.OpenFolderPanel("Select Module Path", projectPath, "");
                 if (!string.IsNullOrEmpty(path))
                 {
                     serverDirectory = path;
@@ -2420,15 +2446,11 @@ public class ServerWindow : EditorWindow
                     hasDockerCompose = compose;
                     hasDockerImage = image;
                     hasDockerContainerMounts = mounts;
-                    wslPrerequisitesChecked = true; // Check if this is necessary
-                    
-                    // Load userName value 
-                    userName = serverManager.UserName;
                     
                     Repaint();
                     
                     bool essentialSoftwareDocker = 
-                        docker && compose && image;
+                        docker && compose && image && hasSpacetimeDBUnitySDK;
 
                     bool essentialUserSettingsDocker = 
                         !string.IsNullOrEmpty(serverDirectory) &&
@@ -2440,9 +2462,9 @@ public class ServerWindow : EditorWindow
                     if (!docker) missingSoftware.Add("- Docker");
                     if (!compose) missingSoftware.Add("- Docker Compose");
                     if (!image) missingSoftware.Add("- SpacetimeDB Docker Image");
+                    if (!hasSpacetimeDBUnitySDK) missingSoftware.Add("- SpacetimeDB Unity SDK");
 
                     List<string> missingUserSettings = new List<string>();
-                    if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
                     if (string.IsNullOrEmpty(serverDirectory)) missingUserSettings.Add("- Server Directory");
                     if (string.IsNullOrEmpty(clientDirectory)) missingUserSettings.Add("- Client Directory");
                     if (string.IsNullOrEmpty(moduleName)) missingUserSettings.Add("- Server Module");
@@ -2474,7 +2496,7 @@ public class ServerWindow : EditorWindow
                     hasBinaryen = binaryen;
                     hasGit = git;
                     hasNETSDK = netSdk;
-                    wslPrerequisitesChecked = true;
+                    CCCPSettingsAdapter.SetWslPrerequisitesChecked(true);
                     
                     // Load userName value 
                     userName = serverManager.UserName;
@@ -2483,7 +2505,7 @@ public class ServerWindow : EditorWindow
                     
                     bool essentialSoftwareWSL = 
                         wsl && debian && trixie && curl && 
-                        spacetime && spacetimePath && spacetimeService && git && (rust || netSdk);
+                        spacetime && spacetimePath && spacetimeService && git && (rust || netSdk) && hasSpacetimeDBUnitySDK;
 
                     bool essentialUserSettingsWSL = 
                         !string.IsNullOrEmpty(userName) &&
@@ -2501,6 +2523,7 @@ public class ServerWindow : EditorWindow
                     if (!spacetimeService) missingSoftware.Add("- SpacetimeDB Service");
                     if (!rust && !netSdk) missingSoftware.Add("- Either Rust or .Net (C#)");
                     if (!git) missingSoftware.Add("- Git");
+                    if (!hasSpacetimeDBUnitySDK) missingSoftware.Add("- SpacetimeDB Unity SDK");
 
                     List<string> missingUserSettings = new List<string>();
                     if (string.IsNullOrEmpty(userName)) missingUserSettings.Add("- Debian Username");
@@ -2522,11 +2545,11 @@ public class ServerWindow : EditorWindow
             bool needsInstallation = EditorUtility.DisplayDialog(
                 $"{localCLIProvider} Setup Required", 
                 $"You are missing some essential {localCLIProvider} software and/or settings to run SpacetimeDB.\n" +
-                $"Please setup the following Software in {localCLIProvider}:\n" +
+                $"Please setup this Software:\n" +
                 string.Join("\n", missingSoftware) + "\n" +
-                $"Please set the following Pre-Requisites in {localCLIProvider}:\n" +
+                $"Please set these Pre-Requisites:\n" +
                 string.Join("\n", missingUserSettings),
-                "Server Setup Window", "Pre-Requisites"
+                "Software Setup Window", "Pre-Requisites Window"
             );
             if (needsInstallation)
             {
@@ -2546,11 +2569,12 @@ public class ServerWindow : EditorWindow
         {
             int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
                 $"{localCLIProvider} Setup Complete", 
-                $"You have everything necessary to run SpacetimeDB on {localCLIProvider}! \n\n" +
-                "Please proceed to Init New Module (if using a new module)\n\n" +
-                "Recommended: Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
-                "Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                "Init Module and Refresh Login", "Refresh Login", "Cancel"
+                $"All pre-requisites are met to run SpacetimeDB on {localCLIProvider}! \n\n" +
+                "Do the following if this is your first time setting up:\n\n" +
+                "Init New Module (if using a new module)\n\n" +
+                "Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
+                "Note: Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
+                "Init Module and Refresh Login", "Refresh Login", "Return to Main Window"
             );
             if (initModuleAndLogout == 0)
             {
@@ -2563,7 +2587,7 @@ public class ServerWindow : EditorWindow
                 // Only logout and login again to ensure a safe online login
                 LogoutAndLogin();
             }
-            // If Cancel do nothing
+            // If Return do nothing, but update the prerequisite state since we now have all prerequisites
 
             hasAllPrerequisites = true;
             CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);

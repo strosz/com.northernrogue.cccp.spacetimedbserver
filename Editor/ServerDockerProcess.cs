@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using System.Linq;
 using UnityEditor;
 using NorthernRogue.CCCP.Editor.Settings;
 
@@ -1278,7 +1279,68 @@ public class ServerDockerProcess
                 }
             }
 
-            return result;
+            // Analyze the result with error message handling (same as WSL version)
+            bool commandSuccess = false;
+            bool isPublishCommand = command.Contains("spacetime publish");
+            bool isGenerateCommand = command.Contains("spacetime generate");
+            bool isLogSizeCommand = command.Contains("du -s") || command.Contains("journalctl") && command.Contains("wc -c");
+
+            if (!string.IsNullOrEmpty(result.Item2) && result.Item2.Contains("Finished"))
+            {
+                if (isPublishCommand)
+                {
+                    //logCallback("Successfully published module!", 1);
+                    commandSuccess = true;
+                }
+                else if (isGenerateCommand)
+                {
+                    //logCallback("Successfully generated files!", 1);
+                    commandSuccess = true;
+                }
+                else
+                {
+                    logCallback("Command finished successfully!", 1);
+                    commandSuccess = true;
+                }
+            }
+            else if (result.Item2.Contains("tar: Removing leading `/' from member names"))
+            {
+                logCallback("Successfully backed up SpacetimeDB data!", 1);
+                commandSuccess = true;
+            }
+            else if (result.Item2.Contains("command not found") || result.Item2.Contains("not found"))
+            {
+                logCallback($"Error: The command (likely 'spacetime') was not found in the Docker container. Ensure SpacetimeDB is correctly installed and in the PATH.", -1);
+                commandSuccess = false;
+            }
+            else if (result.Item2.Contains("not detect the language of the module"))
+            {
+                logCallback("Please ensure Init New Module has run successfully on your selected module before publishing.", 0);
+                commandSuccess = false;
+                EditorUtility.DisplayDialog("Publish Error", "Please ensure Init New Module has run successfully on your selected module before publishing.", "OK");
+            }
+            else if (result.Item2.Contains("invalid characters in database name"))
+            {
+                logCallback("Please ensure your module name is written in lowercase characters.", -1);
+                commandSuccess = false;
+            }
+            else if (isLogSizeCommand && !string.IsNullOrEmpty(result.Item1) && result.Item1.Trim().All(char.IsDigit))
+            {
+                // Log size commands are successful if they return numeric output
+                commandSuccess = true;
+                if (debugMode) logCallback($"Log size command successful with output: {result.Item1.Trim()}", 1);
+            }
+            else if (result.Item3)
+            {
+                // Command succeeded based on exit code
+                commandSuccess = true;
+            }
+            else if (string.IsNullOrEmpty(result.Item1) && string.IsNullOrEmpty(result.Item2))
+            {
+                commandSuccess = true;
+            }
+
+            return (result.Item1, result.Item2, commandSuccess);
         }
         catch (Exception ex)
         {
@@ -1962,6 +2024,19 @@ public class ServerDockerProcess
             
             if (!string.IsNullOrEmpty(latestTag))
             {
+                // If current tag is "latest", resolve it to the actual version number
+                // This prevents false update notifications on first-time pulls with "latest" tag
+                if (currentTag == "latest")
+                {
+                    if (debugMode) logCallback("Current tag is 'latest', resolving to actual version number...", 0);
+                    string resolvedTag = await ResolveLatestTagToVersion(latestTag);
+                    if (!string.IsNullOrEmpty(resolvedTag))
+                    {
+                        currentTag = resolvedTag;
+                        if (debugMode) logCallback($"Resolved 'latest' tag to: {resolvedTag}", 0);
+                    }
+                }
+                
                 bool updateAvailable = currentTag != latestTag && !string.IsNullOrEmpty(currentTag);
                 if (debugMode) logCallback($"Latest SpacetimeDB Docker image tag: {latestTag}, update available: {updateAvailable}", 0);
                 return (currentTag, latestTag, updateAvailable);
@@ -1977,6 +2052,92 @@ public class ServerDockerProcess
             if (debugMode) logCallback($"Error checking for latest Docker image tag: {ex.Message}", -1);
             return ("", "", false);
         }
+    }
+    
+    /// <summary>
+    /// Resolves the "latest" tag to its actual version number by comparing image digests
+    /// or by using the provided latest version if they match
+    /// </summary>
+    private async Task<string> ResolveLatestTagToVersion(string latestVersionTag)
+    {
+        try
+        {
+            if (debugMode) logCallback($"Resolving 'latest' tag to version {latestVersionTag}...", 0);
+            
+            // Get the image ID of the currently running image with "latest" tag
+            string latestImageId = await GetDockerImageId($"{ImageName}:latest");
+            if (string.IsNullOrEmpty(latestImageId))
+            {
+                if (debugMode) logCallback("Could not get image ID for 'latest' tag", -1);
+                return "";
+            }
+            
+            // Get the image ID of the latest version tag from registry
+            string latestVersionImageId = await GetDockerImageId($"{ImageName}:{latestVersionTag}");
+            if (string.IsNullOrEmpty(latestVersionImageId))
+            {
+                // If we can't get the image ID for the version tag, assume they're the same
+                // This happens when the version tag image hasn't been pulled yet
+                if (debugMode) logCallback($"Assuming 'latest' matches version {latestVersionTag}", 0);
+                return latestVersionTag;
+            }
+            
+            // If the image IDs match, they're the same image
+            if (latestImageId == latestVersionImageId)
+            {
+                if (debugMode) logCallback($"'latest' tag matches version {latestVersionTag}", 0);
+                return latestVersionTag;
+            }
+            else
+            {
+                if (debugMode) logCallback($"'latest' tag does not match version {latestVersionTag} (different images)", -1);
+                return "";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error resolving latest tag: {ex.Message}", -1);
+            return "";
+        }
+    }
+    
+    /// <summary>
+    /// Gets the image ID of a Docker image by tag
+    /// Returns empty string if image not found or error occurs
+    /// Multiplatform compatible (Windows, Mac, Linux)
+    /// </summary>
+    private async Task<string> GetDockerImageId(string imageTag)
+    {
+        try
+        {
+            using (Process process = new Process())
+            {
+                process.StartInfo.FileName = "docker";
+                process.StartInfo.Arguments = $"inspect -f \"{{{{.ID}}}}\" {imageTag}";
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                
+                process.Start();
+                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                bool exited = await Task.Run(() => process.WaitForExit(5000)); // 5 second timeout
+                
+                if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    return output.Trim();
+                }
+                
+                if (!exited)
+                    process.Kill();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error getting Docker image ID for {imageTag}: {ex.Message}", -1);
+        }
+        
+        return "";
     }
     
     /// <summary>

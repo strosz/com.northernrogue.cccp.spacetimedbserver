@@ -19,36 +19,48 @@ public static class AssetStore
 
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button("Support", GUILayout.Height(30), GUILayout.Width(200)))
+        if (GUILayout.Button("Request Support", GUILayout.Height(30), GUILayout.Width(200)))
         {
-            try
-            {
-                // Get package info for direct path access (most efficient)
-                var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(System.Reflection.Assembly.GetExecutingAssembly());
-                if (packageInfo != null)
-                {
-                    string pdfPath = System.IO.Path.Combine(packageInfo.assetPath, "Support.pdf");
-                    if (System.IO.File.Exists(pdfPath))
-                    {
-                        Application.OpenURL("file:///" + pdfPath.Replace('\\', '/'));
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Support.pdf not found at expected location: " + pdfPath);
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("Could not find package information.");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning(new System.Exception("Failed to open Support.pdf", ex));
-            }
+            OpenSupportPDF();
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
+    }
+
+    private static void OpenSupportPDF()
+    {
+        try
+        {           
+            // Get package info for direct path access (most efficient)
+            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(System.Reflection.Assembly.GetExecutingAssembly());
+            if (packageInfo != null)
+            {
+                string pdfPath = System.IO.Path.Combine(packageInfo.assetPath, "Support.pdf");
+                
+                if (System.IO.File.Exists(pdfPath))
+                {
+                    // Use the system's file association to open the PDF (works on Windows, macOS, and Linux)
+                    System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo()
+                    {
+                        FileName = pdfPath,
+                        UseShellExecute = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                }
+                else
+                {
+                    Debug.LogWarning("Support.pdf not found at expected location: " + pdfPath);
+                }
+            }
+            else
+            {
+                Debug.LogWarning("Could not find the package information needed in order to open Support.pdf.");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning("Failed to open Support.pdf: " + ex.Message);
+        }
     }
 } // Class
 } // Namespace

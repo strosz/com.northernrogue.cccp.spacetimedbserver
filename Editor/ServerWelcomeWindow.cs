@@ -75,7 +75,7 @@ public class ServerWelcomeWindow : EditorWindow
         textStyle.richText = true;
 
         string welcomeMainWindow = 
-        "Welcome to Cosmos Cove Control Panel,\n a SpacetimeDB manager within Unity.\n\n" +
+        "Welcome to Cosmos Cove Control Panel,\n a SpacetimeDB server manager within Unity.\n\n" +
         "You can find a new menu at\n <b>Window>SpacetimeDB Server Manager</b>.\n\n" +
         "<size=125%><b>Quick Start</b></size>\n" +
         "1. Open the Main Window.\n <size=90%><color=grey>Enter the essential Shared Settings\n in Pre-Requisites.</color></size>\n\n";

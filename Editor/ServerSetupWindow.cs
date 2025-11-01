@@ -884,36 +884,6 @@ public class ServerSetupWindow : EditorWindow
     }
     #endregion
     
-    #region SDK Installation Dialog
-    
-    /// <summary>
-    /// Shows a dialog for installing SpacetimeDB SDK via Package Manager Git URL (Asset Store builds only)
-    /// </summary>
-    private void ShowSpacetimeDBSDKDialog()
-    {
-        const string sdkGitUrl = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git";
-        
-        int choice = EditorUtility.DisplayDialogComplex(
-            "Install SpacetimeDB SDK",
-            "To install the SpacetimeDB SDK, add it through Unity's Package Manager:\n\n" +
-            "1. Open Package Manager\n" +
-            "2. Click the '+' button\n" +
-            "3. Select 'Add package from git URL...'\n" +
-            "4. Paste the official repository URL\n\n" +
-            "Official Git Repository:\n" + sdkGitUrl,
-            "Official Website",
-            "Cancel",
-            ""
-        );
-        
-        if (choice == 0) // "Official Git" button pressed
-        {
-            Application.OpenURL(sdkGitUrl);
-        }
-    }
-    
-    #endregion
-    
     #region Draw UI
     
     private void DrawToolbar()
@@ -1411,15 +1381,29 @@ public class ServerSetupWindow : EditorWindow
             EditorGUILayout.Space(2);
         }
         
-        // If disabled, add a note about prerequisites
+        // If disabled, add a note about prerequisites depending on current tab
         if (isDisabled && !userNamePrompt)
         {
             GUIStyle prereqStyle = new GUIStyle(EditorStyles.miniLabel);
             prereqStyle.normal.textColor = new Color(0.7f, 0.5f, 0.3f); // Orange
-            if (!hasDebianTrixie)
-            EditorGUILayout.LabelField("Requires WSL with Debian Trixie to be installed first", prereqStyle);
-            else if (!hasCurl)
-            EditorGUILayout.LabelField("Requires cURL to be installed first", prereqStyle);
+            if (currentTab == wslTabIndex) {
+                if (!hasDebianTrixie)
+                    EditorGUILayout.LabelField("Requires WSL with Debian Trixie to be installed first", prereqStyle);
+                else if (!hasCurl)
+                    EditorGUILayout.LabelField("Requires cURL to be installed first", prereqStyle);
+            } 
+            else if (currentTab == dockerTabIndex) 
+            {
+                if (!hasDocker)
+                    EditorGUILayout.LabelField("Requires Docker Desktop to be installed first", prereqStyle);
+            } 
+            else if (currentTab == customTabIndex) 
+            {
+                if (!hasCustomDebianTrixie)
+                    EditorGUILayout.LabelField("Requires Debian Trixie on the remote server", prereqStyle);
+                else if (!hasCustomCurl)
+                    EditorGUILayout.LabelField("Requires cURL to be installed on the remote server", prereqStyle);
+            }
         }
         
         // Restore original color
@@ -1653,21 +1637,25 @@ public class ServerSetupWindow : EditorWindow
             isDockerRefreshing = false;
             
             // Provide more detailed status messages
-            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
+            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts && hasSpacetimeDBUnitySDK)
             {
                 SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
             }
+            else if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
+            {
+                SetStatus("Docker has all components. Please install the SpacetimeDB Unity SDK.", Color.yellow);
+            }
             else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMounts)
             {
-                SetStatus("Docker ready but container needs volume mount configuration.", Color.yellow);
+                SetStatus("Docker image ready for volume mount configuration.", Color.yellow);
             }
             else if (hasDocker && hasDockerCompose)
             {
-                SetStatus("Docker is installed. SpacetimeDB image will be pulled when needed.", Color.green);
+                SetStatus("Docker is installed. Please download the SpacetimeDB image.", Color.green);
             }
-            else if (hasDocker && !hasDockerCompose)
+            else if (hasDocker && !hasDockerCompose) // Compose is not currently used
             {
-                SetStatus("Docker is installed but Docker Compose is not available. Please update Docker Desktop.", Color.yellow);
+                //SetStatus("Docker is installed but Docker Compose is not available. Please update Docker Desktop.", Color.yellow);
             }
             else if (!hasDocker)
             {
@@ -1767,10 +1755,10 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("Docker Desktop required. Please visit: https://www.docker.com/products/docker-desktop/", Color.yellow);
         
         if (EditorUtility.DisplayDialog("Docker Desktop Required",
-            "Docker Desktop needs to be installed to run a SpacetimeDB CLI and Server in Docker mode.\n\n" +
+            "Docker Desktop needs to be installed for a SpacetimeDB environment and server in Docker server mode.\n\n" +
             "Please visit the official Docker Desktop homepage and install your desired distribution.\n\n" +
-            "After installation, click Refresh to verify.",
-            "Open Docker Homepage", "Cancel"))
+            "If this is your first time installing Docker, restart if prompted and continue with the Setup Window.",
+            "Docker Official Homepage", "Cancel"))
         {
             Application.OpenURL("https://www.docker.com/products/docker-desktop/");
         }
@@ -1780,14 +1768,21 @@ public class ServerSetupWindow : EditorWindow
     {
         SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
         
-        if (EditorUtility.DisplayDialog("SpacetimeDB Docker Image Required",
-            "The SpacetimeDB Docker image needs to be pulled manually.\n\n" +
-            "1. Visit the official SpacetimeDB installation page and copy the Docker command.\n\n" +
-            "2. Replace the port 3000:3000 with your desired port mapping (i.e. 3011:3000) in the Docker command and run it in your Docker Desktop terminal.\n\n" +
-            "3. After pulling the image, click Refresh to verify.",
-            "Open SpacetimeDB Homepage", "Cancel"))
+        int dockerImageChoice = EditorUtility.DisplayDialogComplex("SpacetimeDB Docker Image Required",
+            "The official SpacetimeDB Docker image command can be found on their homepage.\n\n" +
+            "1. The Docker command below is provided for convenience and pulls the image with the correct parameters:\n" +
+            "docker run --rm --pull always -p 3011:3000 clockworklabs/spacetime\n\n" +
+            "2. Open your Docker Desktop terminal by clicking the >_ icon in the lower right of Docker Desktop and press Enable if asked.\n" +
+            "Paste, run the command and then wait for the download to finish.\n\n" +
+            "3. Click 'Refresh' when done to verify the image was downloaded successfully.",
+            "SpacetimeDB Official Homepage", "Refresh", "Cancel");
+        if (dockerImageChoice == 0)
         {
-            Application.OpenURL("https://spacetimedb.com/install#docker");
+            Application.OpenURL("https://spacetimedb.com/install");
+        }
+        else if (dockerImageChoice == 1)
+        {
+            CheckPrerequisitesDocker();
         }
     }
     
@@ -1964,6 +1959,34 @@ public class ServerSetupWindow : EditorWindow
         {
             EditorUtility.ClearProgressBar();
             Repaint();
+        }
+    }
+    
+    #endregion
+
+    #region SDK Setup
+    
+    /// <summary>
+    /// Shows a dialog for installing SpacetimeDB SDK via Package Manager Git URL (Asset Store builds only)
+    /// </summary>
+    private void ShowSpacetimeDBSDKDialog()
+    {
+        const string sdkGitUrl = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git";
+        
+        bool setupSDKChoice = EditorUtility.DisplayDialog(
+            "Setup SpacetimeDB SDK",
+            "To install the SpacetimeDB SDK, add it through Unity's Package Manager:\n\n" +
+            "1. Copy the official SpacetimeDB SDK git URL"+
+            "It is provided here for convenience:\n" 
+            + sdkGitUrl + "\n"+
+            "2. Open Package Manager and click the '+' button\n" +
+            "3. Select 'Add package from git URL...' and paste the above URL\n" +
+            "4. Refresh the Setup Window to confirm the SDK installation.\n\n" +
+            "Official SDK Homepage", "Cancel"
+        );
+        if (setupSDKChoice) // "Official Git" button pressed
+        {
+            Application.OpenURL(sdkGitUrl);
         }
     }
     
