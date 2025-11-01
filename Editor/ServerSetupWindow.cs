@@ -572,6 +572,10 @@ public class ServerSetupWindow : EditorWindow
                     {
                         CheckDockerImage();
                     }
+                    else if (hasDockerImage && forceInstall)
+                    {
+                        CheckDockerImage();
+                    }
                     else if (dockerImageUpdateAvailable)
                     {
                         UpdateDockerImage();
@@ -1769,8 +1773,8 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
         
         int dockerImageChoice = EditorUtility.DisplayDialogComplex("SpacetimeDB Docker Image Required",
-            "The official SpacetimeDB Docker image command can be found on their homepage.\n\n" +
-            "1. The Docker command below is provided for convenience and pulls the image with the correct parameters:\n" +
+            "The SpacetimeDB Docker image download command can be found on their homepage.\n\n" +
+            "1. Copy the official Docker command below with the correct parameters:\n" +
             "docker run --rm --pull always -p 3011:3000 clockworklabs/spacetime\n\n" +
             "2. Open your Docker Desktop terminal by clicking the >_ icon in the lower right of Docker Desktop and press Enable if asked.\n" +
             "Paste, run the command and then wait for the download to finish.\n\n" +
@@ -1976,13 +1980,13 @@ public class ServerSetupWindow : EditorWindow
         bool setupSDKChoice = EditorUtility.DisplayDialog(
             "Setup SpacetimeDB SDK",
             "To install the SpacetimeDB SDK, add it through Unity's Package Manager:\n\n" +
-            "1. Copy the official SpacetimeDB SDK git URL"+
+            "1. Copy the official SpacetimeDB SDK git URL.\n"+
             "It is provided here for convenience:\n" 
             + sdkGitUrl + "\n"+
             "2. Open Package Manager and click the '+' button\n" +
             "3. Select 'Add package from git URL...' and paste the above URL\n" +
-            "4. Refresh the Setup Window to confirm the SDK installation.\n\n" +
-            "Official SDK Homepage", "Cancel"
+            "4. Refresh the Setup Window to confirm the SDK installation.\n\n",
+            "Official SDK Homepage", "Return to Setup Window"
         );
         if (setupSDKChoice) // "Official Git" button pressed
         {

@@ -1821,10 +1821,10 @@ public class ServerWindow : EditorWindow
         }
         
         // Start or Stop Server button
-        if (serverMode != ServerMode.MaincloudServer) // Maincloud is always running
+        if (serverMode != ServerMode.MaincloudServer) // Maincloud is always running remotely, so we don't need to show any start/stop button
         {
             serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp; // Update running state
-            if (!serverManager.WslPrerequisitesChecked || !serverManager.HasAllPrerequisites)
+            if (!serverManager.HasAllPrerequisites)
             {
                 if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
                 {
@@ -2567,6 +2567,8 @@ public class ServerWindow : EditorWindow
         }
         else if (essentialSoftware && essentialUserSettings)
         {
+            serverManager.StartServer();
+
             int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
                 $"{localCLIProvider} Setup Complete", 
                 $"All pre-requisites are met to run SpacetimeDB on {localCLIProvider}! \n\n" +
