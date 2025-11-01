@@ -2794,7 +2794,7 @@ public class ServerWindow : EditorWindow
             }
             serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
             await Task.Delay(1000); // Wait for logout to complete
-            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
+            serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB online login...");
         }
         else if (localCLIProvider == "WSL") {
             if (serverRunning) // WSL is service based, so stop the spacetimedb service first if running
