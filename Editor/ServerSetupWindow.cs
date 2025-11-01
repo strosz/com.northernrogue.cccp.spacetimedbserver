@@ -1762,7 +1762,7 @@ public class ServerSetupWindow : EditorWindow
             "Docker Desktop needs to be installed for a SpacetimeDB environment and server in Docker server mode.\n\n" +
             "Please visit the official Docker Desktop homepage and install your desired distribution.\n\n" +
             "If this is your first time installing Docker, restart if prompted and continue with the Setup Window.",
-            "Docker Official Homepage", "Cancel"))
+            "Docker Official Homepage", "Return to Setup Window"))
         {
             Application.OpenURL("https://www.docker.com/products/docker-desktop/");
         }
@@ -1787,6 +1787,7 @@ public class ServerSetupWindow : EditorWindow
         else if (dockerImageChoice == 1)
         {
             CheckPrerequisitesDocker();
+            serverManager.StartServer();
         }
     }
     

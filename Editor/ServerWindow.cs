@@ -2432,6 +2432,12 @@ public class ServerWindow : EditorWindow
 
     public void CheckPrerequisites()
     {
+        // Refresh SDK status to get the latest state (checks assembly first, then package manager)
+        ServerSpacetimeSDKInstaller.IsSDKInstalled((sdkInstalled) => {
+            hasSpacetimeDBUnitySDK = sdkInstalled;
+            CCCPSettingsAdapter.SetHasSpacetimeDBUnitySDK(sdkInstalled);
+        });
+
         if (localCLIProvider == "Docker")
         {
             if (dockerProcess == null)
@@ -2496,7 +2502,7 @@ public class ServerWindow : EditorWindow
                     hasBinaryen = binaryen;
                     hasGit = git;
                     hasNETSDK = netSdk;
-                    CCCPSettingsAdapter.SetWslPrerequisitesChecked(true);
+                    CCCPSettingsAdapter.SetWslPrerequisitesChecked(true); // If we need to see if WSL prerequisites have been checked
                     
                     // Load userName value 
                     userName = serverManager.UserName;
@@ -2567,35 +2573,40 @@ public class ServerWindow : EditorWindow
         }
         else if (essentialSoftware && essentialUserSettings)
         {
-            serverManager.StartServer();
-
-            int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
-                $"{localCLIProvider} Setup Complete", 
-                $"All pre-requisites are met to run SpacetimeDB on {localCLIProvider}! \n\n" +
-                "Do the following if this is your first time setting up:\n\n" +
-                "Init New Module (if using a new module)\n\n" +
-                "Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
-                "Note: Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
-                "Init Module and Refresh Login", "Refresh Login", "Return to Main Window"
-            );
-            if (initModuleAndLogout == 0)
-            {
-                InitNewModule();
-                // Also logout and login again to ensure a safe online login
-                LogoutAndLogin();
-            } 
-            else if (initModuleAndLogout == 1)
-            {
-                // Only logout and login again to ensure a safe online login
-                LogoutAndLogin();
-            }
-            // If Return do nothing, but update the prerequisite state since we now have all prerequisites
-
             hasAllPrerequisites = true;
             CCCPSettingsAdapter.SetHasAllPrerequisites(hasAllPrerequisites);
 
             publishFirstModule = true;
             CCCPSettingsAdapter.SetPublishFirstModule(publishFirstModule);
+
+            if (!serverRunning) serverManager.StartServer();
+
+            // Schedule showing the dialog after a brief delay to let the startup process begin
+            EditorApplication.delayCall += () => {
+                // Give the server a moment to initialize
+                EditorApplication.delayCall += () => {
+                    int initModuleAndLogout = EditorUtility.DisplayDialogComplex(
+                    $"{localCLIProvider} Setup Complete", 
+                    $"All pre-requisites are met to run SpacetimeDB on {localCLIProvider}! \n\n" +
+                    "Do the following if this is your first time setting up:\n\n" +
+                    "Init New Module (if using a new module)\n\n" +
+                    "Logout and then Login again (Refresh Login) to switch from the default SpacetimeDB offline Login to an online Login which is easier to recover.\n\n" +
+                    "Note: Remember to copy your auth token to the Pre-Requisites section after your first publish to enable all functionality.",
+                    "Init Module and Refresh Login", "Refresh Login", "Return to Main Window"
+                    );
+                    if (initModuleAndLogout == 0)
+                    {
+                        InitNewModule();
+                        // Also logout and login again to ensure a safe online login
+                        LogoutAndLogin();
+                    } 
+                    else if (initModuleAndLogout == 1)
+                    {
+                        // Only logout and login again to ensure a safe online login
+                        LogoutAndLogin();
+                    }
+                };
+            };
         }
         // After writing module name this will appear (when essential software and user settings)
         else if (essentialSoftware && essentialUserSettings && !initializedFirstModule)

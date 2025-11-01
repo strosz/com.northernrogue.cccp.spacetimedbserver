@@ -801,12 +801,6 @@ public class ServerManager
 
     public void StartServer()
     {
-        if (!WslPrerequisitesChecked)
-        {
-            LogMessage("Prerequisites need to be checked before starting the server.", -2);
-            return;
-        }
-
         switch (Settings.serverMode)
         {
             case ServerMode.WSLServer:
@@ -829,13 +823,9 @@ public class ServerManager
 
     private void StartWSLServer()
     {
-        if (!HasWSL || !HasDebian || !HasDebianTrixie || !HasSpacetimeDBService)
+        if (!HasWSL || !HasDebian || !HasDebianTrixie || !HasSpacetimeDBService || string.IsNullOrEmpty(UserName))
         {
-            LogMessage("Missing required installed items. Will attempt to start server.", -2);
-        }
-        if (string.IsNullOrEmpty(UserName))
-        {
-            LogMessage("Cannot start server. Debian username is not set.", -1);
+            LogMessage("WSL is missing required software or settings. Please check your pre-requisites and try again.", -2);
             return;
         }
         
@@ -938,6 +928,12 @@ public class ServerManager
 
     private void StartDockerServer()
     {
+        if (!hasDocker || !hasDockerImage)
+        {
+            LogMessage("Docker is not installed or image not detected. Check pre-requisites and try again.", -1);
+            return;
+        }
+
         LogMessage("Start sequence initiated for Docker server. Waiting for confirmation...", 0);
         
         EditorApplication.delayCall += async () => {
