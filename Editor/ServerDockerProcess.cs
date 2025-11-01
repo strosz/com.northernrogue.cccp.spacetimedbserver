@@ -44,6 +44,16 @@ public class ServerDockerProcess
         
         if (debugMode) UnityEngine.Debug.Log($"[ServerDockerProcess] Initialized");
     }
+
+    /// <summary>
+    /// Configures a ProcessStartInfo for Docker execution with proper PATH handling for macOS
+    /// </summary>
+    /// <param name="processStartInfo">The ProcessStartInfo to configure</param>
+    private void ConfigureDockerProcess(System.Diagnostics.ProcessStartInfo processStartInfo)
+    {
+        processStartInfo.FileName = ServerUtilityProvider.GetDockerExecutablePath();
+        ServerUtilityProvider.SetEnhancedPATHForProcess(processStartInfo);
+    }
     
     #region Installation
 
@@ -217,7 +227,9 @@ public class ServerDockerProcess
                 // Just open a window to the existing container
                 Process logProcess = new Process();
                 logProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker logs -f {ContainerName}");
+                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                    ServerUtilityProvider.GetDockerShellCommand($"logs -f {ContainerName}")
+                );
                 logProcess.StartInfo.UseShellExecute = true;
                 logProcess.Start();
                 return logProcess;
@@ -230,7 +242,9 @@ public class ServerDockerProcess
                 // Start existing stopped container
                 Process startProcess = new Process();
                 startProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker start {ContainerName}");
+                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                    ServerUtilityProvider.GetDockerShellCommand($"start {ContainerName}")
+                );
                 startProcess.StartInfo.UseShellExecute = false;
                 startProcess.StartInfo.CreateNoWindow = true;
                 startProcess.Start();
@@ -239,7 +253,9 @@ public class ServerDockerProcess
                 // Now show logs
                 Process logProcess = new Process();
                 logProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker logs -f {ContainerName}");
+                logProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                    ServerUtilityProvider.GetDockerShellCommand($"logs -f {ContainerName}")
+                );
                 logProcess.StartInfo.UseShellExecute = true;
                 logProcess.Start();
                 return logProcess;
@@ -291,9 +307,11 @@ public class ServerDockerProcess
             // Start Docker container with interactive mode
             // Note: NOT using --rm so container persists and can be stopped/restarted
             // Override entrypoint and use --user root to ensure permissions on the volumes
-            string dockerCommand = $"docker run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
+            string dockerCommand = $"run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
             
-            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand(dockerCommand)
+            );
             process.StartInfo.UseShellExecute = true;
             
             if (debugMode) logCallback($"Starting SpacetimeDB Server on port {hostPort} (Docker Visible Shell)...", 0);
@@ -331,7 +349,9 @@ public class ServerDockerProcess
                 // Start existing stopped container
                 Process startProcess = new Process();
                 startProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker start {ContainerName}");
+                startProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                    ServerUtilityProvider.GetDockerShellCommand($"start {ContainerName}")
+                );
                 startProcess.StartInfo.UseShellExecute = false;
                 startProcess.StartInfo.CreateNoWindow = true;
                 startProcess.StartInfo.RedirectStandardOutput = true;
@@ -396,13 +416,15 @@ public class ServerDockerProcess
             // Container doesn't exist, create new one
             // Start Docker container in detached mode
             // Override entrypoint and use --user root to ensure permissions on the volumes
-            string dockerCommand = $"docker run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
+            string dockerCommand = $"run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
             
-            if (debugMode) logCallback($"Docker command: {dockerCommand}", 0);
+            if (debugMode) logCallback($"Docker command: {ServerUtilityProvider.GetDockerShellCommand(dockerCommand)}", 0);
             
             Process process = new Process();
             process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable(); 
-            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(dockerCommand);
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand(dockerCommand)
+            );
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardOutput = true;
@@ -442,7 +464,9 @@ public class ServerDockerProcess
             // Open Docker Desktop or attach to running container
             Process process = new Process();
             process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments($"docker exec -it {ContainerName} /bin/bash");
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand($"exec -it {ContainerName} /bin/bash")
+            );
             process.StartInfo.UseShellExecute = true;
             process.Start();
         }
@@ -462,7 +486,9 @@ public class ServerDockerProcess
         {
             Process process = new Process();
             process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments("docker-compose down");
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand("compose down")
+            );
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
@@ -482,7 +508,9 @@ public class ServerDockerProcess
         {
             Process process = new Process();
             process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments("docker-compose up -d");
+            process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand("compose up -d")
+            );
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.Start();
@@ -501,11 +529,11 @@ public class ServerDockerProcess
         try
         {
             // Use Docker Desktop's official shutdown command (works on all platforms on Docker Desktop 4.11.0+)
-            string quitCommand = "docker desktop stop";
-
             Process quitProcess = new Process();
             quitProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            quitProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(quitCommand);
+            quitProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
+                ServerUtilityProvider.GetDockerShellCommand("desktop stop")
+            );
             quitProcess.StartInfo.UseShellExecute = false;
             quitProcess.StartInfo.CreateNoWindow = true;
             quitProcess.StartInfo.RedirectStandardOutput = true;
@@ -553,7 +581,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = $"ps --filter name={ContainerName} --format \"{{{{.Names}}}}\"";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -641,57 +669,66 @@ public class ServerDockerProcess
 
             try
             {
-                // Step 1: Check if Docker CLI is installed (platform-agnostic)
-                // Use 'docker --version' which works even if daemon isn't running
-                using (Process dockerVersionCheck = new Process())
+                // Step 1: Check if Docker CLI is installed with fallback paths for macOS
+                // On macOS, GUI apps don't inherit full shell PATH, so we try multiple locations
+                string[] dockerPaths = ServerUtilityProvider.GetDockerExecutablePaths();
+                
+                foreach (string dockerPath in dockerPaths)
                 {
-                    dockerVersionCheck.StartInfo.FileName = "docker";
-                    dockerVersionCheck.StartInfo.Arguments = "--version";
-                    dockerVersionCheck.StartInfo.RedirectStandardOutput = true;
-                    dockerVersionCheck.StartInfo.RedirectStandardError = true;
-                    dockerVersionCheck.StartInfo.UseShellExecute = false;
-                    dockerVersionCheck.StartInfo.CreateNoWindow = true;
-                    
-                    dockerVersionCheck.Start();
-                    string output = dockerVersionCheck.StandardOutput.ReadToEnd();
-                    string error = dockerVersionCheck.StandardError.ReadToEnd();
-                    bool exited = dockerVersionCheck.WaitForExit(5000);
-                    
-                    if (exited && dockerVersionCheck.ExitCode == 0 && output.Contains("Docker version"))
+                    using (Process dockerVersionCheck = new Process())
                     {
-                        hasDocker = true;
-                        if (debugMode)
+                        dockerVersionCheck.StartInfo.FileName = dockerPath;
+                        dockerVersionCheck.StartInfo.Arguments = "--version";
+                        dockerVersionCheck.StartInfo.RedirectStandardOutput = true;
+                        dockerVersionCheck.StartInfo.RedirectStandardError = true;
+                        dockerVersionCheck.StartInfo.UseShellExecute = false;
+                        dockerVersionCheck.StartInfo.CreateNoWindow = true;
+                        
+                        // Enhance PATH for the process on macOS/Linux
+                        ServerUtilityProvider.SetEnhancedPATHForProcess(dockerVersionCheck.StartInfo);
+                        
+                        try
                         {
-                            UnityEngine.Debug.Log($"[ServerDockerProcess] Docker is installed: {output.Trim()}");
-                        }
-                    }
-                    else
-                    {
-                        if (debugMode)
-                        {
+                            dockerVersionCheck.Start();
+                            string output = dockerVersionCheck.StandardOutput.ReadToEnd();
+                            string error = dockerVersionCheck.StandardError.ReadToEnd();
+                            bool exited = dockerVersionCheck.WaitForExit(5000);
+                            
+                            if (exited && dockerVersionCheck.ExitCode == 0 && output.Contains("Docker version"))
+                            {
+                                hasDocker = true;
+                                if (debugMode)
+                                {
+                                    UnityEngine.Debug.Log($"[ServerDockerProcess] Docker is installed (found at {dockerPath}): {output.Trim()}");
+                                }
+                                break; // Found Docker, exit loop
+                            }
+                            else if (debugMode && dockerPath != "docker") // Only log for specific paths, not PATH attempts
+                            {
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker not found at {dockerPath}");
+                            }
+                            
                             if (!exited)
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check timed out - Docker may not be installed");
+                                try { dockerVersionCheck.Kill(); } catch { }
                             }
-                            else if (dockerVersionCheck.ExitCode != 0)
+                        }
+                        catch (System.ComponentModel.Win32Exception)
+                        {
+                            // This path doesn't exist, try the next one
+                            if (debugMode && dockerPath != "docker")
                             {
-                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check failed (exit code {dockerVersionCheck.ExitCode})");
-                                if (!string.IsNullOrEmpty(error))
-                                {
-                                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Error: {error.Trim()}");
-                                }
-                            }
-                            else
-                            {
-                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker version check succeeded but output doesn't contain version info: {output}");
+                                UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker executable not found at {dockerPath}");
                             }
                         }
                     }
                     
-                    if (!exited)
-                    {
-                        try { dockerVersionCheck.Kill(); } catch { }
-                    }
+                    if (hasDocker) break; // Exit outer loop if Docker found
+                }
+                
+                if (!hasDocker && debugMode)
+                {
+                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker executable not found in any of the expected locations");
                 }
 
                 // Step 2: If Docker CLI exists, check if daemon is running
@@ -699,12 +736,15 @@ public class ServerDockerProcess
                 {
                     using (Process dockerPingCheck = new Process())
                     {
-                        dockerPingCheck.StartInfo.FileName = "docker";
+                        string dockerExe = ServerUtilityProvider.GetDockerExecutablePath();
+                        dockerPingCheck.StartInfo.FileName = dockerExe;
                         dockerPingCheck.StartInfo.Arguments = "info";
                         dockerPingCheck.StartInfo.RedirectStandardOutput = true;
                         dockerPingCheck.StartInfo.RedirectStandardError = true;
                         dockerPingCheck.StartInfo.UseShellExecute = false;
                         dockerPingCheck.StartInfo.CreateNoWindow = true;
+                        
+                        ServerUtilityProvider.SetEnhancedPATHForProcess(dockerPingCheck.StartInfo);
                         
                         dockerPingCheck.Start();
                         string output = dockerPingCheck.StandardOutput.ReadToEnd();
@@ -744,12 +784,15 @@ public class ServerDockerProcess
                     // Check if Docker Compose is available
                     using (Process composeCheck = new Process())
                     {
-                        composeCheck.StartInfo.FileName = "docker";
+                        string dockerExe = ServerUtilityProvider.GetDockerExecutablePath();
+                        composeCheck.StartInfo.FileName = dockerExe;
                         composeCheck.StartInfo.Arguments = "compose version";
                         composeCheck.StartInfo.RedirectStandardOutput = true;
                         composeCheck.StartInfo.RedirectStandardError = true;
                         composeCheck.StartInfo.UseShellExecute = false;
                         composeCheck.StartInfo.CreateNoWindow = true;
+                        
+                        ServerUtilityProvider.SetEnhancedPATHForProcess(composeCheck.StartInfo);
                         
                         composeCheck.Start();
                         string output = composeCheck.StandardOutput.ReadToEnd();
@@ -785,12 +828,15 @@ public class ServerDockerProcess
                     // Step 4: Check if SpacetimeDB image exists locally (only if Docker daemon is running)
                     using (Process imageCheck = new Process())
                     {
-                        imageCheck.StartInfo.FileName = "docker";
+                        string dockerExe = ServerUtilityProvider.GetDockerExecutablePath();
+                        imageCheck.StartInfo.FileName = dockerExe;
                         imageCheck.StartInfo.Arguments = $"images -q {ImageName}";
                         imageCheck.StartInfo.RedirectStandardOutput = true;
                         imageCheck.StartInfo.RedirectStandardError = true;
                         imageCheck.StartInfo.UseShellExecute = false;
                         imageCheck.StartInfo.CreateNoWindow = true;
+                        
+                        ServerUtilityProvider.SetEnhancedPATHForProcess(imageCheck.StartInfo);
                         
                         imageCheck.Start();
                         string output = imageCheck.StandardOutput.ReadToEnd();
@@ -825,14 +871,6 @@ public class ServerDockerProcess
                             try { imageCheck.Kill(); } catch { }
                         }
                     }
-                }
-            }
-            catch (System.ComponentModel.Win32Exception ex)
-            {
-                // This exception occurs when the executable is not found (Docker not in PATH)
-                if (debugMode) 
-                {
-                    UnityEngine.Debug.LogWarning($"[ServerDockerProcess] Docker executable not found. Docker may not be installed or not in system PATH: {ex.Message}");
                 }
             }
             catch (Exception ex)
@@ -877,7 +915,7 @@ public class ServerDockerProcess
             // Inspect the container to check mounts
             using (Process inspectProcess = new Process())
             {
-                inspectProcess.StartInfo.FileName = "docker";
+                ConfigureDockerProcess(inspectProcess.StartInfo);
                 inspectProcess.StartInfo.Arguments = $"inspect {ContainerName}";
                 inspectProcess.StartInfo.UseShellExecute = false;
                 inspectProcess.StartInfo.RedirectStandardOutput = true;
@@ -984,7 +1022,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = $"stop {containerName}";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -1071,7 +1109,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = $"rm {containerName}";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -1155,7 +1193,7 @@ public class ServerDockerProcess
         {
             using (Process process = new Process())
             {
-                process.StartInfo.FileName = "docker";
+                ConfigureDockerProcess(process.StartInfo);
                 process.StartInfo.Arguments = dockerCommand;
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.CreateNoWindow = true;
@@ -1199,7 +1237,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = dockerExecCommand;
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -1365,7 +1403,7 @@ public class ServerDockerProcess
             // Check if container exists (running or stopped)
             using (Process checkProcess = new Process())
             {
-                checkProcess.StartInfo.FileName = "docker";
+                ConfigureDockerProcess(checkProcess.StartInfo);
                 checkProcess.StartInfo.Arguments = $"ps -a --filter name={containerName} --format {{{{.Names}}}}";
                 checkProcess.StartInfo.UseShellExecute = false;
                 checkProcess.StartInfo.RedirectStandardOutput = true;
@@ -1385,7 +1423,7 @@ public class ServerDockerProcess
                 // Container exists, now check if it's running
                 using (Process runningCheck = new Process())
                 {
-                    runningCheck.StartInfo.FileName = "docker";
+                    ConfigureDockerProcess(runningCheck.StartInfo);
                     runningCheck.StartInfo.Arguments = $"ps --filter name={containerName} --format {{{{.Names}}}}";
                     runningCheck.StartInfo.UseShellExecute = false;
                     runningCheck.StartInfo.RedirectStandardOutput = true;
@@ -1581,7 +1619,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = "version";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -1618,32 +1656,21 @@ public class ServerDockerProcess
     {
         try
         {
-            // On Windows, try to start Docker Desktop
+            // Cross-platform Docker Desktop launch
             if (debugMode) logCallback("[ServerDockerProcess] Attempting to start Docker Desktop...", 0);
             
             var result = await Task.Run(() =>
             {
                 try
                 {
-                    // Try to start Docker Desktop executable
-                    string dockerDesktopPath = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                        "Docker", "Docker", "Docker Desktop.exe"
-                    );
-
-                    if (System.IO.File.Exists(dockerDesktopPath))
+                    bool launched = ServerUtilityProvider.LaunchDockerDesktop();
+                    
+                    if (!launched && debugMode)
                     {
-                        Process.Start(dockerDesktopPath);
-                        return true;
+                        logCallback($"[ServerDockerProcess] Failed to launch Docker Desktop - it may not be installed or not in expected location", -1);
                     }
-                    else
-                    {
-                        if (debugMode) 
-                        {
-                            logCallback($"[ServerDockerProcess] Docker Desktop not found at: {dockerDesktopPath}", -1);
-                        }
-                        return false;
-                    }
+                    
+                    return launched;
                 }
                 catch (Exception ex)
                 {
@@ -1717,7 +1744,7 @@ public class ServerDockerProcess
                 {
                     using (Process process = new Process())
                     {
-                        process.StartInfo.FileName = "docker";
+                        ConfigureDockerProcess(process.StartInfo);
                         process.StartInfo.Arguments = $"logs --tail {tailLines} {ContainerName}";
                         process.StartInfo.RedirectStandardOutput = true;
                         process.StartInfo.RedirectStandardError = true;
@@ -1964,8 +1991,8 @@ public class ServerDockerProcess
             
             using (Process process = new Process())
             {
-                process.StartInfo.FileName = "cmd.exe";
-                process.StartInfo.Arguments = $"/c docker images {ImageName}";
+                ConfigureDockerProcess(process.StartInfo);
+                process.StartInfo.Arguments = $"images {ImageName}";
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.UseShellExecute = false;
@@ -2112,7 +2139,7 @@ public class ServerDockerProcess
         {
             using (Process process = new Process())
             {
-                process.StartInfo.FileName = "docker";
+                ConfigureDockerProcess(process.StartInfo);
                 process.StartInfo.Arguments = $"inspect -f \"{{{{.ID}}}}\" {imageTag}";
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
@@ -2148,61 +2175,58 @@ public class ServerDockerProcess
     {
         try
         {
-            // Use PowerShell to query Docker Hub API for tags
+            // Cross-platform: Use C# HttpClient to query Docker Hub API for tags
             // We get multiple tags and filter for the first one that looks like a version number (contains dot)
-            using (Process process = new Process())
+            using (var httpClient = new System.Net.Http.HttpClient())
             {
-                process.StartInfo.FileName = "powershell.exe";
-                process.StartInfo.Arguments = "-Command \"" +
-                    "$response = Invoke-RestMethod -Uri 'https://registry.hub.docker.com/v2/repositories/clockworklabs/spacetime/tags?page_size=100' -ErrorAction SilentlyContinue; " +
-                    "if ($response -and $response.results) { " +
-                        // Find the first tag that looks like a version number (vX.Y.Z or X.Y.Z)
-                        "$versionTag = $response.results | Where-Object { $_.name -match '^v?[0-9]+\\.[0-9]+' -and $_.name -ne 'latest' } | Select-Object -First 1; " +
-                        "if ($versionTag) { " +
-                            "Write-Host $versionTag.name; " +
-                        "} else { " +
-                            "Write-Host 'Error'; " +
-                        "} " +
-                    "} else { " +
-                        "Write-Host 'Error'; " +
-                    "} " +
-                    "\"";
+                httpClient.Timeout = TimeSpan.FromSeconds(10);
                 
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.RedirectStandardError = true;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.CreateNoWindow = true;
-                
-                process.Start();
-                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
-                bool exited = await Task.Run(() => process.WaitForExit(10000));
-                
-                if (exited && process.ExitCode == 0)
+                try
                 {
-                    string latestTag = output.Trim();
-                    if (!latestTag.Contains("Error") && !string.IsNullOrEmpty(latestTag))
+                    string url = "https://registry.hub.docker.com/v2/repositories/clockworklabs/spacetime/tags?page_size=100";
+                    var response = await httpClient.GetStringAsync(url);
+                    
+                    // Parse JSON manually (avoiding dependencies)
+                    // Look for version tags in format "name":"vX.Y.Z" or "name":"X.Y.Z"
+                    var nameMatches = System.Text.RegularExpressions.Regex.Matches(
+                        response, 
+                        @"""name""\s*:\s*""(v?[0-9]+\.[0-9]+[^""]*?)""");
+                    
+                    foreach (System.Text.RegularExpressions.Match match in nameMatches)
                     {
-                        if (debugMode) logCallback($"Retrieved latest version tag from registry: {latestTag}", 0);
-                        return latestTag;
+                        if (match.Groups.Count > 1)
+                        {
+                            string tagName = match.Groups[1].Value;
+                            
+                            // Skip "latest" and find first version-like tag
+                            if (tagName != "latest" && System.Text.RegularExpressions.Regex.IsMatch(tagName, @"^v?[0-9]+\.[0-9]+"))
+                            {
+                                if (debugMode) logCallback($"Found latest version tag from registry: {tagName}", 0);
+                                return tagName;
+                            }
+                        }
                     }
+                    
+                    if (debugMode) logCallback("No version tags found in registry response", -1);
+                    return "";
                 }
-                else if (!exited)
+                catch (System.Net.Http.HttpRequestException ex)
                 {
-                    process.Kill();
-                    if (debugMode) logCallback("Docker Hub registry query timed out", -1);
+                    if (debugMode) logCallback($"HTTP error querying Docker Hub: {ex.Message}", -1);
+                    return "";
                 }
-                else if (process.ExitCode != 0)
+                catch (TaskCanceledException)
                 {
-                    if (debugMode) logCallback($"Docker Hub registry query failed with exit code {process.ExitCode}", -1);
+                    if (debugMode) logCallback("Timeout querying Docker Hub API", -1);
+                    return "";
                 }
             }
         }
         catch (Exception ex)
         {
             if (debugMode) logCallback($"Error querying Docker Hub registry: {ex.Message}", -1);
+            return "";
         }
-        
-        return "";
     }
     
     /// <summary>
@@ -2245,8 +2269,8 @@ public class ServerDockerProcess
             
             using (Process process = new Process())
             {
-                process.StartInfo.FileName = "cmd.exe";
-                process.StartInfo.Arguments = $"/c docker pull {pullCommand}";
+                ConfigureDockerProcess(process.StartInfo);
+                process.StartInfo.Arguments = $"pull {pullCommand}";
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.UseShellExecute = false;

@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using NorthernRogue.CCCP.Editor.Settings;
 using ModuleInfo = NorthernRogue.CCCP.Editor.Settings.ModuleInfo;
-using NUnit.Framework;
 
 // The main Comos Cove Control Panel that controls the server state and launches all features ///
 

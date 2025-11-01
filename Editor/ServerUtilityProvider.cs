@@ -1233,6 +1233,204 @@ public static class ServerUtilityProvider
     }
 
     #endregion
+
+    #region Docker Utilities
+
+    /// <summary>
+    /// Gets the Docker executable path for the current platform.
+    /// On macOS, checks common installation paths since GUI apps don't inherit full shell PATH.
+    /// </summary>
+    /// <returns>Full path to docker executable, or null if not found</returns>
+    public static string GetDockerExecutablePath()
+    {
+        if (IsWindows())
+        {
+            // On Windows, docker should be in PATH or in program files
+            return "docker";
+        }
+        else if (IsMacOS())
+        {
+            // On macOS, check common installation paths
+            // macOS GUI apps don't inherit shell PATH, so we need to check specific locations
+            string[] macOSDockerPaths = new[]
+            {
+                "/usr/local/bin/docker",           // Intel Mac - typical Docker Desktop install
+                "/opt/homebrew/bin/docker",        // Apple Silicon - Homebrew install
+                "/Applications/Docker.app/Contents/Resources/bin/docker",  // Docker Desktop app bundle
+                "docker"                           // Fallback to PATH
+            };
+
+            foreach (string path in macOSDockerPaths)
+            {
+                if (path == "docker")
+                {
+                    // Try PATH version last
+                    return path;
+                }
+                
+                if (System.IO.File.Exists(path))
+                {
+                    return path;
+                }
+            }
+
+            // If none found, return the command and let it try PATH
+            return "docker";
+        }
+        else if (IsLinux())
+        {
+            // On Linux, docker should be in PATH
+            return "docker";
+        }
+        else
+        {
+            return "docker"; // Fallback
+        }
+    }
+
+    /// <summary>
+    /// Gets all potential Docker executable paths for the current platform (for fallback attempts).
+    /// Used to try multiple locations when the primary path fails.
+    /// </summary>
+    /// <returns>Array of potential Docker paths to try in order</returns>
+    public static string[] GetDockerExecutablePaths()
+    {
+        if (IsWindows())
+        {
+            // On Windows, primarily use PATH
+            return new[] { "docker" };
+        }
+        else if (IsMacOS())
+        {
+            // On macOS, check multiple common locations
+            return new[]
+            {
+                "docker",                                                   // Try PATH first
+                "/usr/local/bin/docker",                                    // Intel Mac - Docker Desktop
+                "/opt/homebrew/bin/docker",                                 // Apple Silicon - Docker Desktop
+                "/Applications/Docker.app/Contents/Resources/bin/docker"    // Docker Desktop app bundle
+            };
+        }
+        else if (IsLinux())
+        {
+            return new[] { "docker", "/usr/bin/docker", "/snap/bin/docker" };
+        }
+        else
+        {
+            return new[] { "docker" };
+        }
+    }
+
+    /// <summary>
+    /// Sets the PATH environment variable for a process to include common tool directories.
+    /// On macOS, adds /usr/local/bin and /opt/homebrew/bin which are often missing from GUI app environments.
+    /// </summary>
+    /// <param name="processStartInfo">The ProcessStartInfo to configure</param>
+    public static void SetEnhancedPATHForProcess(System.Diagnostics.ProcessStartInfo processStartInfo)
+    {
+        if (processStartInfo == null)
+            return;
+
+        string currentPath = System.Environment.GetEnvironmentVariable("PATH") ?? "";
+
+        if (IsMacOS())
+        {
+            // On macOS, ensure /usr/local/bin and /opt/homebrew/bin are in PATH
+            string enhancedPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+            
+            if (!string.IsNullOrEmpty(currentPath))
+            {
+                enhancedPath = enhancedPath + ":" + currentPath;
+            }
+
+            processStartInfo.EnvironmentVariables["PATH"] = enhancedPath;
+        }
+        else if (IsLinux())
+        {
+            // On Linux, add common snap and local bin directories
+            string enhancedPath = "/snap/bin:/usr/local/bin:" + currentPath;
+            processStartInfo.EnvironmentVariables["PATH"] = enhancedPath;
+        }
+        // Windows doesn't typically need enhancement as PATH is usually correct
+    }
+
+    /// <summary>
+    /// Builds a shell command string with the full Docker executable path for the current platform.
+    /// This ensures Docker commands work even when executed through a shell on macOS where PATH may not be set correctly.
+    /// </summary>
+    /// <param name="dockerArguments">Docker command arguments (e.g., "logs -f container-name")</param>
+    /// <returns>Full Docker command string with absolute path on platforms that need it</returns>
+    public static string GetDockerShellCommand(string dockerArguments)
+    {
+        string dockerPath = GetDockerExecutablePath();
+        
+        // On macOS/Linux, if we have a full path, use it
+        if ((IsMacOS() || IsLinux()) && dockerPath.StartsWith("/"))
+        {
+            return $"{dockerPath} {dockerArguments}";
+        }
+        
+        // Otherwise, use the command as-is
+        return $"docker {dockerArguments}";
+    }
+
+    /// <summary>
+    /// Launches Docker Desktop application in a cross-platform way.
+    /// </summary>
+    /// <returns>True if launch was attempted successfully, false otherwise</returns>
+    public static bool LaunchDockerDesktop()
+    {
+        try
+        {
+            if (IsWindows())
+            {
+                // Windows: Launch Docker Desktop.exe
+                string dockerDesktopPath = System.IO.Path.Combine(
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.ProgramFiles),
+                    "Docker", "Docker", "Docker Desktop.exe"
+                );
+
+                if (System.IO.File.Exists(dockerDesktopPath))
+                {
+                    System.Diagnostics.Process.Start(dockerDesktopPath);
+                    return true;
+                }
+                
+                return false;
+            }
+            else if (IsMacOS())
+            {
+                // macOS: Use 'open' command to launch Docker.app
+                System.Diagnostics.Process openProcess = new System.Diagnostics.Process();
+                openProcess.StartInfo.FileName = "open";
+                openProcess.StartInfo.Arguments = "-a Docker";
+                openProcess.StartInfo.UseShellExecute = false;
+                openProcess.StartInfo.CreateNoWindow = true;
+                openProcess.Start();
+                return true;
+            }
+            else if (IsLinux())
+            {
+                // Linux: Try systemctl to start docker service
+                // Docker Desktop for Linux uses different approach
+                System.Diagnostics.Process systemctlProcess = new System.Diagnostics.Process();
+                systemctlProcess.StartInfo.FileName = "systemctl";
+                systemctlProcess.StartInfo.Arguments = "start docker";
+                systemctlProcess.StartInfo.UseShellExecute = false;
+                systemctlProcess.StartInfo.CreateNoWindow = true;
+                systemctlProcess.Start();
+                return true;
+            }
+            
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    #endregion
 }
 
 } // Namespace
