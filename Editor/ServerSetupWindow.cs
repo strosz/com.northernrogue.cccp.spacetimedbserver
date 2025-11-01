@@ -587,7 +587,7 @@ public class ServerSetupWindow : EditorWindow
                 title = "Setup Docker Container Volume Mounts",
                 description = "Ensures the Docker container has proper volume mounts for Unity file generation\n"+
                 "Verifies that the Unity Assets directory and Server Directory are mounted inside the container\n"+
-                "Note: Will recreate container if mounts are incorrect (server must be stopped)",
+                "Note: This step is done automatically, but can be called manually to reconfigure mounts",
                 isInstalled = hasDockerContainerMounts,
                 isEnabled = hasDocker && hasDockerImage,
                 installAction = ReconfigureDockerContainer,
@@ -1787,7 +1787,6 @@ public class ServerSetupWindow : EditorWindow
         else if (dockerImageChoice == 1)
         {
             CheckPrerequisitesDocker();
-            serverManager.StartServer();
         }
     }
     
