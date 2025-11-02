@@ -265,8 +265,11 @@ public class ServerDockerProcess
             Process process = new Process();
             process.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
             
+            // Normalize paths for Docker compatibility (forward slashes on all platforms)
+            string normalizedServerDir = ServerUtilityProvider.NormalizePathForDocker(serverDirectory);
+            
             // Build volume mounts
-            string volumeMounts = $"-v \"{serverDirectory}:/app\"";
+            string volumeMounts = $"-v \"{normalizedServerDir}:/app\"";
             
             // Add persistent volume for SpacetimeDB data
             volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
@@ -290,7 +293,8 @@ public class ServerDockerProcess
                 {
                     logCallback($"WARNING: Could not determine Unity project root from: {unityAssetsDirectory}. File generation may fail!", -1);
                     logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
-                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    // Use forward slashes for Docker compatibility on all platforms
+                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
                     volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
                     if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
                 }
@@ -299,7 +303,8 @@ public class ServerDockerProcess
             {
                 logCallback($"WARNING: Unity Assets directory not provided. File generation will likely fail!", -1);
                 logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
-                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                // Use forward slashes for Docker compatibility on all platforms
+                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
                 volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
                 if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
             }
@@ -374,8 +379,11 @@ public class ServerDockerProcess
                 }
             }
             
+            // Normalize paths for Docker compatibility (forward slashes on all platforms)
+            string normalizedServerDir = ServerUtilityProvider.NormalizePathForDocker(serverDirectory);
+            
             // Build volume mounts
-            string volumeMounts = $"-v \"{serverDirectory}:/app\"";
+            string volumeMounts = $"-v \"{normalizedServerDir}:/app\"";
             
             // Add persistent volume for SpacetimeDB data
             volumeMounts += " -v spacetimedb-data:/home/spacetime/.local/share/spacetime/data";
@@ -399,7 +407,8 @@ public class ServerDockerProcess
                 {
                     logCallback($"WARNING: Could not determine Unity project root from: {unityAssetsDirectory}. File generation may fail!", -1);
                     logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
-                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    // Use forward slashes for Docker compatibility on all platforms
+                    string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
                     volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
                     if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
                 }
@@ -408,7 +417,8 @@ public class ServerDockerProcess
             {
                 logCallback($"WARNING: Unity Assets directory not provided. File generation will likely fail!", -1);
                 logCallback($"Using fallback: Mounting Unity's Application.dataPath", 0);
-                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                // Use forward slashes for Docker compatibility on all platforms
+                string fallbackRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
                 volumeMounts += $" -v \"{fallbackRoot}:/unity\"";
                 if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
             }
@@ -1497,7 +1507,8 @@ public class ServerDockerProcess
             
         try
         {
-            // Normalize the path
+            // Normalize the path - use forward slashes for cross-platform compatibility
+            // Docker expects forward slashes on all platforms
             string normalizedPath = assetsPath.Replace('\\', '/');
             
             if (debugMode) logCallback($"[GetUnityProjectRoot] Input path: {normalizedPath}", 0);
@@ -1511,7 +1522,8 @@ public class ServerDockerProcess
                 if (assetsIndex >= 0 && assetsIndex + 7 == normalizedPath.Length)
                 {
                     // Path ends with /Assets, extract everything before it
-                    string projectRoot = normalizedPath.Substring(0, assetsIndex).Replace('/', '\\');
+                    // Keep forward slashes for Docker compatibility
+                    string projectRoot = normalizedPath.Substring(0, assetsIndex);
                     if (debugMode) logCallback($"[GetUnityProjectRoot] Found /Assets at end. Project root: {projectRoot}", 0);
                     return projectRoot;
                 }
@@ -1528,20 +1540,21 @@ public class ServerDockerProcess
                 {
                     // Path starts with Assets/ (relative path)
                     // Get current Unity project directory
-                    string projectRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                    string projectRoot = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
                     if (debugMode) logCallback($"[GetUnityProjectRoot] Path starts with Assets/. Using Unity's dataPath: {projectRoot}", 0);
                     return projectRoot;
                 }
             }
             
             // Extract everything before /Assets/ or Assets/
-            string result = normalizedPath.Substring(0, assetsIndex).Replace('/', '\\');
+            // Keep forward slashes for Docker compatibility
+            string result = normalizedPath.Substring(0, assetsIndex);
             
             // Handle case where path starts with Assets (relative path)
             if (string.IsNullOrEmpty(result))
             {
                 // Get current Unity project directory
-                result = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('/', '\\');
+                result = UnityEngine.Application.dataPath.Replace("/Assets", "").Replace('\\', '/');
             }
             
             if (debugMode) logCallback($"[GetUnityProjectRoot] Final project root: {result}", 0);

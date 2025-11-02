@@ -1429,6 +1429,33 @@ public static class ServerUtilityProvider
             return false;
         }
     }
+    
+    /// <summary>
+    /// Normalizes a path for Docker volume mounts across platforms
+    /// Docker expects forward slashes on all platforms
+    /// On Windows with Docker Desktop, paths like C:\path become /c/path
+    /// </summary>
+    /// <param name="path">The path to normalize</param>
+    /// <returns>Docker-compatible path with forward slashes</returns>
+    public static string NormalizePathForDocker(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+            
+        // Replace all backslashes with forward slashes
+        string normalized = path.Replace('\\', '/');
+        
+        // On Windows, convert C:/ style paths to /c/ for Docker Desktop
+        // This is required for Docker Desktop on Windows, but doesn't hurt on other platforms
+        if (normalized.Length >= 2 && char.IsLetter(normalized[0]) && normalized[1] == ':')
+        {
+            // Convert C:/path to /c/path
+            char driveLetter = char.ToLower(normalized[0]);
+            normalized = "/" + driveLetter + normalized.Substring(2);
+        }
+        
+        return normalized;
+    }
 
     #endregion
 }
