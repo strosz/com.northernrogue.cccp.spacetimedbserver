@@ -89,10 +89,10 @@ Install directly in your Unity Package Manager with this git URL
    Install the asset using this .git URL in the Package Manager´s + menu.<br>
    ```https://github.com/strosz/com.northernrogue.cccp.spacetimedbserver.git```
    
-   A Welcome Window displays if successful with a link to the Main Window and the Installer Window.
+   A Welcome Window displays if successful with a link to the Main Window and the Setup Window.
 
    1. Open the Main Window. Enter the essential Pre-Requisite settings for your server.
-   2. Open the Setup Window. Check and setup the essential Software for either a Docker or WSL Local CLI.
+   2. Open the Setup Window. Check and setup the essential Software for either a Docker or WSL Local server and SpacetimeDB environment.
    3. Now you can manage and publish your SpacetimeDB server directly from Unity!
 
    **Note:** For a detailed install process please check the documentation button available in the Welcome Window.

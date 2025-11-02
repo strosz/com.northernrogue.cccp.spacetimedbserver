@@ -22,6 +22,9 @@ public class ServerCompabilityReport : EditorWindow
     
     // Constants for timeouts
     private const int PROCESS_TIMEOUT_MS = 5000;
+    
+    // Settings access for build type detection
+    private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
 
     /// <summary>
     /// Checks if the system supports WSL2 asynchronously and returns the result.
@@ -196,16 +199,16 @@ public class ServerCompabilityReport : EditorWindow
             "incompatible with WMWare and VirtualBox. Some older Windows PCs may\n" +
             "also not support WSL2. While this compability tool should be accurate\n" +
             "I leave no responsibility for any issues that may occur from installing WSL2.\n" +
-            "Refer to the CCCP documentation if the automatic installation fails.";
+            "Please check the documentation for more details.";
         } else {
             currentResultDetails += 
             "It's recommended to install WSL1 for your system for better compatibility.\n" +
             "Regardless of chosen WSL, remember to always backup anything important\n" +
             "on your PC before continuing.\n\n" +
-            "WSL1 may require a restart and will probably show errors on the other\n" +
-            "Debian installers like Curl and Rust, but will succesfully install.\n" +
-            "It may display installing version 2, but it is actually installing WSL1.\n" +
-            "Refer to the CCCP documentation if the automatic installation fails.";
+            "WSL1 may require a restart and can show errors on software installers\n" +
+            "like Curl and Rust, but will successfully install anyhow.\n" +
+            "Windows may display installing version 2, but it is actually installing WSL1.\n" +
+            "Please check the documentation for more details.";
         }
 
         return (canInstallWSL2, currentResultDetails);
@@ -401,8 +404,8 @@ public class ServerCompabilityReport : EditorWindow
             EditorGUILayout.TextArea(resultDetails, GUILayout.ExpandHeight(true));
             EditorGUILayout.EndScrollView();
             
-            // Installation buttons
-            if (installWSL1Action != null || installWSL2Action != null)
+            // Installation buttons (only for GitHub builds)
+            if (isGithubBuild && (installWSL1Action != null || installWSL2Action != null))
             {
                 EditorGUILayout.Space(10);
                 EditorGUILayout.BeginHorizontal();
@@ -427,6 +430,15 @@ public class ServerCompabilityReport : EditorWindow
                 }
                 
                 EditorGUILayout.EndHorizontal();
+            }
+            // For Asset Store builds, show OK button instead
+            else if (!isGithubBuild)
+            {
+                EditorGUILayout.Space(10);
+                if (GUILayout.Button("OK", GUILayout.Height(30)))
+                {
+                    Close(); // Close the window
+                }
             }
         }
         

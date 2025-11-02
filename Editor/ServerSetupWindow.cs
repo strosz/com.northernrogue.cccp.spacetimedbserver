@@ -36,7 +36,6 @@ public class ServerSetupWindow : EditorWindow
     // Tab selection
     private int currentTab; // 0 = Docker, 1 = WSL, 2 = Custom
     private string[] tabNames = new string[] { "Local Docker Setup", "Local WSL Setup", "Remote Custom Setup" };
-    private bool isAssetStoreBuild => ServerUpdateProcess.IsAssetStoreVersion();
     private bool isGithubBuild => ServerUpdateProcess.IsGithubVersion();
     
     // Tab indices - always 3 tabs
@@ -373,6 +372,7 @@ public class ServerSetupWindow : EditorWindow
                 isInstalled = hasDebian,
                 isEnabled = true, // Always enabled as it's the first prerequisite
                 installAction = isGithubBuild ? CreateReflectionAction("InstallWSLDebian") : null,
+                compatibilityCheckAction = !isGithubBuild ? LaunchCompatibilityCheck : null,
                 sectionHeader = "Required Local Software"
             },
             new InstallerItem
@@ -1146,6 +1146,35 @@ public class ServerSetupWindow : EditorWindow
         // Title - reuse cached content when possible
         EditorGUILayout.LabelField(item.title, itemTitleStyle, GUILayout.ExpandWidth(true));        
 
+        // Check if this item has a compatibility check button (for Asset Store builds)
+        // Only show if not installed or if forceInstall is enabled
+        if (item.compatibilityCheckAction != null && currentTab == wslTabIndex && (!item.isInstalled || alwaysShowInstall))
+        {
+            EditorGUILayout.Space(2);
+            EditorGUI.BeginDisabledGroup(isDisabled);
+            if (GUILayout.Button("Check Compatibility", installButtonStyle, GUILayout.Width(130), GUILayout.Height(30)))
+            {
+                EditorApplication.delayCall += () => {
+                    item.compatibilityCheckAction?.Invoke();
+                };
+            }
+            EditorGUI.EndDisabledGroup();
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField(item.description, EditorStyles.wordWrappedMiniLabel);
+            EditorGUILayout.EndVertical();
+            
+            // Restore color
+            GUI.color = originalColor;
+            
+            // Handle username field if needed (though WSL Debian usually doesn't need it initially)
+            if (item.hasUsernameField || item.title.Contains("SpacetimeDB Server"))
+            {
+                EditorGUILayout.BeginHorizontal();
+            }
+            
+            return; // Return early to avoid duplicate rendering
+        }
+
         if (currentTab == wslTabIndex) {
             showUpdateButton = (item.title.Contains("SpacetimeDB Server") && 
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
@@ -1498,6 +1527,21 @@ public class ServerSetupWindow : EditorWindow
 
         isRefreshing = false;
         SetStatus("WSL installation status updated.", Color.green); // This might request repaint (throttled)
+    }
+
+    /// <summary>
+    /// Launches the WSL2 compatibility check window.
+    /// For GitHub builds, this will show install buttons.
+    /// For Asset Store builds, this will show an OK button.
+    /// </summary>
+    private async void LaunchCompatibilityCheck()
+    {
+        // Launch the ServerCompabilityReport window
+        await ServerCompabilityReport.CheckWSL2Support(
+            showDialog: true,
+            onInstallWSL1: isGithubBuild ? CreateReflectionAction("InstallWSL1") : null,
+            onInstallWSL2: isGithubBuild ? CreateReflectionAction("InstallWSL2") : null
+        );
     }
     #endregion
     #region Custom Prereq
@@ -2188,6 +2232,7 @@ public class ServerSetupWindow : EditorWindow
         public string usernameLabel = "Debian Username:"; // Default label for the username field
         public string expectedModuleName = ""; // Expected module name for database logs service
         public string sectionHeader = ""; // Optional section header to display before this item
+        public Action compatibilityCheckAction = null; // Optional action for compatibility check button
     }
     #endregion
 } // Class
