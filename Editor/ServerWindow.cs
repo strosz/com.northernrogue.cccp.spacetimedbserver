@@ -3127,7 +3127,7 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableLocal()
     {
-        if (hasDockerImage && localCLIProvider == "Docker")
+        if (hasDocker && localCLIProvider == "Docker")
         {
             if (debugMode) LogMessage("SpacetimeDB Local CLI is available via Docker.", 1);
             return true;

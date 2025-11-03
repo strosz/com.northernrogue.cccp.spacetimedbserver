@@ -17,7 +17,7 @@ Install directly in your Unity Package Manager with this git URL
 
 🌌 **Local, Custom Remote or Maincloud**
    - Use your server mode of choice.
-   - Quickly start developing using SpacetimeDB with local Docker or WSL then publish the exact same project to a remote custom server or Maincloud. Docker CLI is multiplatform with Windows, Linux or MacOS supported.
+   - Quickly start developing using SpacetimeDB with local Docker or WSL then publish the exact same project to a remote custom server or Maincloud. The Docker environment is multiplatform with Windows, Linux or MacOS supported.
 
 🚀 **Silent Server and One-Click Server Management**
    - Start your server silently in a second.

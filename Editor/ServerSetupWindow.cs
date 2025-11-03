@@ -1831,8 +1831,8 @@ public class ServerSetupWindow : EditorWindow
         SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
         
         int dockerImageChoice = EditorUtility.DisplayDialogComplex("SpacetimeDB Docker Image Required",
-            "The SpacetimeDB Docker image download command can be found on their homepage.\n\n" +
-            "1. Copy the official Docker command below with the correct parameters:\n" +
+            "The official SpacetimeDB Docker image download command can be found on their homepage.\n\n" +
+            "1. Copy the Docker command below with the correct parameters:\n" +
             "docker run --rm --pull always -p 3011:3000 clockworklabs/spacetime\n\n" +
             "2. Open your Docker Desktop terminal by clicking the >_ icon in the lower right of Docker Desktop and press Enable if asked.\n" +
             "Paste, run the command and then wait for the download to finish.\n\n" +
