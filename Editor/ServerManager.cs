@@ -928,7 +928,7 @@ public class ServerManager
 
     private void StartDockerServer()
     {
-        if (!hasDocker || !hasDockerImage)
+        if (!hasDocker)
         {
             LogMessage("Docker is not installed or image not detected. Check pre-requisites and try again.", -1);
             return;

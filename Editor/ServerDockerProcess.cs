@@ -214,6 +214,13 @@ public class ServerDockerProcess
     {
         try 
         {
+            // Validate required directories before attempting to start
+            if (string.IsNullOrEmpty(serverDirectory))
+            {
+                logCallback("ERROR: Server directory is not set. Please configure the server directory in Server Settings before starting Docker server.", -1);
+                return null;
+            }
+            
             // Get the configured port from settings
             int hostPort = CCCPSettings.Instance.serverPortDocker;
             
@@ -309,10 +316,21 @@ public class ServerDockerProcess
                 if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
             }
             
-            // Start Docker container with interactive mode
+            // Build Docker run command with proper escaping for the current platform
             // Note: NOT using --rm so container persists and can be stopped/restarted
             // Override entrypoint and use --user root to ensure permissions on the volumes
-            string dockerCommand = $"run -it --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
+            string[] setupCommands = ServerUtilityProvider.BuildSpacetimeDBSetupCommands();
+            string startCommand = ServerUtilityProvider.BuildSpacetimeDBStartCommand();
+            
+            string dockerCommand = ServerUtilityProvider.BuildDockerRunCommand(
+                ContainerName,
+                ImageName,
+                hostPort,
+                volumeMounts,
+                setupCommands,
+                startCommand,
+                detached: false
+            );
             
             process.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(
                 ServerUtilityProvider.GetDockerShellCommand(dockerCommand)
@@ -335,6 +353,13 @@ public class ServerDockerProcess
     {
         try 
         {
+            // Validate required directories before attempting to start
+            if (string.IsNullOrEmpty(serverDirectory))
+            {
+                logCallback("ERROR: Server directory is not set. Please configure the server directory in Server Settings before starting Docker server.", -1);
+                return null;
+            }
+            
             // Get the configured port from settings
             int hostPort = CCCPSettings.Instance.serverPortDocker;
             
@@ -423,10 +448,21 @@ public class ServerDockerProcess
                 if (debugMode) logCallback($"Fallback mount: {fallbackRoot} -> /unity", 0);
             }
             
-            // Container doesn't exist, create new one
+            // Build Docker run command with proper escaping for the current platform
             // Start Docker container in detached mode
             // Override entrypoint and use --user root to ensure permissions on the volumes
-            string dockerCommand = $"run -d --name {ContainerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {ImageName} -c \"chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data && chown -R spacetime:spacetime /home/spacetime/.config/spacetime && su spacetime -c 'spacetime start'\"";
+            string[] setupCommands = ServerUtilityProvider.BuildSpacetimeDBSetupCommands();
+            string startCommand = ServerUtilityProvider.BuildSpacetimeDBStartCommand();
+            
+            string dockerCommand = ServerUtilityProvider.BuildDockerRunCommand(
+                ContainerName,
+                ImageName,
+                hostPort,
+                volumeMounts,
+                setupCommands,
+                startCommand,
+                detached: true
+            );
             
             if (debugMode) logCallback($"Docker command: {ServerUtilityProvider.GetDockerShellCommand(dockerCommand)}", 0);
             
@@ -913,12 +949,26 @@ public class ServerDockerProcess
     {
         try
         {
+            // First check if required directories are configured
+            // If not, we can't have proper mounts
+            string serverDir = CCCPSettings.Instance?.serverDirectory;
+            if (string.IsNullOrEmpty(serverDir))
+            {
+                if (debugMode)
+                {
+                    UnityEngine.Debug.Log($"[ServerDockerProcess] Container mount check - Server directory not set, cannot verify mounts");
+                }
+                // Return false because without serverDirectory, mounts can't be properly configured
+                return false;
+            }
+            
             // Check if container exists
             var (exists, isRunning) = CheckContainerExistsAndRunning();
             
             if (!exists)
             {
                 // Container doesn't exist yet - that's okay, it will be created with correct mounts
+                // But only return true if directories are configured
                 return true;
             }
             

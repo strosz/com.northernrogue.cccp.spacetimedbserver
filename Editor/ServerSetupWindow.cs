@@ -1814,6 +1814,20 @@ public class ServerSetupWindow : EditorWindow
     
     private void CheckDockerImage()
     {
+        // Validate that required directories are set before proceeding
+        if (string.IsNullOrEmpty(serverDirectory))
+        {
+            EditorUtility.DisplayDialog(
+                "Server Directory Required",
+                "Before setting up the Docker image, you must configure the Server Directory.\n\n" +
+                "The Server Directory is required for Docker volume mounts and proper container configuration.\n\n" +
+                "Please set the Server Directory in the Main Window's Pre-requisites first, then return to complete the Docker setup.",
+                "OK"
+            );
+            SetStatus("Server Directory must be set before Docker image setup.", Color.red);
+            return;
+        }
+        
         SetStatus("SpacetimeDB Docker image required. Please visit: https://spacetimedb.com/install", Color.yellow);
         
         int dockerImageChoice = EditorUtility.DisplayDialogComplex("SpacetimeDB Docker Image Required",
@@ -1921,6 +1935,19 @@ public class ServerSetupWindow : EditorWindow
     {
         try
         {
+            // Validate that required directories are set
+            if (string.IsNullOrEmpty(serverDirectory))
+            {
+                EditorUtility.DisplayDialog(
+                    "Server Directory Required",
+                    "Cannot reconfigure Docker container without a Server Directory.\n\n" +
+                    "Please set the Server Directory in Server Settings first.",
+                    "OK"
+                );
+                SetStatusInternal("Server Directory must be set before container reconfiguration.", Color.red);
+                return;
+            }
+            
             SetStatusInternal("Reconfiguring Docker container...", Color.yellow);
             
             // Check if container is running using dockerProcess
@@ -1962,12 +1989,17 @@ public class ServerSetupWindow : EditorWindow
                 EditorUtility.DisplayProgressBar("Reconfiguring Docker Container", "Removing old container...", 0.3f);
                 
                 var removeProcess = new System.Diagnostics.Process();
-                removeProcess.StartInfo.FileName = "docker";
+                
+                // Use proper Docker executable path resolution (critical for macOS)
+                removeProcess.StartInfo.FileName = ServerUtilityProvider.GetDockerExecutablePath();
                 removeProcess.StartInfo.Arguments = $"rm -f {ServerDockerProcess.ContainerName}";
                 removeProcess.StartInfo.UseShellExecute = false;
                 removeProcess.StartInfo.RedirectStandardOutput = true;
                 removeProcess.StartInfo.RedirectStandardError = true;
                 removeProcess.StartInfo.CreateNoWindow = true;
+                
+                // Set enhanced PATH for macOS Docker compatibility
+                ServerUtilityProvider.SetEnhancedPATHForProcess(removeProcess.StartInfo);
                 
                 removeProcess.Start();
                 string removeOutput = removeProcess.StandardOutput.ReadToEnd();

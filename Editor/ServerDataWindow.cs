@@ -856,9 +856,12 @@ public class ServerDataWindow : EditorWindow
         
         if (string.IsNullOrEmpty(currentAuthToken))
         {
-            SetStatus("Error: Authorization Token not set. DML operations require owner permissions.", Color.red);
-            EditorUtility.DisplayDialog("Authorization Required", 
-                "SQL DELETE operations require owner permissions. Please ensure your auth token is set in the ServerWindow settings.", "OK");
+            SetStatus("Authorization token not set. SQL operations require owner permissions.", Color.red);
+
+            EditorUtility.DisplayDialog("Authentication Required",
+                "An authentication token is required to be set in Main Windows Pre-requisites to run SQL operations on the server.\n\n" +
+                "Please go to Commands > Show Login Info with Auth Token and copy-paste your auth token to the Pre-requisites.",
+                "OK");
             return;
         }
         

@@ -1457,6 +1457,95 @@ public static class ServerUtilityProvider
         return normalized;
     }
 
+    /// <summary>
+    /// Builds a properly escaped Docker run command with entrypoint for the current platform.
+    /// On macOS, uses a different quoting strategy to avoid nested shell escaping issues
+    /// that cause "chown: missing operand" errors.
+    /// </summary>
+    /// <param name="containerName">Name of the Docker container</param>
+    /// <param name="imageName">Docker image name</param>
+    /// <param name="hostPort">Host port to bind</param>
+    /// <param name="volumeMounts">Volume mount arguments (e.g., "-v /path:/app")</param>
+    /// <param name="setupCommands">Commands to run before starting the server (e.g., chown commands)</param>
+    /// <param name="serverCommand">The main server command to run</param>
+    /// <param name="detached">Whether to run in detached mode (-d flag)</param>
+    /// <returns>Properly escaped Docker command for the current platform</returns>
+    public static string BuildDockerRunCommand(
+        string containerName,
+        string imageName,
+        int hostPort,
+        string volumeMounts,
+        string[] setupCommands,
+        string serverCommand,
+        bool detached = false)
+    {
+        string detachFlag = detached ? "-d" : "-it";
+        
+        if (IsMacOS())
+        {
+            // macOS requires special handling to avoid quote escaping issues
+            // We use single quotes for the outer -c argument, but need to escape
+            // any inner double quotes so bash doesn't process them
+            string allCommands = string.Join(" && ", setupCommands);
+            if (!string.IsNullOrEmpty(serverCommand))
+            {
+                allCommands += " && " + serverCommand;
+            }
+            
+            // Escape double quotes with backslash so they survive bash processing
+            // When bash sees: -c 'su spacetime -c \"spacetime start\"'
+            // It passes to docker: -c 'su spacetime -c "spacetime start"'
+            string escapedCommands = allCommands.Replace("\"", "\\\"");
+            
+            return $"run {detachFlag} --name {containerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {imageName} -c '{escapedCommands}'";
+        }
+        else
+        {
+            // Windows and Linux can use escaped double quotes
+            string allCommands = string.Join(" && ", setupCommands);
+            if (!string.IsNullOrEmpty(serverCommand))
+            {
+                allCommands += " && " + serverCommand;
+            }
+            
+            return $"run {detachFlag} --name {containerName} -p {hostPort}:3000 --user root --entrypoint /bin/sh {volumeMounts} {imageName} -c \"{allCommands}\"";
+        }
+    }
+
+    /// <summary>
+    /// Builds the chown setup commands for SpacetimeDB Docker container initialization.
+    /// These commands ensure proper permissions on mounted volumes.
+    /// </summary>
+    /// <returns>Array of chown commands to run as root before switching to spacetime user</returns>
+    public static string[] BuildSpacetimeDBSetupCommands()
+    {
+        return new[]
+        {
+            "chown -R spacetime:spacetime /home/spacetime/.local/share/spacetime/data",
+            "chown -R spacetime:spacetime /home/spacetime/.config/spacetime"
+        };
+    }
+
+    /// <summary>
+    /// Builds the server start command to run after setup commands.
+    /// Uses su to switch to the spacetime user before starting the server.
+    /// On macOS, uses double quotes to avoid nested single-quote escaping issues.
+    /// </summary>
+    /// <returns>Command to start SpacetimeDB server as spacetime user</returns>
+    public static string BuildSpacetimeDBStartCommand()
+    {
+        if (IsMacOS())
+        {
+            // On macOS, use double quotes to avoid single-quote nesting issues with bash
+            return "su spacetime -c \"spacetime start\"";
+        }
+        else
+        {
+            // Windows and Linux can use single quotes safely
+            return "su spacetime -c 'spacetime start'";
+        }
+    }
+
     #endregion
 }
 

@@ -2455,7 +2455,7 @@ public class ServerWindow : EditorWindow
                     Repaint();
                     
                     bool essentialSoftwareDocker = 
-                        docker && compose && image && hasSpacetimeDBUnitySDK;
+                        docker && image && hasSpacetimeDBUnitySDK;
 
                     bool essentialUserSettingsDocker = 
                         !string.IsNullOrEmpty(serverDirectory) &&
@@ -2464,8 +2464,7 @@ public class ServerWindow : EditorWindow
                         !string.IsNullOrEmpty(serverLang);
 
                     List<string> missingSoftware = new List<string>();
-                    if (!docker) missingSoftware.Add("- Docker");
-                    if (!compose) missingSoftware.Add("- Docker Compose");
+                    if (!docker) missingSoftware.Add("- Docker Desktop");
                     if (!image) missingSoftware.Add("- SpacetimeDB Docker Image");
                     if (!hasSpacetimeDBUnitySDK) missingSoftware.Add("- SpacetimeDB Unity SDK");
 

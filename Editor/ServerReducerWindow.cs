@@ -746,7 +746,14 @@ public class ServerReducerWindow : EditorWindow
             (serverMode == "CustomServer" && string.IsNullOrEmpty(customServerAuthToken)) ||
             (serverMode == "MaincloudServer" && string.IsNullOrEmpty(maincloudAuthToken)))
         {
-            SetStatus("Authentication token is required to run reducers.", Color.red);
+            SetStatus("Authentication token required in Pre-requisites to run reducers.", Color.red);
+
+            // EditorDialog to inform user
+            EditorUtility.DisplayDialog("Authentication Required",
+                "An authentication token is required to be set in Main Windows Pre-requisites to run reducers on the server.\n\n" +
+                "Please go to Commands > Show Login Info with Auth Token and copy-paste your auth token to the Pre-requisites.",
+                "OK");
+
             return;
         }
         
