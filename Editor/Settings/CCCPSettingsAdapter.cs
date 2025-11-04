@@ -107,8 +107,6 @@ public static class CCCPSettingsAdapter
         {
             if (!_pendingSave)
                 return;
-                
-            _pendingSave = false;
             
             // Check if we're in a safe context to save assets
             // Avoid saving during asset post-processing or when UI is not ready
@@ -119,11 +117,11 @@ public static class CCCPSettingsAdapter
                 AssetDatabase.IsAssetImportWorkerProcess())
             {
                 // Retry later if we're not in a safe state
-                _pendingSave = true;
                 EditorApplication.delayCall += SafeDeferredSave;
                 return;
             }
             
+            _pendingSave = false;
             AssetDatabase.SaveAssets();
         }
         catch (System.Exception ex)
@@ -149,26 +147,34 @@ public static class CCCPSettingsAdapter
     
     /// <summary>
     /// Force save UI settings (call this from OnDisable or similar)
+    /// Uses deferred saving to avoid DPI errors during asset post-processing
     /// </summary>
     public static void ForceUISettingsSave()
     {
         if (_pendingUISave && _cachedSettings != null)
         {
-            // Only save if we're not in the middle of asset processing or compilation
-            if (!EditorApplication.isCompiling && !EditorApplication.isUpdating && 
-                !AssetDatabase.IsAssetImportWorkerProcess())
+            // Check if we're in a safe context to save assets
+            if (EditorApplication.isCompiling || 
+                EditorApplication.isUpdating ||
+                EditorApplication.isPlayingOrWillChangePlaymode ||
+                AssetDatabase.IsAssetImportWorkerProcess())
             {
-                try
-                {
-                    AssetDatabase.SaveAssets();
-                }
-                catch (System.Exception e)
-                {
-                    // Log but don't throw - UI settings save failures shouldn't break the workflow
-                    if (debugMode) Debug.LogWarning($"Failed to save UI settings: {e.Message}");
-                }
+                // Defer the save to avoid DPI errors during unsafe contexts
+                EditorApplication.delayCall += ForceUISettingsSave;
+                return;
             }
+            
             _pendingUISave = false;
+            
+            try
+            {
+                AssetDatabase.SaveAssets();
+            }
+            catch (System.Exception e)
+            {
+                // Log but don't throw - UI settings save failures shouldn't break the workflow
+                if (debugMode) Debug.LogWarning($"Failed to save UI settings: {e.Message}");
+            }
         }
     }
     
