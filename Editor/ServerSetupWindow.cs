@@ -120,6 +120,13 @@ public class ServerSetupWindow : EditorWindow
     internal bool hasDockerContainerMounts = false;
     internal ServerDockerProcess dockerProcess;
     
+    // Docker state caching - preserve state when Docker Desktop is not running
+    private bool cachedHasDockerImage = false;
+    private bool cachedHasDockerContainerMounts = false;
+    private DateTime lastDockerImageCheckTime = DateTime.MinValue;
+    private DateTime lastDockerContainerMountsCheckTime = DateTime.MinValue;
+    private bool isUsingCachedDockerState = false;
+    
     // WSL 1 requires unique install logic for Debian apps
     internal bool WSL1Installed;
 
@@ -266,6 +273,29 @@ public class ServerSetupWindow : EditorWindow
         hasDocker = CCCPSettingsAdapter.GetHasDocker();
         hasDockerCompose = CCCPSettingsAdapter.GetHasDockerCompose();
         hasDockerImage = CCCPSettingsAdapter.GetHasDockerImage();
+        hasDockerContainerMounts = CCCPSettingsAdapter.GetHasDockerContainerMounts();
+        
+        // Load Docker cache timestamps from Settings
+        string cachedImageTimestamp = CCCPSettingsAdapter.GetDockerImageCacheTimestamp();
+        string cachedMountsTimestamp = CCCPSettingsAdapter.GetDockerContainerMountsCacheTimestamp();
+        
+        // Parse cached timestamps if available
+        if (!string.IsNullOrEmpty(cachedImageTimestamp))
+        {
+            if (DateTime.TryParse(cachedImageTimestamp, out DateTime parsedTime))
+            {
+                lastDockerImageCheckTime = parsedTime;
+                cachedHasDockerImage = hasDockerImage;
+            }
+        }
+        if (!string.IsNullOrEmpty(cachedMountsTimestamp))
+        {
+            if (DateTime.TryParse(cachedMountsTimestamp, out DateTime parsedTime))
+            {
+                lastDockerContainerMountsCheckTime = parsedTime;
+                cachedHasDockerContainerMounts = hasDockerContainerMounts;
+            }
+        }
         
         // Load Docker image version tracking from Settings
         dockerImageCurrentTag = CCCPSettingsAdapter.GetDockerImageCurrentTag();
@@ -1341,7 +1371,16 @@ public class ServerSetupWindow : EditorWindow
         
         EditorGUILayout.EndHorizontal();
 
-        EditorGUILayout.LabelField(item.description, EditorStyles.wordWrappedMiniLabel);
+        // Display description with cache indicator for Docker items when appropriate
+        string displayDescription = item.description;
+        if (currentTab == dockerTabIndex && isUsingCachedDockerState)
+        {
+            if (item.title.Contains("Docker Image") || item.title.Contains("Container Mounts"))
+            {
+                displayDescription += $"\n(Cached - Docker Desktop not running. Last checked: {lastDockerImageCheckTime:HH:mm:ss})";
+            }
+        }
+        EditorGUILayout.LabelField(displayDescription, EditorStyles.wordWrappedMiniLabel);
         
         // Add username field for installers that need it
         if (item.hasUsernameField || item.title.Contains("SpacetimeDB Server"))
@@ -1672,8 +1711,43 @@ public class ServerSetupWindow : EditorWindow
         {
             hasDocker = docker;
             hasDockerCompose = compose;
-            hasDockerImage = image;
-            hasDockerContainerMounts = containerMounts;
+            
+            // Update cache strategy: Only update image/container state when Docker is running
+            // This prevents false negatives when Docker Desktop is stopped
+            if (serverManager.IsDockerRunning)
+            {
+                // Docker is running - update with live data and cache it
+                hasDockerImage = image;
+                hasDockerContainerMounts = containerMounts;
+                
+                // Cache the current state with timestamp
+                cachedHasDockerImage = image;
+                cachedHasDockerContainerMounts = containerMounts;
+                lastDockerImageCheckTime = DateTime.Now;
+                lastDockerContainerMountsCheckTime = DateTime.Now;
+                isUsingCachedDockerState = false;
+                
+                // Save cache timestamps to settings
+                CCCPSettingsAdapter.SetDockerImageCacheTimestamp(lastDockerImageCheckTime.ToString("o"));
+                CCCPSettingsAdapter.SetDockerContainerMountsCacheTimestamp(lastDockerContainerMountsCheckTime.ToString("o"));
+            }
+            else
+            {
+                // Docker is not running - use cached state if available
+                if (lastDockerImageCheckTime != DateTime.MinValue)
+                {
+                    hasDockerImage = cachedHasDockerImage;
+                    hasDockerContainerMounts = cachedHasDockerContainerMounts;
+                    isUsingCachedDockerState = true;
+                }
+                else
+                {
+                    // No cache available, use current (likely false) values
+                    hasDockerImage = image;
+                    hasDockerContainerMounts = containerMounts;
+                    isUsingCachedDockerState = false;
+                }
+            }
             
             // Save to settings
             CCCPSettingsAdapter.SetHasDocker(hasDocker);
@@ -1687,33 +1761,35 @@ public class ServerSetupWindow : EditorWindow
             isDockerRefreshing = false;
             
             // Provide more detailed status messages
-            if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts && hasSpacetimeDBUnitySDK)
-            {
-                SetStatus("Docker prerequisites check complete. All components ready!", Color.green);
-            }
-            else if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
-            {
-                SetStatus("Docker has all components. Please install the SpacetimeDB Unity SDK.", Color.yellow);
-            }
-            else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMounts)
-            {
-                SetStatus("Docker image ready for volume mount configuration.", Color.yellow);
-            }
-            else if (hasDocker && hasDockerCompose)
-            {
-                SetStatus("Docker is installed. Please download the SpacetimeDB image.", Color.green);
-            }
-            else if (hasDocker && !hasDockerCompose) // Compose is not currently used
-            {
-                //SetStatus("Docker is installed but Docker Compose is not available. Please update Docker Desktop.", Color.yellow);
-            }
-            else if (!hasDocker)
-            {
-                SetStatus("Docker is not installed or not in system PATH. Please install Docker Desktop.", Color.yellow);
-            }
-            else
-            {
-                SetStatus("Docker prerequisites check complete.", Color.yellow);
+            string cacheIndicator = isUsingCachedDockerState ? $" (last verified: {lastDockerImageCheckTime:HH:mm:ss})" : "";
+            
+            if (serverManager.IsDockerRunning) {
+                if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts && hasSpacetimeDBUnitySDK)
+                {
+                    SetStatus($"Docker prerequisites check complete. All components ready!", Color.green);
+                }
+                else if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
+                {
+                    SetStatus($"Docker has all components. Please install the SpacetimeDB Unity SDK.", Color.yellow);
+                }
+                else if (hasDocker && hasDockerCompose && hasDockerImage && !hasDockerContainerMounts)
+                {
+                    SetStatus($"Docker image ready for volume mount configuration.", Color.yellow);
+                }
+                else if (hasDocker && hasDockerCompose)
+                {
+                    SetStatus("Docker is installed. Please download the SpacetimeDB image.", Color.green);
+                }
+                else if (!hasDocker)
+                {
+                    SetStatus("Docker is not installed or not in system PATH. Please install Docker Desktop.", Color.yellow);
+                }
+                else
+                {
+                    SetStatus("Docker prerequisites check complete.", Color.yellow);
+                }
+            } else if (isUsingCachedDockerState) {
+                SetStatus($"Docker Desktop not running. Showing cached state{cacheIndicator}", Color.green);
             }
         });
     }

@@ -898,6 +898,27 @@ public static class CCCPSettingsAdapter
         }
     }
 
+    // Docker cache state persistence
+    public static string GetDockerImageCacheTimestamp() => Settings.dockerImageCacheTimestamp;
+    public static void SetDockerImageCacheTimestamp(string value) 
+    { 
+        if (Settings.dockerImageCacheTimestamp != value)
+        {
+            Settings.dockerImageCacheTimestamp = value; 
+            SaveSettings(); 
+        }
+    }
+
+    public static string GetDockerContainerMountsCacheTimestamp() => Settings.dockerContainerMountsCacheTimestamp;
+    public static void SetDockerContainerMountsCacheTimestamp(string value) 
+    { 
+        if (Settings.dockerContainerMountsCacheTimestamp != value)
+        {
+            Settings.dockerContainerMountsCacheTimestamp = value; 
+            SaveSettings(); 
+        }
+    }
+
     public static bool GetHideWarnings() => Settings.hideWarnings;
     public static void SetHideWarnings(bool value) 
     { 

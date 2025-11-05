@@ -80,6 +80,10 @@ public class CCCPSettings : ScriptableObject
     public bool hasDockerImage = false;
     public bool hasDockerContainerMounts = false;
     
+    [Header("Docker Cache Timestamps")]
+    public string dockerImageCacheTimestamp = "";
+    public string dockerContainerMountsCacheTimestamp = "";
+    
     [Header("Workflow Settings")]
     public bool wslPrerequisitesChecked = false;
     public bool initializedFirstModule = false;
