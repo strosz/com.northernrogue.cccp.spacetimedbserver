@@ -4,7 +4,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
-// Processes the backup and restore commands of the local WSL Server ///
+// Processes the backup and restore commands of the local Docker or WSL Server ///
 
 namespace NorthernRogue.CCCP.Editor {
 
@@ -134,6 +134,9 @@ public class ServerVersionProcess
             cpProcess.StartInfo.RedirectStandardOutput = true;
             cpProcess.StartInfo.RedirectStandardError = true;
             
+            // Ensure PATH is properly set on macOS where GUI apps don't inherit shell PATH
+            ServerUtilityProvider.SetEnhancedPATHForProcess(cpProcess.StartInfo);
+            
             cpProcess.Start();
             string cpOutput = await cpProcess.StandardOutput.ReadToEndAsync();
             string cpError = await cpProcess.StandardError.ReadToEndAsync();
@@ -192,6 +195,9 @@ public class ServerVersionProcess
             clearProcess.StartInfo.CreateNoWindow = true;
             clearProcess.StartInfo.RedirectStandardOutput = true;
             clearProcess.StartInfo.RedirectStandardError = true;
+            
+            // Ensure PATH is properly set on macOS where GUI apps don't inherit shell PATH
+            ServerUtilityProvider.SetEnhancedPATHForProcess(clearProcess.StartInfo);
             
             clearProcess.Start();
             string output = await clearProcess.StandardOutput.ReadToEndAsync();
@@ -380,6 +386,9 @@ public class ServerVersionProcess
         cpProcess.StartInfo.RedirectStandardOutput = true;
         cpProcess.StartInfo.RedirectStandardError = true;
         
+        // Ensure PATH is properly set on macOS where GUI apps don't inherit shell PATH
+        ServerUtilityProvider.SetEnhancedPATHForProcess(cpProcess.StartInfo);
+        
         cpProcess.Start();
         cpProcess.WaitForExit();
 
@@ -425,6 +434,9 @@ public class ServerVersionProcess
             restoreProcess.StartInfo.CreateNoWindow = true;
             restoreProcess.StartInfo.RedirectStandardOutput = true;
             restoreProcess.StartInfo.RedirectStandardError = true;
+            
+            // Ensure PATH is properly set on macOS where GUI apps don't inherit shell PATH
+            ServerUtilityProvider.SetEnhancedPATHForProcess(restoreProcess.StartInfo);
             
             restoreProcess.Start();
             string output = await restoreProcess.StandardOutput.ReadToEndAsync();
@@ -581,7 +593,7 @@ public class ServerVersionProcess
     {
         logCallback("Starting automated file restore...", 0);
         
-        // Create Windows temp directory for extraction
+        // Create platform-specific temp directory for extraction
         string windowsTempPath = Path.Combine(Path.GetTempPath(), "SpacetimeDBRestore_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         Directory.CreateDirectory(windowsTempPath);
         logCallback($"Created temporary directory: {windowsTempPath}", 0);
@@ -628,17 +640,27 @@ public class ServerVersionProcess
             logCallback($"Error: Data directory not found in extracted backup at {sourceDataDir}", -1);
             logCallback("Falling back to manual restore method...", 0);
             
-            // Open both explorer windows as fallback
-            Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
-            Process.Start("explorer.exe", $"\"{wslPath}\"");
+            // Open file explorer windows based on platform
+            if (ServerUtilityProvider.IsWindows())
+            {
+                Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
+                Process.Start("explorer.exe", $"\"{wslPath}\"");
+            }
+            else if (ServerUtilityProvider.IsMacOS())
+            {
+                Process.Start("open", extractedFolderToOpen);
+                // Can't easily open WSL path on macOS, just show the extracted folder
+            }
+            else if (ServerUtilityProvider.IsLinux())
+            {
+                Process.Start("xdg-open", extractedFolderToOpen);
+            }
             
             EditorUtility.DisplayDialog(
                 "Manual Restore Required",
                 "The data directory could not be found automatically in the extracted backup.\n\n" +
-                "Two Explorer windows have been opened:\n" +
-                "1. The extracted backup files\n" +
-                "2. The WSL SpacetimeDB directory\n\n" +
-                "Please manually find the 'data' folder in the backup and copy it to replace the one in the WSL window.",
+                "A file manager window has been opened to the extracted backup files.\n\n" +
+                "Please manually find the 'data' folder in the backup and copy it to replace the one in the WSL SpacetimeDB directory.",
                 "OK"
             );
             return;
@@ -689,15 +711,26 @@ public class ServerVersionProcess
             
             // Fall back to manual restore
             logCallback("Falling back to manual restore method...", 0);
-            Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
-            Process.Start("explorer.exe", $"\"{wslPath}\"");
+            
+            // Open file explorer windows based on platform
+            if (ServerUtilityProvider.IsWindows())
+            {
+                Process.Start("explorer.exe", $"\"{extractedFolderToOpen}\"");
+                Process.Start("explorer.exe", $"\"{wslPath}\"");
+            }
+            else if (ServerUtilityProvider.IsMacOS())
+            {
+                Process.Start("open", extractedFolderToOpen);
+            }
+            else if (ServerUtilityProvider.IsLinux())
+            {
+                Process.Start("xdg-open", extractedFolderToOpen);
+            }
             
             EditorUtility.DisplayDialog(
                 "Automated Restore Failed",
                 $"Error: {ex.Message}\n\n" +
-                "Two Explorer windows have been opened for manual restore:\n" +
-                "1. The extracted backup files\n" +
-                "2. The WSL SpacetimeDB directory\n\n" +
+                "A file manager window has been opened to the extracted backup files.\n\n" +
                 "Please manually copy the 'data' folder to complete the restore.",
                 "OK"
             );
@@ -708,55 +741,110 @@ public class ServerVersionProcess
     {
         logCallback("Extracting backup archive... (this may take a moment)", 0);
         
-        // Write a batch file to execute the extraction
-        string batchFilePath = Path.Combine(Path.GetTempPath(), "extract_backup.bat");
-        string batchContent = $@"@echo off
+        try
+        {
+            if (ServerUtilityProvider.IsWindows())
+            {
+                // Windows: Use batch file approach
+                string batchFilePath = Path.Combine(Path.GetTempPath(), "extract_backup.bat");
+                string batchContent = $@"@echo off
         echo Extracting {backupFilePath} to {windowsTempPath}...
         mkdir ""{windowsTempPath}"" 2>nul
         tar -xf ""{backupFilePath}"" -C ""{windowsTempPath}""
         echo Extraction complete
         ";
-        
-        File.WriteAllText(batchFilePath, batchContent);
-        logCallback($"Created extraction batch file: {batchFilePath}", 0);
-        
-        // Run the batch file
-        Process extractProcess = new Process();
-        extractProcess.StartInfo.FileName = "cmd.exe";
-        extractProcess.StartInfo.Arguments = $"/c \"{batchFilePath}\"";
-        extractProcess.StartInfo.UseShellExecute = false;
-        extractProcess.StartInfo.CreateNoWindow = true;
-        extractProcess.StartInfo.RedirectStandardOutput = true;
-        extractProcess.StartInfo.RedirectStandardError = true;
-        
-        string extractOutput = "";
-        string extractError = "";
-        
-        extractProcess.OutputDataReceived += (sender, e) => {
-            if (!string.IsNullOrEmpty(e.Data)) extractOutput += e.Data + "\n";
-        };
-        extractProcess.ErrorDataReceived += (sender, e) => {
-            if (!string.IsNullOrEmpty(e.Data)) extractError += e.Data + "\n";
-        };
-        
-        extractProcess.Start();
-        extractProcess.BeginOutputReadLine();
-        extractProcess.BeginErrorReadLine();
-        extractProcess.WaitForExit();
-        
-        // Clean up the batch file
-        try {
-            File.Delete(batchFilePath);
-        } catch {
-            // Ignore errors when deleting the batch file
+                
+                File.WriteAllText(batchFilePath, batchContent);
+                logCallback($"Created extraction batch file: {batchFilePath}", 0);
+                
+                // Run the batch file
+                Process extractProcess = new Process();
+                extractProcess.StartInfo.FileName = "cmd.exe";
+                extractProcess.StartInfo.Arguments = $"/c \"{batchFilePath}\"";
+                extractProcess.StartInfo.UseShellExecute = false;
+                extractProcess.StartInfo.CreateNoWindow = true;
+                extractProcess.StartInfo.RedirectStandardOutput = true;
+                extractProcess.StartInfo.RedirectStandardError = true;
+                
+                string extractOutput = "";
+                string extractError = "";
+                
+                extractProcess.OutputDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data)) extractOutput += e.Data + "\n";
+                };
+                extractProcess.ErrorDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data)) extractError += e.Data + "\n";
+                };
+                
+                extractProcess.Start();
+                extractProcess.BeginOutputReadLine();
+                extractProcess.BeginErrorReadLine();
+                extractProcess.WaitForExit();
+                
+                // Clean up the batch file
+                try
+                {
+                    File.Delete(batchFilePath);
+                }
+                catch
+                {
+                    // Ignore errors when deleting the batch file
+                }
+                
+                if (!string.IsNullOrEmpty(extractOutput))
+                    logCallback("Extraction output: " + extractOutput, 0);
+                if (!string.IsNullOrEmpty(extractError))
+                    logCallback("Extraction errors: " + extractError, -1);
+            }
+            else
+            {
+                // macOS/Linux: Use tar command directly through shell
+                string tarCommand = $"tar -xf \"{backupFilePath}\" -C \"{windowsTempPath}\"";
+                
+                Process extractProcess = new Process();
+                extractProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
+                extractProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(tarCommand);
+                extractProcess.StartInfo.UseShellExecute = false;
+                extractProcess.StartInfo.CreateNoWindow = true;
+                extractProcess.StartInfo.RedirectStandardOutput = true;
+                extractProcess.StartInfo.RedirectStandardError = true;
+                
+                // Ensure PATH is properly set on macOS
+                ServerUtilityProvider.SetEnhancedPATHForProcess(extractProcess.StartInfo);
+                
+                string extractOutput = "";
+                string extractError = "";
+                
+                extractProcess.OutputDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data)) extractOutput += e.Data + "\n";
+                };
+                extractProcess.ErrorDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data)) extractError += e.Data + "\n";
+                };
+                
+                extractProcess.Start();
+                extractProcess.BeginOutputReadLine();
+                extractProcess.BeginErrorReadLine();
+                extractProcess.WaitForExit();
+                
+                if (extractProcess.ExitCode != 0)
+                {
+                    if (!string.IsNullOrEmpty(extractError))
+                        logCallback("Extraction error: " + extractError, -1);
+                    throw new Exception($"Tar extraction failed with exit code {extractProcess.ExitCode}");
+                }
+                
+                if (!string.IsNullOrEmpty(extractOutput))
+                    logCallback("Extraction output: " + extractOutput, 0);
+            }
+            
+            logCallback("Extraction completed.", 1);
         }
-        
-        if (!string.IsNullOrEmpty(extractOutput))
-            logCallback("Extraction output: " + extractOutput, 0);
-        if (!string.IsNullOrEmpty(extractError))
-            logCallback("Extraction errors: " + extractError, -1);
-        
-        logCallback("Extraction completed.", 1);
+        catch (Exception ex)
+        {
+            logCallback($"Error during extraction: {ex.Message}", -1);
+            throw;
+        }
     }
 
     private void CopyDirectory(string sourceDir, string destDir)

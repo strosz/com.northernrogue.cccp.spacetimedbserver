@@ -3208,17 +3208,15 @@ public class ServerManager
             if (updateAvailable)
             {
                 // Only show the update message once per editor session (persists across script recompilations)
-                if (!SessionState.GetBool("SpacetimeDBDockerUpdateMessageShown", false))
-                {
-                    LogMessage($"SpacetimeDB update available for Docker! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
-                    SessionState.SetBool("SpacetimeDBDockerUpdateMessageShown", true);
+                if (manualCheck && !dockerImageUpdateAvailable) {
+                    LogMessage($"SpacetimeDB update available! No docker image update is available yet, please wait until an official Docker image update. Current version: {version} and latest version: {latestVersion}", 1);
+                } else if (manualCheck && dockerImageUpdateAvailable) {
+                    LogMessage($"SpacetimeDB update available in the latest Docker image! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
                 }
-                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(true);
             } else {
                 if (manualCheck) {
                     LogMessage($"SpacetimeDB is up to date in Docker (version {version})", 1);
                 }
-                CCCPSettingsAdapter.SetSpacetimeDBUpdateAvailable(false);
             }
         }
     }
@@ -3341,7 +3339,15 @@ public class ServerManager
             
             if (updateAvailable && !string.IsNullOrEmpty(latestSDKVersion) && currentSDKVersion != latestSDKVersion)
             {
-                LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                if (manualCheck)
+                {
+                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                }
+                else if (!manualCheck && !SessionState.GetBool("SpacetimeDBSDKUpdateMessageShown", false))
+                {
+                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                    SessionState.SetBool("SpacetimeDBSDKUpdateMessageShown", true);
+                }
             }
             else if (!string.IsNullOrEmpty(latestSDKVersion))
             {

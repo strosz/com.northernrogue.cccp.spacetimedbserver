@@ -911,33 +911,6 @@ public class ServerSetupWindow : EditorWindow
             UpdateInstallerItemsStatus();
         }
         EditorGUI.EndDisabledGroup();
-               
-        // Debug Dropdown
-        GUIContent debugContent = new GUIContent("Debug");
-        if (EditorGUILayout.DropdownButton(debugContent, FocusType.Passive, EditorStyles.toolbarDropDown, GUILayout.Width(60)))
-        {
-            GenericMenu menu = new GenericMenu();
-
-            menu.AddItem(new GUIContent("Show Install Windows"), visibleInstallProcesses, () => {
-                visibleInstallProcesses = !visibleInstallProcesses;
-                CCCPSettingsAdapter.SetVisibleInstallProcesses(visibleInstallProcesses);
-            });
-
-            menu.AddItem(new GUIContent("Keep Windows Open"), keepWindowOpenForDebug, () => {
-                keepWindowOpenForDebug = !keepWindowOpenForDebug;
-                CCCPSettingsAdapter.SetKeepWindowOpenForDebug(keepWindowOpenForDebug);
-            });
-            
-            menu.AddItem(new GUIContent("Force Install"), forceInstall, () => {
-                forceInstall = !forceInstall;
-                // Update dependent flags when forceInstall changes
-                alwaysShowInstall = forceInstall;
-                installIfAlreadyInstalled = forceInstall;
-                // No Settings for forceInstall as it's a transient state for the session
-            });
-
-            menu.ShowAsContext();
-        }
         
         // Settings Dropdown
         GUIContent settingsContent = new GUIContent("Settings");
@@ -950,7 +923,36 @@ public class ServerSetupWindow : EditorWindow
                 CCCPSettingsAdapter.SetUpdateCargoToml(updateCargoToml);
             });
 
+            menu.AddItem(new GUIContent("Force Install Mode"), forceInstall, () => {
+                forceInstall = !forceInstall;
+                // Update dependent flags when forceInstall changes
+                alwaysShowInstall = forceInstall;
+                installIfAlreadyInstalled = forceInstall;
+                // No Settings for forceInstall as it's a transient state for the session
+            });
+
             menu.ShowAsContext();
+        }
+
+        // Debug Dropdown
+        if (debugMode) {
+            GUIContent debugContent = new GUIContent("Debug");
+            if (EditorGUILayout.DropdownButton(debugContent, FocusType.Passive, EditorStyles.toolbarDropDown, GUILayout.Width(60)))
+            {
+                GenericMenu menu = new GenericMenu();
+    
+                menu.AddItem(new GUIContent("Show Install Windows"), visibleInstallProcesses, () => {
+                    visibleInstallProcesses = !visibleInstallProcesses;
+                    CCCPSettingsAdapter.SetVisibleInstallProcesses(visibleInstallProcesses);
+                });
+    
+                menu.AddItem(new GUIContent("Keep Windows Open"), keepWindowOpenForDebug, () => {
+                    keepWindowOpenForDebug = !keepWindowOpenForDebug;
+                    CCCPSettingsAdapter.SetKeepWindowOpenForDebug(keepWindowOpenForDebug);
+                });
+    
+                menu.ShowAsContext();
+            }
         }
 
         // Add space between elements
@@ -1196,7 +1198,7 @@ public class ServerSetupWindow : EditorWindow
                                     dockerImageUpdateAvailable && 
                                     !string.IsNullOrEmpty(dockerImageLatestTag);
         }
-        
+
         // Status (installed or install button)
         if (showUpdateButton)
         {
