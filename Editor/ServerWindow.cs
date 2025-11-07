@@ -1352,9 +1352,9 @@ public class ServerWindow : EditorWindow
                 EditorGUILayout.LabelField(new GUIContent(statusLabel, tooltipStatus), GUILayout.Width(110));
                 Color originalStatusColor = connectedStyle.normal.textColor;
                 
-                bool serviceRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
-                connectedStyle.normal.textColor = serviceRunning ? originalStatusColor : Color.gray;
-                string statusText = serviceRunning ? "RUNNING" : "STOPPED";
+                bool cliProviderRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
+                connectedStyle.normal.textColor = cliProviderRunning ? originalStatusColor : Color.gray;
+                string statusText = cliProviderRunning ? "RUNNING" : "STOPPED";
                 EditorGUILayout.LabelField(statusText, connectedStyle);
                 // Restore the original color after using it
                 connectedStyle.normal.textColor = originalStatusColor;
@@ -2010,26 +2010,26 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField("SpacetimeDB:", GUILayout.Width(110));
         
-        // Use green for running/starting, gray for stopped
+        // Use green for running/starting OR gray for stopped/local CLI not connected
         string statusText;
         Color originalStatusColor = connectedStyle.normal.textColor;
-        bool isActive = (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected) || 
-                        serverManager.IsStartingUp || 
-                        serverManager.IsServerStarted;
-        
+        bool spacetimedbConnected = (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected) || 
+                                    (serverMode == ServerMode.CustomServer && serverManager.IsSSHConnectionActive) ||
+                                    (serverManager.IsCliProviderRunning && (serverManager.IsStartingUp || serverManager.IsServerStarted));
+
         if (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected)
         {
-            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
             statusText = "MAINCLOUD";
         }
         else if (serverManager.IsStartingUp)
         {
-            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
             statusText = "STARTING...";
         }
         else if (serverManager.IsServerStarted)
         {
-            connectedStyle.normal.textColor = isActive ? originalStatusColor : Color.gray;
+            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
             statusText = "RUNNING";
         }
         else
@@ -2327,7 +2327,9 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.LabelField("First Publish then Generate client code.", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(20));
         }
 
-        EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.ModuleName));
+        // Disable publish if module name is empty OR if CLI provider isn't running
+        bool publishDisabled = string.IsNullOrEmpty(serverManager.ModuleName) || !serverManager.IsCliProviderRunning;
+        EditorGUI.BeginDisabledGroup(publishDisabled);
         
         string editModuleTooltip = "Edit the module script (lib.rs or lib.cs) of the selected module.";
         if (GUILayout.Button(new GUIContent("Edit Module", editModuleTooltip), GUILayout.Height(20)))
@@ -2382,6 +2384,11 @@ public class ServerWindow : EditorWindow
 
         string publishTooltip = "Publish the selected module to the server.\n\n" +
                                 "Ctrl + Alt + Click to also reset the database.";
+        
+        if (!serverManager.IsCliProviderRunning)
+        {
+            publishTooltip += "\n\nRequires the local CLI provider to be running";
+        }
 
         if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(30)))
         {

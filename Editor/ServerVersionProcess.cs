@@ -74,8 +74,8 @@ public class ServerVersionProcess
         string backupCommand = $"tar czf \"{wslBackupPath}/spacetimedb_wsl_backup_$(date +%F_%H-%M-%S).tar.gz\" {spacetimePath}";
         var result = await wslProcess.RunServerCommandAsync(backupCommand);
         
-        if (result.success && debugMode)
-            logCallback("Server backup created successfully.", 1);
+        if (result.success)
+            logCallback($"WSL server backup created successfully: {wslBackupPath}/spacetimedb_wsl_backup_$(date +%F_%H-%M-%S).tar.gz", 1);
         else
             logCallback($"Backup may have failed: {result.error}", -1);
     }
@@ -152,10 +152,7 @@ public class ServerVersionProcess
             string cleanupCommand = $"rm {containerTempBackup}";
             await dockerProcess.RunServerCommandAsync(cleanupCommand);
 
-            if (debugMode)
-                logCallback($"Docker server backup created successfully: {hostBackupPath}", 1);
-            else
-                logCallback("Server backup created successfully.", 1);
+            logCallback($"Docker server backup created successfully: {hostBackupPath}", 1);
         }
         catch (Exception ex)
         {

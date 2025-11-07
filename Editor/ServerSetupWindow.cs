@@ -495,7 +495,8 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on WSL
-                installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                //installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                installAction = ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -570,7 +571,8 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Custom SSH
-                installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                //installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                installAction = ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -629,7 +631,8 @@ public class ServerSetupWindow : EditorWindow
                 "Examples include a network manager that syncs the client state with the database",
                 isInstalled = hasSpacetimeDBUnitySDK,
                 isEnabled = true, // Always enabled as it doesn't depend on Docker
-                installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                //installAction = isGithubBuild ? CreateReflectionAction("InstallSpacetimeDBUnitySDK") : (Action)ShowSpacetimeDBSDKDialog,
+                installAction = ShowSpacetimeDBSDKDialog,
                 sectionHeader = "Required Unity Plugin"
             }
         };
@@ -1697,7 +1700,6 @@ public class ServerSetupWindow : EditorWindow
         if (isDockerRefreshing) return; // Don't start a new refresh if one is already running
         
         isDockerRefreshing = true;
-        SetStatus("Checking Docker prerequisites...", Color.yellow);
 
         // Check for SpacetimeDB Unity SDK separately
         ServerSpacetimeSDKInstaller.IsSDKInstalled((isSDKInstalled) => {
@@ -1897,12 +1899,12 @@ public class ServerSetupWindow : EditorWindow
         {
             EditorUtility.DisplayDialog(
                 "Server Directory Required",
-                "Before setting up the Docker image, you must configure the Server Directory.\n\n" +
-                "The Server Directory is required for Docker volume mounts and proper container configuration.\n\n" +
-                "Please set the Server Directory in the Main Window's Pre-requisites first, then return to complete the Docker setup.",
+                "Before setting up the Docker image, you must enter and select a server module so you get a valid Server Directory.\n\n" +
+                "This is required for Docker volume mounts and proper container configuration.\n\n" +
+                "Please select a server module in the Main Window's Pre-requisites first, then return to complete the Docker setup.",
                 "OK"
             );
-            SetStatus("Server Directory must be set before Docker image setup.", Color.red);
+            SetStatus("Server module must be selected before Docker image setup.", Color.yellow);
             return;
         }
         

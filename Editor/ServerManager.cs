@@ -381,6 +381,12 @@ public class ServerManager
     private double lastWslCheckTime = 0;
     private const double wslCheckInterval = 5.0;
 
+    // CLI provider check (only true when the configured LocalCLIProvider is actually running)
+    // Docker uses WSL too, so we must check which provider is configured
+    public bool IsCliProviderRunning => 
+        (LocalCLIProvider == "Docker" && isDockerRunning) || 
+        (LocalCLIProvider == "WSL" && isWslRunning);
+
     // Maincloud Connection Status
     public bool IsMaincloudConnected => isMaincloudConnected;
     private bool isMaincloudConnected = false;
@@ -3341,11 +3347,11 @@ public class ServerManager
             {
                 if (manualCheck)
                 {
-                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Package Manager update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
                 }
                 else if (!manualCheck && !SessionState.GetBool("SpacetimeDBSDKUpdateMessageShown", false))
                 {
-                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Setup Window update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
+                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Package Manager update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
                     SessionState.SetBool("SpacetimeDBSDKUpdateMessageShown", true);
                 }
             }
