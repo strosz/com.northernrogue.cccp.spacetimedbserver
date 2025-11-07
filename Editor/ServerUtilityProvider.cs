@@ -1234,6 +1234,132 @@ public static class ServerUtilityProvider
 
     #endregion
 
+    #region File Opening Utilities
+
+    /// <summary>
+    /// Opens a file in the default application for the current platform.
+    /// On macOS, explicitly opens with TextEdit (which works reliably, equivalent to Cmd+Click > Open With > TextEdit).
+    /// On Windows, uses the file association to open with the default application.
+    /// On Linux, uses xdg-open to open with the default application.
+    /// </summary>
+    /// <param name="filePath">The full path to the file to open</param>
+    /// <returns>True if the file was successfully opened, false otherwise</returns>
+    public static bool OpenFileInDefaultApplication(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
+        {
+            Debug.LogError($"File does not exist: {filePath}");
+            return false;
+        }
+
+        try
+        {
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+            
+            if (IsWindows())
+            {
+                // Windows: Use the file association directly
+                // This will open the file with the default application for its extension
+                startInfo.FileName = filePath;
+                startInfo.UseShellExecute = true;
+                startInfo.CreateNoWindow = true;
+            }
+            else if (IsMacOS())
+            {
+                // macOS: Use the -a flag to specify the application
+                startInfo.FileName = "open";
+                startInfo.Arguments = $"-a \"\" \"{filePath}\"";
+                //startInfo.Arguments = $"-a TextEdit \"{filePath}\""; // Alternative: specify TextEdit explicitly
+                startInfo.UseShellExecute = false;
+                startInfo.CreateNoWindow = false;
+            }
+            else if (IsLinux())
+            {
+                // Linux: Use 'xdg-open' command
+                startInfo.FileName = "xdg-open";
+                startInfo.Arguments = $"\"{filePath}\"";
+                startInfo.UseShellExecute = false;
+                startInfo.CreateNoWindow = false;
+            }
+            else
+            {
+                // Fallback to UseShellExecute for unknown platforms
+                startInfo.FileName = filePath;
+                startInfo.UseShellExecute = true;
+            }
+
+            System.Diagnostics.Process.Start(startInfo);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to open file {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Opens the folder containing the file and attempts to select/highlight the file.
+    /// On Windows, uses /select flag with explorer.
+    /// On macOS, uses 'open -R' to reveal the file in Finder.
+    /// On Linux, opens the folder with xdg-open.
+    /// </summary>
+    /// <param name="filePath">The full path to the file to reveal</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool RevealFileInFolder(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
+        {
+            Debug.LogError($"File does not exist: {filePath}");
+            return false;
+        }
+
+        try
+        {
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+            
+            if (IsWindows())
+            {
+                // Windows: Use explorer /select to select the file
+                startInfo.FileName = "explorer";
+                startInfo.Arguments = $"/select, \"{filePath}\"";
+                startInfo.UseShellExecute = false;
+                startInfo.CreateNoWindow = true;
+            }
+            else if (IsMacOS())
+            {
+                // macOS: Use 'open -R' to reveal in Finder
+                startInfo.FileName = "open";
+                startInfo.Arguments = $"-R \"{filePath}\"";
+                startInfo.UseShellExecute = false;
+                startInfo.CreateNoWindow = false;
+            }
+            else if (IsLinux())
+            {
+                // Linux: Open the folder containing the file
+                string folderPath = System.IO.Path.GetDirectoryName(filePath);
+                startInfo.FileName = "xdg-open";
+                startInfo.Arguments = $"\"{folderPath}\"";
+                startInfo.UseShellExecute = false;
+                startInfo.CreateNoWindow = false;
+            }
+            else
+            {
+                return false;
+            }
+
+            System.Diagnostics.Process.Start(startInfo);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to reveal file in folder {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    #endregion
+
     #region Docker Utilities
 
     /// <summary>
@@ -1455,6 +1581,30 @@ public static class ServerUtilityProvider
         }
         
         return normalized;
+    }
+    
+    /// <summary>
+    /// Normalizes a path specifically for Docker volume mount arguments (-v flag).
+    /// This ensures cross-platform compatibility for Docker volume mounts.
+    /// On Windows: C:\Users\path -> /c/Users/path
+    /// On macOS/Linux: /Users/path -> /Users/path (unchanged)
+    /// </summary>
+    /// <param name="path">The host path to mount in Docker</param>
+    /// <returns>Docker-compatible volume mount path</returns>
+    public static string NormalizePathForDockerMount(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+            
+        // For macOS and Linux, paths are already correct
+        if (IsMacOS() || IsLinux())
+        {
+            // Just ensure forward slashes (though they should already be correct)
+            return path.Replace('\\', '/');
+        }
+        
+        // For Windows, use the NormalizePathForDocker method
+        return NormalizePathForDocker(path);
     }
 
     /// <summary>

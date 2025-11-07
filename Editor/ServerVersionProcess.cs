@@ -10,9 +10,11 @@ namespace NorthernRogue.CCCP.Editor {
 
 public class ServerVersionProcess
 {
+    private bool debugMode;
+
     private ServerWSLProcess wslProcess;
     private ServerDockerProcess dockerProcess;
-    private bool debugMode;
+
     private Action<string, int> logCallback;
     
     // Server control delegates
@@ -181,13 +183,11 @@ public class ServerVersionProcess
         {
             logCallback("Clearing Docker volume data...", 0);
             
+            // Execute docker directly to avoid quote escaping issues
             // Use a temporary alpine container to clear the volume
-            // Mount the volume at /data in the temp container
-            string clearCommand = $"docker run --rm -v spacetimedb-data:/data alpine sh -c \"rm -rf /data/*\"";
-            
             Process clearProcess = new Process();
-            clearProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            clearProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(clearCommand);
+            clearProcess.StartInfo.FileName = ServerUtilityProvider.GetDockerExecutablePath();
+            clearProcess.StartInfo.Arguments = "run --rm -v spacetimedb-data:/data alpine sh -c \"rm -rf /data/*\"";
             clearProcess.StartInfo.UseShellExecute = false;
             clearProcess.StartInfo.CreateNoWindow = true;
             clearProcess.StartInfo.RedirectStandardOutput = true;
@@ -203,7 +203,15 @@ public class ServerVersionProcess
             
             if (clearProcess.ExitCode == 0)
             {
-                logCallback("Docker server data cleared successfully.", 1);
+                // Check if stderr contains actual errors (not just Docker progress)
+                if (!string.IsNullOrEmpty(error) && !IsDockerProgressOutput(error))
+                {
+                    logCallback($"Docker server data cleared with warnings: {error}", -2);
+                }
+                else
+                {
+                    logCallback("Docker server data cleared successfully.", 1);
+                }
             }
             else
             {
@@ -413,20 +421,18 @@ public class ServerVersionProcess
             string backupFileName = Path.GetFileName(absoluteBackupPath);
             string backupDirectory = Path.GetDirectoryName(absoluteBackupPath);
             
+            // Normalize path for Docker volume mount (cross-platform)
+            string normalizedBackupDir = ServerUtilityProvider.NormalizePathForDockerMount(backupDirectory);
+            
             logCallback("Restoring data to Docker volume...", 0);
             
-            // Use a temporary alpine container to:
-            // 1. Mount the volume at /data
-            // 2. Mount the backup directory at /backup (read-only)
-            // 3. Clear existing data and extract the backup
-            string restoreCommand = $"docker run --rm " +
-                $"-v spacetimedb-data:/data " +
-                $"-v \"{backupDirectory}:/backup:ro\" " +
-                $"alpine sh -c \"rm -rf /data/* && tar xzf /backup/{backupFileName} -C /data --strip-components=1\"";
+            // Execute docker directly without shell to avoid quote escaping issues
+            // Build the Alpine container command arguments as a list
+            string alpineShellCommand = $"rm -rf /data/* && tar xzf /backup/{backupFileName} -C /data --strip-components=1";
             
             Process restoreProcess = new Process();
-            restoreProcess.StartInfo.FileName = ServerUtilityProvider.GetShellExecutable();
-            restoreProcess.StartInfo.Arguments = ServerUtilityProvider.GetShellArguments(restoreCommand);
+            restoreProcess.StartInfo.FileName = ServerUtilityProvider.GetDockerExecutablePath();
+            restoreProcess.StartInfo.Arguments = $"run --rm -v spacetimedb-data:/data -v \"{normalizedBackupDir}:/backup:ro\" alpine sh -c \"{alpineShellCommand}\"";
             restoreProcess.StartInfo.UseShellExecute = false;
             restoreProcess.StartInfo.CreateNoWindow = true;
             restoreProcess.StartInfo.RedirectStandardOutput = true;
@@ -440,13 +446,23 @@ public class ServerVersionProcess
             string error = await restoreProcess.StandardError.ReadToEndAsync();
             restoreProcess.WaitForExit();
 
+            // Docker image pull messages go to stderr but aren't errors
+            // Only treat as error if exit code is non-zero
             if (restoreProcess.ExitCode != 0)
             {
                 logCallback($"Failed to restore backup: {error}", -1);
                 return;
             }
 
-            logCallback("Docker restore completed successfully!", 1);
+            // Filter out Docker progress messages from stderr
+            if (!string.IsNullOrEmpty(error) && !IsDockerProgressOutput(error))
+            {
+                logCallback($"Restore completed with warnings: {error}", -2);
+            }
+            else
+            {
+                logCallback("Docker restore completed successfully!", 1);
+            }
             
             EditorUtility.DisplayDialog(
                 "Restore Completed",
@@ -460,6 +476,69 @@ public class ServerVersionProcess
             logCallback($"Error during Docker restore: {ex.Message}", -1);
             throw;
         }
+    }
+    
+    /// <summary>
+    /// Checks if stderr output is just Docker progress/pull messages (not actual errors)
+    /// </summary>
+    private bool IsDockerProgressOutput(string stderr)
+    {
+        if (string.IsNullOrEmpty(stderr))
+            return false;
+            
+        // Common Docker progress indicators that appear in stderr
+        string[] progressIndicators = new string[]
+        {
+            "Pulling from",
+            "Pulling fs layer",
+            "Download complete",
+            "Pull complete",
+            "Digest:",
+            "Status: Downloaded",
+            "already exists",
+            "Waiting",
+            "Verifying Checksum",
+            "Extracting"
+        };
+        
+        // If stderr contains progress indicators and no actual error keywords, it's just progress
+        bool hasProgressIndicator = false;
+        bool hasErrorKeyword = false;
+        
+        foreach (string indicator in progressIndicators)
+        {
+            if (stderr.Contains(indicator))
+            {
+                hasProgressIndicator = true;
+                break;
+            }
+        }
+        
+        // Check for actual error keywords
+        string[] errorKeywords = new string[]
+        {
+            "Error:",
+            "ERROR:",
+            "error:",
+            "failed:",
+            "Failed:",
+            "FAILED:",
+            "cannot",
+            "Cannot",
+            "CANNOT"
+        };
+        
+        foreach (string keyword in errorKeywords)
+        {
+            if (stderr.Contains(keyword))
+            {
+                hasErrorKeyword = true;
+                break;
+            }
+        }
+        
+        // It's just progress if we have progress indicators and no error keywords
+        return hasProgressIndicator && !hasErrorKeyword;
     }
 
     public async void RestoreServerDataWSL(string backupDirectory, string userName, string backupFilePath = null)

@@ -2334,16 +2334,49 @@ public class ServerWindow : EditorWindow
         string editModuleTooltip = "Edit the module script (lib.rs or lib.cs) of the selected module.";
         if (GUILayout.Button(new GUIContent("Edit Module", editModuleTooltip), GUILayout.Height(20)))
         {
-            // Open the module script in the default editor
+            // Open the module script in the default editor using cross-platform utility
             string modulePathRs = Path.Combine(serverDirectory, "src", "lib.rs");
             string modulePathCs = Path.Combine(serverDirectory, "lib.cs");
+            
+            string fileToOpen = null;
+            
             if (File.Exists(modulePathRs))
             {
-                Process.Start(modulePathRs);
+                fileToOpen = modulePathRs;
             }
             else if (File.Exists(modulePathCs))
             {
-                Process.Start(modulePathCs);
+                fileToOpen = modulePathCs;
+            }
+            
+            if (fileToOpen != null)
+            {
+                // Try to open the file with the default application
+                bool opened = ServerUtilityProvider.OpenFileInDefaultApplication(fileToOpen);
+                
+                if (ServerUtilityProvider.IsMacOS())
+                {
+                    // On macOS, also reveal the file in Finder
+                    ServerUtilityProvider.RevealFileInFolder(fileToOpen);
+                }
+
+                if (!opened)
+                {
+                    // If open failed, try to reveal the folder instead
+                    if (ServerUtilityProvider.RevealFileInFolder(fileToOpen))
+                    {
+                        if (debugMode) LogMessage("Module script folder opened", 1);
+                    }
+                    else
+                    {
+                        LogMessage("Failed to open module script or folder", -2);
+                    }
+                }
+                else
+                {
+                    // Successfully opened
+                    if (debugMode) LogMessage("Opened module script with text editor", 1);
+                }
             }
             else
             {

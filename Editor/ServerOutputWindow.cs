@@ -1532,16 +1532,27 @@ public class ServerOutputWindow : EditorWindow
     {
         if (string.IsNullOrEmpty(text)) return 10f;
         
-        // Use line count to determine height
+        // Count lines
         int lineCount = text.Split('\n').Length;
         
-        // Get line height from style (fallback to standard line height) // Set this manually for now to get the text to go to the bottom of the window
-        float singleLineHeight = 14.023f;/*logStyle != null ? 
-            logStyle.CalcSize(new GUIContent("Test")).y : EditorGUIUtility.singleLineHeight;*/
+        // Use the style's lineHeight property which accounts for font size and line spacing
+        // Falls back to EditorGUIUtility if logStyle is not available
+        float lineHeight = logStyle != null && logStyle.lineHeight > 0 ? 
+            logStyle.lineHeight : EditorGUIUtility.singleLineHeight;
         
-        // Calculate precise height without extra padding
-        return lineCount * singleLineHeight;
-        //return 1300f;
+        // Calculate total height
+        float contentHeight = lineCount * lineHeight;
+        
+        // Add style padding to prevent clipping at edges
+        if (logStyle != null)
+        {
+            contentHeight += logStyle.padding.vertical;
+        }
+        
+        // Add extra buffer equal to one line height to ensure bottom text is fully visible
+        //contentHeight += lineHeight;
+        
+        return contentHeight;
     }
 
     
