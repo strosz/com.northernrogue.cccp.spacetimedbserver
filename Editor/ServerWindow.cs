@@ -1350,14 +1350,14 @@ public class ServerWindow : EditorWindow
                 }
                 string statusLabel = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? "Docker:" : "WSL:";
                 EditorGUILayout.LabelField(new GUIContent(statusLabel, tooltipStatus), GUILayout.Width(110));
-                Color originalStatusColor = connectedStyle.normal.textColor;
+                Color connectedStatusColor = connectedStyle.normal.textColor;
                 
                 bool cliProviderRunning = serverManager.CurrentServerMode == ServerManager.ServerMode.DockerServer ? isDockerRunning : isWslRunning;
-                connectedStyle.normal.textColor = cliProviderRunning ? originalStatusColor : Color.gray;
+                connectedStyle.normal.textColor = cliProviderRunning ? connectedStatusColor : Color.gray;
                 string statusText = cliProviderRunning ? "RUNNING" : "STOPPED";
                 EditorGUILayout.LabelField(statusText, connectedStyle);
                 // Restore the original color after using it
-                connectedStyle.normal.textColor = originalStatusColor;
+                connectedStyle.normal.textColor = connectedStatusColor;
                 EditorGUILayout.EndHorizontal();
             }
             #endregion
@@ -1820,68 +1820,77 @@ public class ServerWindow : EditorWindow
         }
         
         // Start or Stop Server button
-        if (serverMode != ServerMode.MaincloudServer) // Maincloud is always running remotely, so we don't need to show any start/stop button
+        serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp; // Update running state
+        if (!serverManager.HasAllPrerequisites)
         {
-            serverRunning = serverManager.IsServerStarted || serverManager.IsStartingUp; // Update running state
-            if (!serverManager.HasAllPrerequisites)
+            if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
             {
-                if (GUILayout.Button("Check Pre-Requisites to Start SpacetimeDB", GUILayout.Height(30)))
+                CheckPrerequisites();
+            }
+        }
+        else // If Prerequisites are checked then show normal server controls
+        {
+            if (serverMode == ServerMode.WSLServer)
+            {
+                if (!serverRunning)
                 {
-                    CheckPrerequisites();
+                    if (GUILayout.Button("Start SpacetimeDB Local", GUILayout.Height(30)))
+                    {
+                        serverManager.StartServer();
+                    }
+                }
+                else
+                {
+                    if (GUILayout.Button("Stop SpacetimeDB Local", GUILayout.Height(30)))
+                    {
+                        serverManager.StopServer();
+                        CloseDatabaseAndReducerWindow();
+                    }
+                }
+            } 
+            else if (serverMode == ServerMode.DockerServer)
+            {
+                if (!serverRunning)
+                {
+                    if (GUILayout.Button("Start SpacetimeDB Docker", GUILayout.Height(30)))
+                    {
+                        serverManager.StartServer();
+                    }
+                }
+                else
+                {
+                    if (GUILayout.Button("Stop SpacetimeDB Docker", GUILayout.Height(30)))
+                    {
+                        serverManager.StopServer();
+                        CloseDatabaseAndReducerWindow();
+                    }
+                }
+            } 
+            else if (serverMode == ServerMode.CustomServer)
+            {
+                if (!serverRunning)
+                {
+                    if (GUILayout.Button("Start SpacetimeDB Remote", GUILayout.Height(30)))
+                    {
+                        serverManager.StartServer();
+                    }
+                }
+                else
+                {
+                    if (GUILayout.Button("Stop SpacetimeDB Remote", GUILayout.Height(30)))
+                    {
+                        serverManager.StopServer();
+                        CloseDatabaseAndReducerWindow();
+                    }
                 }
             }
-            else // If Prerequisites are checked then show normal server controls
+            else if (serverMode == ServerMode.MaincloudServer)
             {
-                if (serverMode == ServerMode.WSLServer)
+                if (localCLIProvider == "Docker" && !serverManager.IsCliProviderRunning)
                 {
-                    if (!serverRunning)
+                    if (GUILayout.Button("Start SpacetimeDB Docker CLI", GUILayout.Height(30)))
                     {
-                        if (GUILayout.Button("Start SpacetimeDB Local", GUILayout.Height(30)))
-                        {
-                            serverManager.StartServer();
-                        }
-                    }
-                    else
-                    {
-                        if (GUILayout.Button("Stop SpacetimeDB Local", GUILayout.Height(30)))
-                        {
-                            serverManager.StopServer();
-                            CloseDatabaseAndReducerWindow();
-                        }
-                    }
-                } else if (serverMode == ServerMode.DockerServer)
-                {
-                    if (!serverRunning)
-                    {
-                        if (GUILayout.Button("Start SpacetimeDB Docker", GUILayout.Height(30)))
-                        {
-                            serverManager.StartServer();
-                        }
-                    }
-                    else
-                    {
-                        if (GUILayout.Button("Stop SpacetimeDB Docker", GUILayout.Height(30)))
-                        {
-                            serverManager.StopServer();
-                            CloseDatabaseAndReducerWindow();
-                        }
-                    }
-                } else if (serverMode == ServerMode.CustomServer)
-                {
-                    if (!serverRunning)
-                    {
-                        if (GUILayout.Button("Start SpacetimeDB Remote", GUILayout.Height(30)))
-                        {
-                            serverManager.StartServer();
-                        }
-                    }
-                    else
-                    {
-                        if (GUILayout.Button("Stop SpacetimeDB Remote", GUILayout.Height(30)))
-                        {
-                            serverManager.StopServer();
-                            CloseDatabaseAndReducerWindow();
-                        }
+                        serverManager.StartServer();
                     }
                 }
             }
@@ -2012,24 +2021,25 @@ public class ServerWindow : EditorWindow
         
         // Use green for running/starting OR gray for stopped/local CLI not connected
         string statusText;
-        Color originalStatusColor = connectedStyle.normal.textColor;
+        Color connectedStatusColor = connectedStyle.normal.textColor;
         bool spacetimedbConnected = (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected) || 
                                     (serverMode == ServerMode.CustomServer && serverManager.IsSSHConnectionActive) ||
                                     (serverManager.IsCliProviderRunning && (serverManager.IsStartingUp || serverManager.IsServerStarted));
 
         if (serverMode == ServerMode.MaincloudServer && serverManager.IsMaincloudConnected)
         {
-            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
+            // For Maincloud, show in gray if CLI provider is not running
+            connectedStyle.normal.textColor = serverManager.IsCliProviderRunning ? connectedStatusColor : Color.gray;
             statusText = "MAINCLOUD";
         }
         else if (serverManager.IsStartingUp)
         {
-            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
+            connectedStyle.normal.textColor = spacetimedbConnected ? connectedStatusColor : Color.gray;
             statusText = "STARTING...";
         }
         else if (serverManager.IsServerStarted)
         {
-            connectedStyle.normal.textColor = spacetimedbConnected ? originalStatusColor : Color.gray;
+            connectedStyle.normal.textColor = spacetimedbConnected ? connectedStatusColor : Color.gray;
             statusText = "RUNNING";
         }
         else
@@ -2049,7 +2059,7 @@ public class ServerWindow : EditorWindow
         GUILayout.FlexibleSpace();
         
         // Restore the original color after using it
-        connectedStyle.normal.textColor = originalStatusColor;
+        connectedStyle.normal.textColor = connectedStatusColor;
 
         // SpacetimeDB version display
         GUIStyle versionStyle = new GUIStyle(EditorStyles.miniLabel);
@@ -2102,7 +2112,7 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
-                if ((serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer) && CLIAvailableLocal()) 
+                if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
                 #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
@@ -2113,7 +2123,7 @@ public class ServerWindow : EditorWindow
 
             if (GUILayout.Button("Logout", GUILayout.Height(20)))
             {
-                if ((serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer) && CLIAvailableLocal()) 
+                if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
                 #pragma warning disable CS4014 // Because this call is not awaited we disable the warning, it works anyhow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
@@ -2241,8 +2251,8 @@ public class ServerWindow : EditorWindow
             }
 
             EditorGUI.BeginDisabledGroup(!serverManager.IsServerStarted && !serverManager.HasAllPrerequisites);
-            string checkForUpdateTooltip = $"Checks for SpacetimeDB {localCLIProvider} CLI updates if available.";
-            if (GUILayout.Button(new GUIContent($"Check for {localCLIProvider} CLI Update", checkForUpdateTooltip), GUILayout.Height(20)))
+            string checkForUpdateTooltip = $"Checks for SpacetimeDB and {localCLIProvider} CLI updates if available.";
+            if (GUILayout.Button(new GUIContent($"Check for SpacetimeDB Updates", checkForUpdateTooltip), GUILayout.Height(20)))
             {
                 CheckCLIUpdates();
             }
@@ -3167,12 +3177,12 @@ public class ServerWindow : EditorWindow
 
     public bool CLIAvailableLocal()
     {
-        if (hasDocker && localCLIProvider == "Docker")
+        if (localCLIProvider == "Docker" && hasDocker && hasDockerImage && serverManager.IsCliProviderRunning) // Docker doesn't start automatically, check if running
         {
             if (debugMode) LogMessage("SpacetimeDB Local CLI is available via Docker.", 1);
             return true;
         }
-        else if (hasWSL && localCLIProvider == "WSL")
+        else if (localCLIProvider == "WSL" && hasWSL && hasDebianTrixie && hasSpacetimeDBServer && hasSpacetimeDBService)
         {
             if (debugMode) LogMessage("SpacetimeDB Local CLI is available via WSL.", 1);
             return true;

@@ -15,6 +15,10 @@ public class ServerManager
     private const string SessionKeyServerStarted = "ServerManager_ServerStarted";
     private const string SessionKeyServerMode = "ServerManager_ServerMode";
     private const string SessionKeyIsStartingUp = "ServerManager_IsStartingUp";
+    private const string SessionKeyIsMaincloudConnected = "ServerManager_IsMaincloudConnected";
+    private const string SessionKeyIsCliProviderRunning = "ServerManager_IsCliProviderRunning";
+    private const string SessionKeyIsDockerContainerRunning = "ServerManager_IsDockerContainerRunning";
+    private const string SessionKeyIsWslRunning = "ServerManager_IsWslRunning";
     
     // Process Handlers
     private ServerWSLProcess wslProcessor;
@@ -373,18 +377,23 @@ public class ServerManager
     public Action RepaintCallback { get; set; }
 
     // WSL Connection Status
-    public bool IsWslRunning => isWslRunning;
     private bool isWslRunning = false;
-    
-    public bool IsDockerRunning => isDockerRunning;
+    public bool IsWslRunning => isWslRunning;
+
+    // Docker Connection Status
     private bool isDockerRunning = false;
-    private double lastWslCheckTime = 0;
-    private const double wslCheckInterval = 5.0;
+    private bool isDockerContainerRunning = false;
+    public bool IsDockerRunning => isDockerRunning;
+    public bool IsDockerContainerRunning => isDockerContainerRunning;
+
+    // CLI Connection Status
+    private double lastCliCheckTime = 0;
+    private const double cliCheckInterval = 5.0;
 
     // CLI provider check (only true when the configured LocalCLIProvider is actually running)
     // Docker uses WSL too, so we must check which provider is configured
     public bool IsCliProviderRunning => 
-        (LocalCLIProvider == "Docker" && isDockerRunning) || 
+        (LocalCLIProvider == "Docker" && isDockerContainerRunning) || 
         (LocalCLIProvider == "WSL" && isWslRunning);
 
     // Maincloud Connection Status
@@ -618,11 +627,18 @@ public class ServerManager
         bool sessionServerStarted = SessionState.GetBool(SessionKeyServerStarted, false);
         bool sessionIsStartingUp = SessionState.GetBool(SessionKeyIsStartingUp, false);
         int sessionServerMode = SessionState.GetInt(SessionKeyServerMode, (int)ServerMode.WSLServer);
+        bool sessionIsMaincloudConnected = SessionState.GetBool(SessionKeyIsMaincloudConnected, false);
+        bool sessionIsDockerContainerRunning = SessionState.GetBool(SessionKeyIsDockerContainerRunning, false);
+        bool sessionIsWslRunning = SessionState.GetBool(SessionKeyIsWslRunning, false);
+
+        // Restore connection status states
+        isMaincloudConnected = sessionIsMaincloudConnected;
+        isDockerContainerRunning = sessionIsDockerContainerRunning;
+        isWslRunning = sessionIsWslRunning;
         
         if (sessionServerStarted || sessionIsStartingUp)
         {
-            if (debugMode)
-                LogMessage($"[ServerManager] Restoring server state from SessionState: serverStarted={sessionServerStarted}, isStartingUp={sessionIsStartingUp}, serverMode={(ServerMode)sessionServerMode}", 0);
+            if (debugMode) LogMessage($"[ServerManager] Restoring server state from SessionState: serverStarted={sessionServerStarted}, isStartingUp={sessionIsStartingUp}, serverMode={(ServerMode)sessionServerMode}", 0);
             
             // Restore the state
             serverStarted = sessionServerStarted;
@@ -643,8 +659,7 @@ public class ServerManager
                         {
                             // Maincloud is always available, just verify we can connect to it
                             isActuallyRunning = true; // Assume Maincloud is online
-                            if (debugMode)
-                                LogMessage("[ServerManager] MaincloudServer mode - skipping local server ping, Maincloud is assumed available", 0);
+                            if (debugMode) LogMessage("[ServerManager] MaincloudServer mode - skipping local server ping, Maincloud is assumed available", 0);
                         }
                         else
                         {
@@ -654,8 +669,7 @@ public class ServerManager
                         
                         if (!isActuallyRunning)
                         {
-                            if (debugMode)
-                                LogMessage("[ServerManager] Server state was restored but ping failed - server appears to be offline. Resetting state.", 1);
+                            if (debugMode) LogMessage("[ServerManager] Server state was restored but ping failed - server appears to be offline. Resetting state.", 1);
                             
                             serverStarted = false;
                             isStartingUp = false;
@@ -663,8 +677,7 @@ public class ServerManager
                         }
                         else
                         {
-                            if (debugMode)
-                                LogMessage("[ServerManager] Server state restored successfully - server is confirmed running.", 0);
+                            if (debugMode) LogMessage("[ServerManager] Server state restored successfully - server is confirmed running.", 0);
                             
                             // Restart logging after compilation when server state is confirmed
                             if (logProcessor != null)
@@ -676,20 +689,17 @@ public class ServerManager
                                     string sshHost = ServerUtilityProvider.ExtractHostname(CustomServerUrl);
                                     
                                     logProcessor.ConfigureSSH(SSHUserName, sshHost, SSHPrivateKeyPath, true);
-                                    if (debugMode)
-                                        LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
+                                    if (debugMode) LogMessage($"[ServerManager] Reconfigured SSH log processor: {SSHUserName}@{sshHost}", 1);
                                 }
                                 else if (serverMode == ServerMode.DockerServer)
                                 {
                                     logProcessor.ConfigureDocker(true);
-                                    if (debugMode)
-                                        LogMessage($"[ServerManager] Reconfigured Docker log processor", 1);
+                                    if (debugMode) LogMessage($"[ServerManager] Reconfigured Docker log processor", 1);
                                 }
                                 else if (serverMode == ServerMode.WSLServer)
                                 {
                                     logProcessor.ConfigureWSL(true);
-                                    if (debugMode)
-                                        LogMessage($"[ServerManager] Reconfigured WSL log processor", 1);
+                                    if (debugMode) LogMessage($"[ServerManager] Reconfigured WSL log processor", 1);
                                 }
                                 else if (serverMode == ServerMode.MaincloudServer)
                                 {
@@ -697,14 +707,12 @@ public class ServerManager
                                     if (LocalCLIProvider == "Docker")
                                     {
                                         logProcessor.ConfigureDocker(true);
-                                        if (debugMode)
-                                            LogMessage($"[ServerManager] Reconfigured Docker log processor for MaincloudServer mode", 1);
+                                        if (debugMode) LogMessage($"[ServerManager] Reconfigured Docker log processor for MaincloudServer mode", 1);
                                     }
                                     else // WSL
                                     {
                                         logProcessor.ConfigureWSL(true);
-                                        if (debugMode)
-                                            LogMessage($"[ServerManager] Reconfigured WSL log processor for MaincloudServer mode", 1);
+                                        if (debugMode) LogMessage($"[ServerManager] Reconfigured WSL log processor for MaincloudServer mode", 1);
                                     }
                                 }
                                 
@@ -736,8 +744,7 @@ public class ServerManager
                                     }
                                 }
                                 
-                                if (debugMode)
-                                    LogMessage("[ServerManager] Restarted log processor after compilation - server confirmed running.", 1);
+                                if (debugMode) LogMessage("[ServerManager] Restarted log processor after compilation - server confirmed running.", 1);
                             }
                         }
                         
@@ -745,8 +752,7 @@ public class ServerManager
                     }
                     catch (Exception ex)
                     {
-                        if (debugMode)
-                            LogMessage($"[ServerManager] Error verifying restored server state: {ex.Message}", 2);
+                        if (debugMode) LogMessage($"[ServerManager] Error verifying restored server state: {ex.Message}", 2);
                     }
                 };
             }
@@ -765,9 +771,12 @@ public class ServerManager
         SessionState.SetBool(SessionKeyServerStarted, serverStarted);
         SessionState.SetBool(SessionKeyIsStartingUp, isStartingUp);
         SessionState.SetInt(SessionKeyServerMode, (int)serverMode);
-        
-        if (debugMode)
-            LogMessage($"[ServerManager] Saved server state to SessionState: serverStarted={serverStarted}, isStartingUp={isStartingUp}, serverMode={serverMode}", 0);
+        SessionState.SetBool(SessionKeyIsMaincloudConnected, isMaincloudConnected);
+        SessionState.SetBool(SessionKeyIsCliProviderRunning, IsCliProviderRunning);
+        SessionState.SetBool(SessionKeyIsDockerContainerRunning, isDockerContainerRunning);
+        SessionState.SetBool(SessionKeyIsWslRunning, isWslRunning);
+
+        if (debugMode) LogMessage($"[ServerManager] Saved server state to SessionState: serverStarted={serverStarted}, isStartingUp={isStartingUp}, serverMode={serverMode}, isMaincloudConnected={isMaincloudConnected}, isCliProviderRunning={IsCliProviderRunning}, isDockerContainerRunning={isDockerContainerRunning}, isWslRunning={isWslRunning}", 0);
     }
 
     /// <summary>
@@ -775,8 +784,7 @@ public class ServerManager
     /// </summary>
     private void OnBeforeAssemblyReload()
     {
-        if (debugMode)
-            LogMessage("[ServerManager] Assembly reload detected - saving server state...", 0);
+        if (debugMode) LogMessage("[ServerManager] Assembly reload detected - saving server state...", 0);
         
         SaveServerStateToSessionState();
         
@@ -835,7 +843,7 @@ public class ServerManager
             return;
         }
         
-        LogMessage("Start sequence initiated for WSL server. Waiting for confirmation...", 0);
+        LogMessage("Starting Local WSL SpacetimeDB server. Waiting for confirmation...", 0);
         
         // Clear the status cache since we're starting the server
         if (wslProcessor != null)
@@ -940,7 +948,7 @@ public class ServerManager
             return;
         }
 
-        LogMessage("Start sequence initiated for Docker server. Waiting for confirmation...", 0);
+        LogMessage("Starting Local Docker SpacetimeDB server. Waiting for confirmation...", 0);
         
         EditorApplication.delayCall += async () => {
             try
@@ -960,7 +968,7 @@ public class ServerManager
                     }
                     
                     // Wait for Docker service to become fully ready
-                    bool dockerReady = await dockerProcessor.WaitForDockerServiceReady(60); // Wait up to 60 seconds
+                    bool dockerReady = await dockerProcessor.WaitForDockerServiceReady(90); // Wait up to 90 seconds
                     
                     if (!dockerReady)
                     {
@@ -1010,7 +1018,7 @@ public class ServerManager
                     }
                 }
 
-                LogMessage("Docker SpacetimeDB Container Started Successfully!", 1);
+                LogMessage("Local Docker SpacetimeDB server started successfully!", 1);
                 
                 // Wait a moment for container to initialize
                 await Task.Delay(2000);
@@ -1021,7 +1029,7 @@ public class ServerManager
                 
                 if (containerRunning)
                 {
-                    if (DebugMode) LogMessage("Docker container confirmed running immediately!", 1);
+                    if (DebugMode) LogMessage("Local Docker SpacetimeDB server confirmed running immediately!", 1);
                     serverStarted = true;
                     SaveServerStateToSessionState(); // Persist state across domain reloads
                     serverConfirmedRunning = true;
@@ -1041,10 +1049,7 @@ public class ServerManager
                     _ = Task.Run(async () => {
                         await Task.Delay(3000); // Give HTTP endpoint time to initialize
                         bool pingResponding = await PingServerStatusAsync();
-                        if (DebugMode)
-                        {
-                            LogMessage($"Background ping check result: {(pingResponding ? "responding" : "not responding")}", 0);
-                        }
+                        if (DebugMode) LogMessage($"Background ping check result: {(pingResponding ? "responding" : "not responding")}", 0);
                     });
                 }
                 else
@@ -1098,19 +1103,19 @@ public class ServerManager
             return;
         }
         
-        LogMessage($"Connecting to custom server at {CustomServerUrl}", 1);
+        LogMessage($"Connecting to remote custom server at {CustomServerUrl}", 1);
 
         bool success = await serverCustomProcess.StartCustomServer();
 
         if (!success)
         {
-            LogMessage("Custom server process failed to start.", -1);
+            LogMessage("Remote custom server process failed to start.", -1);
             return;
         }
 
         if (success)
         {
-            if (debugMode) LogMessage("Custom server process started, waiting for confirmation...", 1);
+            if (debugMode) LogMessage("Remote custom server process started, waiting for confirmation...", 1);
             // Mark as starting up, but do not confirm running yet
             serverStarted = true;
             SaveServerStateToSessionState(); // Persist state across domain reloads
@@ -1134,7 +1139,7 @@ public class ServerManager
 
                 logProcessor.SetServerRunningState(true);
                 logProcessor.StartSSHLogging();
-                if (debugMode) LogMessage("Custom server log processors started successfully.", 1);
+                if (debugMode) LogMessage("Remote custom server log processors started successfully.", 1);
             }
         }
         SafeRepaint();
@@ -1256,7 +1261,7 @@ public class ServerManager
                 wslProcessor.ClearStatusCache();
             }
             
-            LogMessage("Stopping SpacetimeDB services and processes...", 0);
+            LogMessage("Stopping Local WSL SpacetimeDB server...", 0);
             
             // Use the wslProcessor to stop the services
             bool stopSuccessful = await wslProcessor.StopSpacetimeDBServices();
@@ -1283,7 +1288,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0; // Reset failure counter
 
-                    LogMessage("Server Successfully Stopped.", 1);
+                    LogMessage("Local WSL SpacetimeDB server successfully stopped.", 1);
                     
                     // Stop the log processors after confirming server is stopped
                     logProcessor.StopLogging();
@@ -1305,7 +1310,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Stop sequence completed. Check server status manually if needed.", 1);
+                    LogMessage("Local WSL SpacetimeDB server stop sequence completed. Check server status manually if needed.", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -1334,7 +1339,7 @@ public class ServerManager
         
         try
         {
-            LogMessage("Stopping SpacetimeDB Docker container...", 0);
+            LogMessage("Stopping Local Docker SpacetimeDB server...", 0);
             
             // Use the dockerProcessor to stop the container
             bool stopSuccessful = await dockerProcessor.StopServer();
@@ -1361,7 +1366,7 @@ public class ServerManager
                     stopInitiatedTime = EditorApplication.timeSinceStartup;
                     consecutiveFailedChecks = 0;
 
-                    LogMessage("Docker SpacetimeDB Server Successfully Stopped!", 1);
+                    LogMessage("Local Docker SpacetimeDB server successfully stopped!", 1);
                     logProcessor.StopLogging();
                     logProcessor.SetServerRunningState(false);
                 }
@@ -2751,11 +2756,11 @@ public class ServerManager
     {
         // Only check periodically to avoid excessive checks
         double currentTime = EditorApplication.timeSinceStartup;
-        if (currentTime - lastWslCheckTime < wslCheckInterval)
+        if (currentTime - lastCliCheckTime < cliCheckInterval)
             return;
-        
-        lastWslCheckTime = currentTime;
-        
+
+        lastCliCheckTime = currentTime;
+
         try
         {
             Process process = new Process();
@@ -2835,11 +2840,11 @@ public class ServerManager
     {
         // Only check periodically to avoid excessive checks
         double currentTime = EditorApplication.timeSinceStartup;
-        if (currentTime - lastWslCheckTime < wslCheckInterval) // Reuse the same interval
+        if (currentTime - lastCliCheckTime < cliCheckInterval) // Reuse the same interval
             return;
-        
-        lastWslCheckTime = currentTime; // Update the cache time
-        
+
+        lastCliCheckTime = currentTime; // Update the cache time
+
         try
         {
             if (dockerProcessor == null)
@@ -2872,6 +2877,24 @@ public class ServerManager
         {
             if (debugMode) LogMessage($"Exception in CheckDockerStatus: {ex.Message}", -1);
             isDockerRunning = false;
+        }
+    }
+
+    public async Task CheckDockerContainerStatus()
+    {
+        try
+        {
+            // Docker mode - check Docker container status
+            bool dockerServiceRunning = await dockerProcessor.IsDockerServiceRunning();
+            
+            if (dockerServiceRunning)
+            {
+                isDockerContainerRunning = await dockerProcessor.CheckDockerProcessAsync(dockerServiceRunning);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) LogMessage($"Exception in CheckDockerCLIStatus: {ex.Message}", -1);
         }
     }
 
@@ -3107,6 +3130,10 @@ public class ServerManager
         else if (Settings.serverMode == ServerMode.CustomServer)
         {
             await CheckServerStatus();
+
+            if (LocalCLIProvider == "Docker") 
+            await CheckDockerContainerStatus();
+            else await CheckWslStatus();
             
             // Check SSH log processes for custom server mode only if editor has focus
             if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
@@ -3117,7 +3144,11 @@ public class ServerManager
         else if (Settings.serverMode == ServerMode.MaincloudServer)
         {
             await CheckMaincloudConnectivity();
-            
+
+            if (LocalCLIProvider == "Docker") 
+            await CheckDockerContainerStatus();
+            else await CheckWslStatus();
+
             // Check log processes for Maincloud mode only if editor has focus
             if (serverStarted && silentMode && logProcessor != null && hasEditorFocus)
             {
