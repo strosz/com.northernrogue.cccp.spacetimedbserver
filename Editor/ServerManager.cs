@@ -828,6 +828,7 @@ public class ServerManager
                 break;
             case ServerMode.MaincloudServer:
                 StartMaincloudServer();
+                if (LocalCLIProvider == "Docker") StartDockerServer();
                 break;
             default:
                 LogMessage("Unknown server mode. Cannot start server.", -1);
