@@ -4,6 +4,7 @@ using System;
 using System.Threading.Tasks;
 using UnityEngine;
 using NorthernRogue.CCCP.Editor.Settings;
+using System.Linq;
 
 // Runs the methods related to managing and controlling the WSL server and Maincloud ///
 
@@ -2162,23 +2163,91 @@ public class ServerManager
         // Always trim trailing slashes from CustomServerUrl for all usages
         string customServerUrl = !string.IsNullOrEmpty(CustomServerUrl) ? CustomServerUrl.TrimEnd('/') : "";
         
-        if (resetDatabase)
+        // Check if dev-mode is enabled and find the pre-built WASM
+        bool useDevMode = CCCPSettingsAdapter.GetDevMode();
+        string wasmPath = useDevMode ? FindCompiledWasmFile() : null;
+        
+        // Log the dev-mode status and WASM path for debugging
+        if (useDevMode)
         {
-            if (Settings.serverMode == ServerMode.MaincloudServer)
-                RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
-            else if (Settings.serverMode == ServerMode.CustomServer)
-                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
-            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
-                RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            if (!string.IsNullOrEmpty(wasmPath))
+                UnityEngine.Debug.Log($"[ServerManager] Dev-Mode enabled - using pre-built WASM: {wasmPath}");
+            else
+                UnityEngine.Debug.LogWarning($"[ServerManager] Dev-Mode enabled but no WASM file found. Did the cargo build succeed? Falling back to standard publish (without dev-mode features).");
         }
         else
         {
-            if (Settings.serverMode == ServerMode.MaincloudServer)
-                RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
-            else if (Settings.serverMode == ServerMode.CustomServer)
-                RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
-            else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
-                RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
+            if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Dev-Mode disabled - using standard project-path publish");
+        }
+        
+        // For Docker, convert Windows path to container path
+        if (!string.IsNullOrEmpty(wasmPath) && LocalCLIProvider == "Docker")
+        {
+            // Docker mounts ServerDirectory as /app in the container
+            // Convert: C:\path\to\Server\target\... -> /app/target/...
+            try
+            {
+                string relativePath = wasmPath.Substring(ServerDirectory.Length).TrimStart('\\', '/');
+                wasmPath = "/app/" + relativePath.Replace('\\', '/');
+                if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted WASM path for Docker: {wasmPath}");
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerManager] Failed to convert WASM path for Docker: {ex.Message}");
+                wasmPath = null; // Fall back to project-path method
+            }
+        }
+        
+        // Build the publish command based on whether we're using pre-built WASM or project-path
+        string publishCommand;
+        if (!string.IsNullOrEmpty(wasmPath))
+        {
+            // Use --bin-path with the pre-built WASM (includes dev-mode features)
+            if (resetDatabase)
+            {
+                if (Settings.serverMode == ServerMode.MaincloudServer)
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server maincloud {ModuleName} --delete-data -y";
+                else if (Settings.serverMode == ServerMode.CustomServer)
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server {customServerUrl} {ModuleName} --delete-data -y";
+                else
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server local {ModuleName} --delete-data -y";
+            }
+            else
+            {
+                if (Settings.serverMode == ServerMode.MaincloudServer)
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server maincloud {ModuleName} -y";
+                else if (Settings.serverMode == ServerMode.CustomServer)
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server {customServerUrl} {ModuleName} -y";
+                else
+                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server local {ModuleName} -y";
+            }
+            
+            string logMsg = resetDatabase 
+                ? $"Publishing pre-built WASM (with dev-mode features) for '{ModuleName}' and resetting database"
+                : $"Publishing pre-built WASM (with dev-mode features) for '{ModuleName}'";
+            RunServerCommand(publishCommand, logMsg);
+        }
+        else
+        {
+            // Fall back to standard --project-path publishing (no dev-mode features)
+            if (resetDatabase)
+            {
+                if (Settings.serverMode == ServerMode.MaincloudServer)
+                    RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+                else if (Settings.serverMode == ServerMode.CustomServer)
+                    RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+                else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
+                    RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+            }
+            else
+            {
+                if (Settings.serverMode == ServerMode.MaincloudServer)
+                    RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
+                else if (Settings.serverMode == ServerMode.CustomServer)
+                    RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
+                else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
+                    RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
+            }
         }
 
         // Reset change detection after publishing
@@ -2274,7 +2343,7 @@ public class ServerManager
             successfulPublish = false;
         }
 
-        if (error.Contains("Identity") && error.Contains("is not valid"))
+        if ((error.Contains("Identity") && error.Contains("is not valid")) || error.Contains("not own database"))
         {
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             EditorUtility.DisplayDialog("Invalid Identity", 
@@ -2302,6 +2371,14 @@ public class ServerManager
             EditorUtility.DisplayDialog("Server Not Found", 
             "Could not find a server running at the specified URL.\n" + 
             "Please check that the URL is correct and that your server is running and accessible from your network."
+            ,"OK");
+            successfulPublish = false;
+        }
+
+        if (error.Contains("cannot find type"))
+        {
+            EditorUtility.DisplayDialog("Missing Type Definition", 
+            "Your server code is missing a required type definition. Check the Command Output for more details."
             ,"OK");
             successfulPublish = false;
         }
@@ -2359,8 +2436,8 @@ public class ServerManager
         }
         else
         {
-            LogMessage("Requesting script compilation...", 0);
-            UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+            //LogMessage("Requesting script compilation...", 0); // Removed since Unity yet doesn't detect the new files even if we request compilation
+            //UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
             LogMessage("Publish and Generate successful!", 1);
         }
         
@@ -3120,6 +3197,7 @@ public class ServerManager
         else if (Settings.serverMode == ServerMode.DockerServer)
         {
             await CheckDockerStatus();
+            await CheckDockerContainerStatus();
             await CheckServerStatus();
             
             // Check Docker log processes only if editor has focus
@@ -3520,6 +3598,43 @@ public class ServerManager
                 CCCPSettingsAdapter.SetRustupUpdateAvailable(false);
             }
         }
+    }
+
+    
+    /// Finds the compiled WASM file in the server target directory
+    private string FindCompiledWasmFile()
+    {
+        if (string.IsNullOrEmpty(ServerDirectory))
+            return null;
+
+        // Look for .wasm files in target/wasm32-unknown-unknown/release
+        string releaseDir = System.IO.Path.Combine(ServerDirectory, "target", "wasm32-unknown-unknown", "release");
+        
+        if (!System.IO.Directory.Exists(releaseDir))
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerManager] Release directory not found: {releaseDir}");
+            return null;
+        }
+
+        // Find all .wasm files (excluding .opt.wasm)
+        var wasmFiles = System.IO.Directory.GetFiles(releaseDir, "*.wasm")
+            .Where(f => !f.EndsWith(".opt.wasm", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (wasmFiles.Count == 0)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerManager] No .wasm files found in {releaseDir}");
+            return null;
+        }
+
+        if (wasmFiles.Count > 1)
+        {
+            if (debugMode) UnityEngine.Debug.LogWarning($"[ServerManager] Multiple .wasm files found, using first: {wasmFiles[0]}");
+        }
+
+        string wasmPath = wasmFiles[0];
+        if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Found WASM file: {wasmPath}");
+        return wasmPath;
     }
     
     // Public method to update log read intervals in ServerLogProcess

@@ -97,6 +97,7 @@ public class CCCPSettings : ScriptableObject
     public bool publishAndGenerateMode = true;
     public bool silentMode = true;
     public bool debugMode = false;
+    public bool devMode = false; // Tracks if dev-mode feature is enabled in Cargo.toml
     public bool clearModuleLogAtStart = true;
     public bool clearDatabaseLogAtStart = true;
     public bool autoCloseCLI = true;

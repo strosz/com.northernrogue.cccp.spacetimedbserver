@@ -51,7 +51,8 @@ public class ServerDataWindow : EditorWindow
     // Data Storage
     // Stores raw JSON string received from the SQL API for each table
     private Dictionary<string, string> tableData = new Dictionary<string, string>();
-    private List<string> tableNames = new List<string>(); // Fetched from schema
+    private List<string> tableNames = new List<string>(); // Fetched from schema (public tables only)
+    private List<string> privateTableNames = new List<string>(); // Fetched from schema (private tables)
     private string selectedTable = null;
     private string statusMessage = "Ready. Load settings via ServerWindow and Refresh.";
     private Color statusColor = Color.grey; // Needed for dynamic coloring of messages
@@ -59,6 +60,7 @@ public class ServerDataWindow : EditorWindow
     private bool isRefreshing = false;
     private bool isImporting = false; // Added flag for import process
     private bool showServerReachableInformation = false;
+    private bool devMode = false; // Toggle for dev_export_all_tables reducer
 
     // Scroll positions
     private Vector2 scrollPositionTables;
@@ -96,6 +98,7 @@ public class ServerDataWindow : EditorWindow
 
     private GUIStyle clrButtonStyle;
     private GUIStyle titleStyle;
+    private GUIStyle privateTableStyle;
     private bool stylesInitialized = false;
 
     private Dictionary<string, Dictionary<string, float>> tableColumnWidths = new Dictionary<string, Dictionary<string, float>>();
@@ -172,6 +175,12 @@ public class ServerDataWindow : EditorWindow
         // Style for titles like table name and list of tables
         titleStyle = new GUIStyle(EditorStyles.largeLabel);
         titleStyle.fontSize = 14;
+        
+        // Style for private table names (read-only, grayed out)
+        privateTableStyle = new GUIStyle(EditorStyles.label);
+        privateTableStyle.normal.textColor = new Color(0.6f, 0.6f, 0.6f); // Gray color
+        privateTableStyle.alignment = TextAnchor.MiddleLeft;
+        privateTableStyle.padding = new RectOffset(4, 4, 2, 2);
         
         // Confirm Styles Initialized for OnGUI
         stylesInitialized = true;
@@ -266,6 +275,7 @@ public class ServerDataWindow : EditorWindow
         authTokenDocker = CCCPSettingsAdapter.GetAuthTokenDocker();
 
         serverMode = CCCPSettingsAdapter.GetServerMode().ToString();
+        devMode = CCCPSettingsAdapter.GetDevMode(); // Load dev mode state from settings
 
         if (string.IsNullOrEmpty(moduleName))
         {
@@ -355,7 +365,233 @@ public class ServerDataWindow : EditorWindow
         EditorGUI.EndDisabledGroup(); // End group for import buttons
 
         GUILayout.FlexibleSpace();
+        
+        // Dev Mode toggle (only show if private tables exist)
+        // Add tooltip
+        GUILayout.Label(new GUIContent("Dev Mode:", "Toggle Dev Mode to make all tables public for debugging."), EditorStyles.label, GUILayout.Width(70));
+        
+        // Draw toggle button
+        bool newDevMode = GUILayout.Toggle(devMode, devMode ? "ON" : "OFF", EditorStyles.toolbarButton, GUILayout.Width(60));
+        
+        if (newDevMode != devMode)
+        {
+            // If trying to turn on, confirm with user
+            if (newDevMode)
+            {
+                bool confirmed = EditorUtility.DisplayDialog(
+                    "Enable Dev Mode",
+                    "This will add the [features] dev-mode flag to your Cargo.toml.\n\n" +
+                    "You will need to Re-Publish the module after the cargo build is successful.\n\n" +
+                    "This makes all private tables public for development/debugging so they are visible in the Database browser if you follow the guide in the documentation.\n\n" +
+                    "Continue?",
+                    "Yes, Enable Dev Mode", "Cancel"
+                );
+                
+                if (confirmed)
+                {
+                    devMode = true;
+                    ToggleCargoDevMode(true);
+                }
+            }
+            else
+            {
+                // If trying to turn off, confirm with user
+                bool confirmed = EditorUtility.DisplayDialog(
+                    "Disable Dev Mode",
+                    "This will remove the [features] dev-mode flag from your Cargo.toml.\n\n" +
+                    "You will need to Re-Publish the module to SpacetimeDB after the cargo build is successful.\n\n" +
+                    "Private tables will become private again for public release.\n\n" +
+                    "Continue?",
+                    "Yes, Disable Dev Mode", "Cancel"
+                );
+                
+                if (confirmed)
+                {
+                    devMode = false;
+                    ToggleCargoDevMode(false);
+                }
+            }
+        }
+        
         GUILayout.EndHorizontal();
+    }
+
+    /// <summary>
+    /// Toggle dev-mode feature in Cargo.toml by adding or removing the [features] section
+    /// Then automatically builds the project with the appropriate cargo command via proper CLI
+    /// </summary>
+    private void ToggleCargoDevMode(bool enableDevMode)
+    {
+        try
+        {
+            string serverDirectory = CCCPSettingsAdapter.GetServerDirectory();
+            if (string.IsNullOrEmpty(serverDirectory))
+            {
+                SetStatus("Error: Server directory not set. Cannot modify Cargo.toml.", Color.red);
+                if (debugMode) Debug.LogError("[ServerDataWindow] Server directory not set");
+                return;
+            }
+
+            // Get Cargo.toml path
+            string cargoTomlPath = System.IO.Path.Combine(serverDirectory, "Cargo.toml");
+            if (!File.Exists(cargoTomlPath))
+            {
+                SetStatus("Error: Cargo.toml not found in server directory.", Color.red);
+                if (debugMode) Debug.LogError($"[ServerDataWindow] Cargo.toml not found at {cargoTomlPath}");
+                return;
+            }
+
+            // Read file content
+            string content = File.ReadAllText(cargoTomlPath);
+            string featureLine = "dev-mode = []";
+            bool cargoTomlModified = false;
+
+            // Ensure [features] section with dev-mode exists (always declared for valid cfg)
+            if (!content.Contains("[features]"))
+            {
+                // Create new [features] section before [dependencies]
+                if (content.Contains("[dependencies]"))
+                {
+                    content = content.Replace(
+                        "[dependencies]",
+                        $"[features]\n{featureLine}\n\n[dependencies]"
+                    );
+                }
+                else
+                {
+                    // Append at the end if no [dependencies] section
+                    content += $"\n[features]\n{featureLine}\n";
+                }
+                cargoTomlModified = true;
+                if (debugMode) Debug.Log("[ServerDataWindow] Created [features] section with dev-mode declaration");
+            }
+            else if (!content.Contains(featureLine))
+            {
+                // [features] exists but dev-mode not declared - add it
+                content = System.Text.RegularExpressions.Regex.Replace(
+                    content,
+                    @"(\[features\]\r?\n)",
+                    $"$1{featureLine}\n"
+                );
+                cargoTomlModified = true;
+                if (debugMode) Debug.Log("[ServerDataWindow] Added dev-mode declaration to existing [features]");
+            }
+
+            // Save if modified
+            if (cargoTomlModified)
+            {
+                File.WriteAllText(cargoTomlPath, content);
+            }
+
+            // Now update the devMode state and proceed with build
+            // The "toggle" affects whether we use --features dev-mode during build, not whether it's declared
+            devMode = enableDevMode;
+            CCCPSettingsAdapter.SetDevMode(enableDevMode);
+
+            if (debugMode)
+            {
+                SetStatus($"ℹ Dev Mode {(enableDevMode ? "enabled" : "disabled")} - features always declared in Cargo.toml", Color.cyan);
+                Debug.Log($"[ServerDataWindow] Dev mode toggled to: {enableDevMode}");
+            }
+
+            // Trigger cargo build
+            BuildCargoViaServerManager(serverDirectory, enableDevMode);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Error modifying Cargo.toml: {ex.Message}", Color.red);
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Error toggling dev mode: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Build cargo project using the appropriate CLI (WSL or Docker) via ServerManager
+    /// </summary>
+    private async void BuildCargoViaServerManager(string serverDirectory, bool withDevMode)
+    {
+        try
+        {
+            // Get ServerManager instance to access the proper process handlers
+            var windows = Resources.FindObjectsOfTypeAll<ServerWindow>();
+            if (windows.Length == 0)
+            {
+                SetStatus("Error: ServerWindow not found. Cannot access CLI handlers.", Color.red);
+                if (debugMode) Debug.LogError("[ServerDataWindow] ServerWindow not found");
+                return;
+            }
+
+            ServerWindow serverWindow = windows[0];
+            var serverModeValue = CCCPSettingsAdapter.GetServerMode();
+            string serverMode = serverModeValue.ToString();
+
+            if (debugMode) Debug.Log($"[ServerDataWindow] Building with server mode: {serverMode}");
+
+            SetStatus($"🔨 Building Cargo project... ({(withDevMode ? "dev-mode" : "release")})", Color.yellow);
+
+            (bool success, string output, string error) result = (false, "", "");
+
+            // Call the appropriate process method based on server mode
+            if (serverMode == "DockerServer")
+            {
+                // Access Docker processor via reflection or direct call
+                var serverManager = serverWindow.GetType().GetField("serverManager", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(serverWindow) as ServerManager;
+
+                if (serverManager != null)
+                {
+                    var dockerProcessor = serverManager.GetType().GetField("dockerProcessor",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        ?.GetValue(serverManager) as ServerDockerProcess;
+
+                    if (dockerProcessor != null)
+                    {
+                        result = await dockerProcessor.RunCargoBuildAsync(serverDirectory, withDevMode);
+                    }
+                }
+            }
+            else if (serverMode == "WSLServer")
+            {
+                // Access WSL processor via reflection or direct call
+                var serverManager = serverWindow.GetType().GetField("serverManager",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.GetValue(serverWindow) as ServerManager;
+
+                if (serverManager != null)
+                {
+                    var wslProcessor = serverManager.GetType().GetField("wslProcessor",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        ?.GetValue(serverManager) as ServerWSLProcess;
+
+                    if (wslProcessor != null)
+                    {
+                        result = await wslProcessor.RunCargoBuildAsync(serverDirectory, withDevMode);
+                    }
+                }
+            }
+
+            // Update status based on result
+            if (result.success)
+            {
+                string modeText = withDevMode ? "dev-mode version" : "release version";
+                SetStatus($"✓ Cargo build completed successfully ({modeText}). Please Publish to update the server.", Color.green);
+                if (debugMode) Debug.Log("[ServerDataWindow] Cargo build completed successfully");
+            }
+            else
+            {
+                SetStatus($"✗ Cargo build failed. {(string.IsNullOrEmpty(result.error) ? "Check console for details." : result.error)}", Color.red);
+                if (debugMode)
+                {
+                    if (!string.IsNullOrEmpty(result.output)) Debug.LogError($"[ServerDataWindow] Build output:\n{result.output}");
+                    if (!string.IsNullOrEmpty(result.error)) Debug.LogError($"[ServerDataWindow] Build error:\n{result.error}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Error during cargo build: {ex.Message}", Color.red);
+            if (debugMode) Debug.LogError($"[ServerDataWindow] Error in BuildCargoViaServerManager: {ex}");
+        }
     }
 
     private void DrawStatusMessage()
@@ -396,7 +632,7 @@ public class ServerDataWindow : EditorWindow
         EditorGUILayout.Separator();
         scrollPositionTables = EditorGUILayout.BeginScrollView(scrollPositionTables);
 
-        if (!tableNames.Any() && !isRefreshing)
+        if (!tableNames.Any() && !privateTableNames.Any() && !isRefreshing)
         {
         EditorGUILayout.LabelField("No tables loaded.", EditorStyles.centeredGreyMiniLabel);
         if (GUILayout.Button("Refresh Schema"))
@@ -406,7 +642,7 @@ public class ServerDataWindow : EditorWindow
         }
 
         string tableToSelect = selectedTable;
-        // Use tableNames list fetched from schema
+        // Use tableNames list fetched from schema (public tables)
         foreach (var tableName in tableNames)
         {
             // Create a horizontal layout for each table row and add the CLR button
@@ -444,6 +680,44 @@ public class ServerDataWindow : EditorWindow
             
             EditorGUILayout.EndHorizontal();
         }
+        
+        // Draw private tables section
+        if (privateTableNames.Any())
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("           Private Tables", titleStyle);
+            EditorGUILayout.Separator();
+            
+            // Show private tables as buttons only if Dev Mode is enabled
+            if (devMode)
+            {
+                foreach (var tableName in privateTableNames)
+                {
+                    bool isSelected = tableName == selectedTable;
+                    GUIStyle tableStyle = new GUIStyle(GUI.skin.button);
+                    if (isSelected)
+                    {
+                        tableStyle.normal.textColor = ServerUtilityProvider.ColorManager.TableSelected;
+                        tableStyle.fontStyle = FontStyle.Bold;
+                    }
+
+                    if (GUILayout.Button(tableName, tableStyle, GUILayout.ExpandWidth(true)))
+                    {
+                        tableToSelect = tableName;
+                        CCCPSettingsAdapter.SetLastSelectedTable(tableName);
+                    }
+                }
+            }
+            else
+            {
+                // Show as non-interactive labels if Dev Mode is disabled
+                foreach (var tableName in privateTableNames)
+                {
+                    EditorGUILayout.LabelField(tableName, privateTableStyle);
+                }
+            }
+        }
+        
         if (tableToSelect != selectedTable)
         {
             selectedTable = tableToSelect;
@@ -461,7 +735,16 @@ public class ServerDataWindow : EditorWindow
             GUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
             
             // Check selectedTable against tableNames and tableData
-            if (selectedTable != null && tableNames.Contains(selectedTable))
+            // When dev-mode is enabled, private tables become public and are fetched via SQL like public tables
+            // So we treat them as public tables for display purposes
+            bool isPublicTableSelected = selectedTable != null && 
+                (tableNames.Contains(selectedTable) || (devMode && privateTableNames.Contains(selectedTable)));
+            
+            // Private table view (old reducer-based approach) - only used when dev-mode is OFF
+            // This is kept for backward compatibility but shouldn't be used in normal workflow
+            bool isPrivateTableSelected = false; // Disabled - private tables are now public when dev-mode is ON
+            
+            if (isPublicTableSelected)
             {
                 EditorGUILayout.LabelField($"        {selectedTable}", titleStyle);
                 EditorGUILayout.Separator();
@@ -469,7 +752,26 @@ public class ServerDataWindow : EditorWindow
                 // Check if data for the selected table has been loaded
                 if (!tableData.ContainsKey(selectedTable))
                 {
-                    EditorGUILayout.LabelField("No data loaded. Press Refresh.", EditorStyles.centeredGreyMiniLabel);
+                    // Check if this is a private table that needs republishing
+                    bool isPrivateTable = privateTableNames.Contains(selectedTable);
+                    if (isPrivateTable && !devMode)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "This is a private table and is not available on the server.\n\n" +
+                            "To view it, you need to:\n" +
+                            "1. Enable Dev Mode in the toolbar\n" +
+                            "2. Build the module with dev-mode features\n" +
+                            "3. Publish the module to SpacetimeDB\n" +
+                            "4. Reopen the Database window\n\n" +
+                            "This will temporarily make all private tables public for development/debugging.",
+                            MessageType.Info
+                        );
+                    }
+                    else
+                    {
+                        EditorGUILayout.LabelField("No data loaded. Press Refresh.", EditorStyles.centeredGreyMiniLabel);
+                    }
+                    
                     if (GUILayout.Button("Refresh Data", GUILayout.Height(30)))
                     {
                         RefreshAllData(); // Consider refreshing only this table in the future
@@ -486,8 +788,26 @@ public class ServerDataWindow : EditorWindow
 
                 try
                 {
-                    // SpacetimeDB SQL response is an array of statement results. Assume one statement.
-                    JArray resultsArray = JArray.Parse(rawJson);
+                    // Handle both array and object formats (sometimes servers return wrapped objects)
+                    JToken parsed = JToken.Parse(rawJson);
+                    JArray resultsArray = null;
+
+                    // Check if it's an array or an object
+                    if (parsed is JArray arr)
+                    {
+                        resultsArray = arr;
+                    }
+                    else if (parsed is JObject obj)
+                    {
+                        // If it's an object, wrap it in an array so we can use the same logic
+                        resultsArray = new JArray(obj);
+                        if (debugMode) Debug.Log($"[ServerDataWindow] Converted JObject to JArray for table '{selectedTable}'");
+                    }
+                    else
+                    {
+                        throw new JsonException($"Unexpected JSON type: {parsed.Type}. Expected array or object.");
+                    }
+
                     if (resultsArray.Count > 0)
                     {
                         JObject resultObj = resultsArray[0] as JObject;
@@ -542,7 +862,7 @@ public class ServerDataWindow : EditorWindow
                 }
                 catch (JsonReaderException jsonEx)
                 {
-                    if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to parse JSON for table '{selectedTable}': {jsonEx.Message}Raw JSON:{rawJson}");
+                    if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to parse JSON for table '{selectedTable}': {jsonEx.Message}\nRaw JSON: {rawJson}");
                     EditorGUILayout.LabelField($"Error parsing JSON data: {jsonEx.Message}", EditorStyles.wordWrappedLabel);
                     GUILayout.EndVertical(); // Ensure we end the vertical layout
                     return;
@@ -726,6 +1046,104 @@ public class ServerDataWindow : EditorWindow
 
                 EditorGUILayout.EndScrollView(); // End scroll view for data
             }
+            else if (isPrivateTableSelected)
+            {
+                EditorGUILayout.LabelField($"        {selectedTable}", titleStyle);
+                EditorGUILayout.Separator();
+
+                // Check if data for the selected private table has been loaded
+                if (!tableData.ContainsKey(selectedTable))
+                {
+                    EditorGUILayout.LabelField("No data loaded. Press Refresh.", EditorStyles.centeredGreyMiniLabel);
+                    if (GUILayout.Button("Refresh Data", GUILayout.Height(30)))
+                    {
+                        RefreshAllData();
+                    }
+                    GUILayout.EndVertical();
+                    return;
+                }
+
+                // Parse the stored raw JSON data from private table
+                string rawJson = tableData[selectedTable];
+                List<List<JToken>> rows = new List<List<JToken>>();
+                List<string> columns = new List<string>();
+
+                try
+                {
+                    // Try to parse as array of rows for private tables via dev_export_all_tables reducer
+                    JArray resultsArray = JArray.Parse(rawJson);
+                    if (resultsArray.Count > 0)
+                    {
+                        // For private table data, extract schema and rows similarly
+                        JObject resultObj = resultsArray[0] as JObject;
+                        if (resultObj != null)
+                        {
+                            if (resultObj.TryGetValue("schema", out JToken schemaToken) && schemaToken is JObject schemaObj &&
+                                schemaObj.TryGetValue("elements", out JToken elementsToken) && elementsToken is JArray elementsArray)
+                            {
+                                columns = elementsArray.Select(el => el?["name"]?["some"]?.ToString())
+                                                     .Where(name => name != null)
+                                                     .ToList();
+                            }
+
+                            if (resultObj.TryGetValue("rows", out JToken rowsToken) && rowsToken is JArray rowsArray)
+                            {
+                                foreach (var item in rowsArray)
+                                {
+                                    if (item is JArray rowArrayValues)
+                                    {
+                                        rows.Add(rowArrayValues.ToList());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception parseEx)
+                {
+                    if (debugMode) Debug.LogWarning($"[ServerDataWindow] Failed to parse private table data for '{selectedTable}': {parseEx.Message}");
+                    EditorGUILayout.HelpBox($"Failed to parse private table data. Make sure dev_export_all_tables reducer is implemented correctly.", MessageType.Warning);
+                    GUILayout.EndVertical();
+                    return;
+                }
+
+                // Display message about dev mode limitations
+                EditorGUILayout.HelpBox(
+                    "Private table view is read-only via Dev Mode.\n" +
+                    "Data is exported through the dev_export_all_tables reducer.",
+                    MessageType.Info
+                );
+
+                if (!rows.Any())
+                {
+                    EditorGUILayout.LabelField("No data in private table.", EditorStyles.centeredGreyMiniLabel);
+                }
+                else if (columns != null && columns.Any())
+                {
+                    EditorGUILayout.LabelField($"Rows: {rows.Count}", EditorStyles.miniLabel);
+                    EditorGUILayout.Separator();
+                    
+                    // Simple display of private table data (read-only, no editing/deleting)
+                    scrollPositionData = EditorGUILayout.BeginScrollView(scrollPositionData, GUILayout.ExpandHeight(true));
+                    
+                    foreach (var rowValues in rows)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+                        
+                        // Display each column value
+                        for (int i = 0; i < columns.Count && i < rowValues.Count; i++)
+                        {
+                            string colName = columns[i];
+                            string value = rowValues[i].ToString();
+                            EditorGUILayout.LabelField($"{colName}: {value}", GUILayout.MaxWidth(300));
+                        }
+                        
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    
+                    EditorGUILayout.EndScrollView();
+                }
+            }
             else
             {
                 //EditorGUILayout.LabelField(tableNames.Any() ? "Select a table from the left." : "Refresh to load tables.", EditorStyles.centeredGreyMiniLabel);
@@ -733,6 +1151,14 @@ public class ServerDataWindow : EditorWindow
                 {
                     EditorGUILayout.HelpBox("Couldn't fetch database schema.\n" +
                     "Check that your server URL is correct, your module is selected/published and the server is running.", MessageType.Info);
+                }
+                else if (privateTableNames.Any() && !devMode)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Private tables detected. To browse them, enable Dev Mode in the toolbar." +
+                        "\n\nCheck the documentation for details.",
+                        MessageType.Info
+                    );
                 }
             }
             
@@ -1088,6 +1514,7 @@ public class ServerDataWindow : EditorWindow
         // Clear old data
         tableData.Clear();
         tableNames.Clear();
+        privateTableNames.Clear();
         selectedTable = null;
         Repaint(); // Show clearing immediately
 
@@ -1205,17 +1632,34 @@ public class ServerDataWindow : EditorWindow
                      .Select(t => t.name)
                      .ToList();
 
+                 // Extract private tables (those without public access)
+                 privateTableNames = schemaResponse.tables
+                     .Where(t => t.table_access == null || t.table_access.Public == null)
+                     .Select(t => t.name)
+                     .ToList();
+
+                 // Log all tables and their access levels for debugging
+                 if (debugMode) Debug.Log($"[ServerDataWindow] Schema contains {allSchemaTables.Count} total tables:");
+                 foreach (var table in schemaResponse.tables)
+                 {
+                     bool isPublic = table.table_access != null && table.table_access.Public != null;
+                     if (debugMode) Debug.Log($"  - {table.name}: {(isPublic ? "PUBLIC" : "PRIVATE")}");
+                 }
+
                  // Log excluded tables (optional)
                  var excludedTables = allSchemaTables.Except(tableNames).ToList();
                  if (excludedTables.Any()) {
                     //if (debugMode) Debug.Log($"[ServerDataWindow] Excluding non-queryable/non-public tables from UI list: {string.Join(", ", excludedTables)}");
                  }
 
-                 if (!tableNames.Any()) {
-                      // This condition might now mean no *queryable* tables were found
-                      SetStatus("Schema loaded, but no queryable public tables found.", Color.yellow);
+                 if (!tableNames.Any() && !privateTableNames.Any()) {
+                      SetStatus("Schema loaded, but no tables found.", Color.yellow);
+                 } else if (!tableNames.Any()) {
+                      SetStatus($"Schema loaded. Found {privateTableNames.Count} private table(s). Enable Dev Mode to access them.", Color.yellow);
                  } else {
-                      SetStatus($"Schema loaded. Found {tableNames.Count} queryable public table(s).", Color.Lerp(Color.yellow, Color.green, 0.5f));
+                      SetStatus($"Schema loaded. Found {tableNames.Count} public table(s)" + 
+                          (privateTableNames.Any() ? $" and {privateTableNames.Count} private table(s)" : "") + ".", 
+                          Color.Lerp(Color.yellow, Color.green, 0.5f));
                  }
             } else {
                 throw new JsonException("Schema response or tables list was null.");
@@ -1232,12 +1676,6 @@ public class ServerDataWindow : EditorWindow
         Repaint();
         yield return null;
 
-         if (!tableNames.Any())
-        {
-            callback?.Invoke(true, "Schema loaded, but no tables found."); // Considered success, but with warning status
-            yield break;
-        }
-
         // --- 3. Fetch Data for Each Table (Using HttpClient) ---
         int tablesRefreshed = 0;
         int errorCount = 0;
@@ -1245,8 +1683,19 @@ public class ServerDataWindow : EditorWindow
         // Use the same urlBase as schema fetching
         string sqlUrl = $"{urlBase}/database/{moduleName}/sql";
 
-        // ONLY fetch data for tables we know are public and queryable
-        foreach (var tableName in tableNames)
+        // Fetch data for ALL tables (public + private)
+        // Private tables become queryable in dev-mode, so we need to include them
+        List<string> allTablesToFetch = new List<string>();
+        allTablesToFetch.AddRange(tableNames);
+        allTablesToFetch.AddRange(privateTableNames);
+
+        if (!allTablesToFetch.Any())
+        {
+            callback?.Invoke(true, "Schema loaded, but no tables found."); // Considered success, but with warning status
+            yield break;
+        }
+
+        foreach (var tableName in allTablesToFetch)
         {
             // Skip if table name is null or empty (shouldn't happen)
             if (string.IsNullOrEmpty(tableName))
@@ -1255,7 +1704,7 @@ public class ServerDataWindow : EditorWindow
                 continue;
             }
 
-            SetStatus($"Fetching data for '{tableName}' ({tablesRefreshed + errorCount + 1}/{tableNames.Count})...", Color.yellow);
+            SetStatus($"Fetching data for '{tableName}' ({tablesRefreshed + errorCount + 1}/{allTablesToFetch.Count})...", Color.yellow);
             Repaint();
 
             string sqlQuery = $"SELECT * FROM {tableName};";
@@ -1326,6 +1775,25 @@ public class ServerDataWindow : EditorWindow
             }
             else
             {
+                // Check if this is a private table that failed because it hasn't been republished yet
+                bool isPrivateTable = privateTableNames.Contains(tableName);
+                if (isPrivateTable)
+                {
+                    if (debugMode) {
+                        // Private tables may fail after dev-mode toggle if not republished or if dev-mode wasn't properly built
+                        string devModeNote = devMode ? "(Dev-Mode is ENABLED but table still not queryable)" : "(Dev-Mode is OFF)";
+                        Debug.LogWarning($"[ServerDataWindow] Failed to query table '{tableName}' {devModeNote}\n" +
+                            "This usually means:\n" +
+                            "1. Dev-Mode was not properly enabled when building the Rust module\n" +
+                            "2. The module wasn't republished after enabling Dev-Mode\n" +
+                            "3. The server hasn't loaded the new module yet\n" +
+                            $"Details: {tableFetchError}");
+                    }
+                    // Don't count this as an error for the final message, but don't store data either
+                    // This allows the UI to show "No data loaded" with a helpful message
+                    continue;
+                }
+                
                 errorCount++;
                 if (debugMode) Debug.LogError($"[ServerDataWindow] Failed to fetch data for table '{tableName}': {tableFetchError}\nURL: {sqlUrl}\nQuery: {sqlQuery}");
                  // Store error info as a valid JSON object
@@ -1344,23 +1812,28 @@ public class ServerDataWindow : EditorWindow
         }
         else
         {
-            finalMessage = $"Finished refreshing with {errorCount} error(s) for {tablesRefreshed} successful tables. Check console.";
+            finalMessage = $"Finished refreshing with {errorCount} error(s) for {tablesRefreshed} successful tables.";
         }
 
         // Check if we have a previously selected table saved
         string lastSelectedTable = CCCPSettingsAdapter.GetLastSelectedTable();
         
-        if (tableNames.Any())
+        if (tableNames.Any() || privateTableNames.Any())
         {
-            // Try to restore the last selected table if it exists
-            if (!string.IsNullOrEmpty(lastSelectedTable) && tableNames.Contains(lastSelectedTable))
+            // Build a combined list of all available tables for selection validation
+            List<string> allAvailableTables = new List<string>();
+            allAvailableTables.AddRange(tableNames);
+            allAvailableTables.AddRange(privateTableNames);
+            
+            // Try to restore the last selected table if it exists in either list
+            if (!string.IsNullOrEmpty(lastSelectedTable) && allAvailableTables.Contains(lastSelectedTable))
             {
                 selectedTable = lastSelectedTable;
             }
-            else if (selectedTable == null || !tableNames.Contains(selectedTable))
+            else if (selectedTable == null || !allAvailableTables.Contains(selectedTable))
             {
-                // Otherwise select the first table
-                selectedTable = tableNames.First();
+                // Otherwise select the first available table (prefer public, then private)
+                selectedTable = tableNames.Any() ? tableNames.First() : privateTableNames.First();
             }
         }
 

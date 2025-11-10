@@ -570,6 +570,17 @@ public static class CCCPSettingsAdapter
         }
     }
 
+    // Dev mode state persistence (for cargo.toml feature toggle)
+    public static bool GetDevMode() => Settings.devMode;
+    public static void SetDevMode(bool value)
+    {
+        if (Settings.devMode != value)
+        {
+            Settings.devMode = value;
+            SaveSettings(); // Save immediately so state persists across sessions
+        }
+    }
+
     #endregion
     
     #region Integer Properties

@@ -1406,9 +1406,9 @@ public class ServerDockerProcess
                 logCallback("Successfully backed up SpacetimeDB data!", 1);
                 commandSuccess = true;
             }
-            else if (result.Item2.Contains("command not found") || result.Item2.Contains("not found"))
+            else if (result.Item2.Contains("command not found"))
             {
-                logCallback($"Error: The command (likely 'spacetime') was not found in the Docker container. Ensure SpacetimeDB is correctly installed and in the PATH.", -1);
+                logCallback($"Warning: A command found here ({command}) was not found in the Docker container. Ensure the container is correctly configured for SpacetimeDB.", -2);
                 commandSuccess = false;
             }
             else if (result.Item2.Contains("not detect the language of the module"))
@@ -1444,6 +1444,105 @@ public class ServerDockerProcess
         {
             if (debugMode) logCallback($"[ServerDockerProcess] Exception running server command: {ex.Message}", -1);
             return ("", ex.Message, false);
+        }
+    }
+
+    /// <summary>
+    /// Build Rust cargo project with specified features (for SpacetimeDB modules)
+    /// Server directory is mounted at /app in the container
+    /// </summary>
+    public async Task<(bool success, string output, string error)> RunCargoBuildAsync(string serverDirectory, bool withDevMode)
+    {
+        try
+        {
+            // Build for WASM target with explicit features
+            // Using --no-default-features ensures only our specified features are enabled
+            string cargoCommand = withDevMode 
+                ? "build --target wasm32-unknown-unknown --no-default-features --features dev-mode --release" 
+                : "build --target wasm32-unknown-unknown --release";
+
+            if (debugMode) logCallback($"[ServerDockerProcess] Starting cargo build: {cargoCommand}", 0);
+
+            // Server directory is mounted at /app in the container, so just run cargo there
+            string fullCommand = $"sh -c \"cd /app && cargo {cargoCommand}\"";
+            string dockerExecCommand = $"exec {ContainerName} {fullCommand}";
+
+            var result = await Task.Run(() =>
+            {
+                try
+                {
+                    using (Process process = new Process())
+                    {
+                        ConfigureDockerProcess(process.StartInfo);
+                        process.StartInfo.Arguments = dockerExecCommand;
+                        process.StartInfo.RedirectStandardOutput = true;
+                        process.StartInfo.RedirectStandardError = true;
+                        process.StartInfo.UseShellExecute = false;
+                        process.StartInfo.CreateNoWindow = true;
+
+                        var outputBuilder = new StringBuilder();
+                        var errorBuilder = new StringBuilder();
+
+                        process.OutputDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                outputBuilder.AppendLine(args.Data);
+                                if (debugMode && !string.IsNullOrEmpty(args.Data))
+                                    logCallback($"[ServerDockerProcess] Build: {args.Data}", 0);
+                            }
+                        };
+
+                        process.ErrorDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                errorBuilder.AppendLine(args.Data);
+                                if (debugMode && !string.IsNullOrEmpty(args.Data))
+                                    logCallback($"[ServerDockerProcess] Build: {args.Data}", 0);
+                            }
+                        };
+
+                        process.Start();
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+
+                        // Cargo build can take a while - 5 minute timeout
+                        int timeoutMs = 300000;
+                        bool finished = process.WaitForExit(timeoutMs);
+                        if (!finished)
+                        {
+                            try { process.Kill(); } catch { }
+                            return (false, "", "Cargo build timed out after 5 minutes.");
+                        }
+
+                        string output = outputBuilder.ToString();
+                        string error = errorBuilder.ToString();
+                        bool success = process.ExitCode == 0;
+
+                        if (debugMode)
+                        {
+                            if (success)
+                                logCallback($"[ServerDockerProcess] Cargo build completed successfully", 1);
+                            else
+                                logCallback($"[ServerDockerProcess] Cargo build failed with exit code {process.ExitCode}", -1);
+                        }
+
+                        return (success, output, error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return (false, "", ex.Message);
+                }
+            });
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"[ServerDockerProcess] Exception during cargo build: {ex.Message}", -1);
+            return (false, "", ex.Message);
         }
     }
     

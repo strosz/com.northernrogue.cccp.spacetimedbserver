@@ -941,6 +941,79 @@ public class ServerWSLProcess
             return (string.Empty, $"Exception: {ex.Message}", false);
         }
     }
+
+    /// <summary>
+    /// Build Rust cargo project with specified features (for SpacetimeDB modules) via WSL
+    /// </summary>
+    public async Task<(bool success, string output, string error)> RunCargoBuildAsync(string serverDirectory, bool withDevMode)
+    {
+        try
+        {
+            if (!ValidateUserName(false, out _))
+            {
+                return (false, "", "Error: No Debian username set. Cannot run cargo build.");
+            }
+
+            // Build for WASM target with explicit features
+            // Using --no-default-features ensures only our specified features are enabled
+            string cargoCommand = withDevMode 
+                ? "build --target wasm32-unknown-unknown --no-default-features --features dev-mode --release" 
+                : "build --target wasm32-unknown-unknown --release";
+
+            if (debugMode) logCallback($"[ServerWSLProcess] Starting cargo build: {cargoCommand}", 0);
+
+            // Build the full WSL command with proper path handling
+            string wslPath = GetWslPath(serverDirectory);
+            // Create the command using sh -c for proper shell execution
+            string fullCommand = $"cd '{wslPath}' && cargo {cargoCommand}";
+
+            Process wslProcess = new Process();
+            wslProcess.StartInfo.FileName = "wsl.exe";
+            wslProcess.StartInfo.Arguments = $"-d Debian -u {userName} --exec sh -c \"{fullCommand}\"";
+            wslProcess.StartInfo.UseShellExecute = false;
+            wslProcess.StartInfo.CreateNoWindow = true;
+            wslProcess.StartInfo.RedirectStandardOutput = true;
+            wslProcess.StartInfo.RedirectStandardError = true;
+            wslProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+            wslProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
+
+            wslProcess.Start();
+
+            var outputTask = wslProcess.StandardOutput.ReadToEndAsync();
+            var errorTask = wslProcess.StandardError.ReadToEndAsync();
+
+            if (debugMode) logCallback($"[ServerWSLProcess] {wslProcess.StartInfo.Arguments}", 0);
+
+            // 5 minute timeout for cargo build
+            bool exited = await Task.Run(() => wslProcess.WaitForExit(300000));
+
+            if (!exited)
+            {
+                logCallback("[ServerWSLProcess] Cargo build timed out after 5 minutes.", -1);
+                try { wslProcess.Kill(); } catch (Exception killEx) { logCallback($"Error killing timed-out process: {killEx.Message}", -1); }
+                return (false, "", "Cargo build timed out.");
+            }
+
+            string output = await outputTask;
+            string error = await errorTask;
+            bool success = wslProcess.ExitCode == 0;
+
+            if (debugMode)
+            {
+                if (success)
+                    logCallback($"[ServerWSLProcess] Cargo build completed successfully", 1);
+                else
+                    logCallback($"[ServerWSLProcess] Cargo build failed with exit code {wslProcess.ExitCode}", -1);
+            }
+
+            return (success, output, error);
+        }
+        catch (Exception ex)
+        {
+            logCallback($"[ServerWSLProcess] Error running cargo build: {ex.Message}", -1);
+            return (false, "", ex.Message);
+        }
+    }
     
     #endregion
     
