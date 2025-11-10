@@ -2137,6 +2137,15 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
             }
 
+            if (GUILayout.Button("Refresh Login", GUILayout.Height(20)))
+            {
+                if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
+                    LogoutAndLogin();
+                else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
+                    LogoutAndLogin();
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+            }
+
             if (GUILayout.Button("Show Login Info With Auth Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
@@ -2378,8 +2387,11 @@ public class ServerWindow : EditorWindow
         if (GUILayout.Button(new GUIContent("Edit Module", editModuleTooltip), GUILayout.Height(20)))
         {
             // Open the module script in the default editor using cross-platform utility
-            string modulePathRs = Path.Combine(serverDirectory, "src", "lib.rs");
-            string modulePathCs = Path.Combine(serverDirectory, "lib.cs");
+            // Get the actual project root (handles both old and new directory structures)
+            string projectRoot = ServerUtilityProvider.GetProjectRoot(serverDirectory);
+            
+            string modulePathRs = Path.Combine(projectRoot, "src", "lib.rs");
+            string modulePathCs = Path.Combine(projectRoot, "lib.cs");
             
             string fileToOpen = null;
             
@@ -2500,8 +2512,27 @@ public class ServerWindow : EditorWindow
         {
             if (GUILayout.Button("Generate Client Code", GUILayout.Height(30)))
             {
+                // Get the project root directory for generate command (same as publish)
+                string generateProjectRoot = ServerUtilityProvider.GetProjectRoot(serverManager.ServerDirectory);
+                
+                // For Docker, convert the Windows path to the container path (/app mount)
+                string generateProjectRootForCommand = generateProjectRoot;
+                if (serverManager.LocalCLIProvider == "Docker")
+                {
+                    try
+                    {
+                        string relativePath = generateProjectRoot.Substring(serverManager.ServerDirectory.Length).TrimStart('\\', '/');
+                        generateProjectRootForCommand = string.IsNullOrEmpty(relativePath) ? "/app" : ("/app/" + relativePath).Replace('\\', '/');
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert project root for Docker in generate: {ex.Message}");
+                        generateProjectRootForCommand = "/app";
+                    }
+                }
+                
                 string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory, serverManager.CurrentServerMode.ToString());
-                serverManager.RunServerCommand($"spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y", "Generating Client Code");
+                serverManager.RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y\"", "Generating Client Code");
                 LogMessage($"Generated Client Code to: {outDir}", 1);
             }
         }
@@ -2868,7 +2899,7 @@ public class ServerWindow : EditorWindow
             LogMessage("[LogoutAndLogin] Server Manager not initialized. Please restart Unity.", -1);
             return;
         }
-        if (localCLIProvider == "Docker") {
+        if (serverMode != ServerMode.CustomServer && localCLIProvider == "Docker") {
             if (!serverRunning) // Docker starts and stops the whole container, so start it first if not running
             {
                 serverManager.StartServer();
@@ -2876,22 +2907,36 @@ public class ServerWindow : EditorWindow
                 await Task.Delay(3000); // Wait for Docker server to start
             }
             serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
-            await Task.Delay(1000); // Wait for logout to complete
+            await Task.Delay(500); // Wait for logout to complete
             serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB online login...");
-        }
-        else if (localCLIProvider == "WSL") {
+        } else 
+        if (serverMode != ServerMode.CustomServer && localCLIProvider == "WSL") {
             if (serverRunning) // WSL is service based, so stop the spacetimedb service first if running
             {
                 serverManager.StopServer();
             }
             await Task.Delay(3000); // Wait for WSL server to stop
             serverManager.RunServerCommand("spacetime logout", "Logging out to clear possible offline local login...");
-            await Task.Delay(1000); // Wait for logout to complete
+            await Task.Delay(500); // Wait for logout to complete
             serverManager.RunServerCommand("spacetime login", "Launching official SpacetimeDB SEO online login...");
             if (!serverRunning)
             {
                 serverManager.StartServer();
             }
+        } else
+        if (serverMode == ServerMode.CustomServer && CLIAvailableRemote())
+        {
+            if (!serverRunning) // Docker starts and stops the whole container, so start it first if not running
+            {
+                serverManager.StartServer();
+                LogMessage("Waiting for Docker server to start in order to refresh login...", 0);
+                await Task.Delay(3000); // Wait for Docker server to start
+            }
+            #pragma warning disable CS4014
+            serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
+            await Task.Delay(1000); // Wait for logout to complete
+            serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
+            #pragma warning restore CS4014
         }
     }
 
@@ -3263,9 +3308,15 @@ public class ServerWindow : EditorWindow
             if (debugMode) LogMessage("ServerManager not initialized, skipping mode state update", -1);
             return;
         }
+
+        // Update ServerManager with the new mode
+        serverManager.SetServerMode((ServerManager.ServerMode)serverMode);
+
+        // Use string representation for consistency with ServerManager
+        CCCPSettingsAdapter.SetServerMode((ServerManager.ServerMode)serverMode); 
         
-        // Only run set-default commands when there's an actual mode transition
-        if (previousServerMode != serverMode)
+        // Only run set-default commands when there's an actual mode transition and CLI provider is running
+        if (previousServerMode != serverMode && (localCLIProvider == "Docker" && serverManager.IsCliProviderRunning) || (localCLIProvider == "WSL" && serverManager.IsCliProviderRunning))
         {
             if (debugMode) LogMessage($"Server mode transition: {previousServerMode} -> {serverMode}", 0);
             
@@ -3318,12 +3369,6 @@ public class ServerWindow : EditorWindow
                 EditorUpdateHandler();
                 break;
         }
-
-        // Update ServerManager with the new mode
-        serverManager.SetServerMode((ServerManager.ServerMode)serverMode);
-
-        // Use string representation for consistency with ServerManager
-        CCCPSettingsAdapter.SetServerMode((ServerManager.ServerMode)serverMode);
         
         // Update ServerOutputWindow tab visibility if window is open
         ServerOutputWindow.UpdateTabVisibilityForServerMode(serverMode.ToString());
@@ -3527,6 +3572,12 @@ public class ServerWindow : EditorWindow
             // Update log processes
             serverManager.SwitchModule(moduleName, true); // Clear database log
 
+            // Reconfigure Docker container mount if in Docker mode and module directory changed
+            if (isModuleChange && localCLIProvider == "Docker" && dockerProcess != null)
+            {
+                ReconfigureDockerContainerForNewModule(serverDirectory);
+            }
+
             // Refresh database and reducer windows
             if (browseDbWindowOpen)
             {
@@ -3542,8 +3593,78 @@ public class ServerWindow : EditorWindow
             // Only log when there's an actual change in module selection
             if (isModuleChange)
             {
-                LogMessage($"Selected module: {module.name} at {module.path}", 1);
+                if (localCLIProvider == "Docker")
+                {
+                    LogMessage($"Docker container will be reconfigured to use module: {module.name} at {module.path}", 0);
+                }
+                else
+                {
+                    LogMessage($"Selected module: {module.name} at {module.path}", 1);
+                }
             }
+        }
+    }
+
+    /// <summary>
+    /// Reconfigures Docker container's /app mount to point to the new module directory.
+    /// Only runs if Docker and Docker image are available. The container is removed
+    /// if it exists, and will be recreated with correct mounts on next server start.
+    /// If the server was running, it will be automatically restarted after reconfiguration.
+    /// </summary>
+    private void ReconfigureDockerContainerForNewModule(string newServerDirectory)
+    {
+        try
+        {
+            // Check Docker prerequisites first
+            dockerProcess.CheckPrerequisites((hasDocker, hasDockerCompose, hasDockerImage, hasDockerContainerMounts) =>
+            {
+                if (!hasDocker || !hasDockerImage)
+                {
+                    if (debugMode) LogMessage("[Docker] Skipping container reconfiguration - Docker or Docker image not available", 0);
+                    return;
+                }
+
+                // Run the reconfiguration asynchronously
+                EditorApplication.delayCall += async () =>
+                {
+                    if (debugMode) LogMessage($"[Docker] Reconfiguring container mount for new module directory: {newServerDirectory}", 0);
+                    
+                    var (success, wasRunning) = await dockerProcess.ReconfigureDockerContainerMount(newServerDirectory);
+                    
+                    if (success)
+                    {
+                        if (debugMode) LogMessage("[Docker] Container reconfigured successfully. New mount will apply on next server start.", 1);
+                        
+                        // Restart server if it was running before reconfiguration
+                        if (wasRunning)
+                        {
+                            if (debugMode) LogMessage("[Docker] Server was running before reconfiguration, restarting...", 0);
+                            
+                            // Give a brief moment before restarting
+                            await Task.Delay(1000);
+                            
+                            // Start the server again
+                            EditorApplication.delayCall += () =>
+                            {
+                                if (serverManager != null)
+                                {
+                                    serverManager.StartServer();
+                                    LogMessage("Local Docker SpacetimeDB Server restarted with new module mount.", 1);
+                                }
+                            };
+                        }
+                    }
+                    else
+                    {
+                        LogMessage("[Docker] Failed to reconfigure container mount. You may need to manually restart the container.", -1);
+                    }
+                };
+            });
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"[Docker] Error during container reconfiguration: {ex.Message}", -1);
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Container reconfiguration exception: {ex}");
         }
     }
     #endregion

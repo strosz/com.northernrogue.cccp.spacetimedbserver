@@ -1815,8 +1815,11 @@ public class ServerSetupWindow : EditorWindow
                 return;
             }
             
+            // Get the actual project root (handles both old and new directory structures)
+            string projectRoot = ServerUtilityProvider.GetProjectRoot(serverDirectory);
+            
             // Use ServerUtilityProvider to get the correct file path for the current platform
-            string cargoTomlPath = ServerUtilityProvider.GetPlatformSpecificFilePath(serverDirectory, "Cargo.toml");
+            string cargoTomlPath = ServerUtilityProvider.GetPlatformSpecificFilePath(projectRoot, "Cargo.toml");
             
             if (string.IsNullOrEmpty(cargoTomlPath))
             {
@@ -2037,9 +2040,9 @@ public class ServerSetupWindow : EditorWindow
                 "Confirm Container Reconfiguration",
                 "The Docker container must be stopped and recreated to reconfigure volume mounts.\n\n" +
                 "This will apply the following mounts:\n" +
-                "- Server directory -> /app\n" +
+                "- Selected Module directory -> /app\n" +
                 "- Unity project -> /unity\n" +
-                "- Persistent SpacetimeDB data and auth volume\n\n" +
+                "- Verifies that persistent SpacetimeDB data and auth volumes exist\n\n" +
                 "Do you wish to reconfigure? This is required to complete the setup.",
                 "Yes, Reconfigure",
                 "Cancel"

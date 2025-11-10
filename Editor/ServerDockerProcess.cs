@@ -1197,6 +1197,73 @@ public class ServerDockerProcess
             return false;
         }
     }
+
+    /// <summary>
+    /// Reconfigures the Docker container's /app mount to point to a new serverDirectory.
+    /// Only stops and removes the container if it exists - it will be recreated with new mounts on next start.
+    /// </summary>
+    /// <param name="newServerDirectory">The new server directory to mount at /app</param>
+    /// <returns>Tuple of (success, wasRunning) - success indicates if reconfiguration succeeded, wasRunning indicates if server was running before reconfiguration</returns>
+    public async Task<(bool success, bool wasRunning)> ReconfigureDockerContainerMount(string newServerDirectory)
+    {
+        if (string.IsNullOrEmpty(newServerDirectory))
+        {
+            if (debugMode) logCallback("[ServerDockerProcess] Cannot reconfigure: serverDirectory is null or empty", -1);
+            return (false, false);
+        }
+
+        try
+        {
+            var (exists, isRunning) = CheckContainerStatus(ContainerName);
+            
+            if (!exists)
+            {
+                if (debugMode) logCallback($"[ServerDockerProcess] Container doesn't exist, no reconfiguration needed. New mounts will apply on next start.", 0);
+                return (true, false); // No container to reconfigure, mounts will be correct on next start
+            }
+
+            if (debugMode) logCallback($"[ServerDockerProcess] Reconfiguring container mount to: {newServerDirectory}", 0);
+
+            // Track if server was running before we stop it
+            bool serverWasRunning = isRunning;
+
+            // Stop the container if running
+            if (isRunning)
+            {
+                if (debugMode) logCallback("[ServerDockerProcess] Stopping container for reconfiguration...", 0);
+                bool stopped = await StopDockerContainer(ContainerName);
+                if (!stopped)
+                {
+                    logCallback("[ServerDockerProcess] Failed to stop container for reconfiguration", -1);
+                    return (false, serverWasRunning);
+                }
+                
+                // Brief wait to ensure container is fully stopped
+                await Task.Delay(500);
+            }
+
+            // Remove the container so it will be recreated with new mounts on next start
+            if (debugMode) logCallback("[ServerDockerProcess] Removing container to apply new mount configuration...", 0);
+            bool removed = await RemoveDockerContainer(ContainerName);
+            
+            if (removed)
+            {
+                if (debugMode) logCallback($"[ServerDockerProcess] Container removed. New mount will apply on next server start: {newServerDirectory} -> /app", 1);
+                return (true, serverWasRunning);
+            }
+            else
+            {
+                logCallback("[ServerDockerProcess] Failed to remove container during reconfiguration", -1);
+                return (false, serverWasRunning);
+            }
+        }
+        catch (Exception ex)
+        {
+            logCallback($"[ServerDockerProcess] Error during container reconfiguration: {ex.Message}", -1);
+            if (debugMode) UnityEngine.Debug.LogError($"[ServerDockerProcess] Reconfiguration exception: {ex}");
+            return (false, false);
+        }
+    }
     
     public bool CheckIfServerRunningDocker()
     {
@@ -1450,6 +1517,7 @@ public class ServerDockerProcess
     /// <summary>
     /// Build Rust cargo project with specified features (for SpacetimeDB modules)
     /// Server directory is mounted at /app in the container
+    /// Supports both old structure (/app/Cargo.toml) and new structure (/app/spacetimedb/Cargo.toml)
     /// </summary>
     public async Task<(bool success, string output, string error)> RunCargoBuildAsync(string serverDirectory, bool withDevMode)
     {
@@ -1463,8 +1531,26 @@ public class ServerDockerProcess
 
             if (debugMode) logCallback($"[ServerDockerProcess] Starting cargo build: {cargoCommand}", 0);
 
-            // Server directory is mounted at /app in the container, so just run cargo there
-            string fullCommand = $"sh -c \"cd /app && cargo {cargoCommand}\"";
+            // Get the actual project root (handles both old and new directory structures)
+            // The project root is then mounted at /app in the container
+            string projectRoot = ServerUtilityProvider.GetProjectRoot(serverDirectory);
+            
+            // Determine the build directory relative to /app mount
+            // If serverDirectory is /app, then projectRoot will be either /app or /app/spacetimedb
+            // We need to calculate the relative path from /app to the project root
+            string buildDir = "/app";
+            if (projectRoot.EndsWith("spacetimedb") || projectRoot.Contains("spacetimedb"))
+            {
+                buildDir = "/app/spacetimedb";
+                if (debugMode) logCallback($"[ServerDockerProcess] Detected new SpacetimeDB structure, building from {buildDir}", 0);
+            }
+            else
+            {
+                if (debugMode) logCallback($"[ServerDockerProcess] Detected old structure, building from {buildDir}", 0);
+            }
+
+            // Server directory is mounted at /app in the container, so run cargo from the correct subdirectory
+            string fullCommand = $"sh -c \"cd {buildDir} && cargo {cargoCommand}\"";
             string dockerExecCommand = $"exec {ContainerName} {fullCommand}";
 
             var result = await Task.Run(() =>

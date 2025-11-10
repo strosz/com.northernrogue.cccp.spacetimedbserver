@@ -432,8 +432,11 @@ public class ServerDataWindow : EditorWindow
                 return;
             }
 
+            // Get the actual project root (handles both old and new directory structures)
+            string projectRoot = ServerUtilityProvider.GetProjectRoot(serverDirectory);
+            
             // Get Cargo.toml path
-            string cargoTomlPath = System.IO.Path.Combine(serverDirectory, "Cargo.toml");
+            string cargoTomlPath = System.IO.Path.Combine(projectRoot, "Cargo.toml");
             if (!File.Exists(cargoTomlPath))
             {
                 SetStatus("Error: Cargo.toml not found in server directory.", Color.red);

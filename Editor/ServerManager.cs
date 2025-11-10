@@ -1047,6 +1047,9 @@ public class ServerManager
                         if (debugMode) LogMessage("Docker log processors started successfully.", 1);
                     }
                     
+                    // Configure SpacetimeDB CLI default now that container is running
+                    ConfigureSpacetimeDBConfigServerMode();
+                    
                     // Check ping in background for additional confirmation
                     _ = Task.Run(async () => {
                         await Task.Delay(3000); // Give HTTP endpoint time to initialize
@@ -1170,6 +1173,12 @@ public class ServerManager
         SaveServerStateToSessionState(); // Persist state across domain reloads
         isStartingUp = false;
         serverConfirmedRunning = true;
+        
+        // Configure SpacetimeDB CLI default if using Docker CLI provider
+        if (LocalCLIProvider == "Docker")
+        {
+            ConfigureSpacetimeDBConfigServerMode();
+        }
         
         // Initialize the log processor if it's null
         if (logProcessor == null)
@@ -1460,7 +1469,7 @@ public class ServerManager
         justStopped = true; // Set flag indicating stop was just initiated
         stopInitiatedTime = EditorApplication.timeSinceStartup; // Record time
 
-        LogMessage("Maincloud Server Successfully Stopped.", 1);
+        if (DebugMode) LogMessage("Maincloud Logs Successfully Stopped.", 1);
         
         // Update log processor state
         logProcessor.SetServerRunningState(false);
@@ -1602,6 +1611,12 @@ public class ServerManager
 
                     // Update logProcessor state
                     logProcessor.SetServerRunningState(true);
+
+                    // Configure SpacetimeDB CLI default if using Docker
+                    if (Settings.serverMode == ServerMode.DockerServer || (Settings.serverMode == ServerMode.MaincloudServer && LocalCLIProvider == "Docker"))
+                    {
+                        ConfigureSpacetimeDBConfigServerMode();
+                    }
 
                     // Auto-publish check if applicable
                     if (AutoPublishMode && ServerChangesDetected && !string.IsNullOrEmpty(ModuleName))
@@ -2124,7 +2139,7 @@ public class ServerManager
                     }
                     else
                     {
-                        LogMessage("Command failed to execute.", -2);
+                        LogMessage($"Command ({command}) failed to execute.", -2);
                     }
                 }
             }
@@ -2198,6 +2213,28 @@ public class ServerManager
             }
         }
         
+        // Get the project root directory (handles both old and new SpacetimeDB structures)
+        string projectRoot = ServerUtilityProvider.GetProjectRoot(ServerDirectory);
+        
+        // For Docker, convert the Windows path to the container path (/app mount)
+        string projectRootForCommand = projectRoot;
+        if (LocalCLIProvider == "Docker")
+        {
+            // Docker mounts ServerDirectory as /app in the container
+            // Convert: C:\path\to\Server\spacetimedb -> /app/spacetimedb or /app
+            try
+            {
+                string relativePath = projectRoot.Substring(ServerDirectory.Length).TrimStart('\\', '/');
+                projectRootForCommand = string.IsNullOrEmpty(relativePath) ? "/app" : ("/app/" + relativePath).Replace('\\', '/');
+                if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for Docker: {projectRootForCommand}");
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) UnityEngine.Debug.LogError($"[ServerManager] Failed to convert project root for Docker: {ex.Message}");
+                projectRootForCommand = "/app"; // Fall back to /app
+            }
+        }
+        
         // Build the publish command based on whether we're using pre-built WASM or project-path
         string publishCommand;
         if (!string.IsNullOrEmpty(wasmPath))
@@ -2206,20 +2243,20 @@ public class ServerManager
             if (resetDatabase)
             {
                 if (Settings.serverMode == ServerMode.MaincloudServer)
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server maincloud {ModuleName} --delete-data -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server maincloud {ModuleName} --delete-data -y\"";
                 else if (Settings.serverMode == ServerMode.CustomServer)
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server {customServerUrl} {ModuleName} --delete-data -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server {customServerUrl} {ModuleName} --delete-data -y\"";
                 else
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server local {ModuleName} --delete-data -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server local {ModuleName} --delete-data -y\"";
             }
             else
             {
                 if (Settings.serverMode == ServerMode.MaincloudServer)
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server maincloud {ModuleName} -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server maincloud {ModuleName} -y\"";
                 else if (Settings.serverMode == ServerMode.CustomServer)
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server {customServerUrl} {ModuleName} -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server {customServerUrl} {ModuleName} -y\"";
                 else
-                    publishCommand = $"spacetime publish --bin-path \"{wasmPath}\" --server local {ModuleName} -y";
+                    publishCommand = $"sh -c \"cd '{projectRootForCommand}' && spacetime publish --bin-path '{wasmPath}' --server local {ModuleName} -y\"";
             }
             
             string logMsg = resetDatabase 
@@ -2233,20 +2270,20 @@ public class ServerManager
             if (resetDatabase)
             {
                 if (Settings.serverMode == ServerMode.MaincloudServer)
-                    RunServerCommand($"spacetime publish --server maincloud {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server maincloud {ModuleName} --delete-data -y\"", $"Publishing module '{ModuleName}' and resetting database");
                 else if (Settings.serverMode == ServerMode.CustomServer)
-                    RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server {customServerUrl} {ModuleName} --delete-data -y\"", $"Publishing module '{ModuleName}' and resetting database");
                 else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
-                    RunServerCommand($"spacetime publish --server local {ModuleName} --delete-data -y", $"Publishing module '{ModuleName}' and resetting database");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server local {ModuleName} --delete-data -y\"", $"Publishing module '{ModuleName}' and resetting database");
             }
             else
             {
                 if (Settings.serverMode == ServerMode.MaincloudServer)
-                    RunServerCommand($"spacetime publish --server maincloud {ModuleName} -y", $"Publishing module '{ModuleName}' to Maincloud");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server maincloud {ModuleName} -y\"", $"Publishing module '{ModuleName}' to Maincloud");
                 else if (Settings.serverMode == ServerMode.CustomServer)
-                    RunServerCommand($"spacetime publish --server {customServerUrl} {ModuleName} -y", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server {customServerUrl} {ModuleName} -y\"", $"Publishing module '{ModuleName}' to Custom Server at '{customServerUrl}'");
                 else if (Settings.serverMode == ServerMode.WSLServer || Settings.serverMode == ServerMode.DockerServer)
-                    RunServerCommand($"spacetime publish --server local {ModuleName} -y", $"Publishing module '{ModuleName}' to Local");
+                    RunServerCommand($"sh -c \"cd '{projectRootForCommand}' && spacetime publish --server local {ModuleName} -y\"", $"Publishing module '{ModuleName}' to Local");
             }
         }
 
@@ -2392,17 +2429,36 @@ public class ServerManager
         // Go on to Auto-Generate if mode is enabled (continues even if unsuccessful to get all logs)
         if (PublishAndGenerateMode)
         {
+            // Get the project root directory for generate command (same as publish)
+            string generateProjectRoot = ServerUtilityProvider.GetProjectRoot(ServerDirectory);
+            
+            // For Docker, convert the Windows path to the container path (/app mount)
+            string generateProjectRootForCommand = generateProjectRoot;
+            if (LocalCLIProvider == "Docker")
+            {
+                try
+                {
+                    string relativePath = generateProjectRoot.Substring(ServerDirectory.Length).TrimStart('\\', '/');
+                    generateProjectRootForCommand = string.IsNullOrEmpty(relativePath) ? "/app" : ("/app/" + relativePath).Replace('\\', '/');
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerManager] Failed to convert project root for Docker in generate: {ex.Message}");
+                    generateProjectRootForCommand = "/app";
+                }
+            }
+            
             if (successfulPublish)
             {
                 LogMessage("Publish successful, automatically generating Unity files...", 0);
                 string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
-                RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files");
+                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {UnityLang} -y\"", "Generating Unity files");
             }
             else // If unsuccessful Publish
             {
                 LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
                 string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
-                RunServerCommand($"spacetime generate --out-dir {outDir} --lang {UnityLang} -y", "Generating Unity files (Publish failed)");
+                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {UnityLang} -y\"", "Generating Unity files (Publish failed)");
             }
         }
 
@@ -2484,15 +2540,15 @@ public class ServerManager
         if (LocalCLIProvider == "Docker")
         {
             // For Docker the server directory needs to be mounted in the container, so we use the mount path /app directly
-            string command = $"cd /app && spacetime init --lang {ServerLang} .";
+            string command = $"spacetime init --lang {ServerLang} --project-path /app {ModuleName}";
             dockerProcessor.RunDockerCommandSilent($"exec {ServerDockerProcess.ContainerName} bash -c \"{command}\"");
             LogMessage("New module initialized", 1);
         }
         else // WSL mode
         {
             string wslPath = wslProcessor.GetWslPath(ServerDirectory);
-            // Combine cd and init command
-            string command = $"cd \"{wslPath}\" && spacetime init --lang {ServerLang} .";
+            // Use the new command format with project-path option
+            string command = $"spacetime init --lang {ServerLang} --project-path \"{wslPath}\" {ModuleName}";
             wslProcessor.RunWslCommandSilent(command);
             LogMessage("New module initialized", 1);
         }
@@ -3175,6 +3231,31 @@ public class ServerManager
         // Open a new command window and execute the SSH command, keeping the window open
         Process.Start("cmd.exe", $"/K {sshCommand}");
     }
+
+    // Configures SpacetimeDB CLI default server (maincloud or local) based on current server mode
+    private async void ConfigureSpacetimeDBConfigServerMode()
+    {
+        await Task.Delay(5000); // Wait 5 seconds to ensure CLI is ready
+
+        bool containerRunning = await dockerProcessor.CheckDockerProcessAsync(true);
+
+        // Only configure if using Docker CLI provider
+        if (LocalCLIProvider == "Docker" && !containerRunning)
+        {
+            return;
+        }
+
+        if (Settings.serverMode == ServerMode.MaincloudServer)
+        {
+            if (debugMode) LogMessage("Setting SpacetimeDB CLI default to maincloud", 0);
+            RunServerCommand("spacetime server set-default maincloud", "");
+        }
+        else if (Settings.serverMode == ServerMode.DockerServer || Settings.serverMode == ServerMode.CustomServer || Settings.serverMode == ServerMode.WSLServer)
+        {
+            if (debugMode) LogMessage("Setting SpacetimeDB CLI default to local", 0);
+            RunServerCommand("spacetime server set-default local", "");
+        }
+    }
     #endregion
 
     #region Check All Status
@@ -3607,8 +3688,11 @@ public class ServerManager
         if (string.IsNullOrEmpty(ServerDirectory))
             return null;
 
+        // Get the actual project root (handles both old and new directory structures)
+        string projectRoot = ServerUtilityProvider.GetProjectRoot(ServerDirectory);
+
         // Look for .wasm files in target/wasm32-unknown-unknown/release
-        string releaseDir = System.IO.Path.Combine(ServerDirectory, "target", "wasm32-unknown-unknown", "release");
+        string releaseDir = System.IO.Path.Combine(projectRoot, "target", "wasm32-unknown-unknown", "release");
         
         if (!System.IO.Directory.Exists(releaseDir))
         {

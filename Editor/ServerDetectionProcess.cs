@@ -134,25 +134,44 @@ public class ServerDetectionProcess
         }
     }
 
+    // Get the actual project root (handles both old and new directory structures)
+    // New structure: serverDirectory/spacetimedb/ -> src/, Cargo.toml, etc.
+    // Old structure: serverDirectory/ -> src/, Cargo.toml, etc.
+    private string GetProjectRoot()
+    {
+        // Check if spacetimedb subdirectory exists (new structure)
+        string spacetimedbPath = Path.Combine(serverDirectory, "spacetimedb");
+        if (Directory.Exists(spacetimedbPath))
+        {
+            return spacetimedbPath;
+        }
+        
+        // Fall back to serverDirectory root (old structure)
+        return serverDirectory;
+    }
+
     // Check if this is a Rust project (has Cargo.toml in root)
     private bool IsRustProject()
     {
-        string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+        string projectRoot = GetProjectRoot();
+        string cargoTomlPath = Path.Combine(projectRoot, "Cargo.toml");
         return File.Exists(cargoTomlPath);
     }
 
     // Check if this is a C# project (has global.json in root)
     private bool IsCSharpProject()
     {
-        string globalJsonPath = Path.Combine(serverDirectory, "global.json");
+        string projectRoot = GetProjectRoot();
+        string globalJsonPath = Path.Combine(projectRoot, "global.json");
         return File.Exists(globalJsonPath);
     }
 
     // Scan Rust project structure (existing logic)
     private void ScanRustProject(Dictionary<string, (long size, DateTime lastWrite)> newFileInfo)
     {
-        string srcDirectory = Path.Combine(serverDirectory, "src");
-        string cargoTomlPath = Path.Combine(serverDirectory, "Cargo.toml");
+        string projectRoot = GetProjectRoot();
+        string srcDirectory = Path.Combine(projectRoot, "src");
+        string cargoTomlPath = Path.Combine(projectRoot, "Cargo.toml");
         
         // Check for Cargo.toml existence and add it to tracking
         if (File.Exists(cargoTomlPath))
@@ -200,7 +219,9 @@ public class ServerDetectionProcess
     // Scan C# project structure (new logic for C# projects)
     private void ScanCSharpProject(Dictionary<string, (long size, DateTime lastWrite)> newFileInfo)
     {
-        if (!Directory.Exists(serverDirectory))
+        string projectRoot = GetProjectRoot();
+        
+        if (!Directory.Exists(projectRoot))
             return;
 
         // Directories to exclude from scanning
@@ -210,12 +231,12 @@ public class ServerDetectionProcess
         {
             try
             {
-                string[] allFiles = Directory.GetFiles(serverDirectory, "*" + extension, SearchOption.AllDirectories);
+                string[] allFiles = Directory.GetFiles(projectRoot, "*" + extension, SearchOption.AllDirectories);
                 
                 foreach (string file in allFiles)
                 {
                     // Check if file is in an excluded directory
-                    string relativePath = Path.GetRelativePath(serverDirectory, file);
+                    string relativePath = Path.GetRelativePath(projectRoot, file);
                     bool shouldExclude = false;
                     
                     foreach (string excludedDir in excludedDirectories)

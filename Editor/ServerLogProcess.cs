@@ -2318,13 +2318,15 @@ public class ServerLogProcess
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Writing module '{newModuleName}' to Docker config file: {configFile}", 0);
 
             // Create the directory if it doesn't exist and write the module name to the config file
-            string setupCommand = $"mkdir -p $(dirname {configFile}) && chmod 755 $(dirname {configFile})";
+            // Wrap in sh -c to enable shell expansion of $(dirname ...)
+            string setupCommand = $"sh -c \"mkdir -p $(dirname {configFile}) && chmod 755 $(dirname {configFile})\"";
             await dockerProcessor.RunServerCommandAsync(setupCommand, null, false);
             
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Docker directory setup completed", 0);
 
             // Write module name to config file
-            string updateConfigCommand = $"echo '{newModuleName}' > {configFile}";
+            // Wrap in sh -c to enable shell redirection
+            string updateConfigCommand = $"sh -c \"echo '{newModuleName}' > {configFile}\"";
             await dockerProcessor.RunServerCommandAsync(updateConfigCommand, null, false);
             
             if (debugMode) logCallback?.Invoke($"[ServerLogProcess] Docker config update completed for module: {newModuleName}", 0);

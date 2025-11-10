@@ -543,6 +543,29 @@ public static class ServerUtilityProvider
         }
     }
 
+    /// <summary>
+    /// Gets the actual project root directory, supporting both old and new SpacetimeDB structures.
+    /// New structure: serverDirectory/spacetimedb/ contains the project files (Cargo.toml, global.json, src/, etc.)
+    /// Old structure: serverDirectory/ contains the project files directly
+    /// </summary>
+    /// <param name="serverDirectory">The server directory path</param>
+    /// <returns>The project root directory path</returns>
+    public static string GetProjectRoot(string serverDirectory)
+    {
+        if (string.IsNullOrEmpty(serverDirectory))
+            return serverDirectory;
+
+        // Check if spacetimedb subdirectory exists (new structure)
+        string spacetimedbPath = Path.Combine(serverDirectory, "spacetimedb");
+        if (Directory.Exists(spacetimedbPath))
+        {
+            return spacetimedbPath;
+        }
+
+        // Fall back to serverDirectory root (old structure)
+        return serverDirectory;
+    }
+
     #endregion
 
     #region File System Utilities

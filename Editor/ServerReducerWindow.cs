@@ -56,6 +56,7 @@ public class ServerReducerWindow : EditorWindow
     private string statusMessage = "Ready. Load settings via ServerWindow and Refresh.";
     private Color statusColor = Color.grey; // Dynamic color based on status
     private string statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+    private string lastErrorMessage = "";
     
     // Styles
     private GUIStyle titleStyle;
@@ -345,6 +346,14 @@ public class ServerReducerWindow : EditorWindow
             else
             {
                 EditorGUILayout.LabelField("Click 'Refresh' to load reducers from the server.", EditorStyles.miniLabel);
+                
+                // Display error message if one exists
+                if (!string.IsNullOrEmpty(lastErrorMessage))
+                {
+                    EditorGUILayout.Space(5);
+                    EditorGUILayout.HelpBox("Couldn't access database.\n" +
+                        "Check that your server URL is correct, your module is selected/published and the server is running.", MessageType.Info);
+                }
             }
         }
         else
@@ -975,6 +984,16 @@ public class ServerReducerWindow : EditorWindow
         statusMessage = message;
         statusColor = color;
         statusTimestamp = DateTime.Now.ToString("HH:mm:ss");
+        
+        // Store error messages for display in the UI
+        if (color == Color.red)
+        {
+            lastErrorMessage = message;
+        }
+        else if (color == Color.green)
+        {
+            lastErrorMessage = ""; // Clear error on success
+        }
     }
     #endregion
     
