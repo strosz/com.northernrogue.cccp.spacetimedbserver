@@ -98,6 +98,7 @@ public class ServerWindow : EditorWindow
     private bool autoCloseCLI { get => CCCPSettingsAdapter.GetAutoCloseCLI(); set => CCCPSettingsAdapter.SetAutoCloseCLI(value); }
     private bool clearModuleLogAtStart { get => CCCPSettingsAdapter.GetClearModuleLogAtStart(); set => CCCPSettingsAdapter.SetClearModuleLogAtStart(value); }
     private bool clearDatabaseLogAtStart { get => CCCPSettingsAdapter.GetClearDatabaseLogAtStart(); set => CCCPSettingsAdapter.SetClearDatabaseLogAtStart(value); }
+    private bool devMode { get => CCCPSettingsAdapter.GetDevMode(); set => CCCPSettingsAdapter.SetDevMode(value); }
 
     // Update SpacetimeDB - Direct property access to settings
     private string spacetimeDBCurrentVersionWSL { get => CCCPSettingsAdapter.GetSpacetimeDBCurrentVersionWSL(); set => CCCPSettingsAdapter.SetSpacetimeDBCurrentVersionWSL(value); }
@@ -121,6 +122,7 @@ public class ServerWindow : EditorWindow
     private bool stylesInitialized = false;    // UI optimization
     private const double statusUICheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
+    private bool previousDevMode = false; // Track previous dev mode state for change detection
     
     // Window toggle states
     private bool viewLogsWindowOpen = false;
@@ -467,6 +469,9 @@ public class ServerWindow : EditorWindow
         // After creating ServerManager, ensure it has the latest settings
         serverManager.LoadSettings();
         serverManager.Configure();
+        
+        // Initialize previous dev mode state for change detection
+        previousDevMode = devMode;
         
         // Initialize wslProcess to avoid null reference exceptions
         if (wslProcess == null)
@@ -2299,6 +2304,34 @@ public class ServerWindow : EditorWindow
             GUILayout.EndHorizontal();
         }
 
+        // Display dev mode change notification if dev mode state has changed
+        if (devMode != previousDevMode)
+        {
+            GUIStyle devModeStyle = new GUIStyle(EditorStyles.boldLabel);
+            devModeStyle.normal.textColor = ServerUtilityProvider.ColorManager.Recommended;
+            devModeStyle.hover.textColor = ServerUtilityProvider.ColorManager.HoverGreen;
+            devModeStyle.fontStyle = FontStyle.Bold;
+            
+            string displayText = devMode ? "Publish to Enable Dev Mode" : "Publish to Disable Dev Mode";
+            string tooltip = devMode ? 
+                "Dev Mode is enabled. Publish to apply this change to the server." : 
+                "Dev Mode is disabled. Publish to apply this change to the server.";
+            
+            // Create a button-like appearance
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            
+            // Use a button that looks like a label for better click response
+            if (GUILayout.Button(new GUIContent(displayText, tooltip), devModeStyle))
+            {
+                previousDevMode = devMode;
+                Repaint();
+            }
+            
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
+
         if (publishFirstModule)
         {
             GUIStyle firstModuleStyle = new GUIStyle(EditorStyles.boldLabel);
@@ -2446,6 +2479,7 @@ public class ServerWindow : EditorWindow
                         "Cancel"))
                 {
                     serverManager.Publish(true); // Publish with a database reset
+                    previousDevMode = devMode; // Sync dev mode state after publish
                 }
             }
             else
@@ -2455,6 +2489,7 @@ public class ServerWindow : EditorWindow
                     serverManager.StartServer();
                 }
                 serverManager.Publish(false); // Publish without a database reset
+                previousDevMode = devMode; // Sync dev mode state after publish
                 publishFirstModule = false;
                 CCCPSettingsAdapter.SetPublishFirstModule(false);
             }
