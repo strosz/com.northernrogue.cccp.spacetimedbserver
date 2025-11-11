@@ -860,11 +860,13 @@ public class ServerWSLProcess
             if (debugMode) logCallback("Debug: " + debug, 0);
             
             // Wait for completion or timeout
-            bool exited = await Task.Run(() => wslProcess.WaitForExit(90000)); // 90 seconds timeout
+            // Publish and generate commands can take up to 2 minutes due to compilation
+            int timeoutMs = (command.Contains("spacetime publish") || command.Contains("spacetime generate")) ? 120000 : 90000;
+            bool exited = await Task.Run(() => wslProcess.WaitForExit(timeoutMs));
             
             if (!exited)
             {
-                logCallback("WSL command timed out after 90 seconds. Attempting to kill process...", -1);
+                logCallback($"WSL command timed out after {timeoutMs / 1000} seconds. Attempting to kill process...", -1);
                 try { wslProcess.Kill(); } catch (Exception killEx) { logCallback($"Error killing timed-out process: {killEx.Message}", -1); }
             }
             

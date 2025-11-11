@@ -1407,8 +1407,14 @@ public class ServerDockerProcess
                         process.BeginOutputReadLine();
                         process.BeginErrorReadLine();
 
-                        // Use longer timeout for login commands (3 minutes) since they require user interaction
-                        int timeoutMs = isLoginCommand ? 180000 : 30000; // 3 minutes for login, 30 seconds for others
+                        // Use longer timeout for login commands (3 minutes) and publish/generate commands (2 minutes) since they require compilation
+                        int timeoutMs;
+                        if (isLoginCommand)
+                            timeoutMs = 180000; // 3 minutes for login
+                        else if (command.Contains("spacetime publish") || command.Contains("spacetime generate"))
+                            timeoutMs = 120000; // 2 minutes for publish/generate (can take time to compile)
+                        else
+                            timeoutMs = 30000; // 30 seconds for others
                         bool finished = process.WaitForExit(timeoutMs);
                         if (!finished)
                         {
