@@ -1522,7 +1522,7 @@ public class ServerWindow : EditorWindow
                     {
                         wslProcess = new ServerWSLProcess(LogMessage, debugMode);
                     }
-                    LogoutAndLogin();
+                    LogoutAndLogin(manual:false);
                 }
                 GUILayout.Space(24); // Instead of a status icon we use space to align with other fields
                 EditorGUILayout.EndHorizontal();                
@@ -2115,7 +2115,7 @@ public class ServerWindow : EditorWindow
             else if (serverMode == ServerMode.MaincloudServer)
                 EditorGUILayout.LabelField("SpacetimeDB Maincloud", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            if (GUILayout.Button("Login", GUILayout.Height(20)))
+            if (debugMode && GUILayout.Button("Login (Manual)", GUILayout.Height(20)))
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
@@ -2123,10 +2123,10 @@ public class ServerWindow : EditorWindow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
                     serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime login");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available.", -2);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Logout", GUILayout.Height(20)))
+            if (debugMode && GUILayout.Button("Logout", GUILayout.Height(20)))
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
@@ -2134,30 +2134,30 @@ public class ServerWindow : EditorWindow
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
                     serverCustomProcess.RunVisibleSSHCommand($"/home/{sshUserName}/.local/bin/spacetime logout");
                 #pragma warning restore CS4014
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Refresh Login", GUILayout.Height(20)))
+            if (GUILayout.Button("Login", GUILayout.Height(20)))
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
-                    LogoutAndLogin();
+                    LogoutAndLogin(manual:true);
                 else if (serverMode == ServerMode.CustomServer && CLIAvailableRemote()) 
-                    LogoutAndLogin();
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                    LogoutAndLogin(manual:true);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
             if (GUILayout.Button("Show Login Info With Auth Token", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
             if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
-                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
             EditorGUI.BeginDisabledGroup(serverMode != ServerMode.MaincloudServer && !serverManager.IsServerStarted);
@@ -2165,7 +2165,7 @@ public class ServerWindow : EditorWindow
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime list", "Showing active modules");
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
             EditorGUI.EndDisabledGroup();
 
@@ -2176,14 +2176,14 @@ public class ServerWindow : EditorWindow
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.PingServer(true);
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
                 // Maincloud always uses the latest version
                 if (GUILayout.Button("Show Version", GUILayout.Height(20)))
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available.", -2);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
             }
 
@@ -2194,7 +2194,7 @@ public class ServerWindow : EditorWindow
                 {
                     if (CLIAvailableLocal()) 
                         serverManager.RunServerCommand("spacetime energy balance", "Showing SpacetimeDB Maincloud energy");
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL or Docker) and it is available.", -2);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL or Docker) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
             }
 
@@ -2207,7 +2207,7 @@ public class ServerWindow : EditorWindow
                 {
                     if (CLIAvailableRemote())
                     CheckServiceStatus();
-                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a remote server (SSH) and it is available.", -2);
+                    else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a remote server (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
                 // Add a button which opens a cmd window with the ssh username
                 if (GUILayout.Button("Open SSH Window", buttonStyle))
@@ -2712,12 +2712,12 @@ public class ServerWindow : EditorWindow
                     {
                         InitNewModule();
                         // Also logout and login again to ensure a safe online login
-                        LogoutAndLogin();
+                        LogoutAndLogin(manual:false);
                     } 
                     else if (initModuleAndLogout == 1)
                     {
                         // Only logout and login again to ensure a safe online login
-                        LogoutAndLogin();
+                        LogoutAndLogin(manual:false);
                     }
                 };
             };
@@ -2892,12 +2892,26 @@ public class ServerWindow : EditorWindow
         }
     }
 
-    public async void LogoutAndLogin()
+    public async void LogoutAndLogin(bool manual)
     {
         if (serverManager == null)
         {
             LogMessage("[LogoutAndLogin] Server Manager not initialized. Please restart Unity.", -1);
             return;
+        }
+        if (manual)
+        {
+            // Shows dialog when manually triggered
+            if (!EditorUtility.DisplayDialog(
+                "Refresh Login",
+                "This will logout and then login again to refresh your SpacetimeDB CLI login. \n\n" +
+                "Ensure you keep using the same SSO (i.e. Github etc) when the browser opens to ensure your identity is persistent.\n\n" +
+                "If you acquire a different SSO identity, you lose access to any databases that were published under the previous identity unless you backed up that identity.\n\n",
+                "Yes, Refresh Login",
+                "Cancel"))
+            {
+                return; // User cancelled the action
+            }
         }
         if (serverMode != ServerMode.CustomServer && localCLIProvider == "Docker") {
             if (!serverRunning) // Docker starts and stops the whole container, so start it first if not running
