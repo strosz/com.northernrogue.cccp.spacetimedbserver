@@ -3,7 +3,6 @@ using UnityEngine;
 using System;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
-using NorthernRogue.CCCP.Editor.Settings;
 
 // Manages and displays SpacetimeDB identity information for CLI and server databases ///
 
@@ -24,6 +23,7 @@ public class ServerIdentityWindow : EditorWindow
     // CLI Identity Data
     private string cliIdentity = "";
     private string cliAuthToken = "";
+    private ServerIdentityManager cliServerIdentityManager = null;
     private string cliStatusMessage = "Click Refresh to fetch CLI identity";
     private Color cliStatusColor = Color.grey;
     
@@ -37,6 +37,7 @@ public class ServerIdentityWindow : EditorWindow
     private bool isRefreshing = false;
     private Vector2 scrollPositionCli;
     private Vector2 scrollPositionServer;
+    private bool hadFocus = true; // Track focus state
     
     // Parent window reference to get settings
     private ServerWindow parentServerWindow;
@@ -66,7 +67,7 @@ public class ServerIdentityWindow : EditorWindow
         
         // Use Unity's proper singleton pattern
         ServerIdentityWindow window = GetWindow<ServerIdentityWindow>();
-        window.titleContent = new GUIContent("Identities");
+        window.titleContent = new GUIContent("Identity Manager");
         window.minSize = new Vector2(800, 400);
         window.Show();
         
@@ -111,11 +112,17 @@ public class ServerIdentityWindow : EditorWindow
                 Debug.Log("[ServerIdentityWindow] ServerManager obtained from parent window");
         }
 
+        // Subscribe to focus change events
+        EditorApplication.focusChanged += OnEditorFocusChanged;
+
         RefreshIdentities();
     }
 
     private void OnDisable()
     {
+        // Unsubscribe from focus change events
+        EditorApplication.focusChanged -= OnEditorFocusChanged;
+        
         if (currentInstance == this)
         {
             currentInstance = null;
@@ -127,6 +134,9 @@ public class ServerIdentityWindow : EditorWindow
 
     private void OnDestroy()
     {
+        // Ensure unsubscription
+        EditorApplication.focusChanged -= OnEditorFocusChanged;
+        
         if (currentInstance == this)
         {
             currentInstance = null;
@@ -134,6 +144,18 @@ public class ServerIdentityWindow : EditorWindow
         
         if (debugMode)
             Debug.Log($"[ServerIdentityWindow] OnDestroy called for instance {instanceId}");
+    }
+
+    private void OnEditorFocusChanged(bool hasFocus)
+    {
+        // If Unity just gained focus, refresh identities
+        if (hasFocus && !hadFocus)
+        {
+            if (debugMode)
+                Debug.Log("[ServerIdentityWindow] Window regained focus, refreshing identities");
+            RefreshIdentities();
+        }
+        hadFocus = hasFocus;
     }
 
     /// <summary>
@@ -170,7 +192,7 @@ public class ServerIdentityWindow : EditorWindow
         }
         
         // Update window title to indicate it was opened from ServerWindow
-        titleContent = new GUIContent($"Identity Manager - {serverMode}");
+        titleContent = new GUIContent($"Identity Manager");
         
         if (debugMode)
             Debug.Log($"[ServerIdentityWindow] Settings updated: ServerMode={serverMode}");
@@ -254,7 +276,7 @@ public class ServerIdentityWindow : EditorWindow
         }
         EditorGUI.EndDisabledGroup();
 
-        if (GUILayout.Button("Login", EditorStyles.toolbarButton, GUILayout.Width(70)))
+        if (GUILayout.Button("Login with SSO", EditorStyles.toolbarButton, GUILayout.Width(120)))
         {
             parentServerWindow.LogoutAndLogin(manual: true);
         }
@@ -272,18 +294,49 @@ public class ServerIdentityWindow : EditorWindow
         EditorGUILayout.LabelField("CLI Identity", titleStyle);
         EditorGUILayout.Space(5);
         
-        // Status message
+        // Status message (always in grey as requested)
         GUIStyle statusStyle = new GUIStyle(EditorStyles.miniLabel);
-        statusStyle.normal.textColor = cliStatusColor;
+        statusStyle.normal.textColor = Color.grey;
         statusStyle.fontStyle = FontStyle.Italic;
         EditorGUILayout.LabelField(cliStatusMessage, statusStyle);
+        
+        // Identity type indicator (bold text below status)
+        if (cliServerIdentityManager != null && cliServerIdentityManager.Type != IdentityType.Unknown)
+        {
+            GUIStyle typeStyle = new GUIStyle(EditorStyles.boldLabel);
+            typeStyle.fontSize = 12;
+            
+            // Green for SSO, Yellow for Offline
+            if (cliServerIdentityManager.Type == IdentityType.SSOAuthenticated)
+            {
+                typeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusSuccess;
+                EditorGUILayout.LabelField($"{cliServerIdentityManager.GetTypeIcon()} {cliServerIdentityManager.GetTypeName()}", typeStyle);
+            }
+            else if (cliServerIdentityManager.Type == IdentityType.OfflineServerIssued)
+            {
+                typeStyle.normal.textColor = ServerUtilityProvider.ColorManager.StatusWarning;
+                EditorGUILayout.LabelField($"{cliServerIdentityManager.GetTypeIcon()} {cliServerIdentityManager.GetTypeName()}", typeStyle);
+            }
+            
+            // Show expiration info
+            GUIStyle expirationStyle = new GUIStyle(EditorStyles.miniLabel);
+            expirationStyle.fontStyle = FontStyle.Italic;
+            EditorGUILayout.LabelField(cliServerIdentityManager.GetExpirationInfo(), expirationStyle);
+        }
         
         EditorGUILayout.Space(5);
         
         // Identity display
         if (!string.IsNullOrEmpty(cliIdentity))
         {
-            EditorGUILayout.LabelField("Identity Hash:", EditorStyles.boldLabel);
+            // Show identity type description
+            if (cliServerIdentityManager != null && cliServerIdentityManager.Type != IdentityType.Unknown)
+            {
+                EditorGUILayout.HelpBox(cliServerIdentityManager.GetTypeDescription(), MessageType.Info);
+                EditorGUILayout.Space(5);
+            }
+            
+            EditorGUILayout.LabelField("Identity:", EditorStyles.boldLabel);
             scrollPositionCli = EditorGUILayout.BeginScrollView(scrollPositionCli, GUILayout.Height(60));
             EditorGUILayout.SelectableLabel(cliIdentity, tokenStyle, GUILayout.ExpandHeight(true));
             EditorGUILayout.EndScrollView();
@@ -347,7 +400,7 @@ public class ServerIdentityWindow : EditorWindow
         // Server Identity display (the "Associated database identities for" identity)
         if (!string.IsNullOrEmpty(serverIdentity))
         {
-            EditorGUILayout.LabelField("Server CLI Identity:", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Identity:", EditorStyles.boldLabel);
             scrollPositionServer = EditorGUILayout.BeginScrollView(scrollPositionServer, GUILayout.Height(60));
             EditorGUILayout.SelectableLabel(serverIdentity, tokenStyle, GUILayout.ExpandHeight(true));
             EditorGUILayout.EndScrollView();
@@ -493,23 +546,37 @@ public class ServerIdentityWindow : EditorWindow
                         Debug.LogWarning($"[ServerIdentityWindow] Could not extract auth token from output: {output}");
                 }
                 
+                // Parse identity info from token
+                if (!string.IsNullOrEmpty(cliAuthToken) && !string.IsNullOrEmpty(cliIdentity))
+                {
+                    cliServerIdentityManager = ServerIdentityManager.ParseServerIdentityManager(cliAuthToken, cliIdentity);
+                    
+                    if (debugMode)
+                        Debug.Log($"[ServerIdentityWindow] Parsed identity type: {cliServerIdentityManager.Type}, Issuer: {cliServerIdentityManager.Issuer}");
+                }
+                else
+                {
+                    cliServerIdentityManager = null;
+                }
+                
                 if (!string.IsNullOrEmpty(cliIdentity))
                 {
                     cliStatusMessage = "CLI identity loaded successfully";
-                    cliStatusColor = ServerUtilityProvider.ColorManager.StatusSuccess;
+                    cliStatusColor = Color.grey; // Always grey as requested
                 }
                 else
                 {
                     cliStatusMessage = "No CLI identity logged in";
-                    cliStatusColor = ServerUtilityProvider.ColorManager.StatusWarning;
+                    cliStatusColor = Color.grey; // Always grey as requested
                 }
             }
             else
             {
                 cliIdentity = "";
                 cliAuthToken = "";
+                cliServerIdentityManager = null;
                 cliStatusMessage = !string.IsNullOrEmpty(result.error) ? $"Error: {result.error}" : "Failed to fetch CLI identity";
-                cliStatusColor = ServerUtilityProvider.ColorManager.StatusError;
+                cliStatusColor = Color.grey; // Always grey as requested
                 
                 if (debugMode)
                     Debug.LogWarning($"[ServerIdentityWindow] Failed to fetch CLI identity. Output: {result.output}, Error: {result.error}");
@@ -519,8 +586,9 @@ public class ServerIdentityWindow : EditorWindow
         {
             cliIdentity = "";
             cliAuthToken = "";
+            cliServerIdentityManager = null;
             cliStatusMessage = $"Exception: {ex.Message}";
-            cliStatusColor = ServerUtilityProvider.ColorManager.StatusError;
+            cliStatusColor = Color.grey; // Always grey as requested
             
             if (debugMode)
                 Debug.LogError($"[ServerIdentityWindow] Exception fetching CLI identity: {ex}");
