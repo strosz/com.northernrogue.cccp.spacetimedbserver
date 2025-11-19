@@ -2107,15 +2107,15 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.Space(-10);
 
             if (serverMode == ServerMode.DockerServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local Docker", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Local Server", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.WSLServer)
-                EditorGUILayout.LabelField("SpacetimeDB Local WSL", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Local Server", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.CustomServer)
-                EditorGUILayout.LabelField("SpacetimeDB Remote", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Remote Server", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
             else if (serverMode == ServerMode.MaincloudServer)
-                EditorGUILayout.LabelField("SpacetimeDB Maincloud", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+                EditorGUILayout.LabelField("SpacetimeDB Maincloud Server", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            if (debugMode && GUILayout.Button("Login (Manual)", GUILayout.Height(20)))
+            if (debugMode && GUILayout.Button("Login (Without Refresh)", GUILayout.Height(20))) // Only does login without refresh
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
@@ -2137,7 +2137,7 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Login", GUILayout.Height(20)))
+            if (GUILayout.Button("Login", GUILayout.Height(20))) // Does the complete logout and login with refresh
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     LogoutAndLogin(manual:true);
@@ -2216,7 +2216,7 @@ public class ServerWindow : EditorWindow
                 }
             }
 
-            EditorGUILayout.LabelField($"Local {localCLIProvider} CLI", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField($"Local {localCLIProvider} CLI Tools", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             if (localCLIProvider == "WSL")
             {
@@ -2271,6 +2271,11 @@ public class ServerWindow : EditorWindow
                 CheckCLIUpdates();
             }
             EditorGUI.EndDisabledGroup();
+
+            if (GUILayout.Button("Identity Manager", GUILayout.Height(20)))
+            {
+                OpenIdentityWindow();
+            }
 
             if (debugMode && serverMode == ServerMode.WSLServer)
             {
@@ -3234,6 +3239,19 @@ public class ServerWindow : EditorWindow
     {
         ServerUtilityProvider.CloseWindow<ServerDataWindow>();
         ServerUtilityProvider.CloseWindow<ServerReducerWindow>();
+    }
+
+    private void OpenIdentityWindow()
+    {
+        // Open or focus the Identity Manager window
+        ServerIdentityWindow window = EditorWindow.GetWindow<ServerIdentityWindow>();
+        
+        // Update the window with current settings
+        if (window != null && serverManager != null)
+        {
+            string currentServerMode = serverMode.ToString();
+            window.UpdateSettings(this, serverManager, currentServerMode);
+        }
     }
 
     private async void GenerateSSHKeyPairAsync()

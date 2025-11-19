@@ -372,6 +372,7 @@ public class ServerManager
 
     // Process getters
     public ServerWSLProcess GetWSLProcessor() => wslProcessor;
+    public ServerDockerProcess GetDockerProcessor() => dockerProcessor;
 
     // Callbacks
     public Action<string, int> LogCallback { get; set; }
