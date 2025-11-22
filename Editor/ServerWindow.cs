@@ -138,6 +138,22 @@ public class ServerWindow : EditorWindow
     private GUIStyle moduleInitButtonStyle;
     private GUIStyle titleStyle;
     private GUIContent emptyContent;
+    
+    // Cached GUILayoutOption arrays to prevent per-frame allocations
+    private GUILayoutOption[] width110;
+    private GUILayoutOption[] width75;
+    private GUILayoutOption[] width47;
+    private GUILayoutOption[] width35;
+    private GUILayoutOption[] width25;
+    private GUILayoutOption[] width20;
+    private GUILayoutOption[] height20;
+    private GUILayoutOption[] height10;
+    private GUILayoutOption[] height1_7;
+    private GUILayoutOption[] expandWidth;
+    private GUILayoutOption[] expandHeight;
+    private GUILayoutOption[] width25Height;
+    private GUILayoutOption[] width47Height20;
+    
     private bool stylesInitialized = false;    // UI optimization
     private const double statusUICheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
@@ -289,16 +305,17 @@ public class ServerWindow : EditorWindow
         EditorGUILayout.Space(5);
         
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel, GUILayout.Width(110));
+        EditorGUILayout.LabelField("Command Output:", EditorStyles.boldLabel);
 
         GUILayout.FlexibleSpace();
+        EditorGUILayout.Space(-70);
 
         // Autoscroll button
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
         autoscrollStyle.normal.textColor = autoscroll ? ServerUtilityProvider.ColorManager.AutoscrollEnabled : ServerUtilityProvider.ColorManager.AutoscrollDisabled;
         autoscrollStyle.hover.textColor = autoscrollStyle.normal.textColor; // Explicitly define hover textColor        
-        if (GUILayout.Button(autoscrollButtonContent, autoscrollStyle, GUILayout.Width(75)))
+        if (GUILayout.Button(autoscrollButtonContent, autoscrollStyle, width75))
         {
             autoscroll = !autoscroll;
             CCCPSettingsAdapter.SetAutoscroll(autoscroll);
@@ -313,12 +330,12 @@ public class ServerWindow : EditorWindow
         }
         EditorGUILayout.EndVertical();
 
-        EditorGUILayout.Space(-10);
+        EditorGUILayout.Space(5);
 
         // Clear button
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
-        if (GUILayout.Button(clearButtonContent, clearStyle, GUILayout.Width(35)))
+        if (GUILayout.Button(clearButtonContent, clearStyle, width35))
         {
             commandOutputLog = "";
             Repaint();
@@ -389,7 +406,7 @@ public class ServerWindow : EditorWindow
             }
             
             // Dismiss button (X)
-            if (GUILayout.Button(new GUIContent("✕", "Dismiss Update Notification"), dismissButtonStyle, GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight)))
+            if (GUILayout.Button(new GUIContent("✕", "Dismiss Update Notification"), dismissButtonStyle, width25Height))
             {
                 SessionState.SetBool("CCCPUpdateMessageDismissed", true);
             }
@@ -486,6 +503,21 @@ public class ServerWindow : EditorWindow
         trimmedLogContent = new GUIContent("");
         emptyContent = new GUIContent("");
         
+        // Initialize cached GUILayoutOption arrays
+        width110 = new[] { GUILayout.Width(110) };
+        width75 = new[] { GUILayout.Width(75) };
+        width47 = new[] { GUILayout.Width(47) };
+        width35 = new[] { GUILayout.Width(35) };
+        width25 = new[] { GUILayout.Width(25) };
+        width20 = new[] { GUILayout.Width(20) };
+        height20 = new[] { GUILayout.Height(20) };
+        height10 = new[] { GUILayout.Height(10) };
+        height1_7 = new[] { GUILayout.Height(1.7f) };
+        expandWidth = new[] { GUILayout.ExpandWidth(true) };
+        expandHeight = new[] { GUILayout.ExpandHeight(true) };
+        width25Height = new[] { GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight) };
+        width47Height20 = new[] { GUILayout.Width(47), GUILayout.Height(20) };
+        
         stylesInitialized = true;
     }
     #endregion
@@ -494,6 +526,9 @@ public class ServerWindow : EditorWindow
 
     private void OnEnable()
     {
+        // Prevent unnecessary repaints from mouse movement
+        wantsMouseMove = false;
+        
         // Ensure colors are initialized from the centralized ColorManager
         ServerUtilityProvider.ColorManager.EnsureInitialized();
         
@@ -663,9 +698,6 @@ public class ServerWindow : EditorWindow
     {
         if (serverManager == null) return;
         
-        // Update window states regularly to keep UI in sync
-        UpdateWindowStates();
-        
         // Continuously sync publishing state with ServerManager
         bool newPublishingState = serverManager.Publishing;
         if (publishing != newPublishingState)
@@ -711,14 +743,22 @@ public class ServerWindow : EditorWindow
         }
         
         // Background status checks to update the UI without having to interact with it
+        // Note: Removed redundant Repaint() here since OnGUI already runs regularly
+        // Only trigger when absolutely necessary (e.g., SSH status changes)
         if (currentTime - lastCheckTime > statusUICheckInterval)
         {
             if (serverMode == ServerMode.CustomServer) 
             {
+                bool previousSSHState = isConnectedCustomSSH;
                 serverManager.SSHConnectionStatusAsync();
                 isConnectedCustomSSH = serverManager.IsSSHConnectionActive;
+                
+                // Only repaint if SSH connection state actually changed
+                if (previousSSHState != isConnectedCustomSSH)
+                {
+                    Repaint();
+                }
             }
-            Repaint();
         }
     }
     
@@ -796,6 +836,10 @@ public class ServerWindow : EditorWindow
         if (focused)
         {
             lastCheckTime = EditorApplication.timeSinceStartup;
+            
+            // Update window states only when gaining focus
+            UpdateWindowStates();
+            
             if (debugMode)
             {
                 //UnityEngine.Debug.Log("[ServerWindow] Editor focus regained - resetting timing to prevent log processing backlog");
@@ -835,16 +879,16 @@ public class ServerWindow : EditorWindow
         {
             EditorGUILayout.Space(0);
 
-            EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
+            EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, height10);
 
             // Draw a visible 3px high dark line across the window
-            Rect lineRect = GUILayoutUtility.GetRect(emptyContent, GUIStyle.none, GUILayout.Height(1.7f), GUILayout.ExpandWidth(true));
+            Rect lineRect = GUILayoutUtility.GetRect(emptyContent, GUIStyle.none, height1_7[0], expandWidth[0]);
             Color lineColor = EditorGUIUtility.isProSkin ? ServerUtilityProvider.ColorManager.LineDark : ServerUtilityProvider.ColorManager.LineLight;
             EditorGUI.DrawRect(lineRect, lineColor);
 
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             bool isLocalMode = (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer);
-            if (GUILayout.Button(new GUIContent("Local", "Run a local server with SpacetimeDB"), isLocalMode ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Local", "Run a local server with SpacetimeDB"), isLocalMode ? activeToolbarButton : inactiveToolbarButton, expandWidth))
             {
                 if (serverMode == ServerMode.MaincloudServer) // Maincloud is always started so we don't have to check for serverStarted
                 {
@@ -871,7 +915,7 @@ public class ServerWindow : EditorWindow
                 }
                 // Else we are already in Local mode and don't have to do anything
             }
-            if (GUILayout.Button(new GUIContent("Remote", "Connect to your custom remote server and run spacetime commands"), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Remote", "Connect to your custom remote server and run spacetime commands"), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, expandWidth))
             {
                 if (serverMode == ServerMode.MaincloudServer)
                 {
@@ -891,7 +935,7 @@ public class ServerWindow : EditorWindow
                 }
                 // Else we are already in Custom mode and don't have to do anything
             }
-            if (GUILayout.Button(new GUIContent("Maincloud", "Connect to the official SpacetimeDB cloud server and run spacetime commands"), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Maincloud", "Connect to the official SpacetimeDB cloud server and run spacetime commands"), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, expandWidth))
             {
                 if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
@@ -946,7 +990,7 @@ public class ServerWindow : EditorWindow
                 "WSL: Use Windows Subsystem for Linux to run a SpacetimeDB CLI and Server locally.\n\n"+
                 "WSL supports Windows. Slower 9 step setup, but can run silently in the background.\n\n"+
                 "Both options provide a local development environment.";
-                EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), GUILayout.Width(110));
+                EditorGUILayout.LabelField(new GUIContent("CLI Provider:", cliProviderTooltip), width110);
                 string[] cliProviderOptions = new string[] { "Docker (Windows, Linux or MacOS)", "WSL (Windows)" };
                 int cliProviderSelectedIndex = serverMode == ServerMode.DockerServer ? 0 : 1;
                 int newCliProviderSelectedIndex = EditorGUILayout.Popup(cliProviderSelectedIndex, cliProviderOptions);
@@ -961,7 +1005,7 @@ public class ServerWindow : EditorWindow
                     UpdateServerModeState();
                     LogMessage($"Local server mode changed to: {cliProviderOptions[newCliProviderSelectedIndex]}", 0);
                 }
-                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(true), GUILayout.Width(20));
+                GUILayout.Label(ServerUtilityProvider.GetStatusIcon(true), width20);
                 EditorGUILayout.EndHorizontal();
             }
 
@@ -972,7 +1016,7 @@ public class ServerWindow : EditorWindow
             "Rust: Programming language for auto-generated Unity client code. \n\n"+
             "Typescript: Programming language for auto-generated Unity client code. \n\n"+
             "Recommended: C-Sharp which is natively supported by Unity.";
-            EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), GUILayout.Width(110));
+            EditorGUILayout.LabelField(new GUIContent("Client Language:", unityLangTooltip), width110);
             string[] unityLangOptions = new string[] { "Rust", "C-Sharp", "Typescript"};
             string[] unityLangValues = new string[] { "rust", "csharp", "typescript" };
             int unityLangSelectedIndex = Array.IndexOf(unityLangValues, unityLang);
@@ -984,7 +1028,7 @@ public class ServerWindow : EditorWindow
                 CCCPSettingsAdapter.SetUnityLang(unityLang);
                 LogMessage($"Module language set to: {unityLangOptions[newunityLangSelectedIndex]}", 0);
             }
-            GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(unityLang)), GUILayout.Width(20));
+            GUILayout.Label(ServerUtilityProvider.GetStatusIcon(!string.IsNullOrEmpty(unityLang)), width20);
             EditorGUILayout.EndHorizontal();
 
             // Unity Autogenerated files Directory setting
@@ -992,9 +1036,9 @@ public class ServerWindow : EditorWindow
             string clientDirectoryTooltip = 
             "Directory where SpacetimeDB Unity client scripts will be automatically generated.\n\n"+
             "Note: This should be placed in the Assets folder of your Unity project.";
-            EditorGUILayout.LabelField(new GUIContent("Client Path:", clientDirectoryTooltip), GUILayout.Width(110));
+            EditorGUILayout.LabelField(new GUIContent("Client Path:", clientDirectoryTooltip), width110);
             string clientDirButtonTooltip = "Current set path: " + (string.IsNullOrEmpty(clientDirectory) ? "Not Set" : clientDirectory);
-            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Set Client Path", clientDirButtonTooltip), height20))
             {
                 string path = EditorUtility.OpenFolderPanel("Select Client Path", Application.dataPath, "");
                 if (!string.IsNullOrEmpty(path))
