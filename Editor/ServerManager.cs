@@ -2552,8 +2552,8 @@ public class ServerManager
             wslProcessor.RunWslCommandSilent(command);
         }
         
-        // Wait 3 seconds for the module to be initialized
-        await System.Threading.Tasks.Task.Delay(3000);
+        // Wait 1 second for the module to be initialized
+        await System.Threading.Tasks.Task.Delay(1000);
         
         // Verify module was successfully created by checking if directory contains files/folders
         bool moduleCreated = false;

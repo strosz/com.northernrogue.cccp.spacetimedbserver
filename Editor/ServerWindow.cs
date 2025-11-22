@@ -3689,7 +3689,7 @@ public class ServerWindow : EditorWindow
         serverManager.InitNewModule();
         
         // Wait for the async operation in serverManager to complete
-        await System.Threading.Tasks.Task.Delay(3500);
+        await System.Threading.Tasks.Task.Delay(1500);
         
         // Verify that the module was successfully initialized before setting flags
         bool moduleCreated = false;
@@ -3799,7 +3799,7 @@ public class ServerWindow : EditorWindow
             {
                 if (localCLIProvider == "Docker")
                 {
-                    LogMessage($"Docker container will be reconfigured to use module: {module.name} at {module.path}", 0);
+                    LogMessage($"Please wait - Docker container is being reconfigured to use module: {module.name} at {module.path}", 0);
                 }
                 else
                 {
@@ -3831,42 +3831,67 @@ public class ServerWindow : EditorWindow
                 // Run the reconfiguration asynchronously
                 EditorApplication.delayCall += async () =>
                 {
-                    if (debugMode) LogMessage($"[Docker] Reconfiguring container mount for new module directory: {newServerDirectory}", 0);
-                    
-                    var (success, wasRunning) = await dockerProcess.ReconfigureDockerContainerMount(newServerDirectory);
-                    
-                    if (success)
+                    try
                     {
-                        if (debugMode) LogMessage("[Docker] Container reconfigured successfully. New mount will apply on next server start.", 1);
+                        EditorUtility.DisplayProgressBar("Docker Container Reconfiguration", "Checking container status...", 0.0f);
                         
-                        // Restart server if it was running before reconfiguration
-                        if (wasRunning)
+                        if (debugMode) LogMessage($"[Docker] Reconfiguring container mount for new module directory: {newServerDirectory}", 0);
+                        
+                        EditorUtility.DisplayProgressBar("Docker Container Reconfiguration", "Stopping and removing container...", 0.3f);
+                        
+                        var (success, wasRunning) = await dockerProcess.ReconfigureDockerContainerMount(newServerDirectory);
+                        
+                        if (success)
                         {
-                            if (debugMode) LogMessage("[Docker] Server was running before reconfiguration, restarting...", 0);
+                            EditorUtility.DisplayProgressBar("Docker Container Reconfiguration", "Container reconfigured successfully", 0.7f);
                             
-                            // Give a brief moment before restarting
-                            await Task.Delay(1000);
+                            if (debugMode) LogMessage("[Docker] Container reconfigured successfully. New mount will apply on next server start.", 1);
                             
-                            // Start the server again
-                            EditorApplication.delayCall += () =>
+                            // Restart server if it was running before reconfiguration
+                            if (wasRunning)
                             {
-                                if (serverManager != null)
+                                EditorUtility.DisplayProgressBar("Docker Container Reconfiguration", "Restarting server...", 0.8f);
+                                
+                                if (debugMode) LogMessage("[Docker] Server was running before reconfiguration, restarting...", 0);
+                                
+                                // Give a brief moment before restarting
+                                await Task.Delay(1000);
+                                
+                                // Start the server again
+                                EditorApplication.delayCall += () =>
                                 {
-                                    serverManager.StartServer();
-                                    LogMessage("Local Docker SpacetimeDB Server restarted with new module mount.", 1);
-                                }
-                            };
+                                    if (serverManager != null)
+                                    {
+                                        serverManager.StartServer();
+                                        LogMessage("Local Docker SpacetimeDB Server restarted with new module mount.", 1);
+                                    }
+                                    
+                                    EditorUtility.ClearProgressBar();
+                                };
+                            }
+                            else
+                            {
+                                EditorUtility.ClearProgressBar();
+                            }
+                        }
+                        else
+                        {
+                            EditorUtility.ClearProgressBar();
+                            LogMessage("[Docker] Failed to reconfigure container mount. You may need to manually restart the container.", -1);
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        LogMessage("[Docker] Failed to reconfigure container mount. You may need to manually restart the container.", -1);
+                        EditorUtility.ClearProgressBar();
+                        LogMessage($"[Docker] Error during container reconfiguration: {ex.Message}", -1);
+                        if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Container reconfiguration exception: {ex}");
                     }
                 };
             });
         }
         catch (Exception ex)
         {
+            EditorUtility.ClearProgressBar();
             LogMessage($"[Docker] Error during container reconfiguration: {ex.Message}", -1);
             if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Container reconfiguration exception: {ex}");
         }
