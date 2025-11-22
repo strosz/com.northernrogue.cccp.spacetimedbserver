@@ -116,8 +116,27 @@ public class ServerWindow : EditorWindow
     private bool wasAutoScrolling = false;
     private bool needsScrollToBottom = false; // Flag to control when to apply autoscroll
     private Texture2D logoTexture;
+    private Texture2D logoTextureColor;
+    private Texture2D logoTextureMono;
     private GUIStyle connectedStyle;
     private GUIStyle buttonStyle;
+    private GUIStyle subTitleStyle;
+    private GUIStyle titleControlStyle;
+    private GUIStyle autoscrollStyle;
+    private GUIStyle clearStyle;
+    private GUIStyle richTextStyle;
+    private GUIStyle updateButtonStyle;
+    private GUIStyle dismissButtonStyle;
+    private GUIContent versionButtonContent;
+    private GUIContent autoscrollButtonContent;
+    private GUIContent clearButtonContent;
+    private GUIContent trimmedLogContent;
+    private GUIStyle activeToolbarButton;
+    private GUIStyle inactiveToolbarButton;
+    private GUIStyle customWindowStyle;
+    private GUIStyle moduleInitButtonStyle;
+    private GUIStyle titleStyle;
+    private GUIContent emptyContent;
     private bool stylesInitialized = false;    // UI optimization
     private const double statusUICheckInterval = 3.0; // More responsive interval when window is in focus
     private bool windowFocused = false;
@@ -204,11 +223,8 @@ public class ServerWindow : EditorWindow
 
         EditorGUILayout.BeginVertical();
                
-        // Load and display the logo image
-        if (colorLogo)
-        logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo_azure.png");
-        else
-        logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo.png");
+        // Display the logo image (loaded once during initialization)
+        logoTexture = colorLogo ? logoTextureColor : logoTextureMono;
 
         if (logoTexture != null)
         {
@@ -229,13 +245,6 @@ public class ServerWindow : EditorWindow
             
             GUILayout.BeginHorizontal();
             // Subtitle
-            GUIStyle subTitleStyle = new GUIStyle(EditorStyles.label);
-            subTitleStyle.fontSize = 10;
-            subTitleStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
-            subTitleStyle.hover.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
-            subTitleStyle.alignment = TextAnchor.MiddleCenter;
-
-            //GUILayout.Label("Begin by checking the pre-requisites", subTitleStyle);
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 EditorGUILayout.LabelField("Local Server Mode", subTitleStyle);
             else if (serverMode == ServerMode.CustomServer)
@@ -250,12 +259,8 @@ public class ServerWindow : EditorWindow
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
 
-            // Logo version and color control
-            GUIStyle titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
-            titleControlStyle.fontSize = 10;
-            titleControlStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
-            string tooltipVersion = "Click to change logo color\n" + "Type: " + ServerUpdateProcess.GetCachedDistributionType();
-            if (GUILayout.Button(new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion), titleControlStyle))
+            // Logo version and color control (using cached GUIContent and GUIStyle)
+            if (GUILayout.Button(versionButtonContent, titleControlStyle))
             {
                 colorLogo = !colorLogo;
                 CCCPSettingsAdapter.SetColorLogo(colorLogo);
@@ -265,9 +270,6 @@ public class ServerWindow : EditorWindow
         else
         {
             // Fallback if image not found
-            GUIStyle titleStyle = new GUIStyle(EditorStyles.whiteLargeLabel);
-            titleStyle.alignment = TextAnchor.MiddleCenter;
-            titleStyle.fontSize = 15;
             GUILayout.Label("SpacetimeDB Server Management", titleStyle);
             GUILayout.Label("Control your SpacetimeDB server and run commands.\n If starting fresh check the pre-requisites first.", EditorStyles.centeredGreyMiniLabel);
             EditorGUILayout.Space();
@@ -293,11 +295,9 @@ public class ServerWindow : EditorWindow
         // Autoscroll button
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
-        GUIStyle autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
-        autoscrollStyle.fontSize = 12;
         autoscrollStyle.normal.textColor = autoscroll ? ServerUtilityProvider.ColorManager.AutoscrollEnabled : ServerUtilityProvider.ColorManager.AutoscrollDisabled;
         autoscrollStyle.hover.textColor = autoscrollStyle.normal.textColor; // Explicitly define hover textColor        
-        if (GUILayout.Button(new GUIContent("autoscroll"), autoscrollStyle, GUILayout.Width(75)))
+        if (GUILayout.Button(autoscrollButtonContent, autoscrollStyle, GUILayout.Width(75)))
         {
             autoscroll = !autoscroll;
             CCCPSettingsAdapter.SetAutoscroll(autoscroll);
@@ -317,11 +317,7 @@ public class ServerWindow : EditorWindow
         // Clear button
         EditorGUILayout.BeginVertical();
         EditorGUILayout.Space(2);
-        GUIStyle clearStyle = new GUIStyle(EditorStyles.miniLabel);
-        clearStyle.fontSize = 12;
-        clearStyle.normal.textColor = ServerUtilityProvider.ColorManager.ClearButton;
-        clearStyle.hover.textColor = clearStyle.normal.textColor; // Explicitly define hover textColor
-        if (GUILayout.Button(new GUIContent("clear"), clearStyle, GUILayout.Width(35)))
+        if (GUILayout.Button(clearButtonContent, clearStyle, GUILayout.Width(35)))
         {
             commandOutputLog = "";
             Repaint();
@@ -330,13 +326,11 @@ public class ServerWindow : EditorWindow
 
         EditorGUILayout.EndHorizontal();
         
-        // Output log with rich text support
-        GUIStyle richTextStyle = new GUIStyle(EditorStyles.textArea);
-        richTextStyle.richText = true;
+        // Output log with rich text support (using cached style and content)
         // Store previous scroll position to detect user scrolling
         Vector2 previousScrollPosition = scrollPosition;        
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.ExpandHeight(true));
-        EditorGUILayout.TextArea(commandOutputLog.TrimEnd('\n'), richTextStyle, GUILayout.ExpandHeight(true));
+        EditorGUILayout.TextArea(commandOutputLog, richTextStyle, GUILayout.ExpandHeight(true));
         EditorGUILayout.EndScrollView();
         
         // Handle autoscroll behavior based on user interaction
@@ -368,29 +362,17 @@ public class ServerWindow : EditorWindow
                 buttonText = "New CCCP Update Available (Asset Store)";
             }
             
-            // Create a custom style for the button based on the state
-            GUIStyle updateButtonStyle = new GUIStyle(GUI.skin.button);
-            if (isUpdatingCCCP)
-            {
-                updateButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.Processing;
-                updateButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Processing;
-                updateButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.Processing;
-                updateButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.Processing;
-            }
-            else
-            {
-                updateButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-                updateButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-                updateButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-                updateButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-            }
+            // Update cached style colors based on the state
+            Color targetColor = isUpdatingCCCP ? ServerUtilityProvider.ColorManager.Processing : ServerUtilityProvider.ColorManager.ButtonText;
+            updateButtonStyle.normal.textColor = targetColor;
+            updateButtonStyle.hover.textColor = targetColor;
+            updateButtonStyle.active.textColor = targetColor;
+            updateButtonStyle.focused.textColor = targetColor;
             
             // Create horizontal layout for update button and dismiss button
             EditorGUILayout.BeginHorizontal();
 
-            string updateButtonTooltip = "Update CCCP Package";
-
-            if (GUILayout.Button(new GUIContent(buttonText, updateButtonTooltip), updateButtonStyle))
+            if (GUILayout.Button(new GUIContent(buttonText, "Update CCCP Package"), updateButtonStyle))
             {
                 isUpdatingCCCP = true;
                 cccpUpdateStartTime = EditorApplication.timeSinceStartup;
@@ -406,16 +388,7 @@ public class ServerWindow : EditorWindow
             }
             
             // Dismiss button (X)
-            GUIStyle dismissButtonStyle = new GUIStyle(GUI.skin.button);
-            dismissButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-            dismissButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
-            dismissButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.Warning;
-            dismissButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
-            dismissButtonStyle.fontSize = 12;
-
-            string dismissButtonTooltip = "Dismiss Update Notification";
-
-            if (GUILayout.Button(new GUIContent("✕", dismissButtonTooltip), dismissButtonStyle, GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight)))
+            if (GUILayout.Button(new GUIContent("✕", "Dismiss Update Notification"), dismissButtonStyle, GUILayout.Width(25), GUILayout.Height(EditorGUIUtility.singleLineHeight)))
             {
                 SessionState.SetBool("CCCPUpdateMessageDismissed", true);
             }
@@ -426,6 +399,10 @@ public class ServerWindow : EditorWindow
     
     private void InitializeStyles()
     {
+        // Load logo textures once
+        logoTextureColor = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo_azure.png");
+        logoTextureMono = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.northernrogue.cccp.spacetimedbserver/Editor/cosmos_logo.png");
+        
         // For all connection status labels
         connectedStyle = new GUIStyle(EditorStyles.label);
         connectedStyle.fontSize = 11;
@@ -441,6 +418,72 @@ public class ServerWindow : EditorWindow
         buttonStyle.fontSize = 12;
         buttonStyle.fontStyle = FontStyle.Normal;
         buttonStyle.alignment = TextAnchor.MiddleCenter;
+        
+        // Subtitle style
+        subTitleStyle = new GUIStyle(EditorStyles.label);
+        subTitleStyle.fontSize = 10;
+        subTitleStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
+        subTitleStyle.hover.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
+        subTitleStyle.alignment = TextAnchor.MiddleCenter;
+        
+        // Title control style (version button)
+        titleControlStyle = new GUIStyle(EditorStyles.miniLabel);
+        titleControlStyle.fontSize = 10;
+        titleControlStyle.normal.textColor = ServerUtilityProvider.ColorManager.SubtitleText;
+        
+        // Autoscroll button style
+        autoscrollStyle = new GUIStyle(EditorStyles.miniLabel);
+        autoscrollStyle.fontSize = 12;
+        
+        // Clear button style
+        clearStyle = new GUIStyle(EditorStyles.miniLabel);
+        clearStyle.fontSize = 12;
+        clearStyle.normal.textColor = ServerUtilityProvider.ColorManager.ClearButton;
+        clearStyle.hover.textColor = ServerUtilityProvider.ColorManager.ClearButton;
+        
+        // Rich text style for output log
+        richTextStyle = new GUIStyle(EditorStyles.textArea);
+        richTextStyle.richText = true;
+        
+        // Update button style
+        updateButtonStyle = new GUIStyle(GUI.skin.button);
+        
+        // Dismiss button style
+        dismissButtonStyle = new GUIStyle(GUI.skin.button);
+        dismissButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+        dismissButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.Warning;
+        dismissButtonStyle.active.textColor = ServerUtilityProvider.ColorManager.Warning;
+        dismissButtonStyle.focused.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+        dismissButtonStyle.fontSize = 12;
+        
+        // Active/Inactive toolbar button styles
+        activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
+        activeToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.ActiveToolbar;
+        
+        inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
+        inactiveToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.InactiveToolbar;
+        
+        // Custom window style
+        customWindowStyle = new GUIStyle(GUI.skin.window);
+        customWindowStyle.padding = new RectOffset(5, 5, 5, 5);
+        customWindowStyle.contentOffset = Vector2.zero;
+        customWindowStyle.alignment = TextAnchor.UpperLeft;
+        
+        // Module init button style
+        moduleInitButtonStyle = new GUIStyle(GUI.skin.button);
+        
+        // Title style for fallback
+        titleStyle = new GUIStyle(EditorStyles.whiteLargeLabel);
+        titleStyle.alignment = TextAnchor.MiddleCenter;
+        titleStyle.fontSize = 15;
+        
+        // Initialize GUIContent objects
+        string tooltipVersion = "Click to change logo color\n" + "Type: " + ServerUpdateProcess.GetCachedDistributionType();
+        versionButtonContent = new GUIContent("version " + ServerUpdateProcess.GetCurrentPackageVersion(), tooltipVersion);
+        autoscrollButtonContent = new GUIContent("autoscroll");
+        clearButtonContent = new GUIContent("clear");
+        trimmedLogContent = new GUIContent("");
+        emptyContent = new GUIContent("");
         
         stylesInitialized = true;
     }
@@ -779,22 +822,13 @@ public class ServerWindow : EditorWindow
             EditorGUILayout.LabelField("Server Mode", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
             // Draw a visible 3px high dark line across the window
-            Rect lineRect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(1.7f), GUILayout.ExpandWidth(true));
+            Rect lineRect = GUILayoutUtility.GetRect(emptyContent, GUIStyle.none, GUILayout.Height(1.7f), GUILayout.ExpandWidth(true));
             Color lineColor = EditorGUIUtility.isProSkin ? ServerUtilityProvider.ColorManager.LineDark : ServerUtilityProvider.ColorManager.LineLight;
             EditorGUI.DrawRect(lineRect, lineColor);
 
-            // Style Active serverMode
-            GUIStyle activeToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            activeToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.ActiveToolbar;
-
-            // Style Inactive serverMode
-            GUIStyle inactiveToolbarButton = new GUIStyle(EditorStyles.toolbarButton);
-            inactiveToolbarButton.normal.textColor = ServerUtilityProvider.ColorManager.InactiveToolbar;
-
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
-            string localModeTooltip = "Run a local server with SpacetimeDB";
             bool isLocalMode = (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer);
-            if (GUILayout.Button(new GUIContent("Local", localModeTooltip), isLocalMode ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Local", "Run a local server with SpacetimeDB"), isLocalMode ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverMode == ServerMode.MaincloudServer) // Maincloud is always started so we don't have to check for serverStarted
                 {
@@ -821,8 +855,7 @@ public class ServerWindow : EditorWindow
                 }
                 // Else we are already in Local mode and don't have to do anything
             }
-            string customModeTooltip = "Connect to your custom remote server and run spacetime commands";
-            if (GUILayout.Button(new GUIContent("Remote", customModeTooltip), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Remote", "Connect to your custom remote server and run spacetime commands"), serverMode == ServerMode.CustomServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverMode == ServerMode.MaincloudServer)
                 {
@@ -842,8 +875,7 @@ public class ServerWindow : EditorWindow
                 }
                 // Else we are already in Custom mode and don't have to do anything
             }
-            string maincloudModeTooltip = "Connect to the official SpacetimeDB cloud server and run spacetime commands";
-            if (GUILayout.Button(new GUIContent("Maincloud", maincloudModeTooltip), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(new GUIContent("Maincloud", "Connect to the official SpacetimeDB cloud server and run spacetime commands"), serverMode == ServerMode.MaincloudServer ? activeToolbarButton : inactiveToolbarButton, GUILayout.ExpandWidth(true)))
             {
                 if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
                 {
@@ -1115,20 +1147,25 @@ public class ServerWindow : EditorWindow
             
             EditorGUILayout.LabelField(new GUIContent("Module Init or Del:", fullTooltip), GUILayout.Width(110));
             
-            // Create button style for delete mode
-            GUIStyle buttonStyle = new GUIStyle(GUI.skin.button);
+            // Update cached button style colors for delete mode
             if (deleteMode && hasSelectedModule)
             {
                 // Orange color for delete warning
                 Color warningColor;
                 ColorUtility.TryParseHtmlString("#FFA500", out warningColor); // Orange
-                buttonStyle.normal.textColor = warningColor;
-                buttonStyle.hover.textColor = warningColor;
+                moduleInitButtonStyle.normal.textColor = warningColor;
+                moduleInitButtonStyle.hover.textColor = warningColor;
                 Repaint();
+            }
+            else
+            {
+                // Reset to default button text color
+                moduleInitButtonStyle.normal.textColor = ServerUtilityProvider.ColorManager.ButtonText;
+                moduleInitButtonStyle.hover.textColor = ServerUtilityProvider.ColorManager.ButtonText;
             }
             
             EditorGUI.BeginDisabledGroup(deleteMode && !hasSelectedModule);
-            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), buttonStyle, GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent(buttonText, fullTooltip), moduleInitButtonStyle, GUILayout.Height(20)))
             {
                 if (deleteMode && hasSelectedModule)
                 {
@@ -3453,13 +3490,11 @@ public class ServerWindow : EditorWindow
             // Check if scroll position changed
             bool scrollPositionChanged = Vector2.Distance(scrollPosition, previousScrollPosition) > 0.1f;
             
-            // Calculate content dimensions for bottom detection
-            GUIStyle richTextStyle = new GUIStyle(EditorStyles.textArea);
-            richTextStyle.richText = true;
-            
+            // Calculate content dimensions for bottom detection using cached style and content
             // Estimate scroll view width (window width minus padding and scrollbar)
             float estimatedScrollViewWidth = position.width - 40f; // Account for padding and scrollbar
-            float contentHeight = richTextStyle.CalcHeight(new GUIContent(commandOutputLog.TrimEnd('\n')), estimatedScrollViewWidth);
+            trimmedLogContent.text = commandOutputLog;
+            float contentHeight = richTextStyle.CalcHeight(trimmedLogContent, estimatedScrollViewWidth);
             
             // Better estimation of scroll view height (total window height minus header/buttons area)
             float headerHeight = 120f; // Approximate height of all the UI above the scroll view
