@@ -2233,13 +2233,17 @@ public class ServerDockerProcess
     /// <summary>
     /// Fetches the latest Docker image tag for SpacetimeDB from the registry
     /// This compares the current running image tag with the latest available tag
+    /// Also detects if multiple images exist with a "latest" tag alongside versioned tags
     /// </summary>
-    public async Task<(string currentTag, string latestTag, bool updateAvailable)> GetLatestImageTag()
+    public async Task<(string currentTag, string latestTag, bool updateAvailable, bool hasLatestTagWithVersions)> GetLatestImageTag()
     {
         if (debugMode) logCallback("Checking for latest SpacetimeDB Docker image tag...", 0);
         
         try
         {
+            // Get all image tags for this repository
+            var allTags = await GetAllImageTags();
+            
             // Get the current image tag by querying docker images on the host
             string currentTag = "";
             
@@ -2300,6 +2304,22 @@ public class ServerDockerProcess
                 }
             }
             
+            // Check if we have multiple images with "latest" tag alongside versioned tags
+            // or if we have multiple versioned tags (indicating old versions exist)
+            bool hasLatestTagWithVersions = false;
+            if (allTags.Count > 1)
+            {
+                bool hasLatestTag = allTags.Any(tag => tag == "latest");
+                bool hasVersionTags = allTags.Any(tag => tag != "latest" && System.Text.RegularExpressions.Regex.IsMatch(tag, @"^v?[0-9]+\.[0-9]+"));
+                
+                // Detect if we have "latest" tag with versions, or multiple version tags (old versions present)
+                if ((hasLatestTag && hasVersionTags) || allTags.Count(tag => tag != "latest" && System.Text.RegularExpressions.Regex.IsMatch(tag, @"^v?[0-9]+\.[0-9]+")) > 1)
+                {
+                    hasLatestTagWithVersions = true;
+                    if (debugMode) logCallback($"Detected unnecessary image tags. All tags: {string.Join(", ", allTags)}", 0);
+                }
+            }
+            
             // Get the latest image tag from Docker Hub
             string latestTag = await GetLatestImageTagFromRegistry();
             
@@ -2320,19 +2340,208 @@ public class ServerDockerProcess
                 
                 bool updateAvailable = currentTag != latestTag && !string.IsNullOrEmpty(currentTag);
                 if (debugMode) logCallback($"Latest SpacetimeDB Docker image tag: {latestTag}, update available: {updateAvailable}", 0);
-                return (currentTag, latestTag, updateAvailable);
+                return (currentTag, latestTag, updateAvailable, hasLatestTagWithVersions);
             }
             else
             {
                 if (debugMode) logCallback("Could not determine latest SpacetimeDB Docker image tag", -1);
-                return (currentTag, "", false);
+                return (currentTag, "", false, hasLatestTagWithVersions);
             }
         }
         catch (Exception ex)
         {
             if (debugMode) logCallback($"Error checking for latest Docker image tag: {ex.Message}", -1);
-            return ("", "", false);
+            return ("", "", false, false);
         }
+    }
+    
+    /// <summary>
+    /// Gets all image tags for the SpacetimeDB Docker image on the local system
+    /// </summary>
+    /// <returns>List of all tags found for the image</returns>
+    private async Task<System.Collections.Generic.List<string>> GetAllImageTags()
+    {
+        var tags = new System.Collections.Generic.List<string>();
+        
+        try
+        {
+            using (Process process = new Process())
+            {
+                ConfigureDockerProcess(process.StartInfo);
+                process.StartInfo.Arguments = $"images {ImageName} --format \"{{{{.Tag}}}}\"";
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                
+                process.Start();
+                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                bool exited = await Task.Run(() => process.WaitForExit(10000)); // 10 second timeout
+                
+                if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    string[] lines = output.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.RemoveEmptyEntries);
+                    foreach (string line in lines)
+                    {
+                        string tag = line.Trim();
+                        if (!string.IsNullOrEmpty(tag))
+                        {
+                            tags.Add(tag);
+                        }
+                    }
+                    
+                    if (debugMode && tags.Count > 0)
+                    {
+                        logCallback($"Found {tags.Count} image tag(s): {string.Join(", ", tags)}", 0);
+                    }
+                }
+                else if (!exited)
+                {
+                    process.Kill();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error getting image tags: {ex.Message}", -1);
+        }
+        
+        return tags;
+    }
+    
+    /// <summary>
+    /// Identifies and returns tags that should be removed (latest tag and older version tags)
+    /// Keeps only the newest versioned tag
+    /// </summary>
+    /// <returns>List of tags to remove and the newest tag to keep</returns>
+    public async Task<(System.Collections.Generic.List<string> tagsToRemove, string newestTag)> GetUnnecessaryImageTags()
+    {
+        var tagsToRemove = new System.Collections.Generic.List<string>();
+        string newestTag = "";
+        
+        try
+        {
+            var allTags = await GetAllImageTags();
+            
+            if (allTags.Count <= 1)
+            {
+                return (tagsToRemove, newestTag);
+            }
+            
+            // Separate version tags from "latest"
+            var versionTags = new System.Collections.Generic.List<(string tag, System.Version version)>();
+            bool hasLatestTag = false;
+            
+            foreach (var tag in allTags)
+            {
+                if (tag == "latest")
+                {
+                    hasLatestTag = true;
+                    continue;
+                }
+                
+                // Try to parse version from tag (e.g., "v1.7.0" or "1.7.0")
+                string versionString = tag.TrimStart('v', 'V');
+                if (System.Version.TryParse(versionString, out System.Version version))
+                {
+                    versionTags.Add((tag, version));
+                }
+            }
+            
+            if (versionTags.Count == 0)
+            {
+                return (tagsToRemove, newestTag);
+            }
+            
+            // Sort by version (newest first)
+            versionTags.Sort((a, b) => b.version.CompareTo(a.version));
+            
+            // Keep only the newest version
+            newestTag = versionTags[0].tag;
+            
+            // Add "latest" tag to removal list if it exists
+            if (hasLatestTag)
+            {
+                tagsToRemove.Add("latest");
+            }
+            
+            // Add all older versions to removal list
+            for (int i = 1; i < versionTags.Count; i++)
+            {
+                tagsToRemove.Add(versionTags[i].tag);
+            }
+            
+            if (debugMode && tagsToRemove.Count > 0)
+            {
+                logCallback($"Found {tagsToRemove.Count} unnecessary tag(s) to remove: {string.Join(", ", tagsToRemove)}. Keeping: {newestTag}", 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Error identifying unnecessary image tags: {ex.Message}", -1);
+        }
+        
+        return (tagsToRemove, newestTag);
+    }
+    
+    /// <summary>
+    /// Removes specified Docker image tags for SpacetimeDB
+    /// </summary>
+    /// <param name="tagsToRemove">List of tags to remove</param>
+    /// <returns>Tuple of (success, removedTags) - success if all removals succeeded, list of successfully removed tags</returns>
+    public async Task<(bool success, System.Collections.Generic.List<string> removedTags)> RemoveImageTags(System.Collections.Generic.List<string> tagsToRemove)
+    {
+        if (debugMode) logCallback($"Removing {tagsToRemove.Count} Docker image tag(s)...", 0);
+        
+        var removedTags = new System.Collections.Generic.List<string>();
+        bool allSucceeded = true;
+        
+        foreach (var tag in tagsToRemove)
+        {
+            try
+            {
+                using (Process process = new Process())
+                {
+                    ConfigureDockerProcess(process.StartInfo);
+                    process.StartInfo.Arguments = $"rmi {ImageName}:{tag}";
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    
+                    process.Start();
+                    string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                    string error = await Task.Run(() => process.StandardError.ReadToEnd());
+                    bool exited = await Task.Run(() => process.WaitForExit(30000)); // 30 second timeout
+                    
+                    if (!exited)
+                    {
+                        process.Kill();
+                        if (debugMode) logCallback($"Docker image removal timed out for tag: {tag}", -1);
+                        allSucceeded = false;
+                        continue;
+                    }
+                    
+                    if (process.ExitCode == 0)
+                    {
+                        if (debugMode) logCallback($"Successfully removed '{tag}' tagged image. Output: {output}", 1);
+                        removedTags.Add(tag);
+                    }
+                    else
+                    {
+                        if (debugMode) logCallback($"Failed to remove '{tag}' tagged image. Error: {error}", -1);
+                        allSucceeded = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debugMode) logCallback($"Error removing '{tag}' tagged image: {ex.Message}", -1);
+                allSucceeded = false;
+            }
+        }
+        
+        return (allSucceeded, removedTags);
     }
     
     /// <summary>

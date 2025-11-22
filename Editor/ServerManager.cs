@@ -3432,6 +3432,7 @@ public class ServerManager
         string currentTag = result.currentTag;
         string latestTag = result.latestTag;
         bool updateAvailable = result.updateAvailable;
+        bool hasLatestTagWithVersions = result.hasLatestTagWithVersions;
         
         if (!string.IsNullOrEmpty(currentTag))
         {
@@ -3461,6 +3462,76 @@ public class ServerManager
                     LogMessage($"SpacetimeDB Docker image is up to date ({currentTag})", 1);
                 }
                 CCCPSettingsAdapter.SetDockerImageUpdateAvailable(false);
+            }
+        }
+        
+        // Check if we have unnecessary tags (latest tag and/or older versions) and prompt to remove them
+        if (hasLatestTagWithVersions && manualCheck)
+        {
+            // Only show this dialog once per editor session
+            if (!SessionState.GetBool("LatestTagRemovalPromptShown", false))
+            {
+                SessionState.SetBool("LatestTagRemovalPromptShown", true);
+                
+                // Get the list of tags to remove
+                var unnecessaryTagsResult = await dockerProcessor.GetUnnecessaryImageTags();
+                var tagsToRemove = unnecessaryTagsResult.tagsToRemove;
+                string newestTag = unnecessaryTagsResult.newestTag;
+                
+                if (tagsToRemove.Count > 0)
+                {
+                    string tagsList = string.Join(", ", tagsToRemove);
+                    string dialogMessage;
+                    
+                    if (tagsToRemove.Contains("latest") && tagsToRemove.Count > 1)
+                    {
+                        dialogMessage = $"Multiple Docker images detected including 'latest' tag and older versions ({tagsList}).\n\n" +
+                                      $"These can confuse the update system. It's recommended to remove them and keep only the newest version ({newestTag}).\n\n" +
+                                      $"Would you like to remove: {tagsList}?";
+                    }
+                    else if (tagsToRemove.Contains("latest"))
+                    {
+                        dialogMessage = $"Docker image with 'latest' tag detected alongside versioned tag ({newestTag}).\n\n" +
+                                      "The 'latest' tag can confuse the update system when multiple images exist. " +
+                                      $"It's recommended to remove it and keep only the versioned image ({newestTag}).\n\n" +
+                                      "Would you like to remove the 'latest' tag?";
+                    }
+                    else
+                    {
+                        dialogMessage = $"Older Docker image versions detected ({tagsList}).\n\n" +
+                                      $"It's recommended to remove them and keep only the newest version ({newestTag}).\n\n" +
+                                      $"Would you like to remove: {tagsList}?";
+                    }
+                    
+                    bool shouldRemove = EditorUtility.DisplayDialog(
+                        "Remove Unnecessary Docker Images?",
+                        dialogMessage,
+                        "Remove",
+                        "Keep");
+                    
+                    if (shouldRemove)
+                    {
+                        LogMessage($"Removing {tagsToRemove.Count} unnecessary Docker image tag(s)...", 0);
+                        var removalResult = await dockerProcessor.RemoveImageTags(tagsToRemove);
+                        
+                        if (removalResult.success)
+                        {
+                            LogMessage($"Successfully removed {removalResult.removedTags.Count} Docker image tag(s): {string.Join(", ", removalResult.removedTags)}", 1);
+                            // Re-check Docker image tags after removal
+                            await CheckDockerImageTag(false);
+                        }
+                        else if (removalResult.removedTags.Count > 0)
+                        {
+                            LogMessage($"Partially removed {removalResult.removedTags.Count} out of {tagsToRemove.Count} Docker image tag(s): {string.Join(", ", removalResult.removedTags)}", 0);
+                            // Re-check Docker image tags after partial removal
+                            await CheckDockerImageTag(false);
+                        }
+                        else
+                        {
+                            LogMessage("Failed to remove Docker image tags", -1);
+                        }
+                    }
+                }
             }
         }
     }
