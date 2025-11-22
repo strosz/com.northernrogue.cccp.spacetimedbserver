@@ -2525,7 +2525,7 @@ public class ServerManager
         }
     }
 
-    public void InitNewModule()
+    public async void InitNewModule()
     {
         if (string.IsNullOrEmpty(ServerDirectory))
         {
@@ -2543,7 +2543,6 @@ public class ServerManager
             // For Docker the server directory needs to be mounted in the container, so we use the mount path /app directly
             string command = $"spacetime init --lang {ServerLang} --project-path /app {ModuleName}";
             dockerProcessor.RunDockerCommandSilent($"exec {ServerDockerProcess.ContainerName} bash -c \"{command}\"");
-            LogMessage("New module initialized", 1);
         }
         else // WSL mode
         {
@@ -2551,7 +2550,43 @@ public class ServerManager
             // Use the new command format with project-path option
             string command = $"spacetime init --lang {ServerLang} --project-path \"{wslPath}\" {ModuleName}";
             wslProcessor.RunWslCommandSilent(command);
+        }
+        
+        // Wait 3 seconds for the module to be initialized
+        await System.Threading.Tasks.Task.Delay(3000);
+        
+        // Verify module was successfully created by checking if directory contains files/folders
+        bool moduleCreated = false;
+        try
+        {
+            if (System.IO.Directory.Exists(ServerDirectory))
+            {
+                var entries = System.IO.Directory.GetFileSystemEntries(ServerDirectory);
+                moduleCreated = entries != null && entries.Length > 0;
+            }
+        }
+        catch (System.Exception ex)
+        {
+            if (DebugMode) LogMessage($"Error checking module directory: {ex.Message}", -1);
+        }
+        
+        if (moduleCreated)
+        {
             LogMessage("New module initialized", 1);
+            
+            // Open the folder in the file explorer
+            try
+            {
+                UnityEditor.EditorUtility.RevealInFinder(ServerDirectory);
+            }
+            catch (System.Exception ex)
+            {
+                if (DebugMode) LogMessage($"Could not open folder in explorer: {ex.Message}", -1);
+            }
+        }
+        else
+        {
+            LogMessage("New module couldn't be initialized - please try again", -1);
         }
         
         // Reset the detection process tracking

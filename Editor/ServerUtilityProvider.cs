@@ -1381,6 +1381,36 @@ public static class ServerUtilityProvider
         }
     }
 
+    /// <summary>
+    /// Opens a folder in the system's file explorer/browser.
+    /// On Windows, uses explorer.exe.
+    /// On macOS, uses 'open' command.
+    /// On Linux, uses xdg-open.
+    /// This is a cross-platform wrapper that works with Docker-mounted directories.
+    /// </summary>
+    /// <param name="folderPath">The full path to the folder to open</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool OpenFolderInExplorer(string folderPath)
+    {
+        if (string.IsNullOrEmpty(folderPath) || !System.IO.Directory.Exists(folderPath))
+        {
+            Debug.LogError($"Folder does not exist: {folderPath}");
+            return false;
+        }
+
+        try
+        {
+            // Unity's EditorUtility.RevealInFinder works cross-platform for folders
+            UnityEditor.EditorUtility.RevealInFinder(folderPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to open folder {folderPath}: {ex.Message}");
+            return false;
+        }
+    }
+
     #endregion
 
     #region Docker Utilities
