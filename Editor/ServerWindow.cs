@@ -85,6 +85,7 @@ public class ServerWindow : EditorWindow
     private double lastCheckTime = 0;
     private const double checkInterval = 5.0; // Master interval for status checks
     private bool serverRunning = false;
+    private bool previousServerRunning = false; // Track previous state to detect server start
 
     // Server Settings - Direct property access to settings
     public bool debugMode { get => CCCPSettingsAdapter.GetDebugMode(); set => CCCPSettingsAdapter.SetDebugMode(value); }
@@ -496,6 +497,9 @@ public class ServerWindow : EditorWindow
         // Ensure colors are initialized from the centralized ColorManager
         ServerUtilityProvider.ColorManager.EnsureInitialized();
         
+        // Check identity state on enable
+        CheckIdentityState();
+        
         // Refresh settings cache to ensure we have the latest data (including migrated modules)
         // This is critical after EditorPrefs migration as the cached settings may not reflect
         // the newly migrated data until the cache is explicitly refreshed
@@ -637,6 +641,7 @@ public class ServerWindow : EditorWindow
             try
             {
                 serverRunning = serverManager.IsServerStarted;
+                previousServerRunning = serverRunning; // Initialize tracking state
                 Repaint();
 
                 // Update SSH connection status
@@ -668,6 +673,17 @@ public class ServerWindow : EditorWindow
             publishing = newPublishingState;
             Repaint(); // Refresh UI when publishing state changes
         }
+        
+        // Check identity when server transitions from stopped to running
+        bool currentServerRunning = serverManager.IsServerStarted;
+        if (currentServerRunning && !previousServerRunning)
+        {
+            // Server just started - check identity
+            if (debugMode)
+                UnityEngine.Debug.Log("[ServerWindow] Server started, checking identity state...");
+            CheckIdentityState();
+        }
+        previousServerRunning = currentServerRunning;
         
         // Skip processing if Unity Editor doesn't have focus to prevent accumulating delayed calls
         if (!windowFocused)
@@ -2483,7 +2499,11 @@ public class ServerWindow : EditorWindow
         // Check if control key is held
         bool resetDatabase = Event.current.control && Event.current.alt;
         
-        // Create button style based on control key state
+        // Check if we have an offline identity
+        IdentityType currentIdentityType = ServerIdentityManager.GetSavedIdentityType();
+        bool hasOfflineIdentity = currentIdentityType == IdentityType.OfflineServerIssued;
+        
+        // Create button style based on control key state and identity status
         GUIStyle publishButtonStyle = new GUIStyle(GUI.skin.button);
         if (resetDatabase)
         {
@@ -2504,6 +2524,12 @@ public class ServerWindow : EditorWindow
         else
             buttonText = resetDatabase ? "Publish Module and Reset Database" : "Publish Module";
 
+        // Add warning triangle if offline identity
+        if (hasOfflineIdentity && !publishing)
+        {
+            buttonText = "⚠ " + buttonText;
+        }
+
         if (publishing) 
         {
             buttonText = "Publishing...";
@@ -2514,6 +2540,15 @@ public class ServerWindow : EditorWindow
         string publishTooltip = "Publish the selected module to the server.\n\n" +
                                 "Ctrl + Alt + Click to also reset the database.";
         
+        if (hasOfflineIdentity)
+        {
+            publishTooltip += "\n\n⚠ WARNING: Using offline identity. Consider authenticating with SSO for better security and recovery options.";
+        }
+        else if (!hasOfflineIdentity)
+        {
+            publishTooltip += "\n\n🔒 Using secure SSO identity for publishing.";
+        }
+        
         if (!serverManager.IsCliProviderRunning)
         {
             publishTooltip += "\n\nRequires the local CLI provider to be running";
@@ -2521,6 +2556,42 @@ public class ServerWindow : EditorWindow
 
         if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(30)))
         {
+            // Check if offline identity and show warning dialog
+            if (hasOfflineIdentity && !resetDatabase)
+            {
+                // Use delayCall to avoid GUI layout errors
+                EditorApplication.delayCall += () =>
+                {
+                    int result = EditorUtility.DisplayDialogComplex(
+                        "Offline Identity Detected",
+                        "You are currently using an offline/server-issued identity which cannot be recovered if lost.\n\n" +
+                        "It is recommended to authenticate with SpacetimeDB SSO for better security and recovery options.\n\n" +
+                        "What would you like to do?",
+                        "Open Identity Manager",
+                        "Publish Anyway",
+                        "Cancel");
+                    
+                    if (result == 0) // Open Identity Manager
+                    {
+                        OpenIdentityWindow();
+                    }
+                    else if (result == 1) // Publish Anyway
+                    {
+                        // Perform the publish operation
+                        if (!serverRunning)
+                        {
+                            serverManager.StartServer();
+                        }
+                        serverManager.Publish(false);
+                        previousDevMode = devMode;
+                        publishFirstModule = false;
+                        CCCPSettingsAdapter.SetPublishFirstModule(false);
+                    }
+                    // If result == 2 (Cancel), do nothing
+                };
+                return; // Exit the button handler immediately
+            }
+            
             // Use reset database if control+alt key is held
             if (resetDatabase)
             {
@@ -3739,6 +3810,53 @@ public class ServerWindow : EditorWindow
     public ServerManager GetServerManager()
     {
         return serverManager;
+    }
+
+    /// <summary>
+    /// Checks the current identity state and updates persistent storage
+    /// </summary>
+    private async void CheckIdentityState()
+    {
+        if (serverManager == null || !serverManager.HasAllPrerequisites)
+        {
+            if (debugMode)
+                UnityEngine.Debug.Log("[ServerWindow] Skipping identity check - prerequisites not met");
+            return;
+        }
+
+        try
+        {
+            // Only check if CLI provider is running (for local modes)
+            if ((serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer) && !serverManager.IsCliProviderRunning)
+            {
+                if (debugMode)
+                    UnityEngine.Debug.Log("[ServerWindow] Skipping identity check - CLI provider not running");
+                return;
+            }
+
+            if (debugMode)
+                UnityEngine.Debug.Log("[ServerWindow] Checking identity state...");
+
+            // Fetch CLI identity
+            var result = await ServerIdentityManager.FetchCliIdentityAsync(serverManager, debugMode);
+            
+            if (result.info != null)
+            {
+                // Identity state is automatically saved in FetchCliIdentityAsync
+                if (debugMode)
+                    UnityEngine.Debug.Log($"[ServerWindow] Identity check complete. Type: {result.info.Type}");
+            }
+            else
+            {
+                if (debugMode)
+                    UnityEngine.Debug.Log("[ServerWindow] Identity check returned no info");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode)
+                UnityEngine.Debug.LogError($"[ServerWindow] Error checking identity state: {ex.Message}");
+        }
     }
 
     // Display Cosmos Cove Control Panel title text in the menu bar

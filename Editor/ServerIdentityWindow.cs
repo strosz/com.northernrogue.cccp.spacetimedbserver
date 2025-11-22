@@ -467,9 +467,9 @@ public class ServerIdentityWindow : EditorWindow
         
         if (serverManager == null)
         {
-            cliStatusMessage = "Error: ServerManager not available";
-            cliStatusColor = ServerUtilityProvider.ColorManager.StatusError;
-            serverStatusMessage = "Error: ServerManager not available";
+            cliStatusMessage = "ServerManager not available";
+            cliStatusColor = Color.grey;
+            serverStatusMessage = "ServerManager not available";
             serverStatusColor = ServerUtilityProvider.ColorManager.StatusError;
             Repaint();
             return;
@@ -477,7 +477,7 @@ public class ServerIdentityWindow : EditorWindow
         
         isRefreshing = true;
         cliStatusMessage = "Fetching CLI identity...";
-        cliStatusColor = ServerUtilityProvider.ColorManager.StatusInfo;
+        cliStatusColor = Color.grey;
         serverStatusMessage = "Fetching server identity...";
         serverStatusColor = ServerUtilityProvider.ColorManager.StatusInfo;
         Repaint();
@@ -485,267 +485,26 @@ public class ServerIdentityWindow : EditorWindow
         try
         {
             // Fetch CLI identity
-            await FetchCliIdentity();
+            var cliResult = await ServerIdentityManager.FetchCliIdentityAsync(serverManager, debugMode);
+            cliIdentity = cliResult.identity;
+            cliAuthToken = cliResult.token;
+            cliServerIdentityManager = cliResult.info;
+            cliStatusMessage = cliResult.statusMessage;
+            cliStatusColor = Color.grey;
             
             // Fetch server identity
-            await FetchServerIdentity();
+            var serverResult = await ServerIdentityManager.FetchServerIdentityAsync(serverManager, debugMode);
+            serverIdentity = serverResult.serverIdentity;
+            databaseIdentities = serverResult.databaseIdentities;
+            serverStatusMessage = serverResult.statusMessage;
+            serverStatusColor = !string.IsNullOrEmpty(serverResult.serverIdentity) 
+                ? ServerUtilityProvider.ColorManager.StatusSuccess 
+                : ServerUtilityProvider.ColorManager.StatusInfo;
         }
         finally
         {
             isRefreshing = false;
             Repaint();
-        }
-    }
-
-    /// <summary>
-    /// Fetches CLI identity using "spacetime login show --token"
-    /// </summary>
-    private async Task FetchCliIdentity()
-    {
-        try
-        {
-            // Get the appropriate processor based on server mode
-            var result = await ExecuteServerCommand("spacetime login show --token");
-            
-            if (result.success && !string.IsNullOrEmpty(result.output))
-            {
-                // Parse the output
-                // Expected format:
-                // "You are logged in as c200e65fe56afa9e90d01a1acbc9d3c3ac19d41070ecc31e17ab8a6438b390ca
-                // Your auth token (don't share this!) is eyJhbGc..."
-                
-                string output = result.output;
-                
-                // Extract identity (first line after "logged in as")
-                var identityMatch = Regex.Match(output, @"logged in as\s+([a-fA-F0-9]+)");
-                if (identityMatch.Success)
-                {
-                    cliIdentity = identityMatch.Groups[1].Value;
-                    if (debugMode)
-                        Debug.Log($"[ServerIdentityWindow] Extracted CLI identity: {cliIdentity}");
-                }
-                else
-                {
-                    cliIdentity = "";
-                    if (debugMode)
-                        Debug.LogWarning($"[ServerIdentityWindow] Could not extract CLI identity from output: {output}");
-                }
-                
-                // Extract auth token (second line after "auth token ... is")
-                var tokenMatch = Regex.Match(output, @"auth token[^\n]*is\s+([^\s]+)", RegexOptions.Singleline);
-                if (tokenMatch.Success)
-                {
-                    cliAuthToken = tokenMatch.Groups[1].Value.Trim();
-                    if (debugMode)
-                        Debug.Log($"[ServerIdentityWindow] Extracted CLI auth token (length: {cliAuthToken.Length})");
-                }
-                else
-                {
-                    cliAuthToken = "";
-                    if (debugMode)
-                        Debug.LogWarning($"[ServerIdentityWindow] Could not extract auth token from output: {output}");
-                }
-                
-                // Parse identity info from token
-                if (!string.IsNullOrEmpty(cliAuthToken) && !string.IsNullOrEmpty(cliIdentity))
-                {
-                    cliServerIdentityManager = ServerIdentityManager.ParseServerIdentityManager(cliAuthToken, cliIdentity);
-                    
-                    if (debugMode)
-                        Debug.Log($"[ServerIdentityWindow] Parsed identity type: {cliServerIdentityManager.Type}, Issuer: {cliServerIdentityManager.Issuer}");
-                }
-                else
-                {
-                    cliServerIdentityManager = null;
-                }
-                
-                if (!string.IsNullOrEmpty(cliIdentity))
-                {
-                    cliStatusMessage = "CLI identity loaded successfully";
-                    cliStatusColor = Color.grey; // Always grey as requested
-                }
-                else
-                {
-                    cliStatusMessage = "No CLI identity logged in";
-                    cliStatusColor = Color.grey; // Always grey as requested
-                }
-            }
-            else
-            {
-                cliIdentity = "";
-                cliAuthToken = "";
-                cliServerIdentityManager = null;
-                cliStatusMessage = !string.IsNullOrEmpty(result.error) ? $"Error: {result.error}" : "Failed to fetch CLI identity";
-                cliStatusColor = Color.grey; // Always grey as requested
-                
-                if (debugMode)
-                    Debug.LogWarning($"[ServerIdentityWindow] Failed to fetch CLI identity. Output: {result.output}, Error: {result.error}");
-            }
-        }
-        catch (Exception ex)
-        {
-            cliIdentity = "";
-            cliAuthToken = "";
-            cliServerIdentityManager = null;
-            cliStatusMessage = $"Exception: {ex.Message}";
-            cliStatusColor = Color.grey; // Always grey as requested
-            
-            if (debugMode)
-                Debug.LogError($"[ServerIdentityWindow] Exception fetching CLI identity: {ex}");
-        }
-    }
-
-    /// <summary>
-    /// Fetches server database identity using "spacetime list"
-    /// </summary>
-    private async Task FetchServerIdentity()
-    {
-        try
-        {
-            var result = await ExecuteServerCommand("spacetime list");
-            
-            if (result.success && !string.IsNullOrEmpty(result.output))
-            {
-                // Parse the output
-                // Expected format:
-                // "Associated database identities for c200e65fe56afa9e90d01a1acbc9d3c3ac19d41070ecc31e17ab8a6438b390ca:
-                //
-                //  db_identity                                                      
-                // ------------------------------------------------------------------
-                //  c200087b19ff577ce680042655b9aad23cfa21d856c33209e7f0811cb621015e"
-                
-                string output = result.output;
-                
-                // Extract the server identity from "Associated database identities for <identity>:"
-                var serverIdentityMatch = Regex.Match(output, @"Associated database identities for\s+([a-fA-F0-9]{64})");
-                if (serverIdentityMatch.Success)
-                {
-                    serverIdentity = serverIdentityMatch.Groups[1].Value;
-                    
-                    if (debugMode)
-                        Debug.Log($"[ServerIdentityWindow] Extracted server identity: {serverIdentity}");
-                }
-                else
-                {
-                    serverIdentity = "";
-                    if (debugMode)
-                        Debug.LogWarning($"[ServerIdentityWindow] Could not extract server identity from 'Associated database identities for' line");
-                }
-                
-                // Extract all database identities (64-character hex strings after the table header)
-                var databaseMatches = Regex.Matches(output, @"(?:db_identity[^\n]*\n[^\n]*\n\s*)([a-fA-F0-9]{64})");
-                if (databaseMatches.Count > 0)
-                {
-                    databaseIdentities = new string[databaseMatches.Count];
-                    for (int i = 0; i < databaseMatches.Count; i++)
-                    {
-                        databaseIdentities[i] = databaseMatches[i].Groups[1].Value;
-                    }
-                    
-                    if (debugMode)
-                        Debug.Log($"[ServerIdentityWindow] Extracted {databaseIdentities.Length} database identities");
-                }
-                else
-                {
-                    databaseIdentities = new string[0];
-                    if (debugMode)
-                        Debug.Log("[ServerIdentityWindow] No database identities found in output");
-                }
-                
-                // Set status message
-                if (!string.IsNullOrEmpty(serverIdentity))
-                {
-                    if (databaseIdentities.Length > 0)
-                    {
-                        serverStatusMessage = $"Server identity loaded with {databaseIdentities.Length} database(s)";
-                    }
-                    else
-                    {
-                        serverStatusMessage = "Server identity loaded (no databases published yet)";
-                    }
-                    serverStatusColor = ServerUtilityProvider.ColorManager.StatusSuccess;
-                }
-                else
-                {
-                    serverStatusMessage = "No server identity found - no databases published yet";
-                    serverStatusColor = ServerUtilityProvider.ColorManager.StatusInfo;
-                }
-            }
-            else
-            {
-                serverIdentity = "";
-                databaseIdentities = new string[0];
-                serverStatusMessage = !string.IsNullOrEmpty(result.error) ? $"Error: {result.error}" : "Failed to fetch server identity";
-                serverStatusColor = ServerUtilityProvider.ColorManager.StatusError;
-                
-                if (debugMode)
-                    Debug.LogWarning($"[ServerIdentityWindow] Failed to fetch server identity. Output: {result.output}, Error: {result.error}");
-            }
-        }
-        catch (Exception ex)
-        {
-            serverIdentity = "";
-            databaseIdentities = new string[0];
-            serverStatusMessage = $"Exception: {ex.Message}";
-            serverStatusColor = ServerUtilityProvider.ColorManager.StatusError;
-            
-            if (debugMode)
-                Debug.LogError($"[ServerIdentityWindow] Exception fetching server identity: {ex}");
-        }
-    }
-
-    /// <summary>
-    /// Executes a server command using the appropriate processor (Docker or WSL)
-    /// </summary>
-    private async Task<(string output, string error, bool success)> ExecuteServerCommand(string command)
-    {
-        if (serverManager == null)
-        {
-            return ("", "ServerManager not available", false);
-        }
-
-        // Check prerequisites
-        if (!serverManager.HasAllPrerequisites)
-        {
-            return ("", "Prerequisites not met", false);
-        }
-
-        try
-        {
-            // Get server directory for Docker/WSL commands
-            string serverDirectory = serverManager.ServerDirectory;
-            
-            // Execute command based on CLI provider
-            if (serverManager.LocalCLIProvider == "Docker")
-            {
-                var dockerProcessor = serverManager.GetDockerProcessor();
-                if (dockerProcessor != null)
-                {
-                    return await dockerProcessor.RunServerCommandAsync(command, serverDirectory);
-                }
-                else
-                {
-                    return ("", "Docker processor not available", false);
-                }
-            }
-            else // WSL
-            {
-                var wslProcessor = serverManager.GetWSLProcessor();
-                if (wslProcessor != null)
-                {
-                    return await wslProcessor.RunServerCommandAsync(command, serverDirectory);
-                }
-                else
-                {
-                    return ("", "WSL processor not available", false);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            if (debugMode)
-                Debug.LogError($"[ServerIdentityWindow] Exception executing command: {ex}");
-            return ("", ex.Message, false);
         }
     }
 }
