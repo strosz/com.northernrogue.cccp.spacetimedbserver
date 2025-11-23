@@ -2385,11 +2385,13 @@ public class ServerManager
         {
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             EditorUtility.DisplayDialog("Invalid Identity", 
-            "Please try to Logout and then Login again on your local mode and then copy and paste the new auth token into your Pre-Requisites."
+            "Please try to Login with SSO again on your local CLI mode." +
+            "You may need to clear and republish your databases after logging in if any of them were originally published with an offline identity."
             ,"OK");
             else if (serverMode == ServerMode.CustomServer)
             EditorUtility.DisplayDialog("Invalid Identity",
-            "Please try to Logout and then Login again on your both your local mode and Custom Server mode and then copy and paste each new auth token into their respective fields in your Pre-Requisites."
+            "Please try to Login with SSO again on your both your local CLI mode and Custom Server mode." +
+            "You may need to clear and republish your databases after logging in if any of them were originally published with an offline identity."
             ,"OK");
             successfulPublish = false;
         }

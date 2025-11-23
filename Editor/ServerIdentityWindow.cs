@@ -1,8 +1,5 @@
 using UnityEditor;
 using UnityEngine;
-using System;
-using System.Threading.Tasks;
-using System.Text.RegularExpressions;
 
 // Manages and displays SpacetimeDB identity information for CLI and server databases ///
 
@@ -498,7 +495,7 @@ public class ServerIdentityWindow : EditorWindow
                 $"Published Databases: {databaseIdentities.Length}\n\n" +
                 $"⚠ IMPORTANT: If you login with SSO, you will receive a new identity and will NO LONGER have access to any databases published under your current offline identity.\n\n" +
                 $"These databases cannot be recovered unless you backup your current identity and auth token and later restore them to regain access\n\n" +
-                $"Do you want to proceed with secure SSO login? You may need to republish your databases after logging in.",
+                $"Do you want to proceed with secure SSO login? You may need to clear and republish your databases after logging in.",
                 "Yes, SSO Login",
                 "Cancel"
             );

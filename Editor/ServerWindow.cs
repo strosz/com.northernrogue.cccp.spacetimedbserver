@@ -1196,14 +1196,18 @@ public class ServerWindow : EditorWindow
 
             // Init a new module / Delete Selected Module
             EditorGUILayout.BeginHorizontal();
-            bool deleteMode = Event.current.control && Event.current.alt;
+            // OS-specific key combination: Ctrl+Alt for Windows/Linux, Ctrl+Command for macOS
+            bool deleteMode = ServerUtilityProvider.IsMacOS() 
+                ? (Event.current.control && Event.current.command) 
+                : (Event.current.control && Event.current.alt);
             bool hasSelectedModule = selectedModuleIndex >= 0 && selectedModuleIndex < savedModules.Count;
             string buttonText = deleteMode && hasSelectedModule ? "Delete Selected Module" : "Init New Module";
             string baseTooltip = deleteMode && hasSelectedModule ? 
                 "Delete Selected Module: Removes the currently selected saved module from the list." :
                 "Init a new module: Initializes a new SpacetimeDB module with the selected name, path and language.";
             
-            string fullTooltip = baseTooltip + "\n\nTip: Hold Ctrl + Alt while clicking to delete the selected saved module instead (The path and files remain on the disk).";
+            string keyComboText = ServerUtilityProvider.IsMacOS() ? "Ctrl + Cmd" : "Ctrl + Alt";
+            string fullTooltip = baseTooltip + $"\n\nTip: Hold {keyComboText} while clicking to delete the selected saved module instead (The path and files remain on the disk).";
             
             EditorGUILayout.LabelField(new GUIContent("Module Init or Del:", fullTooltip), GUILayout.Width(110));
             
@@ -2544,8 +2548,11 @@ public class ServerWindow : EditorWindow
         // Publish Button with advanced features
         #region Publish Button
 
-        // Check if control key is held
-        bool resetDatabase = Event.current.control && Event.current.alt;
+        // Check if control key is held - OS-specific key combination
+        // Ctrl+Alt for Windows/Linux, Ctrl+Command for macOS (to avoid Unity crashes)
+        bool resetDatabase = ServerUtilityProvider.IsMacOS() 
+            ? (Event.current.control && Event.current.command) 
+            : (Event.current.control && Event.current.alt);
         
         // Always check identity state before publish to ensure we have fresh data
         // Use delayCall to avoid blocking the GUI thread
@@ -2589,8 +2596,9 @@ public class ServerWindow : EditorWindow
             publishButtonStyle.hover.textColor = Color.green;
         }
 
+        string keyComboText = ServerUtilityProvider.IsMacOS() ? "Ctrl + Cmd" : "Ctrl + Alt";
         string publishTooltip = "Publish the selected module to the server.\n\n" +
-                                "Ctrl + Alt + Click to also reset the database.";
+                                $"{keyComboText} + Click to also reset the database.";
         
         if (hasOfflineIdentity)
         {
