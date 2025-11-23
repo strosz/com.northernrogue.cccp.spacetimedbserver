@@ -5,7 +5,7 @@
 </p>
 <img src="https://northernrogue.se/cosmos_cover_MAIN_new.png" alt="Alt text" width="900">
 
-**Bring the power of SpacetimeDB directly into your Unity Editor!**
+**Bring the power of SpacetimeDB directly into your Unity Editor**
 
 SpacetimeDB is a combined database and server designed for building performant Massively Multiplayer Online games and applications with unprecedented ease. Cosmos Cove Control Panel for SpacetimeDB allows anyone to get started creating an online world in a highly efficient way. Start experimenting locally within minutes and then publish the same project to your own custom server to host your own Massively Multiplayer Online creation for thousands of simultaneous users.
 
@@ -34,6 +34,7 @@ Install directly in your Unity Package Manager with this git URL
    - If starting fresh you will have your own local Docker, local WSL or custom remote SpacetimeDB server in no-time.
    - Extra compability checks for important steps.
    - Get notified of new SpacetimeDB server, Rust and SpacetimeDB SDK updates and update them in the Setup Window.
+   - Identity Manager Window which keeps track of your logged in identity and ensures that you don't publish databases with the wrong identity.
 
 📊 **Real-time Monitoring**
    - Monitor server status directly in Unity and send utility commands.

@@ -1,3 +1,12 @@
+# [0.5.7] - 2025-11-23
+NEW: Identity Manager Window. Keeps track of your logged in identity and ensures that you don't publish databases with the wrong identity. Switching Docker modules now reminds you if Docker changed identity for your next publish.
+NEW: Docker images are now more intelligently managed and update checks will ask to clear old images and latest image tagged images.
+Fix: Shows progress bar for Docker module switching.
+Fix: Docker starts server automatically when pre-req is fully met to ensure the server is ready for first new module initialization.
+Fix: Init New Module opens the serverDirectory in the file explorer to clarify if it was successful and otherwise displays a message if no files were written.
+Fix: ServerWindow GC alloc and Editor lag optimizations. Now uses a few bytes GC alloc instead of up to several kb.
+Fix: Logout removed from commands since it was unnecessary and Login now does the logout and login process by default.
+
 # [0.5.6] - 2025-11-11
 Fix: Switching to another selected module ensures that the Docker container has the correct bindings. May fix cases where Docker didn't find the server directory.
 Fix: Extra check to make sure that the set-default is correctly set on server start so the CLI is configured for local or maincloud server if having switched modes while the Docker CLI was not running.
