@@ -406,7 +406,7 @@ public class ServerWindow : EditorWindow
             }
             
             // Dismiss button (X)
-            if (GUILayout.Button(new GUIContent("✕", "Dismiss Update Notification"), dismissButtonStyle, width25Height))
+            if (GUILayout.Button(new GUIContent("✕", "Dismiss Update Notification"), dismissButtonStyle, GUILayout.Width(25)))
             {
                 SessionState.SetBool("CCCPUpdateMessageDismissed", true);
             }

@@ -226,12 +226,11 @@ public class ServerIdentityWindow : EditorWindow
             richText = true
         };
         
-        // Token style (monospace for better readability)
+        // Token style
         tokenStyle = new GUIStyle(EditorStyles.textArea)
         {
             wordWrap = true,
-            richText = false,
-            font = Font.CreateDynamicFontFromOSFont("Courier New", 10)
+            richText = false
         };
         
         stylesInitialized = true;
