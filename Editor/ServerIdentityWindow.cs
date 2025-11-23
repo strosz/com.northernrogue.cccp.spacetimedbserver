@@ -333,6 +333,25 @@ public class ServerIdentityWindow : EditorWindow
             if (cliServerIdentityManager != null && cliServerIdentityManager.Type != IdentityType.Unknown)
             {
                 EditorGUILayout.HelpBox(cliServerIdentityManager.GetTypeDescription(), MessageType.Info);
+                
+                // Show prominent SSO login button for Offline Server Issued identities
+                if (cliServerIdentityManager.Type == IdentityType.OfflineServerIssued)
+                {
+                    EditorGUILayout.Space(5);
+                    
+                    // Create a centered button with prominent styling
+                    GUIStyle bigButtonStyle = new GUIStyle(GUI.skin.button);
+                    bigButtonStyle.fontSize = 13;
+                    bigButtonStyle.fontStyle = FontStyle.Bold;
+                    bigButtonStyle.fixedHeight = 35;
+                    bigButtonStyle.normal.textColor = Color.white;
+                    
+                    if (GUILayout.Button("🔐 Login with SSO", bigButtonStyle))
+                    {
+                        parentServerWindow.LogoutAndLogin(manual: true);
+                    }
+                }
+                
                 EditorGUILayout.Space(5);
             }
             

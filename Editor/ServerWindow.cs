@@ -2539,9 +2539,17 @@ public class ServerWindow : EditorWindow
                 LogMessage("Module script not found", -2);
             }
         }
+        #endregion
+
+        // Publish Button with advanced features
+        #region Publish Button
 
         // Check if control key is held
         bool resetDatabase = Event.current.control && Event.current.alt;
+        
+        // Always check identity state before publish to ensure we have fresh data
+        // Use delayCall to avoid blocking the GUI thread
+        EditorApplication.delayCall += () => CheckIdentityState();
         
         // Check if we have an offline identity
         IdentityType currentIdentityType = ServerIdentityManager.GetSavedIdentityType();
@@ -2603,7 +2611,7 @@ public class ServerWindow : EditorWindow
             // Check if offline identity and show warning dialog
             if (hasOfflineIdentity && !resetDatabase)
             {
-                // Use delayCall to avoid GUI layout errors
+                // Use delayCall to avoid GUI layout errors when showing dialog
                 EditorApplication.delayCall += () =>
                 {
                     int result = EditorUtility.DisplayDialogComplex(
@@ -2633,11 +2641,10 @@ public class ServerWindow : EditorWindow
                     }
                     // If result == 2 (Cancel), do nothing
                 };
-                return; // Exit the button handler immediately
+                // Don't execute the rest of the button handler
             }
-            
             // Use reset database if control+alt key is held
-            if (resetDatabase)
+            else if (resetDatabase)
             {
                 // Display confirmation dialog when resetting database
                 if (EditorUtility.DisplayDialog(
@@ -3846,6 +3853,10 @@ public class ServerWindow : EditorWindow
                             EditorUtility.DisplayProgressBar("Docker Container Reconfiguration", "Container reconfigured successfully", 0.7f);
                             
                             if (debugMode) LogMessage("[Docker] Container reconfigured successfully. New mount will apply on next server start.", 1);
+                            
+                            // Check identity state after reconfiguration to update GUI
+                            // Use delayCall to avoid blocking
+                            EditorApplication.delayCall += () => CheckIdentityState();
                             
                             // Restart server if it was running before reconfiguration
                             if (wasRunning)

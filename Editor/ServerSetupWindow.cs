@@ -1769,6 +1769,7 @@ public class ServerSetupWindow : EditorWindow
                 if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts && hasSpacetimeDBUnitySDK)
                 {
                     SetStatus($"Docker prerequisites check complete. All components ready!", Color.green);
+                    if (!serverManager.IsServerStarted) serverManager.StartServer();
                 }
                 else if (hasDocker && hasDockerCompose && hasDockerImage && hasDockerContainerMounts)
                 {

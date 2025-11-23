@@ -145,7 +145,7 @@ namespace NorthernRogue.CCCP.Editor
             switch (Type)
             {
                 case IdentityType.SSOAuthenticated:
-                    return "SSO Authenticated";
+                    return "SSO Authenticated, Ready to Publish";
                 case IdentityType.OfflineServerIssued:
                     return "Offline/Server-Issued";
                 default:
@@ -177,9 +177,9 @@ namespace NorthernRogue.CCCP.Editor
             switch (Type)
             {
                 case IdentityType.SSOAuthenticated:
-                    return "This identity is verified through SpacetimeDB SSO and can be recovered if lost.";
+                    return "This identity is verified through SpacetimeDB SSO and can be recovered if lost.\n\nAlways publish using SSO if you have an Internet connection.";
                 case IdentityType.OfflineServerIssued:
-                    return "This identity is server-issued and cannot be recovered if lost. Please login with SpacetimeDB SSO.";
+                    return "This identity is offline CLI server-issued and cannot be recovered if lost. Please login with SpacetimeDB SSO if you have an Internet connection.";
                 default:
                     return "Unable to determine identity type.";
             }
@@ -347,8 +347,9 @@ namespace NorthernRogue.CCCP.Editor
                             Debug.Log($"[ServerIdentityManager] Extracted server identity: {serverIdentity}");
                     }
                     
-                    // Extract all database identities (64-character hex strings after the table header)
-                    var databaseMatches = Regex.Matches(output, @"(?:db_identity[^\n]*\n[^\n]*\n\s*)([a-fA-F0-9]{64})");
+                    // Extract all database identities (64-character hex strings, one per line)
+                    // Match all lines that contain only whitespace and a 64-character hex string
+                    var databaseMatches = Regex.Matches(output, @"^\s*([a-fA-F0-9]{64})\s*$", RegexOptions.Multiline);
                     if (databaseMatches.Count > 0)
                     {
                         databaseIdentities = new string[databaseMatches.Count];
@@ -358,7 +359,7 @@ namespace NorthernRogue.CCCP.Editor
                         }
                         
                         if (debugMode)
-                            Debug.Log($"[ServerIdentityManager] Extracted {databaseIdentities.Length} database identities");
+                            Debug.Log($"[ServerIdentityManager] Extracted {databaseIdentities.Length} database identities: {string.Join(", ", databaseIdentities)}");
                     }
                     
                     // Set status message
