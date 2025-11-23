@@ -2215,7 +2215,7 @@ public class ServerWindow : EditorWindow
             else if (serverMode == ServerMode.MaincloudServer)
                 EditorGUILayout.LabelField("SpacetimeDB Maincloud Server", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-            if (debugMode && GUILayout.Button("Login (Without Refresh)", GUILayout.Height(20))) // Only does login without refresh
+            if (debugMode && GUILayout.Button(new GUIContent("Login (Without Refresh)", "Login without refreshing the current session."), GUILayout.Height(20))) // Only does login without refresh
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime login", "Logging in to SpacetimeDB");
@@ -2226,7 +2226,7 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (WSL/Docker) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (debugMode && GUILayout.Button("Logout", GUILayout.Height(20)))
+            if (debugMode && GUILayout.Button(new GUIContent("Logout", "Logout from the current SpacetimeDB session."), GUILayout.Height(20)))
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     serverManager.RunServerCommand("spacetime logout", "Logging out of SpacetimeDB");
@@ -2237,7 +2237,7 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Login", GUILayout.Height(20))) // Does the complete logout and login with refresh
+            if (GUILayout.Button(new GUIContent("Login", "Logout and login with a fresh SpacetimeDB verified SSO session."), GUILayout.Height(20))) // Does the complete logout and login with refresh
             {
                 if (serverMode != ServerMode.CustomServer && CLIAvailableLocal()) 
                     LogoutAndLogin(manual:true);
@@ -2246,14 +2246,14 @@ public class ServerWindow : EditorWindow
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Show Login Info With Auth Token", GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Show Login Info With Auth Token", "Display the current login information including authentication token."), GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime login show --token", "Showing SpacetimeDB login info and token");
                 else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
             }
 
-            if (GUILayout.Button("Show Server Config", GUILayout.Height(20)))
+            if (GUILayout.Button(new GUIContent("Show Server Config", "Display the current server configuration."), GUILayout.Height(20)))
             {
                 if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                 serverManager.RunServerCommand("spacetime server list", "Showing SpacetimeDB server config");
@@ -2261,7 +2261,7 @@ public class ServerWindow : EditorWindow
             }
 
             EditorGUI.BeginDisabledGroup(serverMode != ServerMode.MaincloudServer && !serverManager.IsServerStarted);
-                if (GUILayout.Button("Show Active Modules", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Show Active Modules", "Display all active modules on the server."), GUILayout.Height(20)))
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime list", "Showing active modules");
@@ -2272,14 +2272,14 @@ public class ServerWindow : EditorWindow
             if (serverMode != ServerMode.MaincloudServer)
             {
                 // Maincloud does not support ping command
-                if (GUILayout.Button("Ping Server", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Ping Server", "Test connectivity to the server."), GUILayout.Height(20)))
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.PingServer(true);
                     else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a local (Docker or WSL) or remote (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
                 // Maincloud always uses the latest version
-                if (GUILayout.Button("Show Version", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Show Version", "Display the SpacetimeDB version."), GUILayout.Height(20)))
                 {
                     if ((serverMode != ServerMode.CustomServer && CLIAvailableLocal()) || (serverMode == ServerMode.CustomServer && CLIAvailableRemote()))
                     serverManager.RunServerCommand("spacetime --version", "Showing SpacetimeDB version");
@@ -2290,7 +2290,7 @@ public class ServerWindow : EditorWindow
             // Maincloud energy command
             if (serverMode == ServerMode.MaincloudServer)
             {
-                if (GUILayout.Button("Show Energy Balance", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Show Energy Balance", "Display your Maincloud energy balance."), GUILayout.Height(20)))
                 {
                     if (CLIAvailableLocal()) 
                         serverManager.RunServerCommand("spacetime energy balance", "Showing SpacetimeDB Maincloud energy");
@@ -2303,14 +2303,14 @@ public class ServerWindow : EditorWindow
             {
                 EditorGUILayout.LabelField("Custom Server Utility Commands", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
-                if (GUILayout.Button("Service Status", buttonStyle))
+                if (GUILayout.Button(new GUIContent("Service Status", "Check the current service status on the remote server."), buttonStyle))
                 {
                     if (CLIAvailableRemote())
                     CheckServiceStatus();
                     else LogMessage("SpacetimeDB CLI disconnected. Make sure you have installed a remote server (SSH) and it is available. Ensure you have started your Docker container if using Docker.", -2);
                 }
                 // Add a button which opens a cmd window with the ssh username
-                if (GUILayout.Button("Open SSH Window", buttonStyle))
+                if (GUILayout.Button(new GUIContent("Open SSH Window", "Open an SSH terminal to the remote server."), buttonStyle))
                 {
                     serverManager.OpenSSHWindow();
                 }
@@ -2320,13 +2320,13 @@ public class ServerWindow : EditorWindow
 
             if (localCLIProvider == "WSL")
             {
-                if (GUILayout.Button("Open Debian Window", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Open Debian Window", "Open a terminal to the Debian/WSL environment."), GUILayout.Height(20)))
                 {
                     serverManager.OpenDebianWindow();
                 }
             } else if (localCLIProvider == "Docker")
             {
-                if (GUILayout.Button("Open Docker Window", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Open Docker Window", "Open a terminal to the Docker container."), GUILayout.Height(20)))
                 {
                     serverManager.OpenDockerWindow();
                 }
@@ -2372,14 +2372,35 @@ public class ServerWindow : EditorWindow
             }
             EditorGUI.EndDisabledGroup();
 
-            if (GUILayout.Button("Identity Manager", GUILayout.Height(20)))
+            // Identity Manager button with warning if offline identity
+            string identityButtonText = "Identity Manager";
+            // Check if we have an offline identity
+            IdentityType currentIdentityTypeCommand = ServerIdentityManager.GetSavedIdentityType();
+            bool hasOfflineIdentityCommand = currentIdentityTypeCommand == IdentityType.OfflineServerIssued;
+            // Add warning triangle if offline identity
+            if (hasOfflineIdentityCommand)
+            {
+                identityButtonText = "⚠ " + identityButtonText;
+            }
+            string identityManagerTooltip = "Open the Identity Manager to verify your SpacetimeDB identity.";
+            IdentityType currentIdentityTypeForManager = ServerIdentityManager.GetSavedIdentityType();
+            bool hasOfflineIdentityForManager = currentIdentityTypeForManager == IdentityType.OfflineServerIssued;
+            if (hasOfflineIdentityForManager)
+            {
+                identityManagerTooltip += "\n\n<color=orange>⚠ WARNING: Currently using offline identity. Consider authenticating with SSO for better security and recovery options.</color>";
+            }
+            else if (!hasOfflineIdentityForManager)
+            {
+                identityManagerTooltip += "\n\n<color=green>🔒 Currently using secure SSO identity.</color>";
+            }
+            if (GUILayout.Button(new GUIContent(identityButtonText, identityManagerTooltip), GUILayout.Height(20)))
             {
                 OpenIdentityWindow();
             }
 
             if (debugMode && serverMode == ServerMode.WSLServer)
             {
-                if (GUILayout.Button("Test Server Running", GUILayout.Height(20)))
+                if (GUILayout.Button(new GUIContent("Test Server Running", "Test if the WSL server is currently running."), GUILayout.Height(20)))
                 {
                     if (wslProcess == null)
                     {
@@ -2602,11 +2623,11 @@ public class ServerWindow : EditorWindow
         
         if (hasOfflineIdentity)
         {
-            publishTooltip += "\n\n⚠ WARNING: Using offline identity. Consider authenticating with SSO for better security and recovery options.";
+            publishTooltip += "\n\n<color=orange>⚠ WARNING: Currently using offline identity. Consider authenticating with SSO for better security and recovery options.</color>";
         }
         else if (!hasOfflineIdentity)
         {
-            publishTooltip += "\n\n🔒 Using secure SSO identity for publishing.";
+            publishTooltip += "\n\n<color=green>🔒 Currently using secure SSO identity.</color>";
         }
         
         if (!serverManager.IsCliProviderRunning)
