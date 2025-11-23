@@ -277,7 +277,7 @@ public class ServerIdentityWindow : EditorWindow
 
         if (GUILayout.Button("Login with SSO", EditorStyles.toolbarButton, GUILayout.Width(120)))
         {
-            parentServerWindow.LogoutAndLogin(manual: true);
+            HandleSSOLogin();
         }
 
         GUILayout.FlexibleSpace();
@@ -347,7 +347,7 @@ public class ServerIdentityWindow : EditorWindow
                     
                     if (GUILayout.Button("🔐 Login with SSO", bigButtonStyle))
                     {
-                        parentServerWindow.LogoutAndLogin(manual: true);
+                        HandleSSOLogin();
                     }
                 }
                 
@@ -474,6 +474,55 @@ public class ServerIdentityWindow : EditorWindow
         }
         
         EditorGUILayout.EndVertical();
+    }
+
+    /// <summary>
+    /// Handles SSO login with appropriate warnings
+    /// </summary>
+    private void HandleSSOLogin()
+    {
+        // Check if we have an offline/server-issued identity that matches the server identity
+        bool hasOfflineIdentity = cliServerIdentityManager != null && 
+                                   cliServerIdentityManager.Type == IdentityType.OfflineServerIssued;
+        bool identitiesMatch = !string.IsNullOrEmpty(cliIdentity) && 
+                              !string.IsNullOrEmpty(serverIdentity) && 
+                              cliIdentity == serverIdentity;
+        bool hasPublishedDatabases = databaseIdentities != null && databaseIdentities.Length > 0;
+
+        // If offline identity is in use on the server, show warning
+        if (hasOfflineIdentity && identitiesMatch && hasPublishedDatabases)
+        {
+            bool proceed = EditorUtility.DisplayDialog(
+                "Found Published Offline Databases",
+                $"You currently have an offline/server-issued identity that matches the server identity.\n\n" +
+                $"Published Databases: {databaseIdentities.Length}\n\n" +
+                $"⚠ IMPORTANT: If you login with SSO, you will receive a new identity and will NO LONGER have access to any databases published under your current offline identity.\n\n" +
+                $"These databases cannot be recovered unless you backup your current identity and auth token and later restore them to regain access\n\n" +
+                $"Do you want to proceed with secure SSO login? You may need to republish your databases after logging in.",
+                "Yes, SSO Login",
+                "Cancel"
+            );
+
+            if (!proceed)
+            {
+                if (debugMode)
+                    Debug.Log("[ServerIdentityWindow] User cancelled SSO login due to offline identity warning");
+                return;
+            }
+            
+            if (debugMode)
+                Debug.Log("[ServerIdentityWindow] User confirmed SSO login despite offline identity warning");
+        }
+
+        // Proceed with SSO login
+        if (parentServerWindow != null)
+        {
+            parentServerWindow.LogoutAndLogin(manual: true);
+        }
+        else
+        {
+            Debug.LogError("[ServerIdentityWindow] Cannot perform SSO login - parent window not found");
+        }
     }
 
     /// <summary>
