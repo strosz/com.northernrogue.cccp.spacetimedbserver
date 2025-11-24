@@ -1215,7 +1215,7 @@ public class ServerSetupWindow : EditorWindow
                                     !string.IsNullOrEmpty(spacetimeDBCurrentVersion) && 
                                     !string.IsNullOrEmpty(spacetimeDBLatestVersion) && 
                                     spacetimeDBCurrentVersion != spacetimeDBLatestVersion) ||
-                              (item.title.Contains("Install Rust") && 
+                              (item.title.Contains("Rust") && 
                                     rustUpdateAvailable && 
                                     !string.IsNullOrEmpty(rustLatestVersion)) ||
                               (item.title.Contains("SpacetimeDB Unity SDK") && 
@@ -1244,7 +1244,7 @@ public class ServerSetupWindow : EditorWindow
                 EditorGUI.BeginDisabledGroup(isDisabled);
                 
                 string updateLabelText;
-                if (item.title.Contains("Install Rust"))
+                if (item.title.Contains("Rust"))
                 {
                     updateLabelText = "Update to v" + rustLatestVersion;
                 }
@@ -1279,7 +1279,7 @@ public class ServerSetupWindow : EditorWindow
                 EditorGUI.BeginDisabledGroup(isDisabled);
                 
                 string updateLabelText;
-                if (item.title.Contains("Install Rust"))
+                if (item.title.Contains("Rust"))
                 {
                     updateLabelText = "Update Found\nv" + rustLatestVersion;
                 }
