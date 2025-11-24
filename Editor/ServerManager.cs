@@ -827,6 +827,7 @@ public class ServerManager
                 break;
             case ServerMode.CustomServer:
                 EditorApplication.delayCall += async () => { await StartCustomServer(); };
+                if (LocalCLIProvider == "Docker") StartDockerServer();
                 break;
             case ServerMode.MaincloudServer:
                 StartMaincloudServer();

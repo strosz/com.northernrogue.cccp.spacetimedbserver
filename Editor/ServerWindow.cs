@@ -1962,6 +1962,13 @@ public class ServerWindow : EditorWindow
             } 
             else if (serverMode == ServerMode.CustomServer)
             {
+                if (localCLIProvider == "Docker" && !serverManager.IsCliProviderRunning)
+                {
+                    if (GUILayout.Button("Start SpacetimeDB Local Docker CLI", GUILayout.Height(30)))
+                    {
+                        serverManager.StartServer();
+                    }
+                }
                 if (!serverRunning)
                 {
                     if (GUILayout.Button("Start SpacetimeDB Remote", GUILayout.Height(30)))
@@ -1982,7 +1989,7 @@ public class ServerWindow : EditorWindow
             {
                 if (localCLIProvider == "Docker" && !serverManager.IsCliProviderRunning)
                 {
-                    if (GUILayout.Button("Start SpacetimeDB Docker CLI", GUILayout.Height(30)))
+                    if (GUILayout.Button("Start SpacetimeDB Local Docker CLI", GUILayout.Height(30)))
                     {
                         serverManager.StartServer();
                     }
