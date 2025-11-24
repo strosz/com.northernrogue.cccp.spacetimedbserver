@@ -27,6 +27,12 @@ namespace NorthernRogue.CCCP.Editor
         private const string EditorPrefsKeyIdentityType = "ServerIdentity_Type";
         private const string EditorPrefsKeyIdentity = "ServerIdentity_Identity";
         private const string EditorPrefsKeyLastCheck = "ServerIdentity_LastCheck";
+        
+        // CLI identity fetch cache to prevent redundant calls
+        private static DateTime lastCliIdentityFetchTime = DateTime.MinValue;
+        private static (string identity, string token, ServerIdentityManager info, string statusMessage) cachedCliIdentityResult;
+        private static readonly object cliIdentityCacheLock = new object();
+        private const double cliIdentityCacheSeconds = 5.0; // Cache for 5 seconds
 
         /// <summary>
         /// Detects the identity type from a JWT token
@@ -248,12 +254,36 @@ namespace NorthernRogue.CCCP.Editor
             EditorPrefs.DeleteKey(EditorPrefsKeyIdentity);
             EditorPrefs.DeleteKey(EditorPrefsKeyLastCheck);
         }
+        
+        /// <summary>
+        /// Clears the CLI identity cache to force a fresh fetch on next call
+        /// </summary>
+        public static void ClearCliIdentityCache()
+        {
+            lock (cliIdentityCacheLock)
+            {
+                lastCliIdentityFetchTime = DateTime.MinValue;
+                cachedCliIdentityResult = default;
+            }
+        }
 
         /// <summary>
         /// Fetches CLI identity using "spacetime login show --token"
         /// </summary>
         public static async Task<(string identity, string token, ServerIdentityManager info, string statusMessage)> FetchCliIdentityAsync(ServerManager serverManager, bool debugMode = false)
         {
+            // Check cache first to prevent redundant calls
+            lock (cliIdentityCacheLock)
+            {
+                var timeSinceLastFetch = (DateTime.Now - lastCliIdentityFetchTime).TotalSeconds;
+                if (timeSinceLastFetch < cliIdentityCacheSeconds)
+                {
+                    if (debugMode)
+                        Debug.Log($"[ServerIdentityManager] Returning cached CLI identity (fetched {timeSinceLastFetch:F1}s ago)");
+                    return cachedCliIdentityResult;
+                }
+            }
+            
             try
             {
                 var result = await ExecuteServerCommandAsync(serverManager, "spacetime login show --token", debugMode);
@@ -299,7 +329,18 @@ namespace NorthernRogue.CCCP.Editor
                         ? "CLI identity loaded successfully" 
                         : "No CLI identity logged in";
                     
-                    return (cliIdentity, cliAuthToken, info, statusMessage);
+                    var fetchResult = (cliIdentity, cliAuthToken, info, statusMessage);
+                    
+                    // Update cache with successful result
+                    lock (cliIdentityCacheLock)
+                    {
+                        cachedCliIdentityResult = fetchResult;
+                        lastCliIdentityFetchTime = DateTime.Now;
+                        if (debugMode)
+                            Debug.Log($"[ServerIdentityManager] CLI identity cached for {cliIdentityCacheSeconds} seconds");
+                    }
+                    
+                    return fetchResult;
                 }
                 else
                 {

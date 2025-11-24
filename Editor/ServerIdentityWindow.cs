@@ -548,6 +548,9 @@ public class ServerIdentityWindow : EditorWindow
         
         try
         {
+            // Clear cache to force fresh fetch on manual refresh
+            ServerIdentityManager.ClearCliIdentityCache();
+            
             // Fetch CLI identity
             var cliResult = await ServerIdentityManager.FetchCliIdentityAsync(serverManager, debugMode);
             cliIdentity = cliResult.identity;

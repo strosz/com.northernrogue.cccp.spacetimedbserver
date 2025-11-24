@@ -2007,10 +2007,39 @@ public class ServerDockerProcess
                         process.StartInfo.UseShellExecute = false;
                         process.StartInfo.CreateNoWindow = true;
                         
+                        var outputBuilder = new StringBuilder();
+                        var errorBuilder = new StringBuilder();
+                        
+                        process.OutputDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                outputBuilder.AppendLine(args.Data);
+                            }
+                        };
+                        
+                        process.ErrorDataReceived += (sender, args) =>
+                        {
+                            if (args.Data != null)
+                            {
+                                errorBuilder.AppendLine(args.Data);
+                            }
+                        };
+                        
                         process.Start();
-                        string output = process.StandardOutput.ReadToEnd();
-                        string error = process.StandardError.ReadToEnd();
-                        process.WaitForExit(5000);
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+                        
+                        bool finished = process.WaitForExit(5000);
+                        
+                        if (!finished)
+                        {
+                            try { process.Kill(); } catch { }
+                            return ""; // Timeout - return empty string
+                        }
+                        
+                        string output = outputBuilder.ToString();
+                        string error = errorBuilder.ToString();
                         
                         if (process.ExitCode == 0)
                         {

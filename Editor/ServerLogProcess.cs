@@ -2361,6 +2361,9 @@ public class ServerLogProcess
                 return;
             }
             
+            // Set flag to prevent concurrent reads
+            isReadingDockerModuleLogs = true;
+            
             if (debugMode) logCallback("[ServerLogProcess] Getting Docker logs (non-blocking)...", 0);
             
             // Initialize timestamp tracking if needed

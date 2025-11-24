@@ -86,6 +86,9 @@ public class ServerWindow : EditorWindow
     private const double checkInterval = 5.0; // Master interval for status checks
     private bool serverRunning = false;
     private bool previousServerRunning = false; // Track previous state to detect server start
+    
+    // Identity check guard to prevent concurrent executions
+    private bool isCheckingIdentity = false;
 
     // Server Settings - Direct property access to settings
     public bool debugMode { get => CCCPSettingsAdapter.GetDebugMode(); set => CCCPSettingsAdapter.SetDebugMode(value); }
@@ -237,6 +240,9 @@ public class ServerWindow : EditorWindow
         }
         
         if (!stylesInitialized) InitializeStyles();
+        
+        // Update window states to detect when child windows are closed
+        UpdateWindowStates();
 
         EditorGUILayout.BeginVertical();
                
@@ -839,6 +845,12 @@ public class ServerWindow : EditorWindow
             
             // Update window states only when gaining focus
             UpdateWindowStates();
+            
+            // Check identity state when window regains focus
+            if (!isCheckingIdentity)
+            {
+                CheckIdentityState();
+            }
             
             if (debugMode)
             {
@@ -1881,29 +1893,6 @@ public class ServerWindow : EditorWindow
                 CCCPSettingsProvider.debugMode = newDebugMode;
                 CCCPSettingsAdapter.debugMode = newDebugMode;
             }
-            
-            // Debug: Refresh Settings Cache button - only show in debug mode
-            if (debugMode)
-            {
-                if (GUILayout.Button("Refresh Settings", GUILayout.Width(100)))
-                {
-                    CCCPSettingsAdapter.RefreshSettingsCache();
-                    CCCPSettings.RefreshInstance();
-                    
-                    // Reconfigure ServerManager with refreshed settings
-                    if (serverManager != null)
-                    {
-                        serverManager.LoadSettings();
-                        serverManager.Configure();
-                    }
-                    
-                    // Reload the selected module
-                    LoadSelectedModuleFromSettings();
-                    
-                    UnityEngine.Debug.Log($"[ServerWindow] Manual settings refresh. Module count: {savedModules?.Count ?? 0}");
-                    Repaint();
-                }
-            }
             EditorGUILayout.EndHorizontal();
         }
         EditorGUILayout.EndVertical();
@@ -2575,10 +2564,6 @@ public class ServerWindow : EditorWindow
             ? (Event.current.control && Event.current.command) 
             : (Event.current.control && Event.current.alt);
         
-        // Always check identity state before publish to ensure we have fresh data
-        // Use delayCall to avoid blocking the GUI thread
-        EditorApplication.delayCall += () => CheckIdentityState();
-        
         // Check if we have an offline identity
         IdentityType currentIdentityType = ServerIdentityManager.GetSavedIdentityType();
         bool hasOfflineIdentity = currentIdentityType == IdentityType.OfflineServerIssued;
@@ -2637,6 +2622,12 @@ public class ServerWindow : EditorWindow
 
         if (GUILayout.Button(new GUIContent(buttonText, publishTooltip), publishButtonStyle, GUILayout.Height(30)))
         {
+            // Check identity state before publishing (on demand)
+            if (!isCheckingIdentity)
+            {
+                EditorApplication.delayCall += () => CheckIdentityState();
+            }
+            
             // Check if offline identity and show warning dialog
             if (hasOfflineIdentity && !resetDatabase)
             {
@@ -3949,6 +3940,14 @@ public class ServerWindow : EditorWindow
     /// </summary>
     private async void CheckIdentityState()
     {
+        // Prevent concurrent executions
+        if (isCheckingIdentity)
+        {
+            if (debugMode)
+                UnityEngine.Debug.Log("[ServerWindow] Identity check already in progress, skipping");
+            return;
+        }
+        
         if (serverManager == null || !serverManager.HasAllPrerequisites)
         {
             if (debugMode)
@@ -3956,6 +3955,14 @@ public class ServerWindow : EditorWindow
             return;
         }
 
+        if (!serverRunning)
+        {
+            if (debugMode)
+                UnityEngine.Debug.Log("[ServerWindow] Skipping identity check - server not running");
+            return;
+        }
+
+        isCheckingIdentity = true;
         try
         {
             // Only check if CLI provider is running (for local modes)
@@ -3988,6 +3995,10 @@ public class ServerWindow : EditorWindow
         {
             if (debugMode)
                 UnityEngine.Debug.LogError($"[ServerWindow] Error checking identity state: {ex.Message}");
+        }
+        finally
+        {
+            isCheckingIdentity = false;
         }
     }
 
