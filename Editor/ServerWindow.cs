@@ -1962,9 +1962,9 @@ public class ServerWindow : EditorWindow
             } 
             else if (serverMode == ServerMode.CustomServer)
             {
-                if (localCLIProvider == "Docker" && !serverManager.IsCliProviderRunning)
+                if (!serverManager.IsCliProviderRunning)
                 {
-                    if (GUILayout.Button("Start SpacetimeDB Local Docker CLI", GUILayout.Height(30)))
+                    if (GUILayout.Button($"Start SpacetimeDB Local {localCLIProvider} CLI", GUILayout.Height(30)))
                     {
                         serverManager.StartServer();
                     }

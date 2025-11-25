@@ -828,16 +828,27 @@ public class ServerManager
             case ServerMode.CustomServer:
                 EditorApplication.delayCall += async () => { await StartCustomServer(); };
                 if (LocalCLIProvider == "Docker") StartDockerServer();
+                else if (LocalCLIProvider == "WSL") EnsureWSLRunning();
                 break;
             case ServerMode.MaincloudServer:
                 StartMaincloudServer();
                 if (LocalCLIProvider == "Docker") StartDockerServer();
+                else if (LocalCLIProvider == "WSL") EnsureWSLRunning();
                 break;
             default:
                 LogMessage("Unknown server mode. Cannot start server.", -1);
                 break;
         }
     }    
+
+    public void EnsureWSLRunning()
+    {
+        if (wslProcessor != null)
+        {
+            if (DebugMode) LogMessage("Ensuring WSL is running for CLI operations...", 0);
+            wslProcessor.StartWsl();
+        }
+    }
 
     private void StartWSLServer()
     {
