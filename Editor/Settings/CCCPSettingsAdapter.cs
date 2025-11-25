@@ -122,7 +122,12 @@ public static class CCCPSettingsAdapter
             }
             
             _pendingSave = false;
-            AssetDatabase.SaveAssets();
+            
+            // Use EditorUtility.SetDirty instead of SaveAssets to avoid DPI errors during asset import
+            if (_cachedSettings != null)
+            {
+                UnityEditor.EditorUtility.SetDirty(_cachedSettings);
+            }
         }
         catch (System.Exception ex)
         {
