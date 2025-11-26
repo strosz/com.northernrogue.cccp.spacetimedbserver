@@ -121,6 +121,8 @@ public class CCCPSettings : ScriptableObject
     public string CCCPAssetStoreLatestVersion = "";
     public string dockerImageCurrentTag = "";
     public string dockerImageLatestTag = "";
+    public string dockerImageCurrentDigest = ""; // SHA256 digest of current image
+    public string dockerImageLatestDigest = ""; // SHA256 digest of latest image from registry
     public bool rustupUpdateAvailable = false;
     public bool rustUpdateAvailable = false;
     public bool spacetimeSDKUpdateAvailable = false;

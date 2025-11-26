@@ -2261,7 +2261,8 @@ public class ServerDockerProcess
     
     /// <summary>
     /// Fetches the latest Docker image tag for SpacetimeDB from the registry
-    /// This compares the current running image tag with the latest available tag
+    /// This compares the current running image digest with the latest available tag
+    /// Uses SHA256 digest comparison for reliable version tracking
     /// Also detects if multiple images exist with a "latest" tag alongside versioned tags
     /// </summary>
     public async Task<(string currentTag, string latestTag, bool updateAvailable, bool hasLatestTagWithVersions)> GetLatestImageTag()
@@ -2276,60 +2277,96 @@ public class ServerDockerProcess
             // Get the current image tag by querying docker images on the host
             string currentTag = "";
             
-            using (Process process = new Process())
+            // First, try to get tag from allTags list (more reliable)
+            if (allTags.Count > 0)
             {
-                ConfigureDockerProcess(process.StartInfo);
-                process.StartInfo.Arguments = $"images {ImageName}";
-                process.StartInfo.RedirectStandardOutput = true;
-                process.StartInfo.RedirectStandardError = true;
-                process.StartInfo.UseShellExecute = false;
-                process.StartInfo.CreateNoWindow = true;
+                // Prefer version tags over "latest"
+                var versionTag = allTags.FirstOrDefault(tag => 
+                    tag != "latest" && 
+                    System.Text.RegularExpressions.Regex.IsMatch(tag, @"^v?[0-9]+\.[0-9]+"));
                 
-                process.Start();
-                string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
-                bool exited = await Task.Run(() => process.WaitForExit(10000)); // 10 second timeout
-                
-                if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                if (!string.IsNullOrEmpty(versionTag))
                 {
-                    // Parse the output to find the tag
-                    // Expected format:
-                    // REPOSITORY                TAG       IMAGE ID       CREATED        SIZE
-                    // clockworklabs/spacetime   v1.6.0    236587e83648   10 hours ago   2.49GB
+                    currentTag = versionTag;
+                    if (debugMode) logCallback($"Current SpacetimeDB Docker image tag (from allTags): {currentTag}", 0);
+                }
+                else if (allTags.Contains("latest"))
+                {
+                    currentTag = "latest";
+                    if (debugMode) logCallback("Current SpacetimeDB Docker image tag: latest", 0);
+                }
+            }
+            
+            // Fallback: Query docker images if we couldn't get tag from allTags
+            if (string.IsNullOrEmpty(currentTag))
+            {
+                using (Process process = new Process())
+                {
+                    ConfigureDockerProcess(process.StartInfo);
+                    process.StartInfo.Arguments = $"images {ImageName}";
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
                     
-                    string[] lines = output.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.None);
+                    process.Start();
+                    string output = await Task.Run(() => process.StandardOutput.ReadToEnd());
+                    bool exited = await Task.Run(() => process.WaitForExit(10000)); // 10 second timeout
                     
-                    // Skip header line and find the first row with our image
-                    for (int i = 1; i < lines.Length; i++)
+                    if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
                     {
-                        string line = lines[i].Trim();
-                        if (string.IsNullOrEmpty(line)) continue;
+                        // Parse the output to find the tag
+                        // Expected format:
+                        // REPOSITORY                TAG       IMAGE ID       CREATED        SIZE
+                        // clockworklabs/spacetime   v1.6.0    236587e83648   10 hours ago   2.49GB
                         
-                        // Split by whitespace to get columns
-                        string[] columns = System.Text.RegularExpressions.Regex.Split(line, @"\s+");
+                        string[] lines = output.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.None);
                         
-                        // Format: REPOSITORY TAG IMAGE_ID CREATED SIZE
-                        // We want the second column (index 1) which is the TAG
-                        if (columns.Length >= 2)
+                        // Skip header line and find the first row with our image
+                        for (int i = 1; i < lines.Length; i++)
                         {
-                            currentTag = columns[1]; // Get the TAG column
-                            if (debugMode) logCallback($"Current SpacetimeDB Docker image tag: {currentTag}", 0);
-                            break;
+                            string line = lines[i].Trim();
+                            if (string.IsNullOrEmpty(line)) continue;
+                            
+                            // Split by whitespace to get columns
+                            string[] columns = System.Text.RegularExpressions.Regex.Split(line, @"\s+");
+                            
+                            // Format: REPOSITORY TAG IMAGE_ID CREATED SIZE
+                            // We want the second column (index 1) which is the TAG
+                            if (columns.Length >= 2)
+                            {
+                                string tag = columns[1]; // Get the TAG column
+                                
+                                // Skip if the tag looks like an image ID (12 hex characters)
+                                // Valid tags are either "latest" or version numbers like "v1.9.0"
+                                if (!string.IsNullOrEmpty(tag) && 
+                                    !System.Text.RegularExpressions.Regex.IsMatch(tag, @"^[a-f0-9]{12}$"))
+                                {
+                                    currentTag = tag;
+                                    if (debugMode) logCallback($"Current SpacetimeDB Docker image tag (fallback): {currentTag}", 0);
+                                    break;
+                                }
+                                else if (debugMode)
+                                {
+                                    logCallback($"Skipping invalid tag that looks like image ID: {tag}", 0);
+                                }
+                            }
+                        }
+                        
+                        if (string.IsNullOrEmpty(currentTag))
+                        {
+                            if (debugMode) logCallback("Could not parse Docker image tag from 'docker images' output", -1);
                         }
                     }
-                    
-                    if (string.IsNullOrEmpty(currentTag))
+                    else if (!exited)
                     {
-                        if (debugMode) logCallback("Could not parse Docker image tag from 'docker images' output", -1);
+                        process.Kill();
+                        if (debugMode) logCallback("docker images query timed out", -1);
                     }
-                }
-                else if (!exited)
-                {
-                    process.Kill();
-                    if (debugMode) logCallback("docker images query timed out", -1);
-                }
-                else if (process.ExitCode != 0)
-                {
-                    if (debugMode) logCallback($"docker images query failed with exit code {process.ExitCode}", -1);
+                    else if (process.ExitCode != 0)
+                    {
+                        if (debugMode) logCallback($"docker images query failed with exit code {process.ExitCode}", -1);
+                    }
                 }
             }
             
@@ -2354,8 +2391,32 @@ public class ServerDockerProcess
             
             if (!string.IsNullOrEmpty(latestTag))
             {
-                // If current tag is "latest", resolve it to the actual version number
-                // This prevents false update notifications on first-time pulls with "latest" tag
+                // Get digest of current local image
+                string currentDigest = await GetImageDigest($"{ImageName}:{currentTag}");
+                if (!string.IsNullOrEmpty(currentDigest))
+                {
+                    // Store the current digest for future comparisons
+                    CCCPSettingsAdapter.SetDockerImageCurrentDigest(currentDigest);
+                    if (debugMode) logCallback($"Stored current image digest: {currentDigest}", 0);
+                }
+                
+                // Get digest of latest image from registry (without pulling)
+                string latestDigest = await GetRemoteImageDigest($"{ImageName}:{latestTag}");
+                if (!string.IsNullOrEmpty(latestDigest))
+                {
+                    // Store the latest digest for future comparisons
+                    CCCPSettingsAdapter.SetDockerImageLatestDigest(latestDigest);
+                    if (debugMode) logCallback($"Stored latest image digest: {latestDigest}", 0);
+                }
+                else
+                {
+                    // Clear the latest digest if we couldn't retrieve it
+                    CCCPSettingsAdapter.SetDockerImageLatestDigest("");
+                    if (debugMode) logCallback($"Could not retrieve remote digest for latest tag {latestTag}, will use tag comparison", 0);
+                }
+                
+                // If current tag is "latest", try to resolve it to the actual version number
+                // This prevents confusion about which version "latest" actually is
                 if (currentTag == "latest")
                 {
                     if (debugMode) logCallback("Current tag is 'latest', resolving to actual version number...", 0);
@@ -2365,9 +2426,27 @@ public class ServerDockerProcess
                         currentTag = resolvedTag;
                         if (debugMode) logCallback($"Resolved 'latest' tag to: {resolvedTag}", 0);
                     }
+                    else
+                    {
+                        if (debugMode) logCallback("Could not resolve 'latest' to version number, keeping as 'latest'", 0);
+                    }
                 }
                 
-                bool updateAvailable = currentTag != latestTag && !string.IsNullOrEmpty(currentTag);
+                // Determine if update is available by comparing digests
+                bool updateAvailable = false;
+                if (!string.IsNullOrEmpty(currentDigest) && !string.IsNullOrEmpty(latestDigest))
+                {
+                    // Use digest comparison for reliable detection
+                    updateAvailable = currentDigest != latestDigest;
+                    if (debugMode) logCallback($"Update available (digest comparison): {updateAvailable}", 0);
+                }
+                else
+                {
+                    // Fallback to tag comparison if digests unavailable
+                    updateAvailable = currentTag != latestTag && !string.IsNullOrEmpty(currentTag);
+                    if (debugMode) logCallback($"Update available (tag comparison fallback): {updateAvailable}", 0);
+                }
+                
                 if (debugMode) logCallback($"Latest SpacetimeDB Docker image tag: {latestTag}, update available: {updateAvailable}", 0);
                 return (currentTag, latestTag, updateAvailable, hasLatestTagWithVersions);
             }
@@ -2575,7 +2654,7 @@ public class ServerDockerProcess
     
     /// <summary>
     /// Resolves the "latest" tag to its actual version number by comparing image digests
-    /// or by using the provided latest version if they match
+    /// Uses RepoDigest for reliable comparison with remote registry
     /// </summary>
     private async Task<string> ResolveLatestTagToVersion(string latestVersionTag)
     {
@@ -2583,33 +2662,42 @@ public class ServerDockerProcess
         {
             if (debugMode) logCallback($"Resolving 'latest' tag to version {latestVersionTag}...", 0);
             
-            // Get the image ID of the currently running image with "latest" tag
-            string latestImageId = await GetDockerImageId($"{ImageName}:latest");
-            if (string.IsNullOrEmpty(latestImageId))
+            // Get the digest of the currently running image with "latest" tag
+            string latestDigest = await GetImageDigest($"{ImageName}:latest");
+            if (string.IsNullOrEmpty(latestDigest))
             {
-                if (debugMode) logCallback("Could not get image ID for 'latest' tag", -1);
-                return "";
+                if (debugMode) logCallback("Could not get digest for 'latest' tag, will query remote", 0);
+                
+                // Try to get the digest from remote registry
+                latestDigest = await GetRemoteImageDigest($"{ImageName}:latest");
+                if (string.IsNullOrEmpty(latestDigest))
+                {
+                    if (debugMode) logCallback("Could not get remote digest for 'latest' tag either", -1);
+                    return "";
+                }
             }
             
-            // Get the image ID of the latest version tag from registry
-            string latestVersionImageId = await GetDockerImageId($"{ImageName}:{latestVersionTag}");
-            if (string.IsNullOrEmpty(latestVersionImageId))
+            // Get the digest of the latest version tag from remote registry
+            // We compare with remote to avoid needing to pull the versioned tag
+            string latestVersionDigest = await GetRemoteImageDigest($"{ImageName}:{latestVersionTag}");
+            if (string.IsNullOrEmpty(latestVersionDigest))
             {
-                // If we can't get the image ID for the version tag, assume they're the same
-                // This happens when the version tag image hasn't been pulled yet
-                if (debugMode) logCallback($"Assuming 'latest' matches version {latestVersionTag}", 0);
+                // If we can't get the digest for the version tag from remote,
+                // assume they're the same (this is the most likely scenario on first run)
+                if (debugMode) logCallback($"Could not get remote digest for version {latestVersionTag}, assuming it matches 'latest'", 0);
                 return latestVersionTag;
             }
             
-            // If the image IDs match, they're the same image
-            if (latestImageId == latestVersionImageId)
+            // If the digests match, they're the same image
+            if (latestDigest == latestVersionDigest)
             {
-                if (debugMode) logCallback($"'latest' tag matches version {latestVersionTag}", 0);
+                if (debugMode) logCallback($"'latest' tag digest matches version {latestVersionTag}", 0);
                 return latestVersionTag;
             }
             else
             {
-                if (debugMode) logCallback($"'latest' tag does not match version {latestVersionTag} (different images)", -1);
+                if (debugMode) logCallback($"'latest' tag digest does not match version {latestVersionTag} (different images)", 0);
+                // Return empty to indicate they don't match - current tag stays as "latest"
                 return "";
             }
         }
@@ -2621,18 +2709,20 @@ public class ServerDockerProcess
     }
     
     /// <summary>
-    /// Gets the image ID of a Docker image by tag
+    /// Gets the RepoDigest (SHA256) of a Docker image by tag
     /// Returns empty string if image not found or error occurs
+    /// RepoDigest is the manifest list digest from the registry
     /// Multiplatform compatible (Windows, Mac, Linux)
     /// </summary>
-    private async Task<string> GetDockerImageId(string imageTag)
+    private async Task<string> GetImageDigest(string imageTag)
     {
         try
         {
             using (Process process = new Process())
             {
                 ConfigureDockerProcess(process.StartInfo);
-                process.StartInfo.Arguments = $"inspect -f \"{{{{.ID}}}}\" {imageTag}";
+                // Get RepoDigests which contains the SHA256 manifest list digest from the registry
+                process.StartInfo.Arguments = $"inspect -f \"{{{{index .RepoDigests 0}}}}\" {imageTag}";
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;
                 process.StartInfo.UseShellExecute = false;
@@ -2644,7 +2734,31 @@ public class ServerDockerProcess
                 
                 if (exited && process.ExitCode == 0 && !string.IsNullOrEmpty(output))
                 {
-                    return output.Trim();
+                    string rawOutput = output.Trim();
+                    
+                    // Log raw output for debugging
+                    if (debugMode) logCallback($"Raw RepoDigest output for {imageTag}: {rawOutput}", 0);
+                    
+                    // Extract just the digest portion (after @sha256:)
+                    // Format is like: clockworklabs/spacetime@sha256:abc123...
+                    if (rawOutput.Contains("@sha256:"))
+                    {
+                        int shaIndex = rawOutput.IndexOf("@sha256:");
+                        string digest = rawOutput.Substring(shaIndex + 1); // "sha256:abc123..."
+                        if (debugMode) logCallback($"Extracted RepoDigest (manifest list) for {imageTag}: {digest}", 0);
+                        return digest;
+                    }
+                    else if (rawOutput.StartsWith("sha256:"))
+                    {
+                        // Already in the right format
+                        if (debugMode) logCallback($"Got RepoDigest (manifest list) for {imageTag}: {rawOutput}", 0);
+                        return rawOutput;
+                    }
+                    else if (rawOutput != "<no value>" && !string.IsNullOrEmpty(rawOutput))
+                    {
+                        // Unknown format, log it
+                        if (debugMode) logCallback($"Unexpected RepoDigest format for {imageTag}: {rawOutput}", -1);
+                    }
                 }
                 
                 if (!exited)
@@ -2653,7 +2767,126 @@ public class ServerDockerProcess
         }
         catch (Exception ex)
         {
-            if (debugMode) logCallback($"Error getting Docker image ID for {imageTag}: {ex.Message}", -1);
+            if (debugMode) logCallback($"Error getting Docker image digest for {imageTag}: {ex.Message}", -1);
+        }
+        
+        return "";
+    }
+    
+    /// <summary>
+    /// Gets the manifest digest of a Docker image from the remote registry without pulling it
+    /// Uses Docker Hub API to query the manifest list digest (same as RepoDigest)
+    /// This ensures consistent comparison with local RepoDigest from docker inspect
+    /// Multiplatform compatible (Windows, Mac, Linux)
+    /// </summary>
+    private async Task<string> GetRemoteImageDigest(string imageTag)
+    {
+        try
+        {
+            // Extract tag from full image name (e.g., "clockworklabs/spacetime:v1.9.0" -> "v1.9.0")
+            string tag = "latest";
+            if (imageTag.Contains(":"))
+            {
+                tag = imageTag.Substring(imageTag.LastIndexOf(':') + 1);
+            }
+            
+            // Use Docker Hub API to get the manifest digest
+            using (var httpClient = new System.Net.Http.HttpClient())
+            {
+                httpClient.Timeout = TimeSpan.FromSeconds(10);
+                
+                try
+                {
+                    // Docker Hub API endpoint for image tags
+                    string url = $"https://registry.hub.docker.com/v2/repositories/clockworklabs/spacetime/tags/{tag}";
+                    
+                    if (debugMode) logCallback($"Querying Docker Hub API for tag '{tag}' manifest digest...", 0);
+                    
+                    var response = await httpClient.GetStringAsync(url);
+                    
+                    if (debugMode)
+                    {
+                        // Log a truncated version of the response for debugging
+                        string truncated = response.Length > 500 ? response.Substring(0, 500) + "..." : response;
+                        logCallback($"Docker Hub API response (first 500 chars): {truncated}", 0);
+                    }
+                    
+                    // The Docker Hub API response contains a "digest" field which is the manifest list digest
+                    // This is the same digest that appears in RepoDigests when you do 'docker inspect'
+                    // Look for the top-level "digest" field (not the ones inside "images" array)
+                    
+                    // Strategy 1: Look for "manifest_digest" field which is specifically the manifest list
+                    var manifestDigestMatch = System.Text.RegularExpressions.Regex.Match(
+                        response, 
+                        @"""manifest_digest""\s*:\s*""(sha256:[a-f0-9]{64})""");
+                    
+                    if (manifestDigestMatch.Success && manifestDigestMatch.Groups.Count > 1)
+                    {
+                        string digest = manifestDigestMatch.Groups[1].Value;
+                        if (debugMode) logCallback($"Got remote manifest_digest for {imageTag}: {digest}", 0);
+                        return digest;
+                    }
+                    
+                    // Strategy 2: Find the digest field with manifest.list media type
+                    var manifestListMatch = System.Text.RegularExpressions.Regex.Match(
+                        response, 
+                        @"""digest""\s*:\s*""(sha256:[a-f0-9]{64})""[^}]*""media_type""\s*:\s*""application/vnd\.docker\.distribution\.manifest\.list");
+                    
+                    if (manifestListMatch.Success && manifestListMatch.Groups.Count > 1)
+                    {
+                        string digest = manifestListMatch.Groups[1].Value;
+                        if (debugMode) logCallback($"Got remote manifest list digest for {imageTag}: {digest}", 0);
+                        return digest;
+                    }
+                    
+                    // Strategy 3: Collect all digest fields - the index/manifest list digest is usually LAST
+                    var allDigests = System.Text.RegularExpressions.Regex.Matches(
+                        response, 
+                        @"""digest""\s*:\s*""(sha256:[a-f0-9]{64})""");
+                    
+                    if (allDigests.Count > 0)
+                    {
+                        // Log all found digests
+                        var digestList = new System.Collections.Generic.List<string>();
+                        foreach (System.Text.RegularExpressions.Match match in allDigests)
+                        {
+                            if (match.Groups.Count > 1)
+                            {
+                                digestList.Add(match.Groups[1].Value);
+                            }
+                        }
+                        
+                        if (debugMode)
+                        {
+                            logCallback($"Found {digestList.Count} digest(s) in response: {string.Join(", ", digestList)}", 0);
+                        }
+                        
+                        // The manifest list (index) digest is typically the LAST one in the response
+                        // The first digests are platform-specific (linux/amd64, linux/arm64, etc.)
+                        // Return the last digest which should be the index digest matching RepoDigest
+                        string digest = allDigests[allDigests.Count - 1].Groups[1].Value;
+                        if (debugMode) logCallback($"Using LAST digest (manifest list) for {imageTag}: {digest}", 0);
+                        return digest;
+                    }
+                    
+                    if (debugMode)
+                    {
+                        logCallback($"Could not parse any digest from Docker Hub API response for {imageTag}", -1);
+                    }
+                }
+                catch (System.Net.Http.HttpRequestException ex)
+                {
+                    if (debugMode) logCallback($"HTTP error querying Docker Hub for digest: {ex.Message}", -1);
+                }
+                catch (TaskCanceledException)
+                {
+                    if (debugMode) logCallback($"Timeout querying Docker Hub API for digest of {imageTag}", -1);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (debugMode) logCallback($"Exception getting remote digest for {imageTag}: {ex.Message}", -1);
         }
         
         return "";

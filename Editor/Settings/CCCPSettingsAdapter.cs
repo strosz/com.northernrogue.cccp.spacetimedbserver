@@ -245,6 +245,20 @@ public static class CCCPSettingsAdapter
         }
     }
     
+    public static string GetDockerImageCurrentDigest() => Settings.dockerImageCurrentDigest;
+    public static void SetDockerImageCurrentDigest(string value) 
+    { 
+        if (Settings.dockerImageCurrentDigest != value)
+        {Settings.dockerImageCurrentDigest = value; MarkDirty();}
+    }
+    
+    public static string GetDockerImageLatestDigest() => Settings.dockerImageLatestDigest;
+    public static void SetDockerImageLatestDigest(string value) 
+    { 
+        if (Settings.dockerImageLatestDigest != value)
+        {Settings.dockerImageLatestDigest = value; MarkDirty();}
+    }
+    
     public static string GetServerDirectory() => Settings.serverDirectory;
     public static void SetServerDirectory(string value) 
     { 

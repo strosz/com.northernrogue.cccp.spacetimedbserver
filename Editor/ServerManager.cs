@@ -258,6 +258,16 @@ public class ServerManager
         get => Settings.dockerImageLatestTag;
         set => CCCPSettingsAdapter.SetDockerImageLatestTag(value);
     }
+    public string dockerImageCurrentDigest
+    {
+        get => Settings.dockerImageCurrentDigest;
+        set => CCCPSettingsAdapter.SetDockerImageCurrentDigest(value);
+    }
+    public string dockerImageLatestDigest
+    {
+        get => Settings.dockerImageLatestDigest;
+        set => CCCPSettingsAdapter.SetDockerImageLatestDigest(value);
+    }
     public bool dockerImageUpdateAvailable
     {
         get => Settings.dockerImageUpdateAvailable;
@@ -3496,11 +3506,18 @@ public class ServerManager
 
             if (updateAvailable)
             {
-                // Only show the update message once per editor session (persists across script recompilations)
-                if (!SessionState.GetBool("DockerImageUpdateMessageShown", false))
+                if (manualCheck)
                 {
-                    LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current tag: {currentTag} and latest tag: {latestTag}", 1);
-                    SessionState.SetBool("DockerImageUpdateMessageShown", true);
+                    LogMessage($"SpacetimeDB Docker image update available! Current: {currentTag}, Latest: {latestTag}", 1);
+                }
+                else
+                {
+                    // Only show the update message once per editor session for automatic checks
+                    if (!SessionState.GetBool("DockerImageUpdateMessageShown", false))
+                    {
+                        LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current tag: {currentTag} and latest tag: {latestTag}", 1);
+                        SessionState.SetBool("DockerImageUpdateMessageShown", true);
+                    }
                 }
                 CCCPSettingsAdapter.SetDockerImageUpdateAvailable(true);
             }

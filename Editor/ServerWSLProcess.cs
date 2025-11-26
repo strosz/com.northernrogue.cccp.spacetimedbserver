@@ -359,7 +359,7 @@ public class ServerWSLProcess
             process.StartInfo.CreateNoWindow = true;
             process.Start();
             
-            if (debugMode) logCallback("WSL startup command issued.", 1);
+            logCallback("WSL startup initiated and the CLI should be available within a few seconds.", 1);
         }
         catch (Exception ex)
         {
