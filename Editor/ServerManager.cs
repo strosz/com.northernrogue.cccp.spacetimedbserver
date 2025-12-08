@@ -3025,19 +3025,23 @@ public class ServerManager
                             LogMessage($"Warning: Could not delete directory {dirPath}: {dirEx.Message}", 0);
                         }
                     }
-                    
-                    // Delete specific file
-                    string fileToDelete = System.IO.Path.Combine(ClientDirectory, "SpacetimeDBClient.g");
-                    try
+
+                    // Delete specific files
+                    string[] filesToDelete = { "SpacetimeDBClient.g.cs", "SpacetimeDBClient.g.cs.meta" };
+                    foreach (var fileName in filesToDelete)
                     {
-                        if (System.IO.File.Exists(fileToDelete))
+                        string filePath = System.IO.Path.Combine(ClientDirectory, fileName);
+                        try
                         {
-                            System.IO.File.Delete(fileToDelete);
+                            if (System.IO.File.Exists(filePath))
+                            {
+                                System.IO.File.Delete(filePath);
+                            }
                         }
-                    }
-                    catch (Exception fileEx)
-                    {
-                        LogMessage($"Warning: Could not delete file {fileToDelete}: {fileEx.Message}", 0);
+                        catch (Exception fileEx)
+                        {
+                            LogMessage($"Warning: Could not delete file {filePath}: {fileEx.Message}", 0);
+                        }
                     }
                 }
                 else
