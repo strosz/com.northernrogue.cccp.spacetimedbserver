@@ -2169,13 +2169,13 @@ public class ServerWindow : EditorWindow
 
         EditorGUILayout.LabelField("v", versionStyle, GUILayout.Width(10));
         if (serverMode == ServerMode.WSLServer)
-            EditorGUILayout.LabelField(spacetimeDBCurrentVersionWSL, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionWSL, versionStyle, GUILayout.Width(32));
         else if (serverMode == ServerMode.DockerServer)
-            EditorGUILayout.LabelField(spacetimeDBCurrentVersionDocker, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionDocker, versionStyle, GUILayout.Width(32));
         else if (serverMode == ServerMode.CustomServer)
-            EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBCurrentVersionCustom, versionStyle, GUILayout.Width(32));
         else if (serverMode == ServerMode.MaincloudServer)
-            EditorGUILayout.LabelField(spacetimeDBLatestVersion, versionStyle, GUILayout.Width(25));
+            EditorGUILayout.LabelField(spacetimeDBLatestVersion, versionStyle, GUILayout.Width(32));
 
         EditorGUILayout.EndHorizontal();
 
