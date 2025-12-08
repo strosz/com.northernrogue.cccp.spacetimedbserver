@@ -3655,7 +3655,7 @@ public class ServerManager
             {
                 if (manualCheck)
                 {
-                    LogMessage($"SpacetimeDB Docker image update available! Current: {currentTag}, Latest: {latestTag}", 1);
+                    LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current: {currentTag}, Latest: {latestTag}", 1);
                 }
                 else
                 {

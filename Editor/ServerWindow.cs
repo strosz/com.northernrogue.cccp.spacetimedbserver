@@ -3218,8 +3218,8 @@ public class ServerWindow : EditorWindow
         bool manualCheck = true;
         if (localCLIProvider == "Docker")
         {
-            await serverManager.CheckSpacetimeDBVersionDocker(manualCheck);
             await serverManager.CheckDockerImageTag(manualCheck);
+            await serverManager.CheckSpacetimeDBVersionDocker(manualCheck);
         }
         else if (localCLIProvider == "WSL")
         {
