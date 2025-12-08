@@ -2337,8 +2337,8 @@ public class ServerWindow : EditorWindow
                 int dialogResult = EditorUtility.DisplayDialogComplex(
                     "Clean Temporary Files",
                     "Select which temporary files to clean:\n\n" +
-                    "Cargo Cache: Removes the build cache. Fixes permission errors and compilation issues.\n\n" +
                     "Generated Client Code: Removes generated bindings. Useful when client API changes or to force regeneration.\n\n" +
+                    "Cargo Cache: Removes the build cache. Fixes permission errors and compilation issues.\n\n" +
                     "Both operations are safe and don't affect your source code or database.",
                     "Both",           // Button 0
                     "Cancel",         // Button 1

@@ -2988,7 +2988,7 @@ public class ServerManager
     }
 
     /// <summary>
-    /// Cleans the generated client bindings by deleting all files in the client directory.
+    /// Cleans the generated client bindings by deleting specific directories and files in the client directory.
     /// This forces a regeneration of client code on the next generate operation.
     /// </summary>
     public async void CleanServerGeneratedClientBindings()
@@ -3003,22 +3003,41 @@ public class ServerManager
         
         try
         {
-            // Run file deletion asynchronously on a background thread
+            // Run deletion asynchronously on a background thread
             await Task.Run(() =>
             {
-                // Recursively delete all files in the client directory
                 if (System.IO.Directory.Exists(ClientDirectory))
                 {
-                    foreach (var file in System.IO.Directory.GetFiles(ClientDirectory, "*", System.IO.SearchOption.AllDirectories))
+                    // Delete specific directories
+                    string[] directoriesToDelete = { "Reducers", "Tables", "Types" };
+                    foreach (var dirName in directoriesToDelete)
                     {
+                        string dirPath = System.IO.Path.Combine(ClientDirectory, dirName);
                         try
                         {
-                            System.IO.File.Delete(file);
+                            if (System.IO.Directory.Exists(dirPath))
+                            {
+                                System.IO.Directory.Delete(dirPath, true);
+                            }
                         }
-                        catch (Exception fileEx)
+                        catch (Exception dirEx)
                         {
-                            LogMessage($"Warning: Could not delete file {file}: {fileEx.Message}", 0);
+                            LogMessage($"Warning: Could not delete directory {dirPath}: {dirEx.Message}", 0);
                         }
+                    }
+                    
+                    // Delete specific file
+                    string fileToDelete = System.IO.Path.Combine(ClientDirectory, "SpacetimeDBClient.g");
+                    try
+                    {
+                        if (System.IO.File.Exists(fileToDelete))
+                        {
+                            System.IO.File.Delete(fileToDelete);
+                        }
+                    }
+                    catch (Exception fileEx)
+                    {
+                        LogMessage($"Warning: Could not delete file {fileToDelete}: {fileEx.Message}", 0);
                     }
                 }
                 else
