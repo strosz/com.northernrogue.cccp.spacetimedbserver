@@ -1063,10 +1063,18 @@ public class ServerWSLProcess
     public string GetWslPath(string windowsPath)
     {
         if (string.IsNullOrEmpty(windowsPath)) return "~";
-        string path = windowsPath.Replace("\\", "/").Replace(":", "");
-        if (path.Length > 1 && char.IsLetter(path[0]) && path[1] == '/') 
-        { path = "/mnt/" + char.ToLower(path[0]) + path.Substring(1); }
-        else { path = "~"; }
+        // First normalize the path by replacing backslashes with forward slashes
+        string path = windowsPath.Replace("\\", "/");
+        // Check for drive letter (e.g., "C:/path") before removing the colon
+        if (path.Length > 1 && char.IsLetter(path[0]) && path[1] == ':') 
+        { 
+            // Convert C:/path to /mnt/c/path
+            path = "/mnt/" + char.ToLower(path[0]) + path.Substring(2);
+        }
+        else 
+        { 
+            path = "~"; 
+        }
         return path;
     }
     
