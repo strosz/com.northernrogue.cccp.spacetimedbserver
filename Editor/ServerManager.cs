@@ -3027,7 +3027,7 @@ public class ServerManager
                     }
 
                     // Delete specific files
-                    string[] filesToDelete = { "SpacetimeDBClient.g.cs", "SpacetimeDBClient.g.cs.meta" };
+                    string[] filesToDelete = { "SpacetimeDBClient.g.cs", "SpacetimeDBClient.g.cs.meta", "Reducers.meta", "Tables.meta", "Types.meta" };
                     foreach (var fileName in filesToDelete)
                     {
                         string filePath = System.IO.Path.Combine(ClientDirectory, fileName);
