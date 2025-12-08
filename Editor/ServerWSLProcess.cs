@@ -919,6 +919,17 @@ public class ServerWSLProcess
                 logCallback("Please ensure your module name is written in lowercase characters.", -1);
                 commandSuccess = false;
             }
+            else if (error.Contains("failed to open") || error.Contains("Permission denied (os error 13)"))
+            {
+                logCallback("Cargo permission error detected. Try cleaning the Cargo cache to fix this issue.", -1);
+                commandSuccess = false;
+                // Show dialog to user suggesting cargo clean
+                EditorUtility.DisplayDialog(
+                    "Cargo Permission Error", 
+                    "A Cargo permission error was detected during publishing. This commonly occurs when build files have incorrect permissions.\n\nWould you like to clean the Cargo cache and try publishing again?\n\nYou can manually clean it using the 'Clean Server Cargo' button in Commands section.", 
+                    "OK"
+                );
+            }
             else if (isLogSizeCommand && !string.IsNullOrEmpty(output) && output.Trim().All(char.IsDigit))
             {
                 // Log size commands are successful if they return numeric output
@@ -1076,6 +1087,64 @@ public class ServerWSLProcess
             path = "~"; 
         }
         return path;
+    }
+    
+    /// <summary>
+    /// Cleans the Cargo build cache in the server directory by removing the target folder.
+    /// This can fix common Cargo permission errors and compilation issues.
+    /// Uses direct Windows file deletion to avoid WSL sudo permission issues.
+    /// </summary>
+    /// <param name="serverDirectory">The server directory containing the target folder to clean</param>
+    /// <returns>True if the clean operation succeeded, false otherwise</returns>
+    public async Task<bool> CleanServerCargo(string serverDirectory)
+    {
+        if (string.IsNullOrEmpty(serverDirectory))
+        {
+            logCallback("Error: Server directory is not set. Cannot clean cargo.", -1);
+            return false;
+        }
+
+        if (debugMode) logCallback($"Attempting to clean Cargo target folder at: {serverDirectory}/target", 0);
+        
+        try
+        {
+            string targetPath = System.IO.Path.Combine(serverDirectory, "target");
+            
+            // Check if target directory exists
+            if (System.IO.Directory.Exists(targetPath))
+            {
+                logCallback("Removing Cargo target folder (this may take a moment)...", 0);
+                
+                // Delete directory recursively
+                await Task.Run(() => 
+                {
+                    System.IO.Directory.Delete(targetPath, true);
+                });
+                
+                logCallback("Successfully cleaned Cargo build cache (target folder removed).", 1);
+                return true;
+            }
+            else
+            {
+                logCallback("Cargo target folder not found. Nothing to clean.", 0);
+                return true; // Not finding it is also a successful outcome
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            logCallback("Error: Access denied when trying to delete target folder. Some files may be locked by other processes.", -1);
+            return false;
+        }
+        catch (System.IO.IOException ioEx)
+        {
+            logCallback($"Error: Could not delete target folder: {ioEx.Message}", -1);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            logCallback($"Error cleaning Cargo cache: {ex.Message}", -1);
+            return false;
+        }
     }
     
     #endregion

@@ -1495,6 +1495,17 @@ public class ServerDockerProcess
                 logCallback("Please ensure your module name is written in lowercase characters.", -1);
                 commandSuccess = false;
             }
+            else if (result.Item2.Contains("failed to open") || result.Item2.Contains("Permission denied (os error 13)"))
+            {
+                logCallback("Cargo permission error detected. Try cleaning the Cargo cache to fix this issue.", -1);
+                commandSuccess = false;
+                // Show dialog to user suggesting cargo clean
+                EditorUtility.DisplayDialog(
+                    "Cargo Permission Error", 
+                    "A Cargo permission error was detected during publishing. This commonly occurs when build files have incorrect permissions.\n\nWould you like to clean the Cargo cache and try publishing again?\n\nYou can manually clean it using the 'Clean Server Cargo' button in Commands section.", 
+                    "OK"
+                );
+            }
             else if (isLogSizeCommand && !string.IsNullOrEmpty(result.Item1) && result.Item1.Trim().All(char.IsDigit))
             {
                 // Log size commands are successful if they return numeric output
@@ -1635,6 +1646,47 @@ public class ServerDockerProcess
         {
             if (debugMode) logCallback($"[ServerDockerProcess] Exception during cargo build: {ex.Message}", -1);
             return (false, "", ex.Message);
+        }
+    }
+    
+    #endregion
+    
+    #region Cargo Management
+    
+    /// <summary>
+    /// Cleans the Cargo build cache in the server directory by removing the target folder.
+    /// This can fix common Cargo permission errors and compilation issues.
+    /// Works cross-platform (Windows, Mac, Linux).
+    /// </summary>
+    /// <param name="serverDirectory">The server directory containing the target folder to clean</param>
+    /// <returns>True if the clean operation succeeded, false otherwise</returns>
+    public async Task<bool> CleanServerCargo(string serverDirectory)
+    {
+        if (string.IsNullOrEmpty(serverDirectory))
+        {
+            logCallback("Error: Server directory is not set. Cannot clean cargo.", -1);
+            return false;
+        }
+
+        // In Docker, the server directory is mounted at /app
+        // The target folder is at /app/target
+        string targetPath = "/app/target";
+        
+        if (debugMode) logCallback($"Attempting to clean Cargo target folder in Docker container at: {targetPath}", 0);
+        
+        // Execute rm command inside the Docker container
+        string command = $"rm -rf '{targetPath}'";
+        var result = await RunServerCommandAsync(command, serverDirectory);
+        
+        if (result.success || string.IsNullOrEmpty(result.error))
+        {
+            logCallback("Successfully cleaned Cargo build cache (target folder removed).", 1);
+            return true;
+        }
+        else
+        {
+            logCallback($"Failed to clean Cargo cache: {result.error}", -1);
+            return false;
         }
     }
     

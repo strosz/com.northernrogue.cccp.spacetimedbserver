@@ -2314,6 +2314,7 @@ public class ServerWindow : EditorWindow
 
             EditorGUILayout.LabelField($"Local {localCLIProvider} CLI Tools", EditorStyles.centeredGreyMiniLabel, GUILayout.Height(10));
 
+            // Open WSL or Docker CLI terminal
             if (localCLIProvider == "WSL")
             {
                 if (GUILayout.Button(new GUIContent("Open Debian Window", "Open a terminal to the Debian/WSL environment."), GUILayout.Height(20)))
@@ -2328,6 +2329,37 @@ public class ServerWindow : EditorWindow
                 }
             }
 
+            // Clean Temp Files button - covers both Cargo cache and generated client bindings
+            string cleanTempFilesTooltip = "Remove temporary build and generated files to fix compilation issues.";
+            if (GUILayout.Button(new GUIContent("Clean Temp Files", cleanTempFilesTooltip), GUILayout.Height(20)))
+            {
+                // Show a dialog with options to clean cargo cache and/or generated files
+                int dialogResult = EditorUtility.DisplayDialogComplex(
+                    "Clean Temporary Files",
+                    "Select which temporary files to clean:\n\n" +
+                    "Cargo Cache: Removes the build cache. Fixes permission errors and compilation issues.\n\n" +
+                    "Generated Client Code: Removes generated bindings. Useful when client API changes or to force regeneration.\n\n" +
+                    "Both operations are safe and don't affect your source code or database.",
+                    "Both",           // Button 0
+                    "Cancel",         // Button 1
+                    "Cargo Only"      // Button 2
+                );
+
+                if (dialogResult == 0)
+                {
+                    // Clean both
+                    serverManager.CleanServerCargo();
+                    serverManager.CleanServerGeneratedClientBindings();
+                }
+                else if (dialogResult == 2)
+                {
+                    // Clean cargo only
+                    serverManager.CleanServerCargo();
+                }
+                // dialogResult == 1 means Cancel, do nothing
+            }
+
+            // Backup, Restore and Clear Server Data buttons (Only supports local WSL and Docker servers)
             if (serverMode == ServerMode.WSLServer || serverMode == ServerMode.DockerServer)
             {
                 EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(serverManager.BackupDirectory));
@@ -2720,9 +2752,46 @@ public class ServerWindow : EditorWindow
                         generateProjectRootForCommand = "/app";
                     }
                 }
+                else if (serverManager.LocalCLIProvider == "WSL")
+                {
+                    // WSL needs Windows paths converted to WSL format: C:\path -> /mnt/c/path
+                    generateProjectRootForCommand = wslProcess.GetWslPath(generateProjectRoot);
+                    if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for WSL: {generateProjectRootForCommand}");
+                }
                 
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(serverManager.ClientDirectory, serverManager.CurrentServerMode.ToString());
-                serverManager.RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {serverManager.UnityLang} -y\"", "Generating Client Code");
+                // Use absolute path for --out-dir to avoid cross-project generation
+                string outDir = serverManager.ClientDirectory;
+                
+                // Convert client directory path for the CLI provider
+                if (serverManager.LocalCLIProvider == "Docker")
+                {
+                    // Docker mount: /unity points to the Unity project root
+                    // Convert C:\path\to\Assets\SpacetimeDBGeneratedClientBindings to /unity/Assets/SpacetimeDBGeneratedClientBindings
+                    try
+                    {
+                        string normalizedPath = outDir.Replace('\\', '/');
+                        int unityIndex = normalizedPath.IndexOf("Assets");
+                        if (unityIndex >= 0)
+                        {
+                            outDir = "/unity/" + normalizedPath.Substring(unityIndex);
+                        }
+                        else
+                        {
+                            outDir = "/unity" + normalizedPath;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert client path for Docker: {ex.Message}");
+                    }
+                }
+                else if (serverManager.LocalCLIProvider == "WSL")
+                {
+                    // WSL needs Windows paths converted to WSL format
+                    outDir = wslProcess.GetWslPath(outDir);
+                }
+                
+                serverManager.RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir '{outDir}' --lang {serverManager.UnityLang} -y\"", "Generating Client Code");
                 LogMessage($"Generated Client Code to: {outDir}", 1);
             }
         }

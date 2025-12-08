@@ -2257,6 +2257,12 @@ public class ServerManager
                 projectRootForCommand = "/app"; // Fall back to /app
             }
         }
+        else if (LocalCLIProvider == "WSL")
+        {
+            // WSL needs Windows paths converted to WSL format: C:\path -> /mnt/c/path
+            projectRootForCommand = wslProcessor.GetWslPath(projectRoot);
+            if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for WSL: {projectRootForCommand}");
+        }
         
         // Build the publish command based on whether we're using pre-built WASM or project-path
         string publishCommand;
@@ -2472,18 +2478,54 @@ public class ServerManager
                     generateProjectRootForCommand = "/app";
                 }
             }
+            else if (LocalCLIProvider == "WSL")
+            {
+                // WSL needs Windows paths converted to WSL format: C:\path -> /mnt/c/path
+                generateProjectRootForCommand = wslProcessor.GetWslPath(generateProjectRoot);
+                if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for WSL: {generateProjectRootForCommand}");
+            }
+            
+            // Use absolute path for --out-dir to avoid cross-project generation
+            string outDir = ClientDirectory;
+            
+            // Convert client directory path for the CLI provider
+            if (LocalCLIProvider == "Docker")
+            {
+                // Docker mount: /unity points to the Unity project root
+                // Convert C:\path\to\Assets\SpacetimeDBGeneratedClientBindings to /unity/Assets/SpacetimeDBGeneratedClientBindings
+                try
+                {
+                    string normalizedPath = outDir.Replace('\\', '/');
+                    int unityIndex = normalizedPath.IndexOf("Assets");
+                    if (unityIndex >= 0)
+                    {
+                        outDir = "/unity/" + normalizedPath.Substring(unityIndex);
+                    }
+                    else
+                    {
+                        outDir = "/unity" + normalizedPath;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerManager] Failed to convert client path for Docker: {ex.Message}");
+                }
+            }
+            else if (LocalCLIProvider == "WSL")
+            {
+                // WSL needs Windows paths converted to WSL format
+                outDir = wslProcessor.GetWslPath(outDir);
+            }
             
             if (successfulPublish)
             {
                 LogMessage("Publish successful, automatically generating Unity files...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
-                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {UnityLang} -y\"", "Generating Unity files");
+                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir '{outDir}' --lang {UnityLang} -y\"", "Generating Unity files");
             }
             else // If unsuccessful Publish
             {
                 LogMessage("Publish failed, automatically generating Unity files to capture all logs...", 0);
-                string outDir = ServerUtilityProvider.GetRelativeClientPath(ClientDirectory, CurrentServerMode.ToString());
-                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir {outDir} --lang {UnityLang} -y\"", "Generating Unity files (Publish failed)");
+                RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir '{outDir}' --lang {UnityLang} -y\"", "Generating Unity files (Publish failed)");
             }
         }
 
@@ -2908,6 +2950,88 @@ public class ServerManager
             versionProcessor.RestoreServerDataDocker(BackupDirectory);
         } else if (LocalCLIProvider == "WSL") {
             versionProcessor.RestoreServerDataWSL(BackupDirectory, UserName);
+        }
+    }
+
+    /// <summary>
+    /// Cleans the Cargo build cache (target folder) in the server directory.
+    /// Useful for fixing permission errors and compilation issues.
+    /// </summary>
+    public async void CleanServerCargo()
+    {
+        if (string.IsNullOrEmpty(ServerDirectory))
+        {
+            LogMessage("Error: Server directory is not set. Cannot clean cargo.", -1);
+            return;
+        }
+
+        LogMessage("Cleaning Cargo build cache...", 0);
+        
+        bool success = false;
+        if (LocalCLIProvider == "Docker")
+        {
+            success = await dockerProcessor.CleanServerCargo(ServerDirectory);
+        }
+        else if (LocalCLIProvider == "WSL")
+        {
+            success = await wslProcessor.CleanServerCargo(ServerDirectory);
+        }
+        else
+        {
+            LogMessage("Error: No valid CLI provider selected. Please select WSL or Docker.", -1);
+        }
+
+        if (success)
+        {
+            LogMessage("Cargo build cache cleaned successfully. You can now try publishing again.", 1);
+        }
+    }
+
+    /// <summary>
+    /// Cleans the generated client bindings by deleting all files in the client directory.
+    /// This forces a regeneration of client code on the next generate operation.
+    /// </summary>
+    public async void CleanServerGeneratedClientBindings()
+    {
+        if (string.IsNullOrEmpty(ClientDirectory))
+        {
+            LogMessage("Error: Client directory is not set. Cannot clean generated bindings.", -1);
+            return;
+        }
+
+        LogMessage("Cleaning generated client bindings...", 0);
+        
+        try
+        {
+            // Run file deletion asynchronously on a background thread
+            await Task.Run(() =>
+            {
+                // Recursively delete all files in the client directory
+                if (System.IO.Directory.Exists(ClientDirectory))
+                {
+                    foreach (var file in System.IO.Directory.GetFiles(ClientDirectory, "*", System.IO.SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(file);
+                        }
+                        catch (Exception fileEx)
+                        {
+                            LogMessage($"Warning: Could not delete file {file}: {fileEx.Message}", 0);
+                        }
+                    }
+                }
+                else
+                {
+                    LogMessage("Warning: Client directory does not exist.", 0);
+                }
+            });
+            
+            LogMessage("Successfully cleaned generated client bindings. Run 'Generate Client Code' to regenerate.", 1);
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Error cleaning generated client bindings: {ex.Message}", -1);
         }
     }
 
