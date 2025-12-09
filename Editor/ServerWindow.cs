@@ -1010,6 +1010,11 @@ public class ServerWindow : EditorWindow
                 {
                     ServerMode newMode = newCliProviderSelectedIndex == 0 ? ServerMode.DockerServer : ServerMode.WSLServer;
                     serverMode = newMode;
+                    if (serverRunning)
+                    {
+                        serverManager.StopServer();
+                        LogMessage("Stopped local server before changing CLI provider", 0);
+                    }
                     // Save the selected CLI provider as the last local mode
                     CCCPSettingsAdapter.SetLastLocalServerMode((ServerManager.ServerMode)newMode);
                     // Update localCLIProvider variable
