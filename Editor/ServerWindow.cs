@@ -2734,65 +2734,7 @@ public class ServerWindow : EditorWindow
         {
             if (GUILayout.Button("Generate Client Code", GUILayout.Height(30)))
             {
-                // Get the project root directory for generate command (same as publish)
-                string generateProjectRoot = ServerUtilityProvider.GetProjectRoot(serverManager.ServerDirectory);
-                
-                // For Docker, convert the Windows path to the container path (/app mount)
-                string generateProjectRootForCommand = generateProjectRoot;
-                if (serverManager.LocalCLIProvider == "Docker")
-                {
-                    try
-                    {
-                        string relativePath = generateProjectRoot.Substring(serverManager.ServerDirectory.Length).TrimStart('\\', '/');
-                        generateProjectRootForCommand = string.IsNullOrEmpty(relativePath) ? "/app" : ("/app/" + relativePath).Replace('\\', '/');
-                    }
-                    catch (Exception ex)
-                    {
-                        if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert project root for Docker in generate: {ex.Message}");
-                        generateProjectRootForCommand = "/app";
-                    }
-                }
-                else if (serverManager.LocalCLIProvider == "WSL")
-                {
-                    // WSL needs Windows paths converted to WSL format: C:\path -> /mnt/c/path
-                    generateProjectRootForCommand = wslProcess.GetWslPath(generateProjectRoot);
-                    if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for WSL: {generateProjectRootForCommand}");
-                }
-                
-                // Use absolute path for --out-dir to avoid cross-project generation
-                string outDir = serverManager.ClientDirectory;
-                
-                // Convert client directory path for the CLI provider
-                if (serverManager.LocalCLIProvider == "Docker")
-                {
-                    // Docker mount: /unity points to the Unity project root
-                    // Convert C:\path\to\Assets\SpacetimeDBGeneratedClientBindings to /unity/Assets/SpacetimeDBGeneratedClientBindings
-                    try
-                    {
-                        string normalizedPath = outDir.Replace('\\', '/');
-                        int unityIndex = normalizedPath.IndexOf("Assets");
-                        if (unityIndex >= 0)
-                        {
-                            outDir = "/unity/" + normalizedPath.Substring(unityIndex);
-                        }
-                        else
-                        {
-                            outDir = "/unity" + normalizedPath;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert client path for Docker: {ex.Message}");
-                    }
-                }
-                else if (serverManager.LocalCLIProvider == "WSL")
-                {
-                    // WSL needs Windows paths converted to WSL format
-                    outDir = wslProcess.GetWslPath(outDir);
-                }
-                
-                serverManager.RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir '{outDir}' --lang {serverManager.UnityLang} -y\"", "Generating Client Code");
-                LogMessage($"Generated Client Code to: {outDir}", 1);
+                _ = GenerateClientCodeAsync();
             }
         }
         
@@ -4074,6 +4016,94 @@ public class ServerWindow : EditorWindow
         finally
         {
             isCheckingIdentity = false;
+        }
+    }
+
+    private async System.Threading.Tasks.Task GenerateClientCodeAsync()
+    {
+        try
+        {
+            // Get the project root directory for generate command (same as publish)
+            string generateProjectRoot = ServerUtilityProvider.GetProjectRoot(serverManager.ServerDirectory);
+            
+            // For Docker, convert the Windows path to the container path (/app mount)
+            string generateProjectRootForCommand = generateProjectRoot;
+            if (serverManager.LocalCLIProvider == "Docker")
+            {
+                try
+                {
+                    string relativePath = generateProjectRoot.Substring(serverManager.ServerDirectory.Length).TrimStart('\\', '/');
+                    generateProjectRootForCommand = string.IsNullOrEmpty(relativePath) ? "/app" : ("/app/" + relativePath).Replace('\\', '/');
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert project root for Docker in generate: {ex.Message}");
+                    generateProjectRootForCommand = "/app";
+                }
+            }
+            else if (serverManager.LocalCLIProvider == "WSL")
+            {
+                // WSL needs Windows paths converted to WSL format: C:\path -> /mnt/c/path
+                generateProjectRootForCommand = wslProcess.GetWslPath(generateProjectRoot);
+                if (debugMode) UnityEngine.Debug.Log($"[ServerManager] Converted project root for WSL: {generateProjectRootForCommand}");
+            }
+            
+            // Use absolute path for --out-dir to avoid cross-project generation
+            string outDir = serverManager.ClientDirectory;
+            
+            // Convert client directory path for the CLI provider
+            if (serverManager.LocalCLIProvider == "Docker")
+            {
+                // Docker mount: /unity points to the Unity project root
+                // Convert C:\path\to\Assets\SpacetimeDBGeneratedClientBindings to /unity/Assets/SpacetimeDBGeneratedClientBindings
+                try
+                {
+                    string normalizedPath = outDir.Replace('\\', '/');
+                    int unityIndex = normalizedPath.IndexOf("Assets");
+                    if (unityIndex >= 0)
+                    {
+                        outDir = "/unity/" + normalizedPath.Substring(unityIndex);
+                    }
+                    else
+                    {
+                        outDir = "/unity" + normalizedPath;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (debugMode) UnityEngine.Debug.LogError($"[ServerWindow] Failed to convert client path for Docker: {ex.Message}");
+                }
+            }
+            else if (serverManager.LocalCLIProvider == "WSL")
+            {
+                // WSL needs Windows paths converted to WSL format
+                outDir = wslProcess.GetWslPath(outDir);
+            }
+            
+            LogMessage("Generating Client Code...", 0);
+            
+            // Run the server command
+            serverManager.RunServerCommand($"sh -c \"cd '{generateProjectRootForCommand}' && spacetime generate --out-dir '{outDir}' --lang {serverManager.UnityLang} -y\"", "");
+            
+            // Wait for the command to complete (allow up to 7 seconds)
+            await Task.Delay(7000);
+            
+            try
+            {
+                // Refresh the AssetDatabase so Unity detects any newly generated files
+                LogMessage("Requesting asset refresh...", 0);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                LogMessage("Asset refresh completed.", 1);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Failed to refresh Unity Assets: {ex.Message}", -1);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogMessage($"Generate Client Code failed: {ex.Message}", -1);
+            if (debugMode) UnityEngine.Debug.LogException(ex);
         }
     }
 

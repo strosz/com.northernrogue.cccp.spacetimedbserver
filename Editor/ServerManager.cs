@@ -2555,15 +2555,23 @@ public class ServerManager
     private async void GenerateResult(string output, string error, bool publishSuccessful)
     {
         LogMessage("Waiting for generated files to be fully written...", 0);
-        await Task.Delay(3000); // Wait 3 seconds for files to be fully generated
+        await Task.Delay(1000); // Wait 1 second for files to be fully generated
         if (!string.IsNullOrEmpty(error) && error.Contains("Error") || !publishSuccessful)
         {
             LogMessage("Publish and Generate failed! Attempted to anyhow generate the client files to capture all the error logs.", -1);
         }
         else
         {
-            //LogMessage("Requesting script compilation...", 0); // Removed since Unity yet doesn't detect the new files even if we request compilation
-            //UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation();
+            try
+            {
+                // Refresh the AssetDatabase so Unity detects any newly generated files
+                LogMessage("Requesting asset refresh...", 0);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Failed to refresh Unity Assets: {ex.Message}", -1);
+            }
             LogMessage("Publish and Generate successful!", 1);
         }
         
@@ -2994,7 +3002,7 @@ public class ServerManager
     /// Cleans the generated client bindings by deleting specific directories and files in the client directory.
     /// This forces a regeneration of client code on the next generate operation.
     /// </summary>
-    public async void CleanServerGeneratedClientBindings()
+    public void CleanServerGeneratedClientBindings()
     {
         if (string.IsNullOrEmpty(ClientDirectory))
         {
@@ -3007,7 +3015,7 @@ public class ServerManager
         try
         {
             // Run deletion asynchronously on a background thread
-            await Task.Run(() =>
+            Task.Run(() =>
             {
                 if (System.IO.Directory.Exists(ClientDirectory))
                 {
@@ -3046,14 +3054,30 @@ public class ServerManager
                             LogMessage($"Warning: Could not delete file {filePath}: {fileEx.Message}", 0);
                         }
                     }
+                    
+                    // Refresh the AssetDatabase on the main thread after deletion completes
+                    EditorApplication.CallbackFunction refreshCallback = null;
+                    refreshCallback = () =>
+                    {
+                        LogMessage("Requesting asset refresh...", 0);
+                        try
+                        {
+                            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                            LogMessage("Successfully cleaned generated client bindings. Run 'Generate Client Code' to regenerate.", 1);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogMessage($"Failed to refresh Unity Assets: {ex.Message}", -1);
+                        }
+                        EditorApplication.update -= refreshCallback;
+                    };
+                    EditorApplication.update += refreshCallback;
                 }
                 else
                 {
                     LogMessage("Warning: Client directory does not exist.", 0);
                 }
             });
-            
-            LogMessage("Successfully cleaned generated client bindings. Run 'Generate Client Code' to regenerate.", 1);
         }
         catch (Exception ex)
         {
