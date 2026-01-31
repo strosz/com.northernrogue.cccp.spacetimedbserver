@@ -3639,10 +3639,14 @@ public class ServerManager
             if (updateAvailable)
             {
                 // Only show the update message once per editor session (persists across script recompilations)
-                if (manualCheck && !dockerImageUpdateAvailable) {
-                    LogMessage($"SpacetimeDB update available! No docker image update is available yet, please wait until an official Docker image update. Current version: {version} and latest version: {latestVersion}", 1);
-                } else if (manualCheck && dockerImageUpdateAvailable) {
-                    LogMessage($"SpacetimeDB update available in the latest Docker image! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
+                if (!SessionState.GetBool("SpacetimeDBDockerVersionUpdateMessageShown", false))
+                {
+                    if (!dockerImageUpdateAvailable) {
+                        LogMessage($"SpacetimeDB update available! No docker image update is available yet, please wait until an official Docker image update. Current version: {version} and latest version: {latestVersion}", 1);
+                    } else {
+                        LogMessage($"SpacetimeDB update available in the latest Docker image! Click on the Setup Window update button to install. Current version: {version} and latest version: {latestVersion}", 1);
+                    }
+                    SessionState.SetBool("SpacetimeDBDockerVersionUpdateMessageShown", true);
                 }
             } else {
                 if (manualCheck) {
@@ -3680,18 +3684,18 @@ public class ServerManager
 
             if (updateAvailable)
             {
-                if (manualCheck)
+                // Only show the update message once per editor session for both manual and automatic checks
+                if (!SessionState.GetBool("DockerImageUpdateMessageShown", false))
                 {
-                    LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current: {currentTag}, Latest: {latestTag}", 1);
-                }
-                else
-                {
-                    // Only show the update message once per editor session for automatic checks
-                    if (!SessionState.GetBool("DockerImageUpdateMessageShown", false))
+                    if (manualCheck)
+                    {
+                        LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current: {currentTag}, Latest: {latestTag}", 1);
+                    }
+                    else
                     {
                         LogMessage($"SpacetimeDB Docker image update available! Click on the Setup Window update button to install. Current tag: {currentTag} and latest tag: {latestTag}", 1);
-                        SessionState.SetBool("DockerImageUpdateMessageShown", true);
                     }
+                    SessionState.SetBool("DockerImageUpdateMessageShown", true);
                 }
                 CCCPSettingsAdapter.SetDockerImageUpdateAvailable(true);
             }
@@ -3853,11 +3857,8 @@ public class ServerManager
             
             if (updateAvailable && !string.IsNullOrEmpty(latestSDKVersion) && currentSDKVersion != latestSDKVersion)
             {
-                if (manualCheck)
-                {
-                    LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Package Manager update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
-                }
-                else if (!manualCheck && !SessionState.GetBool("SpacetimeDBSDKUpdateMessageShown", false))
+                // Only show the update message once per editor session for both manual and automatic checks
+                if (!SessionState.GetBool("SpacetimeDBSDKUpdateMessageShown", false))
                 {
                     LogMessage($"SpacetimeDB SDK update available for Unity! Click on the Package Manager update button to install. Current version: {currentSDKVersion} and latest version: {latestSDKVersion}", 1);
                     SessionState.SetBool("SpacetimeDBSDKUpdateMessageShown", true);
@@ -3911,7 +3912,12 @@ public class ServerManager
             
             if (rustUpdateAvailable)
             {
-                LogMessage($"Rust update available for WSL! Click on the Setup Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("RustWSLUpdateMessageShown", false))
+                {
+                    LogMessage($"Rust update available for WSL! Click on the Setup Window update button to install. Current version: {rustCurrentVersion} and latest version: {rustLatestVersion}", 1);
+                    SessionState.SetBool("RustWSLUpdateMessageShown", true);
+                }
                 CCCPSettingsAdapter.SetRustUpdateAvailable(true);
             }
             else
@@ -3972,7 +3978,12 @@ public class ServerManager
             
             if (rustUpdateAvailable)
             {
-                LogMessage($"Rust update available for Docker! Click on the Setup Window update button to install. Current version: {rustCurrentVersionDocker} and latest version: {rustLatestVersionDocker}", 1);
+                // Only show the update message once per editor session (persists across script recompilations)
+                if (!SessionState.GetBool("RustDockerUpdateMessageShown", false))
+                {
+                    LogMessage($"Rust update available for Docker! Click on the Setup Window update button to install. Current version: {rustCurrentVersionDocker} and latest version: {rustLatestVersionDocker}", 1);
+                    SessionState.SetBool("RustDockerUpdateMessageShown", true);
+                }
                 CCCPSettingsAdapter.SetRustUpdateAvailable(true);
             }
             else
